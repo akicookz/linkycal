@@ -1,0 +1,9 @@
+node_modules
+dist
+dist-widget
+.wrangler
+*.tsbuildinfo
+.env
+.env.local
+worker-configuration.d.ts
+.dev.vars

@@ -1,0 +1,233 @@
+@import url("https://api.fontshare.com/v2/css?f[]=satoshi@300,400,500,600,700,800&display=swap");
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  /* ─── Brand Scale ─────────────────────────────────────────────────── */
+  --color-brand: var(--brand);
+  --color-brand-dark: var(--brand-dark);
+  --color-brand-soft: var(--brand-soft);
+
+  --font-sans: "Satoshi", system-ui, sans-serif;
+  --font-heading: "Satoshi", system-ui, sans-serif;
+}
+
+/* ─── Light-First Design Language ──────────────────────────────────────────── */
+
+:root {
+  --radius: 1rem;
+
+  /* Dark forest green brand scale */
+  --brand: #1B4332;
+  --brand-dark: #143728;
+  --brand-soft: #2D6A4F;
+
+  /* Surface scale (light) */
+  --background: #ffffff;
+  --foreground: #0f1a14;
+
+  --card: #ffffff;
+  --card-foreground: #0f1a14;
+
+  --popover: #ffffff;
+  --popover-foreground: #0f1a14;
+
+  /* Brand green primary */
+  --primary: var(--brand);
+  --primary-foreground: #ffffff;
+
+  --secondary: #f1f5f3;
+  --secondary-foreground: #1a2e23;
+
+  --muted: #f4f7f5;
+  --muted-foreground: #5c7268;
+
+  --accent: #f1f5f3;
+  --accent-foreground: #0f1a14;
+
+  --destructive: oklch(55% 0.2 25);
+
+  --success: oklch(55% 0.15 152);
+  --warning: oklch(70% 0.15 75);
+
+  --border: #e5ebe8;
+  --input: #e5ebe8;
+  --ring: var(--brand-soft);
+
+  /* Sidebar */
+  --sidebar: #fafcfb;
+  --sidebar-border: #e5ebe8;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: var(--background);
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* ─── Squircle CTA Glow Surface ────────────────────────────────────────────── */
+/* Dark forest green with inner top glow + subtle outer glow                   */
+.glow-surface {
+  background: var(--brand);
+  color: #ffffff;
+  border: 1px solid rgba(45, 106, 79, 0.6);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 12px 20px -10px rgba(255, 255, 255, 0.12),
+    0 0 20px rgba(27, 67, 50, 0.25);
+  border-radius: var(--radius);
+}
+.glow-surface:hover {
+  background: var(--brand-dark);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 12px 20px -10px rgba(255, 255, 255, 0.15),
+    0 0 28px rgba(27, 67, 50, 0.35);
+}
+.glow-surface-subtle {
+  background: rgba(27, 67, 50, 0.06);
+  border: 1px solid rgba(27, 67, 50, 0.12);
+  box-shadow: inset 0 12px 16px -10px rgba(27, 67, 50, 0.08);
+  border-radius: var(--radius);
+}
+.glow-surface-subtle:hover {
+  background: rgba(27, 67, 50, 0.1);
+}
+
+/* ─── Card Glow Variants ──────────────────────────────────────────────────── */
+
+.card-glow-primary {
+  border-radius: 1.5rem;
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(27, 67, 50, 0.1);
+  box-shadow:
+    inset 0 10px 30px -12px rgba(27, 67, 50, 0.12),
+    0 4px 24px -8px rgba(27, 67, 50, 0.06);
+}
+
+.card-glow-secondary {
+  border-radius: 1.5rem;
+  background: rgba(250, 252, 251, 0.8);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(27, 67, 50, 0.06);
+  box-shadow: inset 0 10px 30px -12px rgba(27, 67, 50, 0.06);
+}
+
+/* ─── Landing Page Keyframes ──────────────────────────────────────────────── */
+
+@keyframes messageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes typingDot {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-3px); }
+}
+
+@keyframes glowPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Feature Pill ────────────────────────────────────────────────────────── */
+
+.feature-pill {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(27, 67, 50, 0.08);
+  background: rgba(27, 67, 50, 0.02);
+  backdrop-filter: blur(20px);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+/* ─── Section Alternating Background ──────────────────────────────────────── */
+
+.section-tinted {
+  background-color: #f8faf9;
+}
+
+/* ─── Docs Code Blocks ────────────────────────────────────────────────────── */
+
+.code-block {
+  background: #0f1a14;
+  color: #d4e8dc;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+}
+
+.code-block .keyword { color: #81c995; }
+.code-block .string { color: #a8d8b9; }
+.code-block .comment { color: #5c7268; }
+.code-block .property { color: #7ec8a0; }
+.code-block .number { color: #b8d4c7; }
+
+/* ─── Docs Callout Variants ───────────────────────────────────────────────── */
+
+.callout-info {
+  background: rgba(27, 67, 50, 0.04);
+  border: 1px solid rgba(27, 67, 50, 0.12);
+  border-radius: 0.75rem;
+}
+
+.callout-warning {
+  background: rgba(217, 119, 6, 0.04);
+  border: 1px solid rgba(217, 119, 6, 0.15);
+  border-radius: 0.75rem;
+}
+
+.callout-tip {
+  background: rgba(16, 185, 129, 0.04);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: 0.75rem;
+}

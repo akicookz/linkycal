@@ -1,0 +1,68 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "account_id": "35bc7a4522237728214ba9d54c36002e",
+  "name": "linkycal",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-05-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+  },
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+  },
+  "placement": {
+    "mode": "smart",
+    "hint": "enam",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "linkycal-db",
+      "database_id": "f077026d-c201-4e57-93ef-91061c411078",
+      "migrations_dir": "worker/db/drizzle",
+      "remote": true,
+    },
+  ],
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "linkycal-uploads",
+      "remote": true,
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "1b10094005db458db0079de926af47c1",
+      "remote": true,
+    },
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "linkycal-workflows",
+        "max_batch_timeout": 30,
+        "max_batch_size": 5,
+      },
+    ],
+    "producers": [
+      {
+        "queue": "linkycal-workflows",
+        "binding": "WORKFLOW_QUEUE",
+      },
+    ],
+  },
+  "vars": {
+    "BETTER_AUTH_URL": "https://linkycal.com",
+    "SENDER_EMAIL": "noreply@updates.linkycal.com",
+    "COMPANY_ADDRESS": "131 Continental Dr, Suite 305, Newark, DE 19713",
+    "STRIPE_FREE_MONTHLY_PRICE_ID": "",
+    "STRIPE_PRO_MONTHLY_PRICE_ID": "",
+    "STRIPE_PRO_ANNUAL_PRICE_ID": "",
+    "STRIPE_BUSINESS_MONTHLY_PRICE_ID": "",
+    "STRIPE_BUSINESS_ANNUAL_PRICE_ID": "",
+  },
+}
