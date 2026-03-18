@@ -17,6 +17,7 @@ interface CalendarEntry {
   id: string;
   summary: string;
   primary: boolean;
+  accessRole: "freeBusyReader" | "reader" | "writer" | "owner";
 }
 
 interface CalendarEvent {
@@ -157,13 +158,14 @@ export class CalendarService {
     }
 
     const data = (await response.json()) as {
-      items: Array<{ id: string; summary: string; primary?: boolean }>;
+      items: Array<{ id: string; summary: string; primary?: boolean; accessRole?: string }>;
     };
 
     return (data.items ?? []).map((item) => ({
       id: item.id,
       summary: item.summary,
       primary: item.primary ?? false,
+      accessRole: (item.accessRole as CalendarEntry["accessRole"]) ?? "reader",
     }));
   }
 

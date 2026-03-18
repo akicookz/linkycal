@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Loader2,
@@ -95,6 +96,7 @@ export default function Settings() {
   const [nameInitialized, setNameInitialized] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   // Theme state
@@ -221,6 +223,11 @@ export default function Settings() {
     onSuccess: (data) => {
       // Redirect to OAuth URL
       window.location.href = data.url;
+    },
+    onError: (err: Error) => {
+      if (err.message.includes("Plan limit")) {
+        setShowUpgradeDialog(true);
+      }
     },
   });
 
@@ -620,6 +627,15 @@ export default function Settings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Upgrade Dialog */}
+      <UpgradeDialog
+        open={showUpgradeDialog}
+        onClose={() => setShowUpgradeDialog(false)}
+        projectId={projectId!}
+        feature="calendar connections"
+        description="Your current plan allows 1 calendar connection. Upgrade to Pro to connect unlimited Google Calendar accounts."
+      />
     </div>
   );
 }

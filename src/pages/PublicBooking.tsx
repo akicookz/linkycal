@@ -496,9 +496,16 @@ export default function PublicBooking() {
                       Select a date to see available times
                     </div>
                   ) : loadingSlots ? (
-                    <div className="h-full flex items-center justify-center text-sm text-muted-foreground gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading times...
+                    <div>
+                      <div className="h-4 w-28 bg-muted rounded mb-3 animate-pulse" />
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {Array.from({ length: 8 }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="h-10 rounded-lg border border-border bg-muted/50 animate-pulse"
+                          />
+                        ))}
+                      </div>
                     </div>
                   ) : slots.length === 0 ? (
                     <div className="h-full flex items-center justify-center text-sm text-muted-foreground">

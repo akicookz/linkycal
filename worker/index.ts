@@ -3130,27 +3130,6 @@ export default {
       const expired = await bookingService.expirePendingBookings();
 
       if (expired.length > 0) {
-        const emailService = new EmailService(env.RESEND_API_KEY);
-        for (const booking of expired) {
-          try {
-            const [eventType] = await db
-              .select()
-              .from(dbSchema.eventTypes)
-              .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-              .limit(1);
-
-            await emailService.sendBookingDeclined({
-              to: booking.email,
-              guestName: booking.name,
-              eventTypeName: eventType?.name ?? "Meeting",
-              startTime: new Date(booking.startTime),
-              endTime: new Date(booking.endTime),
-              timezone: booking.timezone,
-            });
-          } catch (err) {
-            console.error(`Failed to send expire email for booking ${booking.id}:`, err);
-          }
-        }
         console.log(`Auto-declined ${expired.length} expired booking(s)`);
       }
     } catch (err) {
