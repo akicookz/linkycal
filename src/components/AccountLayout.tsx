@@ -13,42 +13,46 @@ function AccountLayout() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
-            <div className="flex items-center gap-4">
-              <Link
-                to="/app"
-                className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back
-              </Link>
-              <Logo size="sm" />
-            </div>
-          </div>
-          <nav className="flex gap-1 -mb-px">
+      <header className="px-6 py-4">
+        <div className="flex items-center gap-4">
+          <Link
+            to="/app"
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Link>
+          <Logo size="sm" />
+        </div>
+      </header>
+
+      <div className="flex px-6 gap-8">
+        {/* Sidebar nav */}
+        <nav className="w-48 shrink-0 pt-2">
+          <div className="space-y-1">
             {tabs.map((tab) => (
               <Link
                 key={tab.href}
                 to={tab.href}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors",
+                  "flex items-center gap-2.5 rounded-[12px] px-3 py-2 text-sm font-medium transition-colors",
                   location.pathname === tab.href
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border",
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                 )}
               >
                 <tab.icon className="w-4 h-4" />
                 {tab.label}
               </Link>
             ))}
-          </nav>
-        </div>
-      </header>
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <Outlet />
-      </main>
+          </div>
+        </nav>
+
+        {/* Content */}
+        <main className="flex-1 max-w-5xl py-2 pb-12">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

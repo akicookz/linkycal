@@ -170,6 +170,7 @@ export default function PublicBooking() {
 
   const { data, isLoading, isError } = useQuery<{
     project: ProjectInfo;
+    owner: { name: string; image: string | null } | null;
     eventType: EventType;
     bookingForm: {
       id: string;
@@ -195,6 +196,7 @@ export default function PublicBooking() {
 
   const eventType = data?.eventType;
   const project = data?.project;
+  const owner = data?.owner;
   const theme = project?.settings?.theme;
   const bookingForm = data?.bookingForm;
 
@@ -432,14 +434,42 @@ export default function PublicBooking() {
         <div
            className={cn(
             "bg-card p-6 sm:p-8 transition-all duration-500",
-            theme?.bannerImage ? "rounded-b-[16px] border-x border-b border-border" : "rounded-[16px] border border-border",
+            theme?.bannerImage ? "rounded-b-[16px]" : "rounded-[16px]",
           )}
           style={{ borderRadius: theme?.bannerImage ? undefined : theme?.borderRadius ? `${theme.borderRadius}px` : undefined }}
         >
 
+          {/* ─── Owner Avatar (always visible) ─── */}
+          {owner && (
+            <div className={theme?.bannerImage ? "-mt-14 mb-4" : "mb-4"}>
+              {owner.image ? (
+                <img
+                  src={owner.image}
+                  alt={owner.name}
+                  className={cn(
+                    "h-16 w-16 rounded-full object-cover",
+                    theme?.bannerImage && "ring-4 ring-white",
+                  )}
+                />
+              ) : (
+                <div
+                  className={cn(
+                    "h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-lg font-semibold text-primary",
+                    theme?.bannerImage && "ring-4 ring-white",
+                  )}
+                >
+                  {owner.name?.charAt(0)?.toUpperCase() ?? "?"}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* ─── Event Header (step 1 only) ─── */}
           {step === 1 && (
             <div className="mb-6">
+              {owner && (
+                <p className="text-sm font-medium text-muted-foreground mb-1">{owner.name}</p>
+              )}
               <h1 className="text-xl font-semibold tracking-tight">{eventType.name}</h1>
 
               {desc && (

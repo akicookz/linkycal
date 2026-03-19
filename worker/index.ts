@@ -736,6 +736,13 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       ? JSON.parse(project.settings as string)
       : {};
 
+    // Fetch project owner info for display
+    const [owner] = await db
+      .select({ name: dbSchema.schema.users.name, image: dbSchema.schema.users.image })
+      .from(dbSchema.schema.users)
+      .where(eq(dbSchema.schema.users.id, project.userId))
+      .limit(1);
+
     // If event type has a booking form, fetch its steps + fields
     let bookingForm = null;
     if (eventType.bookingFormId) {
@@ -753,6 +760,7 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
         slug: project.slug,
         settings,
       },
+      owner: owner ? { name: owner.name, image: owner.image } : null,
       eventType,
       bookingForm,
     });
@@ -1254,6 +1262,42 @@ const ALLOWED_IMAGE_TYPES = [
   "image/gif",
 ];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// Account-level upload (for user avatars)
+app.post("/api/account/uploads", async (c) => {
+  try {
+    const userId = c.get("effectiveUserId");
+    const formData = await c.req.formData();
+    const file = formData.get("file");
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: "No file provided" }, 400);
+    }
+
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      return c.json(
+        { error: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF" },
+        400,
+      );
+    }
+
+    if (file.size > MAX_IMAGE_SIZE) {
+      return c.json({ error: "File too large. Maximum 5MB" }, 400);
+    }
+
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const key = `avatars/${userId}/${crypto.randomUUID()}.${ext}`;
+
+    await c.env.UPLOADS.put(key, file.stream(), {
+      httpMetadata: { contentType: file.type },
+    });
+
+    return c.json({ key, url: `/api/uploads/${key}` }, 201);
+  } catch (err) {
+    console.error("Avatar upload error:", err);
+    return c.json({ error: "Failed to upload file" }, 500);
+  }
+});
 
 app.post("/api/projects/:projectId/uploads", async (c) => {
   try {
