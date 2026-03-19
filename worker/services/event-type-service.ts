@@ -16,6 +16,8 @@ interface CreateEventTypeInput {
   bufferAfter?: number;
   maxPerDay?: number;
   enabled?: boolean;
+  requiresConfirmation?: boolean;
+  bookingFormId?: string | null;
   settings?: unknown;
   copyFromEventTypeId?: string;
 }
@@ -219,6 +221,8 @@ export class EventTypeService {
       bufferAfter: data.bufferAfter ?? 0,
       maxPerDay: data.maxPerDay ?? null,
       enabled: data.enabled ?? true,
+      requiresConfirmation: data.requiresConfirmation ?? false,
+      bookingFormId: data.bookingFormId ?? null,
       scheduleId: schedule.id,
       settings: data.settings ?? null,
     });

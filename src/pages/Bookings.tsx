@@ -153,7 +153,7 @@ export default function Bookings() {
   const cancelMutation = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/projects/${projectId}/bookings/${id}/cancel`, {
-        method: "POST",
+        method: "PATCH",
       });
       if (!res.ok) throw new Error("Failed to cancel booking");
       return res.json();

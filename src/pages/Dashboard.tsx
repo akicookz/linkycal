@@ -285,26 +285,27 @@ export default function Dashboard() {
           ) : (
             <div className="space-y-1">
               {recentBookings.map((booking) => (
-                <div key={booking.id}>
-                  <div className="flex items-center gap-4 py-3">
-                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
-                      {booking.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground truncate">
-                        {booking.name}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        {eventTypeMap.get(booking.eventTypeId) ?? "Event"} &middot;{" "}
-                        {formatDateTime(booking.startTime)}
-                      </p>
-                    </div>
-                    <Badge variant={statusVariant(booking.status)}>
-                      {booking.status}
-                    </Badge>
+                <Link
+                  key={booking.id}
+                  to={`/app/projects/${projectId}/bookings`}
+                  className="flex items-center gap-4 py-3 rounded-[12px] px-2 -mx-2 hover:bg-muted/50 transition-colors cursor-pointer"
+                >
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
+                    {booking.name.charAt(0).toUpperCase()}
                   </div>
-
-                </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">
+                      {booking.name}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {eventTypeMap.get(booking.eventTypeId) ?? "Event"} &middot;{" "}
+                      {formatDateTime(booking.startTime)}
+                    </p>
+                  </div>
+                  <Badge variant={statusVariant(booking.status)}>
+                    {booking.status}
+                  </Badge>
+                </Link>
               ))}
             </div>
           )}
