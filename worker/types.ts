@@ -50,6 +50,8 @@ export interface AppEnv {
   STRIPE_PRO_ANNUAL_PRICE_ID: string;
   STRIPE_BUSINESS_MONTHLY_PRICE_ID: string;
   STRIPE_BUSINESS_ANNUAL_PRICE_ID: string;
+  STRIPE_PRO_PRODUCT_ID: string;
+  STRIPE_BUSINESS_PRODUCT_ID: string;
 
   // AI
   OPENAI_API_KEY: string;

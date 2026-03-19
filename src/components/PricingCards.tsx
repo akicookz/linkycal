@@ -40,7 +40,7 @@ const plans = [
       "API access",
       "Priority support",
     ],
-    cta: "Start Free Trial",
+    cta: "Start 7-Day Free Trial",
     highlighted: true,
   },
   {
@@ -59,7 +59,7 @@ const plans = [
       "Custom embeddable widgets",
       "Dedicated support",
     ],
-    cta: "Start Free Trial",
+    cta: "Start 7-Day Free Trial",
     highlighted: false,
   },
 ];

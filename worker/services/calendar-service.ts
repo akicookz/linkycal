@@ -220,7 +220,7 @@ export class CalendarService {
     accessToken: string,
     calendarId: string,
     event: CreateEventInput,
-  ): Promise<string> {
+  ): Promise<{ id: string; meetingUrl: string | null }> {
     const body: Record<string, unknown> = {
       summary: event.summary,
       start: { dateTime: event.start },
@@ -287,8 +287,8 @@ export class CalendarService {
       throw new Error(`Failed to create event: ${error}`);
     }
 
-    const data = (await response.json()) as { id: string };
-    return data.id;
+    const data = (await response.json()) as { id: string; hangoutLink?: string };
+    return { id: data.id, meetingUrl: data.hangoutLink ?? null };
   }
 
   // ─── Get Free/Busy ────────────────────────────────────────────────────────

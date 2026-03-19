@@ -82,6 +82,7 @@ export interface PlanDefinition {
   id: string;
   name: string;
   price: number;
+  annualPrice: number;
   interval: string;
   description: string;
   popular?: boolean;
@@ -94,6 +95,7 @@ export const plans: PlanDefinition[] = [
     id: "free",
     name: "Free",
     price: 0,
+    annualPrice: 0,
     interval: "forever",
     description: "For getting started",
     features: [
@@ -114,6 +116,7 @@ export const plans: PlanDefinition[] = [
     id: "pro",
     name: "Pro",
     price: 29,
+    annualPrice: 24,
     interval: "month",
     description: "For growing businesses",
     popular: true,
@@ -135,6 +138,7 @@ export const plans: PlanDefinition[] = [
     id: "business",
     name: "Business",
     price: 99,
+    annualPrice: 82,
     interval: "month",
     description: "For teams and agencies",
     features: [

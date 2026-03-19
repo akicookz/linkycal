@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   CalendarCheck,
   CalendarRange,
@@ -12,8 +13,10 @@ import {
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ActivityCard } from "@/components/ActivityCard";
+import { ActivityDrawer } from "@/components/ActivityDrawer";
+import { queryClient } from "@/lib/query-client";
 
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -61,36 +64,34 @@ interface Contact {
   email: string | null;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatDateTime(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function statusVariant(status: Booking["status"]) {
-  switch (status) {
-    case "confirmed":
-      return "success" as const;
-    case "cancelled":
-      return "destructive" as const;
-    case "rescheduled":
-      return "warning" as const;
-    default:
-      return "secondary" as const;
-  }
+interface ActivityItem {
+  id: string;
+  type: "booking" | "form_response";
+  name: string;
+  email: string;
+  title: string;
+  status: string;
+  createdAt: string;
+  country?: string | null;
+  city?: string | null;
+  startTime?: string;
+  endTime?: string;
+  timezone?: string;
+  eventTypeId?: string;
+  formResponseId?: string | null;
+  expiresAt?: string | null;
+  formId?: string | null;
+  meetingUrl?: string | null;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const { projectId } = useParams<{ projectId: string }>();
+
+  // Drawer state
+  const [drawerItem, setDrawerItem] = useState<ActivityItem | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const {
     data: eventTypes,
@@ -123,6 +124,21 @@ export default function Dashboard() {
   });
 
   const {
+    data: activityItems,
+    isLoading: loadingActivity,
+    isError: errorActivity,
+  } = useQuery<ActivityItem[]>({
+    queryKey: ["projects", projectId, "activity"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/activity/recent`);
+      if (!res.ok) throw new Error("Failed to fetch activity");
+      const data = await res.json();
+      return data.items ?? [];
+    },
+    enabled: !!projectId,
+  });
+
+  const {
     data: forms,
     isLoading: loadingForms,
   } = useQuery<Form[]>({
@@ -150,6 +166,56 @@ export default function Dashboard() {
     enabled: !!projectId,
   });
 
+  // ─── Mutations ───────────────────────────────────────────────────────────
+
+  const confirmMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/projects/${projectId}/bookings/${id}/confirm`, {
+        method: "PATCH",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to confirm booking");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "activity"] });
+    },
+  });
+
+  const declineMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/projects/${projectId}/bookings/${id}/decline`, {
+        method: "PATCH",
+      });
+      if (!res.ok) throw new Error("Failed to decline booking");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "activity"] });
+    },
+  });
+
+  const deleteFormResponseMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(`/api/projects/${projectId}/form-responses/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete form response");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "activity"] });
+      setDrawerOpen(false);
+      setDrawerItem(null);
+    },
+  });
+
+  // ─── Derived State ──────────────────────────────────────────────────────
+
   const isLoading = loadingEventTypes || loadingBookings || loadingForms || loadingContacts;
   const hasError = errorEventTypes || errorBookings;
 
@@ -157,14 +223,6 @@ export default function Dashboard() {
   const activeForms = forms?.filter((f) => f.status === "active") ?? [];
   const totalBookings = bookings?.length ?? 0;
   const totalContacts = contacts?.length ?? 0;
-
-  const recentBookings = [...(bookings ?? [])]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
-
-  // Build a lookup map for event type names
-  const eventTypeMap = new Map<string, string>();
-  eventTypes?.forEach((et) => eventTypeMap.set(et.id, et.name));
 
   const stats = [
     {
@@ -192,6 +250,28 @@ export default function Dashboard() {
       loading: loadingContacts,
     },
   ];
+
+  // Map activity item to the shape expected by ActivityDrawer
+  function toDrawerItem(item: ActivityItem) {
+    return {
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      email: item.email,
+      title: item.title,
+      status: item.status,
+      date: item.createdAt,
+      country: item.country,
+      city: item.city,
+      startTime: item.startTime,
+      endTime: item.endTime,
+      timezone: item.timezone,
+      meetingUrl: item.meetingUrl,
+      formResponseId: item.formResponseId,
+      eventTypeId: item.eventTypeId,
+      formId: item.formId,
+    };
+  }
 
   return (
     <div>
@@ -236,14 +316,14 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* Recent Bookings */}
+      {/* Recent Activity */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2">
             <CalendarCheck className="h-4 w-4 text-muted-foreground" />
-            Recent Bookings
+            Recent Activity
           </CardTitle>
-          {bookings && bookings.length > 0 && (
+          {activityItems && activityItems.length > 0 && (
             <Link
               to={`/app/projects/${projectId}/bookings`}
               className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
@@ -254,63 +334,88 @@ export default function Dashboard() {
           )}
         </CardHeader>
         <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-center gap-4">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-40" />
-                    <Skeleton className="h-3 w-28" />
-                  </div>
-                  <Skeleton className="h-6 w-20" />
-                </div>
+          {loadingActivity || isLoading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-[160px] rounded-[20px]" />
               ))}
             </div>
-          ) : hasError ? (
+          ) : errorActivity || hasError ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
               <AlertCircle className="h-8 w-8 mb-2" />
-              <p className="text-sm">Failed to load recent bookings.</p>
+              <p className="text-sm">Failed to load recent activity.</p>
             </div>
-          ) : recentBookings.length === 0 ? (
+          ) : !activityItems || activityItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8">
               <CalendarCheck className="h-10 w-10 text-muted-foreground mb-4" />
               <p className="text-sm font-medium text-foreground mb-1">
-                No bookings yet
+                No activity yet
               </p>
               <p className="text-sm text-muted-foreground">
-                Bookings will appear here once someone schedules with you.
+                Bookings and form responses will appear here.
               </p>
             </div>
           ) : (
-            <div className="space-y-1">
-              {recentBookings.map((booking) => (
-                <Link
-                  key={booking.id}
-                  to={`/app/projects/${projectId}/bookings`}
-                  className="flex items-center gap-4 py-3 rounded-[12px] px-2 -mx-2 hover:bg-muted/50 transition-colors cursor-pointer"
-                >
-                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
-                    {booking.name.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">
-                      {booking.name}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {eventTypeMap.get(booking.eventTypeId) ?? "Event"} &middot;{" "}
-                      {formatDateTime(booking.startTime)}
-                    </p>
-                  </div>
-                  <Badge variant={statusVariant(booking.status)}>
-                    {booking.status}
-                  </Badge>
-                </Link>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {activityItems.map((item) => (
+                <ActivityCard
+                  key={`${item.type}-${item.id}`}
+                  type={item.type}
+                  name={item.name}
+                  email={item.email}
+                  title={item.title}
+                  status={item.status}
+                  date={item.createdAt}
+                  startTime={item.startTime}
+                  endTime={item.endTime}
+                  timezone={item.timezone}
+                  meetingUrl={item.meetingUrl}
+                  onClick={() => {
+                    setDrawerItem(item);
+                    setDrawerOpen(true);
+                  }}
+                  isPending={item.type === "booking" && item.status === "pending"}
+                  onConfirm={
+                    item.type === "booking" && item.status === "pending"
+                      ? () => confirmMutation.mutate(item.id)
+                      : undefined
+                  }
+                  onDecline={
+                    item.type === "booking" && item.status === "pending"
+                      ? () => declineMutation.mutate(item.id)
+                      : undefined
+                  }
+                  confirmLoading={confirmMutation.isPending && confirmMutation.variables === item.id}
+                  declineLoading={declineMutation.isPending && declineMutation.variables === item.id}
+                  onDelete={
+                    item.type === "form_response"
+                      ? () => deleteFormResponseMutation.mutate(item.id)
+                      : undefined
+                  }
+                  deleteLoading={deleteFormResponseMutation.isPending && deleteFormResponseMutation.variables === item.id}
+                />
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Activity Drawer */}
+      <ActivityDrawer
+        open={drawerOpen}
+        onClose={() => {
+          setDrawerOpen(false);
+          setDrawerItem(null);
+        }}
+        projectId={projectId ?? ""}
+        item={drawerItem ? toDrawerItem(drawerItem) : null}
+        onConfirm={(id) => confirmMutation.mutate(id)}
+        onDecline={(id) => declineMutation.mutate(id)}
+        onDeleteFormResponse={(id) => deleteFormResponseMutation.mutate(id)}
+        confirmLoading={confirmMutation.isPending}
+        declineLoading={declineMutation.isPending}
+        deleteLoading={deleteFormResponseMutation.isPending}
+      />
     </div>
   );
 }

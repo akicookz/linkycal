@@ -10,21 +10,22 @@ import {
   Clock,
   XCircle,
   BarChart3,
+  FileText,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
+import { ActivityCard } from "@/components/ActivityCard";
+import { CopyableField } from "@/components/CopyableField";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,13 +97,6 @@ function formatDate(dateStr: string): string {
   });
 }
 
-function formatShortDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-  });
-}
-
 function statusVariant(status: FormResponse["status"]) {
   switch (status) {
     case "completed":
@@ -129,11 +123,6 @@ function statusLabel(status: FormResponse["status"]) {
   }
 }
 
-function truncateValue(value: string | null, maxLen = 40): string {
-  if (!value) return "-";
-  return value.length > maxLen ? value.slice(0, maxLen) + "..." : value;
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function FormResponses() {
@@ -143,9 +132,8 @@ export default function FormResponses() {
   }>();
   const navigate = useNavigate();
 
-  const [selectedResponseId, setSelectedResponseId] = useState<string | null>(
-    null
-  );
+  const [drawerItem, setDrawerItem] = useState<FormResponse | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   // ─── Queries ─────────────────────────────────────────────────────────────
 
@@ -188,7 +176,7 @@ export default function FormResponses() {
   const isLoading = isFormLoading || isResponsesLoading;
   const isError = isFormError || isResponsesError;
 
-  // Flatten all fields from all steps for column headers
+  // Flatten all fields from all steps
   const allFields: FormField[] = form
     ? form.steps
         .sort((a, b) => a.sortOrder - b.sortOrder)
@@ -196,10 +184,6 @@ export default function FormResponses() {
           [...step.fields].sort((a, b) => a.sortOrder - b.sortOrder)
         )
     : [];
-
-  // Limit visible columns to prevent overflow
-  const visibleFields = allFields.slice(0, 5);
-  const hasMoreFields = allFields.length > 5;
 
   // ─── Stats ───────────────────────────────────────────────────────────────
 
@@ -214,9 +198,7 @@ export default function FormResponses() {
     (r) => r.status === "abandoned"
   ).length;
 
-  // ─── Selected response for detail view ───────────────────────────────────
-
-  const selectedResponse = responses.find((r) => r.id === selectedResponseId);
+  // ─── Helpers ─────────────────────────────────────────────────────────────
 
   function getValueForField(
     response: FormResponse,
@@ -239,7 +221,7 @@ export default function FormResponses() {
             <Skeleton className="h-4 w-32" />
           </div>
         </div>
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {Array.from({ length: 4 }).map((_, i) => (
             <Card key={i}>
               <CardContent className="pt-4 pb-4">
@@ -249,16 +231,11 @@ export default function FormResponses() {
             </Card>
           ))}
         </div>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="space-y-3">
-              <Skeleton className="h-10 w-full" />
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-[160px] rounded-[20px]" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -384,183 +361,134 @@ export default function FormResponses() {
 
       {/* Empty state */}
       {responses.length === 0 && (
-        <div className="rounded-[20px] border">
-          <div className="flex flex-col items-center justify-center py-16">
-            <Inbox className="h-10 w-10 text-muted-foreground mb-4" />
-            <p className="text-sm font-medium text-foreground mb-1">
-              No responses yet
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Responses will appear here once someone submits this form.
-            </p>
-          </div>
+        <div className="flex flex-col items-center justify-center py-16">
+          <Inbox className="h-10 w-10 text-muted-foreground mb-4" />
+          <p className="text-sm font-medium text-foreground mb-1">
+            No responses yet
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Responses will appear here once someone submits this form.
+          </p>
         </div>
       )}
 
-      {/* Responses table */}
+      {/* Card grid */}
       {responses.length > 0 && (
-        <div className="rounded-[20px] border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-muted/30">
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                    Respondent
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                    Submitted
-                  </th>
-                  <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                    Status
-                  </th>
-                  {visibleFields.map((field) => (
-                    <th
-                      key={field.id}
-                      className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap max-w-[200px]"
-                    >
-                      {field.label}
-                    </th>
-                  ))}
-                  {hasMoreFields && (
-                    <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
-                      +{allFields.length - 5} more
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {responses.map((response) => (
-                  <tr
-                    key={response.id}
-                    className="hover:bg-muted/20 cursor-pointer transition-colors"
-                    onClick={() => setSelectedResponseId(response.id)}
-                  >
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="text-sm text-foreground">
-                        {response.respondentEmail || "Anonymous"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                      {formatShortDate(response.createdAt)}
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <Badge variant={statusVariant(response.status)} className="text-[11px]">
-                        {statusLabel(response.status)}
-                      </Badge>
-                    </td>
-                    {visibleFields.map((field) => (
-                      <td
-                        key={field.id}
-                        className="px-4 py-3 text-muted-foreground max-w-[200px] truncate"
-                      >
-                        {truncateValue(
-                          getValueForField(response, field.id)
-                        )}
-                      </td>
-                    ))}
-                    {hasMoreFields && (
-                      <td className="px-4 py-3 text-muted-foreground text-xs">
-                        ...
-                      </td>
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {responses.map((response) => (
+            <ActivityCard
+              key={response.id}
+              type="form_response"
+              name={response.respondentEmail ?? "Anonymous"}
+              email={response.respondentEmail ?? ""}
+              title={form?.name ?? "Form"}
+              status={response.status}
+              date={response.createdAt ?? new Date().toISOString()}
+              onClick={() => { setDrawerItem(response); setDrawerOpen(true); }}
+            />
+          ))}
         </div>
       )}
 
-      {/* Response Detail Dialog */}
-      <Dialog
-        open={!!selectedResponseId}
-        onOpenChange={(open) => !open && setSelectedResponseId(null)}
+      {/* Response Detail Drawer */}
+      <Sheet
+        open={drawerOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setDrawerOpen(false);
+            setDrawerItem(null);
+          }
+        }}
       >
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Response Details</DialogTitle>
-            <DialogDescription>
-              {selectedResponse
-                ? `Submitted ${formatDate(selectedResponse.createdAt)}`
-                : ""}
-            </DialogDescription>
-          </DialogHeader>
+        <SheetContent>
+          <SheetHeader>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <FileText className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <SheetTitle>
+                  {drawerItem?.respondentEmail ?? "Anonymous"}
+                </SheetTitle>
+                <SheetDescription>
+                  {drawerItem
+                    ? `Submitted ${formatDate(drawerItem.createdAt)}`
+                    : ""}
+                </SheetDescription>
+              </div>
+            </div>
+          </SheetHeader>
 
-          {selectedResponse && (
-            <div className="space-y-4">
-              {/* Meta */}
-              <div className="flex items-center gap-3">
-                <Badge variant={statusVariant(selectedResponse.status)}>
-                  {statusLabel(selectedResponse.status)}
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  {selectedResponse.respondentEmail || "Anonymous"}
-                </span>
+          {drawerItem && (
+            <div className="space-y-6">
+              {/* Details */}
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Details
+                </p>
+                <CopyableField
+                  label="Form"
+                  value={form?.name ?? "Form"}
+                />
+                <CopyableField
+                  label="Submitted"
+                  value={formatDate(drawerItem.createdAt)}
+                />
+                <div className="flex items-start justify-between gap-3 py-2.5">
+                  <div>
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
+                      Status
+                    </p>
+                    <Badge variant={statusVariant(drawerItem.status)}>
+                      {statusLabel(drawerItem.status)}
+                    </Badge>
+                  </div>
+                </div>
               </div>
 
               {/* Field values */}
-              <div className="space-y-3">
-                {allFields.map((field) => {
-                  const rawValue = getValueForField(
-                    selectedResponse,
-                    field.id
-                  );
-                  return (
-                    <div key={field.id}>
-                      <p className="text-xs font-medium text-muted-foreground mb-0.5">
-                        {field.label}
-                      </p>
-                      {rawValue ? (
-                        field.type === "file" ? (
-                          <a
-                            href={rawValue}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm text-primary hover:underline break-all"
-                          >
-                            {rawValue}
-                          </a>
-                        ) : (
-                          <p className="text-sm text-foreground whitespace-pre-wrap break-words">
-                            {rawValue}
-                          </p>
-                        )
-                      ) : (
-                        <p className="text-sm text-muted-foreground italic">
-                          No response
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {allFields.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    No fields configured for this form.
+              {allFields.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Responses
                   </p>
-                )}
-              </div>
+                  {allFields.map((field) => {
+                    const rawValue = getValueForField(drawerItem, field.id);
+                    return (
+                      <CopyableField
+                        key={field.id}
+                        label={field.label}
+                        value={rawValue ?? ""}
+                      />
+                    );
+                  })}
+                </div>
+              )}
 
-              {/* Raw metadata (if any) */}
-              {selectedResponse.metadata != null &&
-                typeof selectedResponse.metadata === "object" &&
-                Object.keys(selectedResponse.metadata as Record<string, unknown>).length >
-                  0 && (
-                  <>
-                    <div className="pt-4">
-                      <p className="text-xs font-medium text-muted-foreground mb-1">
-                        Metadata
-                      </p>
-                      <pre className="text-xs text-muted-foreground bg-muted rounded-[12px] p-3 overflow-x-auto">
-                        {JSON.stringify(selectedResponse.metadata, null, 2)}
-                      </pre>
-                    </div>
-                  </>
+              {allFields.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  No fields configured for this form.
+                </p>
+              )}
+
+              {/* Raw metadata */}
+              {drawerItem.metadata != null &&
+                typeof drawerItem.metadata === "object" &&
+                Object.keys(drawerItem.metadata as Record<string, unknown>)
+                  .length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                      Metadata
+                    </p>
+                    <pre className="text-xs text-muted-foreground bg-muted rounded-[12px] p-3 overflow-x-auto">
+                      {JSON.stringify(drawerItem.metadata, null, 2)}
+                    </pre>
+                  </div>
                 )}
             </div>
           )}
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

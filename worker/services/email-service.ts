@@ -53,10 +53,19 @@ interface BookingRequestNotificationParams {
 interface BookingDeclinedParams {
   to: string;
   guestName: string;
+  hostName: string;
   eventTypeName: string;
   startTime: Date;
   endTime: Date;
   timezone: string;
+}
+
+interface FormResponseNotificationParams {
+  to: string;
+  ownerName: string;
+  formName: string;
+  respondentEmail: string | null;
+  fields: Array<{ label: string; value: string }>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -295,7 +304,7 @@ export class EmailService {
   // ─── Send Booking Declined (to Guest) ─────────────────────────────────────
 
   async sendBookingDeclined(params: BookingDeclinedParams): Promise<void> {
-    const { to, guestName, eventTypeName, startTime, endTime, timezone } =
+    const { to, guestName, hostName, eventTypeName, startTime, endTime, timezone } =
       params;
 
     const dateStr = formatDate(startTime, timezone);
@@ -303,8 +312,9 @@ export class EmailService {
 
     const html = emailWrapper(
       emailHeading("Booking Not Confirmed", "#6b7280") +
-      emailBody(`Hi ${escapeHtml(guestName)}, unfortunately your booking request for <strong>${escapeHtml(eventTypeName)}</strong> was not confirmed.`) +
+      emailBody(`Hi ${escapeHtml(guestName)}, unfortunately, <strong>${escapeHtml(hostName)}</strong> cannot take this call at the time you requested.`) +
       emailInfoTable([
+        { label: "Event", value: eventTypeName },
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
       ]) +
@@ -314,6 +324,36 @@ export class EmailService {
     await this.send({
       to,
       subject: `Booking Update: ${eventTypeName}`,
+      html,
+    });
+  }
+
+  // ─── Send Form Response Notification (to Owner) ────────────────────────────
+
+  async sendFormResponseNotification(params: FormResponseNotificationParams): Promise<void> {
+    const { to, ownerName, formName, respondentEmail, fields } = params;
+
+    const infoRows: Array<{ label: string; value: string; bold?: boolean }> = [];
+    if (respondentEmail) {
+      infoRows.push({ label: "Respondent", value: escapeHtml(respondentEmail) });
+    }
+    for (const field of fields.slice(0, 8)) {
+      infoRows.push({ label: escapeHtml(field.label), value: escapeHtml(field.value || "—") });
+    }
+    if (fields.length > 8) {
+      infoRows.push({ label: "", value: `+ ${fields.length - 8} more fields` });
+    }
+
+    const html = emailWrapper(
+      emailHeading("New Form Response") +
+      emailBody(`Hi ${escapeHtml(ownerName)}, someone submitted a response to <strong>${escapeHtml(formName)}</strong>.`) +
+      (infoRows.length > 0 ? emailInfoTable(infoRows) : "") +
+      emailNote("View full details in your dashboard.")
+    );
+
+    await this.send({
+      to,
+      subject: `New Form Response: ${formName}`,
       html,
     });
   }

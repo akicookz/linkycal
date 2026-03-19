@@ -57,6 +57,20 @@
       "when": 1774243200000,
       "tag": "0007_booking_forms",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1774329600000,
+      "tag": "0009_geolocation",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1774416000000,
+      "tag": "0010_fix_timestamps",
+      "breakpoints": true
     }
   ]
 }

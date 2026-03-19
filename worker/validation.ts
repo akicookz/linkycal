@@ -278,3 +278,12 @@ export const checkAvailabilitySchema = z.object({
   timezone: z.string(),
   eventTypeSlug: z.string().min(1),
 });
+
+// ─── Billing ─────────────────────────────────────────────────────────────────
+
+export const checkoutSchema = z.object({
+  plan: z.enum(["pro", "business"]),
+  interval: z.enum(["month", "year"]),
+  successUrl: z.string().url().optional(),
+  cancelUrl: z.string().url().optional(),
+});

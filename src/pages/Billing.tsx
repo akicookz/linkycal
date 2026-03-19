@@ -35,7 +35,7 @@ import { plans } from "@/lib/constants";
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Billing() {
-  const [selectedInterval] = useState<"month" | "year">("month");
+  const [selectedInterval, setSelectedInterval] = useState<"month" | "year">("month");
 
   const { data, isLoading } = useQuery<BillingData>({
     queryKey: ["billing-subscription"],
@@ -81,9 +81,15 @@ export default function Billing() {
 
   const currentPlan = data?.subscription?.plan ?? "free";
   const subscriptionStatus = data?.subscription?.status ?? "active";
+  const isAnnual = selectedInterval === "year";
 
   function handleUpgrade(planId: string) {
     checkoutMutation.mutate({ plan: planId, interval: selectedInterval });
+  }
+
+  function handleDowngrade() {
+    // Downgrades go through Stripe Billing Portal
+    portalMutation.mutate();
   }
 
   function getPlanAction(planId: string) {
@@ -105,9 +111,9 @@ export default function Billing() {
             disabled={portalMutation.isPending}
           >
             {portalMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <ExternalLink className="h-4 w-4 mr-1.5" />
+              <ExternalLink className="h-4 w-4" />
             )}
             Manage Billing
           </Button>
@@ -127,14 +133,16 @@ export default function Billing() {
                   <h3 className="font-semibold text-foreground">
                     {isLoading ? "Loading..." : `${currentPlan.charAt(0).toUpperCase() + currentPlan.slice(1)} Plan`}
                   </h3>
-                  <Badge variant={subscriptionStatus === "active" ? "success" : "warning"}>
-                    {subscriptionStatus}
+                  <Badge variant={subscriptionStatus === "active" || subscriptionStatus === "trialing" ? "success" : "warning"}>
+                    {subscriptionStatus === "trialing" ? "trial" : subscriptionStatus}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground mt-0.5">
                   {currentPlan === "free"
                     ? "You're on the free plan. Upgrade to unlock more features."
-                    : "Your subscription is active and renews automatically."}
+                    : subscriptionStatus === "trialing"
+                      ? "You're on a 7-day free trial. Your card will be charged when it ends."
+                      : "Your subscription is active and renews automatically."}
                 </p>
               </div>
             </div>
@@ -142,11 +150,48 @@ export default function Billing() {
         </CardContent>
       </Card>
 
+      {/* Billing interval toggle */}
+      <div className="flex items-center justify-center gap-3 mb-8">
+        <div className="inline-flex items-center rounded-full border border-border bg-white p-1">
+          <button
+            onClick={() => setSelectedInterval("month")}
+            className={cn(
+              "px-4 py-1.5 rounded-full text-sm font-medium transition-all",
+              !isAnnual
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Monthly
+          </button>
+          <button
+            onClick={() => setSelectedInterval("year")}
+            className={cn(
+              "pl-4 pr-1 py-1.5 rounded-full text-sm font-medium transition-all",
+              isAnnual
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Annual
+            <span className={cn(
+              "ml-2 text-xs font-medium px-2.5 py-1 rounded-full",
+              isAnnual
+                ? "text-primary-foreground bg-white/20"
+                : "text-emerald-700 bg-emerald-50",
+            )}>
+              2 months free
+            </span>
+          </button>
+        </div>
+      </div>
+
       {/* Pricing cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {plans.map((plan) => {
           const action = getPlanAction(plan.id);
           const isCurrent = action === "current";
+          const price = isAnnual ? plan.annualPrice : plan.price;
 
           return (
             <Card
@@ -168,12 +213,12 @@ export default function Billing() {
               </CardHeader>
               <CardContent className="space-y-6">
                 <div>
-                  {plan.price === 0 ? (
+                  {price === 0 ? (
                     <div className="text-3xl font-bold text-foreground">Free</div>
                   ) : (
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold text-foreground">${plan.price}</span>
-                      <span className="text-sm text-muted-foreground">/{plan.interval}</span>
+                      <span className="text-3xl font-bold text-foreground">${price}</span>
+                      <span className="text-sm text-muted-foreground">/mo</span>
                     </div>
                   )}
                 </div>
@@ -198,20 +243,25 @@ export default function Billing() {
                 <Button
                   variant={isCurrent ? "outline" : "default"}
                   className="w-full"
-                  disabled={isCurrent || checkoutMutation.isPending}
+                  disabled={isCurrent || checkoutMutation.isPending || portalMutation.isPending}
                   onClick={() => {
-                    if (action === "upgrade" || action === "downgrade") {
+                    if (action === "upgrade") {
                       handleUpgrade(plan.id);
+                    } else if (action === "downgrade") {
+                      handleDowngrade();
                     }
                   }}
                 >
-                  {checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                  {(checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id) ||
+                  (action === "downgrade" && portalMutation.isPending) ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
                   ) : null}
                   {isCurrent
                     ? "Current Plan"
                     : action === "upgrade"
-                      ? `Upgrade to ${plan.name}`
+                      ? currentPlan === "free"
+                        ? `Start 7-Day Free Trial`
+                        : `Upgrade to ${plan.name}`
                       : `Switch to ${plan.name}`}
                 </Button>
               </CardContent>

@@ -18,6 +18,9 @@ interface CreateBookingInput {
   status?: "confirmed" | "pending";
   expiresAt?: Date;
   formResponseId?: string;
+  ipAddress?: string | null;
+  country?: string | null;
+  city?: string | null;
 }
 
 interface BookingWithEventType extends dbSchema.BookingRow {
@@ -47,6 +50,10 @@ export class BookingService {
         expiresAt: dbSchema.bookings.expiresAt,
         formResponseId: dbSchema.bookings.formResponseId,
         gcalEventId: dbSchema.bookings.gcalEventId,
+        meetingUrl: dbSchema.bookings.meetingUrl,
+        ipAddress: dbSchema.bookings.ipAddress,
+        country: dbSchema.bookings.country,
+        city: dbSchema.bookings.city,
         metadata: dbSchema.bookings.metadata,
         createdAt: dbSchema.bookings.createdAt,
         updatedAt: dbSchema.bookings.updatedAt,
@@ -94,6 +101,9 @@ export class BookingService {
       contactId: data.contactId ?? null,
       metadata: data.metadata ?? null,
       gcalEventId: data.gcalEventId ?? null,
+      ipAddress: data.ipAddress ?? null,
+      country: data.country ?? null,
+      city: data.city ?? null,
     });
 
     return (await this.getById(id))!;

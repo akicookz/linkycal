@@ -26,10 +26,10 @@ export const projects = sqliteTable(
     settings: text("settings"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [
@@ -77,10 +77,10 @@ export const eventTypes = sqliteTable(
     settings: text("settings", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [
@@ -106,10 +106,10 @@ export const schedules = sqliteTable(
     isDefault: integer("is_default", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [index("schedules_project_id_idx").on(t.projectId)],
@@ -132,7 +132,7 @@ export const availabilityRules = sqliteTable(
     endTime: text("end_time").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("availability_rules_schedule_id_idx").on(t.scheduleId)],
 );
@@ -155,7 +155,7 @@ export const scheduleOverrides = sqliteTable(
     isBlocked: integer("is_blocked", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("schedule_overrides_schedule_id_idx").on(t.scheduleId)],
 );
@@ -179,10 +179,10 @@ export const contacts = sqliteTable(
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [
@@ -223,13 +223,17 @@ export const bookings = sqliteTable(
       { onDelete: "set null" },
     ),
     gcalEventId: text("gcal_event_id"),
+    meetingUrl: text("meeting_url"),
+    ipAddress: text("ip_address"),
+    country: text("country"),
+    city: text("city"),
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [
@@ -262,10 +266,10 @@ export const forms = sqliteTable(
     settings: text("settings", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [
@@ -355,13 +359,16 @@ export const formResponses = sqliteTable(
       .notNull()
       .default("in_progress"),
     respondentEmail: text("respondent_email"),
+    ipAddress: text("ip_address"),
+    country: text("country"),
+    city: text("city"),
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [index("form_responses_form_id_idx").on(t.formId)],
@@ -407,7 +414,7 @@ export const tags = sqliteTable(
     color: text("color").default("#6b7280"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("tags_project_id_idx").on(t.projectId)],
 );
@@ -455,7 +462,7 @@ export const contactActivity = sqliteTable(
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("contact_activity_contact_id_idx").on(t.contactId)],
 );
@@ -478,10 +485,10 @@ export const calendarConnections = sqliteTable(
     email: text("email").notNull(),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [index("calendar_connections_user_id_idx").on(t.userId)],
@@ -536,10 +543,10 @@ export const workflows = sqliteTable(
       .default("draft"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [index("workflows_project_id_idx").on(t.projectId)],
@@ -572,7 +579,7 @@ export const workflowSteps = sqliteTable(
     config: text("config", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("workflow_steps_workflow_id_idx").on(t.workflowId)],
 );
@@ -598,7 +605,7 @@ export const workflowRuns = sqliteTable(
     currentStepIndex: integer("current_step_index").notNull().default(0),
     startedAt: integer("started_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     completedAt: integer("completed_at", { mode: "timestamp" }),
     error: text("error"),
   },
@@ -644,10 +651,10 @@ export const subscriptions = sqliteTable(
       .default(false),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`)
+      .default(sql`(unixepoch())`)
       .$onUpdate(() => new Date()),
   },
   (t) => [
@@ -673,7 +680,7 @@ export const usage = sqliteTable(
     bookingsCount: integer("bookings_count").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("usage_user_id_idx").on(t.userId)],
 );
@@ -696,7 +703,7 @@ export const apiKeys = sqliteTable(
     lastUsedAt: integer("last_used_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
-      .default(sql`(current_timestamp)`),
+      .default(sql`(unixepoch())`),
   },
   (t) => [index("api_keys_project_id_idx").on(t.projectId)],
 );

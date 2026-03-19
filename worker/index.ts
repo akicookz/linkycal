@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
@@ -32,6 +32,7 @@ import {
   checkAvailabilitySchema,
   updateEventTypeCalendarsSchema,
   reorderFieldsSchema,
+  checkoutSchema,
   validate,
 } from "./validation";
 
@@ -148,6 +149,119 @@ function isSpam(body: Record<string, unknown>): boolean {
   return false;
 }
 
+// ─── Form Response Email Notification (Paid Users) ──────────────────────────
+
+async function notifyFormResponseCompleted(
+  db: ReturnType<typeof drizzle>,
+  env: { RESEND_API_KEY: string },
+  responseId: string,
+  formId: string,
+) {
+  try {
+    // Look up form → project → owner + subscription
+    const [form] = await db
+      .select({ id: dbSchema.forms.id, name: dbSchema.forms.name, projectId: dbSchema.forms.projectId })
+      .from(dbSchema.forms)
+      .where(eq(dbSchema.forms.id, formId))
+      .limit(1);
+    if (!form) return;
+
+    const [project] = await db
+      .select({ id: dbSchema.projects.id, userId: dbSchema.projects.userId })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.id, form.projectId))
+      .limit(1);
+    if (!project) return;
+
+    // Check if user is on a paid plan
+    const [sub] = await db
+      .select({ plan: dbSchema.subscriptions.plan })
+      .from(dbSchema.subscriptions)
+      .where(eq(dbSchema.subscriptions.userId, project.userId))
+      .limit(1);
+    if (!sub || sub.plan === "free") return;
+
+    // Get owner details
+    const [owner] = await db
+      .select({ name: dbSchema.schema.users.name, email: dbSchema.schema.users.email })
+      .from(dbSchema.schema.users)
+      .where(eq(dbSchema.schema.users.id, project.userId))
+      .limit(1);
+    if (!owner?.email) return;
+
+    // Get response for respondent email
+    const [formResponse] = await db
+      .select({ respondentEmail: dbSchema.formResponses.respondentEmail })
+      .from(dbSchema.formResponses)
+      .where(eq(dbSchema.formResponses.id, responseId))
+      .limit(1);
+
+    // Get field values with labels
+    const fieldValues = await db
+      .select({
+        label: dbSchema.formFields.label,
+        value: dbSchema.formFieldValues.value,
+      })
+      .from(dbSchema.formFieldValues)
+      .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+      .where(eq(dbSchema.formFieldValues.responseId, responseId));
+
+    const emailService = new EmailService(env.RESEND_API_KEY);
+    await emailService.sendFormResponseNotification({
+      to: owner.email,
+      ownerName: owner.name ?? "there",
+      formName: form.name,
+      respondentEmail: formResponse?.respondentEmail ?? null,
+      fields: fieldValues.map((f) => ({ label: f.label, value: f.value ?? "" })),
+    });
+  } catch (err) {
+    console.error("Form response notification email failed:", err);
+  }
+}
+
+// ─── Timestamp Normalization ─────────────────────────────────────────────────
+
+const TIMESTAMP_KEYS = new Set([
+  "createdAt", "updatedAt", "startTime", "endTime",
+  "expiresAt", "lastUsedAt", "startedAt", "completedAt",
+]);
+
+function normTs(d: unknown): string | null {
+  if (d == null) return null;
+  if (d instanceof Date) {
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  if (typeof d === "number") {
+    if (d <= 0 || isNaN(d)) return null;
+    const ms = d < 1e12 ? d * 1000 : d;
+    const date = new Date(ms);
+    return isNaN(date.getTime()) ? null : date.toISOString();
+  }
+  if (typeof d === "string" && d) {
+    // Already an ISO string — pass through
+    if (d.includes("T") || d.endsWith("Z")) return d;
+    // SQLite text timestamp format: "YYYY-MM-DD HH:MM:SS" — convert to ISO
+    const date = new Date(d.replace(" ", "T") + "Z");
+    return isNaN(date.getTime()) ? d : date.toISOString();
+  }
+  return null;
+}
+
+function normalizeTimestamps<T>(obj: T): T {
+  if (obj == null || typeof obj !== "object") return obj;
+  if (Array.isArray(obj)) return obj.map(normalizeTimestamps) as T;
+
+  const result = { ...obj } as Record<string, unknown>;
+  for (const key of Object.keys(result)) {
+    if (TIMESTAMP_KEYS.has(key)) {
+      result[key] = normTs(result[key]);
+    } else if (typeof result[key] === "object" && result[key] !== null) {
+      result[key] = normalizeTimestamps(result[key]);
+    }
+  }
+  return result as T;
+}
+
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 const app = new Hono<HonoAppContext>();
@@ -164,6 +278,25 @@ app.use(
     maxAge: 86400,
   }),
 );
+
+// ─── Timestamp Normalization Middleware ──────────────────────────────────────
+
+app.use("/api/*", async (c, next) => {
+  await next();
+  const contentType = c.res.headers.get("content-type");
+  if (contentType?.includes("application/json") && c.res.status < 400) {
+    try {
+      const body = await c.res.json();
+      const normalized = normalizeTimestamps(body);
+      c.res = new Response(JSON.stringify(normalized), {
+        status: c.res.status,
+        headers: c.res.headers,
+      });
+    } catch {
+      // If JSON parsing fails, leave the response as-is
+    }
+  }
+});
 
 // ─── Auth Routes ─────────────────────────────────────────────────────────────
 
@@ -316,6 +449,11 @@ app.post("/api/v1/bookings", async (c) => {
 
     const data = validate(createBookingSchema, body);
 
+    const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+    const geoIp = c.req.header("cf-connecting-ip") ?? null;
+    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCity = (cf?.city as string) ?? null;
+
     const db = drizzle(c.env.DB, { schema });
 
     // 1. Look up project by slug
@@ -431,6 +569,9 @@ app.post("/api/v1/bookings", async (c) => {
       status: isPending ? "pending" : "confirmed",
       expiresAt,
       formResponseId,
+      ipAddress: geoIp,
+      country: geoCountry,
+      city: geoCity,
     });
 
     // 7. Look up project owner for calendar invite + email notification
@@ -514,7 +655,7 @@ app.post("/api/v1/bookings", async (c) => {
                 calConnection.refreshToken,
               );
 
-              const gcalEventId = await calendarService.createEvent(
+              const gcalResult = await calendarService.createEvent(
                 accessToken,
                 destinationCalendarId,
                 {
@@ -531,7 +672,7 @@ app.post("/api/v1/bookings", async (c) => {
 
               await db
                 .update(dbSchema.bookings)
-                .set({ gcalEventId })
+                .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
                 .where(eq(dbSchema.bookings.id, booking.id));
             }
           } catch (err) {
@@ -620,7 +761,17 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
       return c.json({ response: { id: crypto.randomUUID(), formId: form.id, status: "in_progress", currentStepIndex: 0 } }, 201);
     }
 
+    const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+    const geoIp = c.req.header("cf-connecting-ip") ?? null;
+    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCity = (cf?.city as string) ?? null;
+
     const response = await service.createResponse(form.id, body.metadata);
+
+    if (geoIp || geoCountry || geoCity) {
+      await db.update(dbSchema.formResponses).set({ ipAddress: geoIp, country: geoCountry, city: geoCity }).where(eq(dbSchema.formResponses.id, response.id));
+    }
+
     const fullForm = await service.getFullForm(form.id);
 
     return c.json({ response, form: fullForm }, 201);
@@ -657,6 +808,13 @@ app.patch(
 
       if (!response) {
         return c.json({ error: "Response not found" }, 404);
+      }
+
+      // Notify owner on completion (paid users only)
+      if (response.status === "completed" && response.formId) {
+        c.executionCtx.waitUntil(
+          notifyFormResponseCompleted(db, c.env, response.id, response.formId),
+        );
       }
 
       return c.json({ response });
@@ -867,7 +1025,16 @@ app.post("/api/public/forms/:slug/responses", async (c) => {
       return c.json({ response: { id: crypto.randomUUID(), formId: form.id, status: "in_progress", currentStepIndex: 0 } }, 201);
     }
 
+    const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+    const geoIp = c.req.header("cf-connecting-ip") ?? null;
+    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCity = (cf?.city as string) ?? null;
+
     const response = await service.createResponse(form.id, body.metadata);
+
+    if (geoIp || geoCountry || geoCity) {
+      await db.update(dbSchema.formResponses).set({ ipAddress: geoIp, country: geoCountry, city: geoCity }).where(eq(dbSchema.formResponses.id, response.id));
+    }
 
     return c.json({ response }, 201);
   } catch (err) {
@@ -902,6 +1069,13 @@ app.patch(
 
       if (!response) {
         return c.json({ error: "Response not found" }, 404);
+      }
+
+      // Notify owner on completion (paid users only)
+      if (response.status === "completed" && response.formId) {
+        c.executionCtx.waitUntil(
+          notifyFormResponseCompleted(db, c.env, response.id, response.formId),
+        );
       }
 
       return c.json({ response });
@@ -987,7 +1161,7 @@ async function syncSubscription(
 
 // ─── Stripe Webhook ──────────────────────────────────────────────────────────
 
-app.post("/api/billing/webhook", async (c) => {
+app.post("/api/subscription/webhook", async (c) => {
   const signature = c.req.header("stripe-signature");
   if (!signature) {
     return c.json({ error: "Missing signature" }, 400);
@@ -1068,7 +1242,7 @@ app.use("/api/*", async (c, next) => {
     path.startsWith("/api/widget/") ||
     path.startsWith("/api/public/") ||
     path.startsWith("/api/uploads/") ||
-    path === "/api/billing/webhook"
+    path === "/api/subscription/webhook"
   ) {
     return next();
   }
@@ -1091,8 +1265,17 @@ app.use("/api/*", async (c, next) => {
     .where(eq(dbSchema.subscriptions.userId, session.user.id))
     .limit(1);
 
-  const plan: Plan = (sub?.plan as Plan) ?? "free";
+  let plan: Plan = (sub?.plan as Plan) ?? "free";
   const status = sub?.status ?? "active";
+
+  // Downgrade to free if subscription is past_due or unpaid for more than 3 days
+  if (sub && (status === "past_due" || status === "unpaid") && plan !== "free") {
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const updatedAt = sub.updatedAt instanceof Date ? sub.updatedAt.getTime() : new Date(sub.updatedAt as unknown as string).getTime();
+    if (Date.now() - updatedAt > THREE_DAYS_MS) {
+      plan = "free";
+    }
+  }
 
   c.set("user", {
     id: session.user.id,
@@ -1674,6 +1857,34 @@ app.get("/api/projects/:projectId/bookings", async (c) => {
   }
 });
 
+app.get("/api/projects/:projectId/bookings/:id", async (c) => {
+  try {
+    const bookingId = c.req.param("id");
+    const db = c.get("db");
+
+    const [booking] = await db.select().from(dbSchema.bookings).where(eq(dbSchema.bookings.id, bookingId)).limit(1);
+    if (!booking) return c.json({ error: "Booking not found" }, 404);
+
+    // Get event type name
+    const [eventType] = await db.select().from(dbSchema.eventTypes).where(eq(dbSchema.eventTypes.id, booking.eventTypeId)).limit(1);
+
+    // Get form response fields if exists
+    let formFields: Array<{ label: string; type: string; value: string }> = [];
+    if (booking.formResponseId) {
+      const fieldValues = await db.select().from(dbSchema.formFieldValues).where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
+      for (const fv of fieldValues) {
+        const [field] = await db.select().from(dbSchema.formFields).where(eq(dbSchema.formFields.id, fv.fieldId)).limit(1);
+        formFields.push({ label: field?.label ?? "Unknown", type: field?.type ?? "text", value: fv.value ?? "" });
+      }
+    }
+
+    return c.json({ booking, eventTypeName: eventType?.name ?? "Event", formFields });
+  } catch (err) {
+    console.error("Booking detail error:", err);
+    return c.json({ error: "Failed to fetch booking" }, 500);
+  }
+});
+
 app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
   try {
     const id = c.req.param("id");
@@ -1917,7 +2128,7 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
               calConnection.refreshToken,
             );
 
-            const gcalEventId = await calendarService.createEvent(
+            const gcalResult = await calendarService.createEvent(
               accessToken,
               destinationCalendarId,
               {
@@ -1934,7 +2145,7 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
 
             await db
               .update(dbSchema.bookings)
-              .set({ gcalEventId })
+              .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
               .where(eq(dbSchema.bookings.id, booking.id));
           }
         } catch (err) {
@@ -1986,12 +2197,29 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
       return c.json({ error: "Booking not found or not pending" }, 404);
     }
 
-    // Look up event type for email
+    // Look up event type and owner for email
     const [eventType] = await db
       .select()
       .from(dbSchema.eventTypes)
       .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
       .limit(1);
+
+    let ownerName = "the host";
+    if (eventType) {
+      const [project] = await db
+        .select()
+        .from(dbSchema.projects)
+        .where(eq(dbSchema.projects.id, eventType.projectId))
+        .limit(1);
+      if (project) {
+        const [owner] = await db
+          .select()
+          .from(dbSchema.schema.users)
+          .where(eq(dbSchema.schema.users.id, project.userId))
+          .limit(1);
+        if (owner?.name) ownerName = owner.name;
+      }
+    }
 
     // Send decline email to guest
     c.executionCtx.waitUntil(
@@ -2001,6 +2229,7 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
           await emailService.sendBookingDeclined({
             to: booking.email,
             guestName: booking.name,
+            hostName: ownerName,
             eventTypeName: eventType?.name ?? "Meeting",
             startTime: new Date(booking.startTime),
             endTime: new Date(booking.endTime),
@@ -2319,6 +2548,39 @@ app.get(
       return c.json({ error: "Response not found" }, 404);
     }
     return c.json({ response });
+  },
+);
+
+app.delete(
+  "/api/projects/:projectId/form-responses/:id",
+  async (c) => {
+    try {
+      const id = c.req.param("id");
+      const db = c.get("db");
+
+      const existing = await db
+        .select({ id: dbSchema.formResponses.id })
+        .from(dbSchema.formResponses)
+        .where(eq(dbSchema.formResponses.id, id))
+        .get();
+
+      if (!existing) {
+        return c.json({ error: "Form response not found" }, 404);
+      }
+
+      // Delete field values first, then the response
+      await db
+        .delete(dbSchema.formFieldValues)
+        .where(eq(dbSchema.formFieldValues.responseId, id));
+      await db
+        .delete(dbSchema.formResponses)
+        .where(eq(dbSchema.formResponses.id, id));
+
+      return c.json({ success: true });
+    } catch (err) {
+      console.error("Delete form response error:", err);
+      return c.json({ error: "Failed to delete form response" }, 500);
+    }
   },
 );
 
@@ -3064,29 +3326,92 @@ app.put("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
   }
 });
 
+// ─── Activity Feed ───────────────────────────────────────────────────────────
+
+app.get("/api/projects/:projectId/activity/recent", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const db = c.get("db");
+
+    const bookings = await db
+      .select({
+        id: dbSchema.bookings.id,
+        name: dbSchema.bookings.name,
+        email: dbSchema.bookings.email,
+        status: dbSchema.bookings.status,
+        startTime: dbSchema.bookings.startTime,
+        endTime: dbSchema.bookings.endTime,
+        timezone: dbSchema.bookings.timezone,
+        country: dbSchema.bookings.country,
+        city: dbSchema.bookings.city,
+        expiresAt: dbSchema.bookings.expiresAt,
+        formResponseId: dbSchema.bookings.formResponseId,
+        eventTypeId: dbSchema.bookings.eventTypeId,
+        meetingUrl: dbSchema.bookings.meetingUrl,
+        createdAt: dbSchema.bookings.createdAt,
+        eventTypeName: dbSchema.eventTypes.name,
+      })
+      .from(dbSchema.bookings)
+      .innerJoin(dbSchema.eventTypes, eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id))
+      .where(eq(dbSchema.eventTypes.projectId, projectId))
+      .orderBy(desc(dbSchema.bookings.createdAt))
+      .limit(10);
+
+    const responses = await db
+      .select({
+        id: dbSchema.formResponses.id,
+        respondentEmail: dbSchema.formResponses.respondentEmail,
+        status: dbSchema.formResponses.status,
+        country: dbSchema.formResponses.country,
+        city: dbSchema.formResponses.city,
+        formId: dbSchema.formResponses.formId,
+        createdAt: dbSchema.formResponses.createdAt,
+        formName: dbSchema.forms.name,
+      })
+      .from(dbSchema.formResponses)
+      .innerJoin(dbSchema.forms, eq(dbSchema.formResponses.formId, dbSchema.forms.id))
+      .where(eq(dbSchema.forms.projectId, projectId))
+      .orderBy(desc(dbSchema.formResponses.createdAt))
+      .limit(10);
+
+    const items = [
+      ...bookings.map((b) => ({
+        type: "booking" as const, ...b,
+        title: b.eventTypeName,
+      })),
+      ...responses.map((r) => ({
+        type: "form_response" as const, ...r,
+        name: r.respondentEmail ?? "Anonymous",
+        email: r.respondentEmail ?? "",
+        title: r.formName,
+      })),
+    ]
+      .sort((a, b) => {
+        // Handle SQLite text timestamps ("YYYY-MM-DD HH:MM:SS") for sorting
+        const aDate = typeof a.createdAt === "string" ? new Date(String(a.createdAt).replace(" ", "T") + (String(a.createdAt).includes("T") ? "" : "Z")) : new Date(a.createdAt as any);
+        const bDate = typeof b.createdAt === "string" ? new Date(String(b.createdAt).replace(" ", "T") + (String(b.createdAt).includes("T") ? "" : "Z")) : new Date(b.createdAt as any);
+        return bDate.getTime() - aDate.getTime();
+      })
+      .slice(0, 10);
+
+    return c.json({ items });
+  } catch (err) {
+    console.error("Activity feed error:", err);
+    return c.json({ error: "Failed to fetch activity" }, 500);
+  }
+});
+
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
 app.post("/api/billing/checkout", async (c) => {
   try {
     const body = await c.req.json();
-    const { plan, interval, successUrl, cancelUrl } = body as {
-      plan: string;
-      interval: "month" | "year";
-      successUrl?: string;
-      cancelUrl?: string;
-    };
-
-    if (!["pro", "business"].includes(plan)) {
-      return c.json({ error: "Invalid plan" }, 400);
-    }
-    if (!["month", "year"].includes(interval)) {
-      return c.json({ error: "Invalid interval" }, 400);
-    }
+    const { plan, interval, successUrl, cancelUrl } = validate(checkoutSchema, body);
 
     const user = c.get("user");
     const db = c.get("db");
     const stripe = getStripe(c.env);
-    const priceId = getPriceId(c.env, plan as "pro" | "business", interval);
+    const priceId = getPriceId(c.env, plan, interval);
 
     // Get or create Stripe customer
     const [sub] = await db
@@ -3123,6 +3448,9 @@ app.post("/api/billing/checkout", async (c) => {
       }
     }
 
+    // Only offer 7-day trial to users who have never had a Stripe subscription
+    const isNewSubscriber = !sub?.stripeSubscriptionId;
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       payment_method_types: ["card"],
@@ -3131,6 +3459,9 @@ app.post("/api/billing/checkout", async (c) => {
       customer_update: { address: "auto" },
       allow_promotion_codes: true,
       line_items: [{ quantity: 1, price: priceId }],
+      ...(isNewSubscriber
+        ? { subscription_data: { trial_period_days: 7, metadata: { plan, interval, userId: user.id } } }
+        : {}),
       success_url: successUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/billing?success=true`,
       cancel_url: cancelUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/billing?canceled=true`,
       metadata: { plan, interval, userId: user.id },
