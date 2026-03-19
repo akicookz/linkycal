@@ -4,7 +4,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
   Zap,
-  Pencil,
   Trash2,
   Loader2,
   AlertCircle,
@@ -179,10 +178,7 @@ export default function Workflows() {
     setFormData(defaultFormData);
   }
 
-  function openDeleteDialog(id: string) {
-    setDeletingId(id);
-    setDeleteDialogOpen(true);
-  }
+
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -260,8 +256,12 @@ export default function Workflows() {
             const TriggerIcon = triggerMeta.icon;
 
             return (
-              <Card key={workflow.id} className="relative transition-opacity">
-                <CardContent className="pt-6">
+              <Card
+                key={workflow.id}
+                className="relative transition-all cursor-pointer hover:shadow-md"
+                onClick={() => navigate(`/app/projects/${projectId}/workflows/${workflow.id}`)}
+              >
+                <CardContent>
                   {/* Name + status toggle */}
                   <div className="flex items-start justify-between mb-3">
                     <h3 className="text-sm font-semibold text-foreground truncate pr-2">
@@ -275,6 +275,7 @@ export default function Workflows() {
                           status: checked ? "active" : "draft",
                         })
                       }
+                      onClick={(e) => e.stopPropagation()}
                     />
                   </div>
 
@@ -282,44 +283,20 @@ export default function Workflows() {
                   <div className="flex items-center gap-1.5 mb-3">
                     <Badge
                       variant={workflow.status === "active" ? "success" : "secondary"}
-                      className="text-[11px] px-2 py-0"
+                      className="text-[11px] px-2 py-0.5"
                     >
                       {workflow.status}
                     </Badge>
-                    <Badge variant="outline" className="text-[11px] px-2 py-0 gap-1">
+                    <Badge variant="outline" className="text-[11px] px-2 py-0.5 gap-1">
                       <TriggerIcon className="h-3 w-3" />
                       {triggerMeta.label}
                     </Badge>
                   </div>
 
                   {/* Created date */}
-                  <p className="text-xs text-muted-foreground mb-4">
+                  <p className="text-xs text-muted-foreground">
                     Created {formatDate(workflow.createdAt)}
                   </p>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1.5 pt-2 border-t">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 px-2.5 text-xs"
-                      onClick={() =>
-                        navigate(`/app/projects/${projectId}/workflows/${workflow.id}`)
-                      }
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                      Edit
-                    </Button>
-                    <div className="flex-1" />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive hover:text-destructive"
-                      onClick={() => openDeleteDialog(workflow.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
             );
@@ -397,8 +374,10 @@ export default function Workflows() {
                 Cancel
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending && (
+                {createMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
                 )}
                 Create Workflow
               </Button>
@@ -433,8 +412,10 @@ export default function Workflows() {
               onClick={() => deletingId && deleteMutation.mutate(deletingId)}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending && (
+              {deleteMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
               )}
               Delete
             </Button>

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader2 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -181,6 +182,11 @@ export default function ApiKeys() {
                     onClick={handleCreate}
                     disabled={createMutation.isPending}
                   >
+                    {createMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
                     {createMutation.isPending ? "Creating..." : "Create Key"}
                   </Button>
                 </DialogFooter>
@@ -208,7 +214,7 @@ export default function ApiKeys() {
                       </code>
                       <Button
                         variant="outline"
-                        size="icon"
+                        size="sm"
                         onClick={handleCopy}
                         className="shrink-0"
                       >
@@ -217,12 +223,16 @@ export default function ApiKeys() {
                         ) : (
                           <Copy className="h-4 w-4" />
                         )}
+                        {copied ? "Copied" : "Copy"}
                       </Button>
                     </div>
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button onClick={handleCloseCreate}>Done</Button>
+                  <Button onClick={handleCloseCreate}>
+                    <Check className="h-4 w-4" />
+                    Done
+                  </Button>
                 </DialogFooter>
               </>
             )}
@@ -247,21 +257,11 @@ export default function ApiKeys() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-[20px] border">
-        <div className="px-6 py-4 border-b">
-          <div className="grid grid-cols-5 text-sm font-medium text-muted-foreground">
-            <span>Label</span>
-            <span>Key</span>
-            <span>Last Used</span>
-            <span>Created</span>
-            <span className="text-right">Actions</span>
-          </div>
-        </div>
-
+      {/* API Keys List */}
+      <Card>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground mt-4">Loading API keys...</p>
           </div>
         ) : apiKeys.length === 0 ? (
@@ -273,39 +273,47 @@ export default function ApiKeys() {
             </p>
           </div>
         ) : (
-          <div className="divide-y">
+          <div className="space-y-1 px-6">
             {apiKeys.map((apiKey) => (
               <div
                 key={apiKey.id}
-                className="grid grid-cols-5 items-center px-6 py-4 text-sm"
+                className="flex items-center gap-4 py-3"
               >
-                <span className="font-medium text-foreground">
-                  {apiKey.label || "Untitled"}
-                </span>
-                <span className="font-mono text-muted-foreground">
-                  {apiKey.prefix}...
-                </span>
-                <span className="text-muted-foreground">
-                  {formatRelativeTime(apiKey.lastUsedAt)}
-                </span>
-                <span className="text-muted-foreground">
-                  {formatDate(apiKey.createdAt)}
-                </span>
-                <div className="flex justify-end">
+                {/* Icon */}
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <KeyRound className="h-4 w-4 text-primary" />
+                </div>
+
+                {/* Info */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {apiKey.label || "Untitled"}
+                    <span className="font-mono font-normal text-muted-foreground ml-2 text-xs">
+                      {apiKey.prefix}...
+                    </span>
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {formatRelativeTime(apiKey.lastUsedAt)} &middot; Created {formatDate(apiKey.createdAt)}
+                  </p>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-1.5 shrink-0">
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    size="sm"
+                    className="h-7 px-2.5 text-xs text-destructive hover:text-destructive"
                     onClick={() => setDeleteId(apiKey.id)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
                   </Button>
                 </div>
               </div>
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Delete confirmation dialog */}
       <Dialog open={!!deleteId} onOpenChange={(open) => { if (!open) setDeleteId(null); }}>
@@ -325,6 +333,11 @@ export default function ApiKeys() {
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               disabled={deleteMutation.isPending}
             >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
               {deleteMutation.isPending ? "Deleting..." : "Delete Key"}
             </Button>
           </DialogFooter>

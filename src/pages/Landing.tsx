@@ -1696,7 +1696,7 @@ function FaqItem({ question, answer }: FaqItemData) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="border-b border-border last:border-b-0">
+    <div>
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center justify-between w-full py-5 text-left group"
@@ -2725,7 +2725,7 @@ export default function Landing() {
           </div>
 
           {/* Copyright */}
-          <div className="border-t border-border mt-8 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               &copy; 2026 LinkyCal
             </p>

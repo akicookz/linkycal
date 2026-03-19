@@ -48,6 +48,7 @@ export const createEventTypeSchema = z.object({
   maxPerDay: z.number().int().min(1).max(50).nullable().optional(),
   enabled: z.boolean().default(true),
   requiresConfirmation: z.boolean().default(false),
+  bookingFormId: z.string().nullable().optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   copyFromEventTypeId: z.string().optional(),
 });
@@ -69,6 +70,7 @@ export const updateEventTypeSchema = z.object({
   maxPerDay: z.number().int().min(1).max(50).nullable().optional(),
   enabled: z.boolean().optional(),
   requiresConfirmation: z.boolean().optional(),
+  bookingFormId: z.string().nullable().optional(),
   settings: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
@@ -109,11 +111,11 @@ export const createBookingSchema = z.object({
   projectSlug: z.string().min(1),
   name: z.string().min(1).max(200),
   email: z.string().email(),
-  phone: z.string().max(30).optional(),
   notes: z.string().max(2000).optional(),
   startTime: z.string().datetime(),
   timezone: z.string(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  formFields: z.record(z.string(), z.string()).optional(),
 });
 
 export const cancelBookingSchema = z.object({
@@ -122,6 +124,11 @@ export const cancelBookingSchema = z.object({
 
 export const declineBookingSchema = z.object({
   reason: z.string().max(500).optional(),
+});
+
+export const reorderFieldsSchema = z.object({
+  stepId: z.string().min(1),
+  fieldIds: z.array(z.string().min(1)),
 });
 
 // ─── Forms ───────────────────────────────────────────────────────────────────

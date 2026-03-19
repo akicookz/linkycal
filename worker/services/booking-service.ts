@@ -8,7 +8,6 @@ interface CreateBookingInput {
   eventTypeId: string;
   name: string;
   email: string;
-  phone?: string;
   notes?: string;
   startTime: Date;
   endTime: Date;
@@ -18,6 +17,7 @@ interface CreateBookingInput {
   gcalEventId?: string;
   status?: "confirmed" | "pending";
   expiresAt?: Date;
+  formResponseId?: string;
 }
 
 interface BookingWithEventType extends dbSchema.BookingRow {
@@ -39,13 +39,13 @@ export class BookingService {
         contactId: dbSchema.bookings.contactId,
         name: dbSchema.bookings.name,
         email: dbSchema.bookings.email,
-        phone: dbSchema.bookings.phone,
         notes: dbSchema.bookings.notes,
         startTime: dbSchema.bookings.startTime,
         endTime: dbSchema.bookings.endTime,
         timezone: dbSchema.bookings.timezone,
         status: dbSchema.bookings.status,
         expiresAt: dbSchema.bookings.expiresAt,
+        formResponseId: dbSchema.bookings.formResponseId,
         gcalEventId: dbSchema.bookings.gcalEventId,
         metadata: dbSchema.bookings.metadata,
         createdAt: dbSchema.bookings.createdAt,
@@ -84,13 +84,13 @@ export class BookingService {
       eventTypeId: data.eventTypeId,
       name: data.name,
       email: data.email,
-      phone: data.phone ?? null,
       notes: data.notes ?? null,
       startTime: data.startTime,
       endTime: data.endTime,
       timezone: data.timezone,
       status: data.status ?? "confirmed",
       expiresAt: data.expiresAt ?? null,
+      formResponseId: data.formResponseId ?? null,
       contactId: data.contactId ?? null,
       metadata: data.metadata ?? null,
       gcalEventId: data.gcalEventId ?? null,
@@ -190,7 +190,6 @@ export class BookingService {
       eventTypeId: existing.eventTypeId,
       name: existing.name,
       email: existing.email,
-      phone: existing.phone ?? undefined,
       notes: existing.notes ?? undefined,
       startTime: newStartTime,
       endTime: newEndTime,

@@ -1,3 +1,4 @@
+import { Save } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ export default function Profile() {
                 —
               </div>
             </div>
-            <Button variant="outline" size="sm">Save Changes</Button>
+            <Button variant="outline" size="sm"><Save className="h-4 w-4" />Save Changes</Button>
           </CardContent>
         </Card>
 

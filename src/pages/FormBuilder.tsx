@@ -20,11 +20,12 @@ import {
   Clock,
   Upload,
   Star,
-  Settings2,
   X,
   Copy,
   ExternalLink,
   Check,
+  Globe,
+  Trash2,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -34,7 +35,6 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import {
   Select,
   SelectContent,
@@ -43,8 +43,33 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
+import { normalizeToFieldId } from "@/lib/constants";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +102,7 @@ interface FullForm {
   name: string;
   slug: string;
   type: "multi_step" | "single";
-  status: "draft" | "active" | "archived";
+  status: string;
   settings: unknown;
   createdAt: string;
   updatedAt: string;
@@ -109,10 +134,12 @@ const FIELD_TYPES = [
 
 const OPTION_FIELD_TYPES = ["select", "multi_select", "radio", "checkbox"];
 
-function getFieldIcon(type: string) {
+// Field icon lookup (used by field type picker in sidebar)
+function _getFieldIcon(type: string) {
   const found = FIELD_TYPES.find((ft) => ft.type === type);
   return found?.icon ?? Type;
 }
+void _getFieldIcon;
 
 function generateSlug(name: string): string {
   return name
@@ -131,14 +158,9 @@ export default function FormBuilder() {
   const navigate = useNavigate();
 
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
-  const [editingFieldId, setEditingFieldId] = useState<string | null>(null);
-  const [fieldSettingsData, setFieldSettingsData] = useState<{
-    label: string;
-    placeholder: string;
-    required: boolean;
-    type: string;
-    options: FieldOption[];
-  }>({ label: "", placeholder: "", required: false, type: "text", options: [] });
+  // Local options state for auto-save (keyed by field ID)
+  const [fieldOptionsState, setFieldOptionsState] = useState<Record<string, FieldOption[]>>({});
+  const [autoFocusLastField, setAutoFocusLastField] = useState(false);
 
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -213,6 +235,8 @@ export default function FormBuilder() {
   });
 
   const form = formData;
+
+
   const steps = form?.steps ?? [];
   const activeStep = steps.find((s) => s.id === activeStepId) ?? steps[0] ?? null;
   const activeFields = activeStep
@@ -431,6 +455,7 @@ export default function FormBuilder() {
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       const tempId = `temp-${crypto.randomUUID()}`;
+      setAutoFocusLastField(true);
       optimisticSetForm((old) => ({
         ...old,
         steps: old.steps.map((s) =>
@@ -555,6 +580,93 @@ export default function FormBuilder() {
     }
   }, [form, editingSlug, updateFormMutation]);
 
+  // ─── Drag and Drop ─────────────────────────────────────────────────────
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
+  const reorderFieldsMutation = useMutation({
+    mutationFn: async ({ stepId, fieldIds }: { stepId: string; fieldIds: string[] }) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/forms/${formId}/fields/reorder`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stepId, fieldIds }),
+        },
+      );
+      if (!res.ok) throw new Error("Failed to reorder fields");
+      return res.json();
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: formQueryKey });
+    },
+  });
+
+  const reorderStepsMutation = useMutation({
+    mutationFn: async ({ stepIds }: { stepIds: string[] }) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/forms/${formId}/steps/reorder`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stepIds }),
+        },
+      );
+      if (!res.ok) throw new Error("Failed to reorder steps");
+      return res.json();
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: formQueryKey });
+    },
+  });
+
+  function handleFieldDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !activeStep) return;
+
+    const oldIndex = activeFields.findIndex((f) => f.id === active.id);
+    const newIndex = activeFields.findIndex((f) => f.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(activeFields, oldIndex, newIndex);
+
+    optimisticSetForm((old) => ({
+      ...old,
+      steps: old.steps.map((s) =>
+        s.id === activeStep.id
+          ? { ...s, fields: reordered.map((f, i) => ({ ...f, sortOrder: i })) }
+          : s,
+      ),
+    }));
+
+    reorderFieldsMutation.mutate({
+      stepId: activeStep.id,
+      fieldIds: reordered.map((f) => f.id),
+    });
+  }
+
+  function handleStepDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = steps.findIndex((s) => s.id === active.id);
+    const newIndex = steps.findIndex((s) => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(steps, oldIndex, newIndex);
+
+    optimisticSetForm((old) => ({
+      ...old,
+      steps: reordered.map((s, i) => ({ ...s, sortOrder: i })),
+    }));
+
+    reorderStepsMutation.mutate({
+      stepIds: reordered.map((s) => s.id),
+    });
+  }
+
   // ─── Add field from palette ──────────────────────────────────────────────
 
   function handleAddField(type: string, label: string) {
@@ -562,77 +674,56 @@ export default function FormBuilder() {
     addFieldMutation.mutate({ stepId: activeStep.id, type, label });
   }
 
-  // ─── Field settings dialog ──────────────────────────────────────────────
+  // ─── Field options helpers (auto-save) ──────────────────────────────────
 
-  function toggleFieldSettings(field: FormField) {
-    if (editingFieldId === field.id) {
-      setEditingFieldId(null);
-      return;
+  function getFieldOptions(field: FormField): FieldOption[] {
+    if (fieldOptionsState[field.id]) {
+      const cached = fieldOptionsState[field.id];
+      return Array.isArray(cached) ? cached : [{ label: "", value: "" }];
     }
-    setEditingFieldId(field.id);
-    setFieldSettingsData({
-      label: field.label,
-      placeholder: field.placeholder ?? "",
-      required: field.required,
-      type: field.type,
-      options: field.options ?? [{ label: "", value: "" }],
-    });
+    if (!field.options) return [{ label: "", value: "" }];
+    // Handle case where options is a JSON string from the DB
+    let parsed = field.options;
+    if (typeof parsed === "string") {
+      try { parsed = JSON.parse(parsed); } catch { return [{ label: "", value: "" }]; }
+    }
+    return Array.isArray(parsed) ? parsed as FieldOption[] : [{ label: "", value: "" }];
   }
 
-  function closeFieldSettings() {
-    setEditingFieldId(null);
+  function setFieldOptions(fieldId: string, options: FieldOption[]) {
+    setFieldOptionsState((prev) => ({ ...prev, [fieldId]: options }));
   }
 
-  function handleSaveFieldSettings(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingFieldId) return;
+  function saveFieldOptions(fieldId: string) {
+    const options = fieldOptionsState[fieldId];
+    if (!options || !Array.isArray(options)) return;
+    const filtered = options.filter((o) => o.label.trim() || o.value.trim());
+    if (filtered.length === 0) return;
+    updateFieldMutation.mutate({ fieldId, data: { options: filtered } });
+  }
 
-    const data: Partial<{
-      label: string;
-      placeholder: string;
-      required: boolean;
-      type: string;
-      options: FieldOption[];
-    }> = {
-      label: fieldSettingsData.label,
-      placeholder: fieldSettingsData.placeholder || undefined,
-      required: fieldSettingsData.required,
-      type: fieldSettingsData.type,
-    };
+  function addFieldOption(fieldId: string, field: FormField) {
+    const current = getFieldOptions(field);
+    const nextNum = current.length + 1;
+    const updated = [...current, { label: `Option ${nextNum}`, value: `option_${nextNum}` }];
+    setFieldOptions(fieldId, updated);
+    // Don't mutate here — saved on blur when user edits the new option label
+  }
 
-    if (OPTION_FIELD_TYPES.includes(fieldSettingsData.type)) {
-      data.options = fieldSettingsData.options.filter(
-        (o) => o.label.trim() || o.value.trim()
-      );
-    }
+  function removeFieldOption(fieldId: string, index: number, field: FormField) {
+    const current = getFieldOptions(field);
+    const updated = current.filter((_, i) => i !== index);
+    setFieldOptions(fieldId, updated);
+    const filtered = updated.filter((o) => o.label.trim() || o.value.trim());
+    updateFieldMutation.mutate({ fieldId, data: { options: filtered } });
+  }
 
-    updateFieldMutation.mutate(
-      { fieldId: editingFieldId, data },
-      { onSuccess: () => closeFieldSettings() }
+  function updateFieldOption(fieldId: string, index: number, val: string) {
+    const current = fieldOptionsState[fieldId] ?? [];
+    const updated = current.map((o, i) =>
+      i === index ? { label: val, value: normalizeToFieldId(val) } : o,
     );
-  }
-
-  function addOptionRow() {
-    setFieldSettingsData((prev) => ({
-      ...prev,
-      options: [...prev.options, { label: "", value: "" }],
-    }));
-  }
-
-  function removeOptionRow(index: number) {
-    setFieldSettingsData((prev) => ({
-      ...prev,
-      options: prev.options.filter((_, i) => i !== index),
-    }));
-  }
-
-  function updateOption(index: number, key: "label" | "value", val: string) {
-    setFieldSettingsData((prev) => ({
-      ...prev,
-      options: prev.options.map((o, i) =>
-        i === index ? { ...o, [key]: val } : o
-      ),
-    }));
+    setFieldOptions(fieldId, updated);
   }
 
   // ─── Render: Create mode ─────────────────────────────────────────────────
@@ -811,11 +902,12 @@ export default function FormBuilder() {
         <div className="flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
+            size="sm"
+            className="h-8 shrink-0"
             onClick={() => navigate(`/app/projects/${projectId}/forms`)}
           >
             <ArrowLeft className="h-4 w-4" />
+            Back
           </Button>
           <div className="min-w-0">
             <Input
@@ -868,8 +960,10 @@ export default function FormBuilder() {
             onClick={() => updateFormMutation.mutate({ status: "active" })}
             disabled={form.status === "active" || updateFormMutation.isPending}
           >
-            {updateFormMutation.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
+            {updateFormMutation.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Globe className="h-3 w-3" />
             )}
             Publish
           </Button>
@@ -889,7 +983,7 @@ export default function FormBuilder() {
                   key={ft.type}
                   type="button"
                   onClick={() => handleAddField(ft.type, ft.label)}
-                  disabled={!activeStep || addFieldMutation.isPending}
+                  disabled={!activeStep}
                   className="flex w-full items-center gap-3 rounded-[16px] border px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ft.icon className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -935,42 +1029,23 @@ export default function FormBuilder() {
         <div className="space-y-4">
           {/* Step tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            {steps
-              .sort((a, b) => a.sortOrder - b.sortOrder)
-              .map((step, idx) => (
-                <button
-                  key={step.id}
-                  type="button"
-                  onClick={() => setActiveStepId(step.id)}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[12px] px-3 py-1.5 text-sm font-medium transition-colors",
-                    step.id === activeStep?.id
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "bg-muted text-muted-foreground hover:bg-accent"
-                  )}
-                >
-                  {step.title || `Step ${idx + 1}`}
-                  {steps.length > 1 && (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteStepMutation.mutate(step.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.stopPropagation();
-                          deleteStepMutation.mutate(step.id);
-                        }
-                      }}
-                      className="ml-1 rounded-full p-0.5 hover:bg-white/20"
-                    >
-                      <X className="h-3 w-3" />
-                    </span>
-                  )}
-                </button>
-              ))}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
+              <SortableContext items={steps.map((s) => s.id)} strategy={horizontalListSortingStrategy}>
+                {steps
+                  .sort((a, b) => a.sortOrder - b.sortOrder)
+                  .map((step, idx) => (
+                    <SortableStepTab
+                      key={step.id}
+                      step={step}
+                      idx={idx}
+                      isActive={step.id === activeStep?.id}
+                      showDelete={steps.length > 1}
+                      onSelect={() => setActiveStepId(step.id)}
+                      onDelete={() => deleteStepMutation.mutate(step.id)}
+                    />
+                  ))}
+              </SortableContext>
+            </DndContext>
             <Button
               variant="outline"
               size="sm"
@@ -993,8 +1068,10 @@ export default function FormBuilder() {
                     Step Title
                   </Label>
                   <Input
-                    value={activeStep.title ?? ""}
-                    onChange={() => {}}
+                    defaultValue={activeStep.title ?? ""}
+                    key={`step-title-${activeStep.id}`}
+                    placeholder="Step title"
+                    className="h-9"
                     onBlur={(e) => {
                       if (e.target.value !== (activeStep.title ?? "")) {
                         updateStepMutation.mutate({
@@ -1003,15 +1080,6 @@ export default function FormBuilder() {
                         });
                       }
                     }}
-                    onInput={(e) => {
-                      // Controlled via DOM for performance
-                      const target = e.target as HTMLInputElement;
-                      target.value = target.value;
-                    }}
-                    defaultValue={activeStep.title ?? ""}
-                    key={`step-title-${activeStep.id}`}
-                    placeholder="Step title"
-                    className="h-9"
                   />
                   <Label className="text-xs text-muted-foreground">
                     Step Description
@@ -1034,8 +1102,6 @@ export default function FormBuilder() {
                   />
                 </div>
 
-                <Separator />
-
                 {/* Fields list */}
                 {activeFields.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -1048,24 +1114,28 @@ export default function FormBuilder() {
                     </p>
                   </div>
                 ) : (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
+                    <SortableContext items={activeFields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
                   <div className="space-y-2">
-                    {activeFields.map((field) => {
-                      const FieldIcon = getFieldIcon(field.type);
-                      const isExpanded = editingFieldId === field.id;
+                    {activeFields.map((field, fieldIdx) => {
+                      const options = getFieldOptions(field);
+                      const hasOptions = OPTION_FIELD_TYPES.includes(field.type);
+                      const isLastField = fieldIdx === activeFields.length - 1;
+                      const shouldAutoFocus = autoFocusLastField && isLastField;
                       return (
-                        <div key={field.id}>
-                          <div
-                            className={cn(
-                              "flex items-center gap-3 border px-3 py-2.5 group hover:border-primary/30 transition-colors",
-                              isExpanded
-                                ? "rounded-t-[16px] border-primary/30 border-b-transparent"
-                                : "rounded-[16px]"
-                            )}
-                          >
-                            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" />
-                            <FieldIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <SortableFieldCard
+                          key={field.id}
+                          id={field.id}
+                          shouldAutoFocus={shouldAutoFocus}
+                          onAutoFocused={() => setAutoFocusLastField(false)}
+                        >
+                          {(dragHandleProps) => (<>
+                          {/* Row 1: Handle + Label + Required + Remove */}
+                          <div className="flex items-center gap-3">
+                            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
                             <InlineEditableLabel
                               value={field.label}
+                              autoFocus={shouldAutoFocus}
                               onSave={(label) =>
                                 updateFieldMutation.mutate({
                                   fieldId: field.id,
@@ -1073,13 +1143,51 @@ export default function FormBuilder() {
                                 })
                               }
                             />
-                            <div className="flex items-center gap-2 ml-auto shrink-0">
-                              <Badge
-                                variant="secondary"
-                                className="text-[10px] px-1.5 py-0"
+                            <div className="flex items-center gap-3 ml-auto shrink-0">
+                              <Select
+                                value={field.type}
+                                onValueChange={(val) => {
+                                  const wasOptionType = OPTION_FIELD_TYPES.includes(field.type);
+                                  const isOptionType = OPTION_FIELD_TYPES.includes(val);
+                                  const updateData: Record<string, unknown> = { type: val };
+                                  if (wasOptionType && !isOptionType) {
+                                    updateData.options = null;
+                                    setFieldOptionsState((prev) => {
+                                      const next = { ...prev };
+                                      delete next[field.id];
+                                      return next;
+                                    });
+                                  }
+                                if (!wasOptionType && isOptionType) {
+                                  const seedOptions = val === "multi_select"
+                                    ? [{ label: "Option 1", value: "option_1" }, { label: "Option 2", value: "option_2" }]
+                                    : [{ label: "Option 1", value: "option_1" }];
+                                  updateData.options = seedOptions;
+                                  setFieldOptions(field.id, seedOptions);
+                                }
+                                // If switching to multi_select and only 1 option, add a second
+                                if (wasOptionType && isOptionType && val === "multi_select") {
+                                  const currentOpts = fieldOptionsState[field.id] ?? field.options ?? [];
+                                  if (currentOpts.length < 2) {
+                                    const seedOptions = [...currentOpts, { label: "Option 2", value: "option_2" }];
+                                    updateData.options = seedOptions;
+                                    setFieldOptions(field.id, seedOptions);
+                                  }
+                                }
+                                  updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
+                                }}
                               >
-                                {field.type}
-                              </Badge>
+                                <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {FIELD_TYPES.map((ft) => (
+                                    <SelectItem key={ft.type} value={ft.type}>
+                                      {ft.label}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                               <div className="flex items-center gap-1">
                                 <span className="text-[11px] text-muted-foreground">
                                   Required
@@ -1097,238 +1205,80 @@ export default function FormBuilder() {
                               </div>
                               <Button
                                 variant="ghost"
-                                size="icon"
-                                className="h-7 w-7"
-                                onClick={() => toggleFieldSettings(field)}
-                              >
-                                <Settings2 className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-destructive hover:text-destructive"
+                                size="sm"
+                                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                                 onClick={() =>
                                   deleteFieldMutation.mutate(field.id)
                                 }
+                                disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
                               >
-                                <X className="h-3.5 w-3.5" />
+                                {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                )}
+                                Remove
                               </Button>
                             </div>
                           </div>
 
-                          {/* ─── Inline Field Settings Panel ─── */}
-                          {isExpanded && (
-                            <div className="rounded-b-[16px] border border-primary/30 bg-muted/30 px-4 py-4">
-                              <form
-                                onSubmit={handleSaveFieldSettings}
-                                className="space-y-4"
-                              >
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-1.5">
-                                    <Label
-                                      htmlFor={`field-label-${field.id}`}
-                                      className="text-xs"
-                                    >
-                                      Label
-                                    </Label>
-                                    <Input
-                                      id={`field-label-${field.id}`}
-                                      value={fieldSettingsData.label}
-                                      onChange={(e) =>
-                                        setFieldSettingsData((prev) => ({
-                                          ...prev,
-                                          label: e.target.value,
-                                        }))
-                                      }
-                                      className="h-8 text-sm"
-                                      required
-                                    />
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    <Label
-                                      htmlFor={`field-placeholder-${field.id}`}
-                                      className="text-xs"
-                                    >
-                                      Placeholder
-                                    </Label>
-                                    <Input
-                                      id={`field-placeholder-${field.id}`}
-                                      value={fieldSettingsData.placeholder}
-                                      onChange={(e) =>
-                                        setFieldSettingsData((prev) => ({
-                                          ...prev,
-                                          placeholder: e.target.value,
-                                        }))
-                                      }
-                                      className="h-8 text-sm"
-                                    />
-                                  </div>
-                                </div>
 
-                                <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-1.5">
-                                    <Label
-                                      htmlFor={`field-type-${field.id}`}
-                                      className="text-xs"
-                                    >
-                                      Type
-                                    </Label>
-                                    <Select
-                                      value={fieldSettingsData.type}
-                                      onValueChange={(val) =>
-                                        setFieldSettingsData((prev) => ({
-                                          ...prev,
-                                          type: val,
-                                        }))
-                                      }
-                                    >
-                                      <SelectTrigger
-                                        id={`field-type-${field.id}`}
-                                        className="h-8 text-sm"
-                                      >
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {FIELD_TYPES.map((ft) => (
-                                          <SelectItem
-                                            key={ft.type}
-                                            value={ft.type}
-                                          >
-                                            {ft.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                  <div className="flex items-end pb-1">
-                                    <div className="flex items-center gap-2">
-                                      <Switch
-                                        id={`field-required-${field.id}`}
-                                        checked={fieldSettingsData.required}
-                                        onCheckedChange={(checked) =>
-                                          setFieldSettingsData((prev) => ({
-                                            ...prev,
-                                            required: checked,
-                                          }))
+
+                          {/* Row 3: Options (conditional) */}
+                          {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
+                            const minOptions = field.type === "multi_select" ? 2 : 1;
+                            return (
+                              <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
+                                {options.map((opt, idx) => {
+                                  const isLast = idx === options.length - 1;
+                                  const canRemove = options.length > minOptions;
+                                  return (
+                                    <div key={idx} className="flex items-center gap-1.5">
+                                      <Input
+                                        placeholder={`Option ${idx + 1}`}
+                                        value={opt.label}
+                                        onChange={(e) =>
+                                          updateFieldOption(field.id, idx, e.target.value)
                                         }
+                                        onBlur={() => saveFieldOptions(field.id)}
+                                        className="h-7 text-xs"
                                       />
-                                      <Label
-                                        htmlFor={`field-required-${field.id}`}
-                                        className="text-xs"
-                                      >
-                                        Required
-                                      </Label>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                {/* Options for select/multi_select/radio/checkbox */}
-                                {OPTION_FIELD_TYPES.includes(
-                                  fieldSettingsData.type
-                                ) && (
-                                  <div className="space-y-2">
-                                    <Separator />
-                                    <Label className="text-xs">Options</Label>
-                                    <div className="space-y-1.5">
-                                      {fieldSettingsData.options.map(
-                                        (opt, idx) => (
-                                          <div
-                                            key={idx}
-                                            className="flex items-center gap-2"
-                                          >
-                                            <Input
-                                              placeholder="Label"
-                                              value={opt.label}
-                                              onChange={(e) =>
-                                                updateOption(
-                                                  idx,
-                                                  "label",
-                                                  e.target.value
-                                                )
-                                              }
-                                              className="h-7 text-xs"
-                                            />
-                                            <Input
-                                              placeholder="Value"
-                                              value={opt.value}
-                                              onChange={(e) =>
-                                                updateOption(
-                                                  idx,
-                                                  "value",
-                                                  e.target.value
-                                                )
-                                              }
-                                              className="h-7 text-xs"
-                                            />
-                                            <Button
-                                              type="button"
-                                              variant="ghost"
-                                              size="icon"
-                                              className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                                              onClick={() =>
-                                                removeOptionRow(idx)
-                                              }
-                                              disabled={
-                                                fieldSettingsData.options
-                                                  .length <= 1
-                                              }
-                                            >
-                                              <X className="h-3 w-3" />
-                                            </Button>
-                                          </div>
-                                        )
+                                      {isLast && (
+                                        <Button
+                                          type="button"
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-7 px-2 shrink-0 text-xs"
+                                          onClick={() => addFieldOption(field.id, field)}
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                          Add
+                                        </Button>
+                                      )}
+                                      {canRemove && (
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
+                                          onClick={() => removeFieldOption(field.id, idx, field)}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </Button>
                                       )}
                                     </div>
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="sm"
-                                      className="h-7 text-xs"
-                                      onClick={addOptionRow}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                      Add Option
-                                    </Button>
-                                  </div>
-                                )}
-
-                                {updateFieldMutation.isError && (
-                                  <p className="text-xs text-destructive">
-                                    {updateFieldMutation.error?.message ??
-                                      "Failed to update field."}
-                                  </p>
-                                )}
-
-                                <div className="flex items-center gap-2 pt-1">
-                                  <Button
-                                    type="submit"
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    disabled={updateFieldMutation.isPending}
-                                  >
-                                    {updateFieldMutation.isPending && (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    )}
-                                    Save
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="sm"
-                                    className="h-7 text-xs"
-                                    onClick={closeFieldSettings}
-                                    disabled={updateFieldMutation.isPending}
-                                  >
-                                    Cancel
-                                  </Button>
-                                </div>
-                              </form>
-                            </div>
-                          )}
-                        </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </>)}
+                        </SortableFieldCard>
                       );
                     })}
                   </div>
+                    </SortableContext>
+                  </DndContext>
                 )}
               </CardContent>
             </Card>
@@ -1355,41 +1305,143 @@ export default function FormBuilder() {
   );
 }
 
+// ─── Sortable Field Card ─────────────────────────────────────────────────────
+
+function SortableFieldCard({
+  id,
+  shouldAutoFocus,
+  onAutoFocused,
+  children,
+}: {
+  id: string;
+  shouldAutoFocus: boolean;
+  onAutoFocused: () => void;
+  children: (dragHandleProps: Record<string, unknown>) => React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={(node) => {
+        setNodeRef(node);
+        if (shouldAutoFocus && node) onAutoFocused();
+      }}
+      style={style}
+      className="rounded-[16px] border px-3 py-2.5 hover:border-primary/30 transition-colors bg-background"
+    >
+      {children({ ...listeners, ...attributes })}
+    </div>
+  );
+}
+
+// ─── Sortable Step Tab ───────────────────────────────────────────────────────
+
+function SortableStepTab({
+  step,
+  idx,
+  isActive,
+  showDelete,
+  onSelect,
+  onDelete,
+}: {
+  step: { id: string; title: string | null };
+  idx: number;
+  isActive: boolean;
+  showDelete: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: step.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      type="button"
+      onClick={onSelect}
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[12px] px-3 py-1.5 text-sm font-medium transition-colors",
+        isActive
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "bg-muted text-muted-foreground hover:bg-accent",
+      )}
+      {...attributes}
+      {...listeners}
+    >
+      {step.title || `Step ${idx + 1}`}
+      {showDelete && (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.stopPropagation();
+              onDelete();
+            }
+          }}
+          className="ml-1 rounded-full p-0.5 hover:bg-white/20"
+        >
+          <X className="h-3 w-3" />
+        </span>
+      )}
+    </button>
+  );
+}
+
 // ─── Inline Editable Label ───────────────────────────────────────────────────
 
 function InlineEditableLabel({
   value,
   onSave,
+  autoFocus = false,
 }: {
   value: string;
   onSave: (value: string) => void;
+  autoFocus?: boolean;
 }) {
-  const [editing, setEditing] = useState(false);
   const [localValue, setLocalValue] = useState(value);
 
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
 
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        className="text-sm font-medium text-foreground text-left truncate hover:underline underline-offset-2 cursor-text min-w-0"
-        onClick={() => setEditing(true)}
-      >
-        {value}
-      </button>
-    );
-  }
-
   return (
-    <Input
-      autoFocus
+    <input
+      type="text"
+      autoFocus={autoFocus}
       value={localValue}
       onChange={(e) => setLocalValue(e.target.value)}
       onBlur={() => {
-        setEditing(false);
         if (localValue.trim() && localValue !== value) {
           onSave(localValue.trim());
         } else {
@@ -1402,10 +1454,10 @@ function InlineEditableLabel({
         }
         if (e.key === "Escape") {
           setLocalValue(value);
-          setEditing(false);
+          e.currentTarget.blur();
         }
       }}
-      className="h-7 text-sm px-1 min-w-0"
+      className="text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary outline-none min-w-0 pb-0.5 w-full max-w-[200px] transition-colors"
     />
   );
 }

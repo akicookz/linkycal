@@ -10,6 +10,10 @@ import {
   Loader2,
   AlertCircle,
   Check,
+  ChevronDown,
+  MoreHorizontal,
+  Code,
+  Sparkles,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -17,6 +21,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +35,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
+import { copyToClipboard, copyToClipboardLazy } from "@/lib/utils";
+import {
+  generateEventTypeApiPrompt,
+  generateEventTypeEmbedPrompt,
+} from "@/lib/prompts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -121,10 +135,46 @@ export default function EventTypes() {
   });
 
   function handleCopyLink(et: EventType) {
-    const projectSlug = currentProject?.slug ?? projectId;
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
     const url = `${window.location.origin}/${projectSlug}/${et.slug}`;
-    navigator.clipboard.writeText(url);
-    setCopiedId(et.id);
+    copyToClipboard(url);
+    setCopiedId(`link-${et.id}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function handleCopyEmbed(et: EventType) {
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+    const snippet = `<div id="linkycal-booking"></div>\n<script src="https://cdn.linkycal.com/widgets/booking.js"></script>\n<script>LinkyCal.booking({ projectSlug: "${projectSlug}", eventTypeSlug: "${et.slug}", container: "#linkycal-booking" })</script>`;
+    copyToClipboard(snippet);
+    setCopiedId(`embed-${et.id}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function handleCopyApiPrompt(et: EventType) {
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+
+    const textPromise = (async () => {
+      let fullEt = et as EventType & { requiresConfirmation?: boolean; bookingFormId?: string | null };
+      try {
+        const res = await fetch(`/api/projects/${projectId}/event-types/${et.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          fullEt = data.eventType ?? et;
+        }
+      } catch { /* use basic data */ }
+      return generateEventTypeApiPrompt(fullEt, projectSlug, window.location.origin);
+    })();
+
+    copyToClipboardLazy(textPromise);
+    setCopiedId(`api-${et.id}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function handleCopyEmbedPrompt(et: EventType) {
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+    const prompt = generateEventTypeEmbedPrompt(et, projectSlug);
+    copyToClipboard(prompt);
+    setCopiedId(`embedprompt-${et.id}`);
     setTimeout(() => setCopiedId(null), 2000);
   }
 
@@ -207,7 +257,8 @@ export default function EventTypes() {
           {eventTypes.map((et) => (
             <Card
               key={et.id}
-              className={`relative transition-opacity ${!et.enabled ? "opacity-60" : ""}`}
+              className={`relative transition-all cursor-pointer hover:shadow-md ${!et.enabled ? "opacity-60" : ""}`}
+              onClick={() => navigate(`/app/projects/${projectId}/event-types/${et.id}`)}
             >
               <CardContent>
                 {/* Color dot + name */}
@@ -226,6 +277,7 @@ export default function EventTypes() {
                     onCheckedChange={(checked) =>
                       toggleMutation.mutate({ id: et.id, enabled: checked })
                     }
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
@@ -248,46 +300,89 @@ export default function EventTypes() {
                 )}
 
                 {/* Actions */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-8 px-2.5 text-xs"
                     onClick={() => handleCopyLink(et)}
                   >
-                    {copiedId === et.id ? (
+                    {copiedId === `link-${et.id}` ? (
                       <Check className="h-3.5 w-3.5 text-emerald-600" />
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
-                    {copiedId === et.id ? "Copied" : "Copy link"}
+                    {copiedId === `link-${et.id}` ? "Copied" : "Copy link"}
                   </Button>
-                  <div className="flex-1" />
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 px-2.5 text-xs">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Copy prompt
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-72 p-1.5">
+                      <button
+                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
+                        onClick={() => handleCopyApiPrompt(et)}
+                      >
+                        <p className="text-sm font-medium">{copiedId === `api-${et.id}` ? "Copied!" : "Copy API Prompt"}</p>
+                        <p className="text-[11px] text-muted-foreground">Full API documentation for AI assistants</p>
+                      </button>
+                      <button
+                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
+                        onClick={() => handleCopyEmbedPrompt(et)}
+                      >
+                        <p className="text-sm font-medium">{copiedId === `embedprompt-${et.id}` ? "Copied!" : "Copy Embed Prompt"}</p>
+                        <p className="text-[11px] text-muted-foreground">Instructions for embedding on a website</p>
+                      </button>
+                    </PopoverContent>
+                  </Popover>
+
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-8 px-2.5 text-xs"
-                    onClick={() =>
-                      navigate(
-                        `/app/projects/${projectId}/event-types/${et.id}`,
-                      )
-                    }
+                    onClick={() => handleCopyEmbed(et)}
                   >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
+                    {copiedId === `embed-${et.id}` ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    ) : (
+                      <Code className="h-3.5 w-3.5" />
+                    )}
+                    {copiedId === `embed-${et.id}` ? "Copied" : "Embed"}
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
-                    onClick={() => {
-                      setDeletingId(et.id);
-                      setDeleteDialogOpen(true);
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </Button>
+
+                  <div className="flex-1" />
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 px-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-40 p-1.5">
+                      <button
+                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+                        onClick={() => navigate(`/app/projects/${projectId}/event-types/${et.id}`)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                        onClick={() => {
+                          setDeletingId(et.id);
+                          setDeleteDialogOpen(true);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </CardContent>
             </Card>
@@ -321,8 +416,10 @@ export default function EventTypes() {
               onClick={() => deletingId && deleteMutation.mutate(deletingId)}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending && (
+              {deleteMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
               )}
               Delete
             </Button>

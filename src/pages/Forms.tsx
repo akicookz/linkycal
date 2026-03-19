@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
+  Sparkles,
   FileText,
   Copy,
   Pencil,
@@ -11,6 +12,9 @@ import {
   AlertCircle,
   Check,
   BarChart3,
+  ChevronDown,
+  MoreHorizontal,
+  Code,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -20,6 +24,11 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -36,6 +45,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
+import { copyToClipboard, copyToClipboardLazy } from "@/lib/utils";
+import {
+  generateFormApiPrompt,
+  generateFormEmbedPrompt,
+} from "@/lib/prompts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -109,6 +123,17 @@ export default function Forms() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // ─── Queries ─────────────────────────────────────────────────────────────
+
+  const { data: projects } = useQuery<Array<{ id: string; slug: string }>>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects");
+      if (!res.ok) throw new Error("Failed to fetch projects");
+      const data = await res.json();
+      return data.projects ?? [];
+    },
+  });
+  const currentProject = projects?.find((p) => p.id === projectId);
 
   const {
     data: formsData,
@@ -213,10 +238,43 @@ export default function Forms() {
     createMutation.mutate(formData);
   }
 
-  function handleCopyEmbedLink(form: Form) {
-    const embedSnippet = `<script src="${window.location.origin}/embed/form/${form.slug}" data-linkycal-form="${form.slug}"></script>`;
-    navigator.clipboard.writeText(embedSnippet);
-    setCopiedId(form.id);
+  function handleCopyLink(form: Form) {
+    const url = `${window.location.origin}/f/${form.slug}`;
+    copyToClipboard(url);
+    setCopiedId(`link-${form.id}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function handleCopyEmbed(form: Form) {
+    const snippet = `<div id="linkycal-form"></div>\n<script src="https://cdn.linkycal.com/widgets/form.js"></script>\n<script>LinkyCal.form({ formSlug: "${form.slug}", container: "#linkycal-form" })</script>`;
+    copyToClipboard(snippet);
+    setCopiedId(`embed-${form.id}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function handleCopyApiPrompt(form: Form) {
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+    const textPromise = (async () => {
+      let fullForm = form as Form & { steps?: Array<{ title: string | null; description: string | null; fields: Array<{ id: string; label: string; type: string; required: boolean; placeholder: string | null; options: Array<{ label: string; value: string }> | null }> }> };
+      try {
+        const res = await fetch(`/api/projects/${projectId}/forms/${form.id}`);
+        if (res.ok) {
+          const data = await res.json();
+          fullForm = data.form ?? form;
+        }
+      } catch { /* use basic data */ }
+      return generateFormApiPrompt(fullForm, projectSlug, window.location.origin);
+    })();
+
+    copyToClipboardLazy(textPromise);
+    setCopiedId(`api-${form.id}`);
+    setTimeout(() => setCopiedId(null), 2000);
+  }
+
+  function handleCopyEmbedPrompt(form: Form) {
+    const prompt = generateFormEmbedPrompt(form);
+    copyToClipboard(prompt);
+    setCopiedId(`embedprompt-${form.id}`);
     setTimeout(() => setCopiedId(null), 2000);
   }
 
@@ -289,7 +347,8 @@ export default function Forms() {
           {forms.map((form) => (
             <Card
               key={form.id}
-              className={`relative transition-opacity ${form.status === "archived" ? "opacity-60" : ""}`}
+              className={`relative transition-all cursor-pointer hover:shadow-md ${form.status === "archived" ? "opacity-60" : ""}`}
+              onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}`)}
             >
               <CardContent>
                 {/* Name + status toggle */}
@@ -305,6 +364,7 @@ export default function Forms() {
                         status: checked ? "active" : "draft",
                       })
                     }
+                    onClick={(e) => e.stopPropagation()}
                   />
                 </div>
 
@@ -324,52 +384,93 @@ export default function Forms() {
                 </p>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-8 px-2.5 text-xs"
-                    onClick={() => handleCopyEmbedLink(form)}
+                    onClick={() => handleCopyLink(form)}
                   >
-                    {copiedId === form.id ? (
+                    {copiedId === `link-${form.id}` ? (
                       <Check className="h-3.5 w-3.5 text-emerald-600" />
                     ) : (
                       <Copy className="h-3.5 w-3.5" />
                     )}
-                    {copiedId === form.id ? "Copied" : "Embed"}
+                    {copiedId === `link-${form.id}` ? "Copied" : "Copy link"}
                   </Button>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 px-2.5 text-xs">
+                        <Sparkles className="h-3.5 w-3.5" />
+                        Copy prompt
+                        <ChevronDown className="h-3 w-3" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-72 p-1.5">
+                      <button
+                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
+                        onClick={() => handleCopyApiPrompt(form)}
+                      >
+                        <p className="text-sm font-medium">{copiedId === `api-${form.id}` ? "Copied!" : "Copy API Prompt"}</p>
+                        <p className="text-[11px] text-muted-foreground">Full API documentation for AI assistants</p>
+                      </button>
+                      <button
+                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
+                        onClick={() => handleCopyEmbedPrompt(form)}
+                      >
+                        <p className="text-sm font-medium">{copiedId === `embedprompt-${form.id}` ? "Copied!" : "Copy Embed Prompt"}</p>
+                        <p className="text-[11px] text-muted-foreground">Instructions for embedding on a website</p>
+                      </button>
+                    </PopoverContent>
+                  </Popover>
+
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-8 px-2.5 text-xs"
-                    onClick={() =>
-                      navigate(`/app/projects/${projectId}/forms/${form.id}/responses`)
-                    }
+                    onClick={() => handleCopyEmbed(form)}
                   >
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    Responses
+                    {copiedId === `embed-${form.id}` ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
+                    ) : (
+                      <Code className="h-3.5 w-3.5" />
+                    )}
+                    {copiedId === `embed-${form.id}` ? "Copied" : "Embed"}
                   </Button>
+
                   <div className="flex-1" />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() =>
-                      navigate(`/app/projects/${projectId}/forms/${form.id}`)
-                    }
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
-                    onClick={() => openDeleteDialog(form.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </Button>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="ghost" size="sm" className="h-8 w-8 px-0">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-40 p-1.5">
+                      <button
+                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+                        onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}/responses`)}
+                      >
+                        <BarChart3 className="h-3.5 w-3.5" />
+                        Responses
+                      </button>
+                      <button
+                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
+                        onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}`)}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                        Edit
+                      </button>
+                      <button
+                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+                        onClick={() => openDeleteDialog(form.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Delete
+                      </button>
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </CardContent>
             </Card>
@@ -455,8 +556,10 @@ export default function Forms() {
                 Cancel
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
-                {createMutation.isPending && (
+                {createMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
                 )}
                 Create Form
               </Button>
@@ -491,8 +594,10 @@ export default function Forms() {
               onClick={() => deletingId && deleteMutation.mutate(deletingId)}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending && (
+              {deleteMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
               )}
               Delete
             </Button>

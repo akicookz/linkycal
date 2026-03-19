@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
+
 import {
   Dialog,
   DialogContent,
@@ -300,13 +300,14 @@ export default function FormResponses() {
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
+            size="sm"
+            className="h-8 shrink-0"
             onClick={() =>
               navigate(`/app/projects/${projectId}/forms/${formId}`)
             }
           >
             <ArrowLeft className="h-4 w-4" />
+            Back
           </Button>
           <div>
             <h1 className="text-2xl font-semibold text-foreground tracking-tight">
@@ -402,7 +403,7 @@ export default function FormResponses() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b bg-muted/30">
+                <tr className="bg-muted/30">
                   <th className="text-left px-4 py-3 font-medium text-muted-foreground whitespace-nowrap">
                     Respondent
                   </th>
@@ -431,7 +432,7 @@ export default function FormResponses() {
                 {responses.map((response) => (
                   <tr
                     key={response.id}
-                    className="border-b last:border-b-0 hover:bg-muted/20 cursor-pointer transition-colors"
+                    className="hover:bg-muted/20 cursor-pointer transition-colors"
                     onClick={() => setSelectedResponseId(response.id)}
                   >
                     <td className="px-4 py-3 whitespace-nowrap">
@@ -497,8 +498,6 @@ export default function FormResponses() {
                 </span>
               </div>
 
-              <Separator />
-
               {/* Field values */}
               <div className="space-y-3">
                 {allFields.map((field) => {
@@ -548,8 +547,7 @@ export default function FormResponses() {
                 Object.keys(selectedResponse.metadata as Record<string, unknown>).length >
                   0 && (
                   <>
-                    <Separator />
-                    <div>
+                    <div className="pt-4">
                       <p className="text-xs font-medium text-muted-foreground mb-1">
                         Metadata
                       </p>

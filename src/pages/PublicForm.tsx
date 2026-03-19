@@ -76,6 +76,10 @@ export default function PublicForm() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
+  // Spam prevention
+  const [spamField, setSpamField] = useState("");
+  const [formToken] = useState(() => btoa(String(Date.now())));
+
   const {
     data: formData,
     isLoading,
@@ -160,7 +164,7 @@ export default function PublicForm() {
     const res = await fetch(`/api/public/forms/${formSlug}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ website: spamField, _token: formToken }),
     });
     if (!res.ok) throw new Error("Failed to start form response");
     const data = await res.json();
@@ -254,8 +258,8 @@ export default function PublicForm() {
 
   return (
     <PageShell theme={theme}>
-      <div className="space-y-1 mb-6">
-        <h1 className="text-xl font-semibold">{form.name}</h1>
+      <div className="space-y-1 mb-5">
+        <h1 className="text-lg font-semibold">{form.name}</h1>
         {steps.length > 1 && currentStep?.title && (
           <p className="text-sm text-muted-foreground">{currentStep.title}</p>
         )}
@@ -268,7 +272,7 @@ export default function PublicForm() {
 
       {/* Step progress indicator */}
       {steps.length > 1 && (
-        <div className="flex gap-1.5 mb-6">
+        <div className="flex gap-1.5 mb-5">
           {steps.map((_, idx) => (
             <div
               key={idx}
@@ -286,8 +290,21 @@ export default function PublicForm() {
           e.preventDefault();
           submitCurrentStep();
         }}
-        className="space-y-5"
+        className="space-y-4"
       >
+        <div className="sr-only" aria-hidden="true">
+          <label htmlFor="website">Website</label>
+          <input
+            id="website"
+            type="text"
+            name="website"
+            autoComplete="url"
+            tabIndex={-1}
+            value={spamField}
+            onChange={(e) => setSpamField(e.target.value)}
+          />
+        </div>
+
         {currentFields.map((field) => (
           <FieldRenderer
             key={field.id}
@@ -305,7 +322,7 @@ export default function PublicForm() {
           </p>
         )}
 
-        <div className="flex items-center gap-3 pt-2">
+        <div className="flex items-center gap-3 pt-4">
           {!isFirstStep && (
             <Button
               type="button"
@@ -324,14 +341,11 @@ export default function PublicForm() {
             style={theme?.primaryBg ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg } : undefined}
           >
             {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <><Loader2 className="h-4 w-4 animate-spin" /> {isLastStep ? "Submitting..." : "Next"}</>
             ) : isLastStep ? (
-              "Submit"
+              <><CheckCircle2 className="h-4 w-4" /> Submit</>
             ) : (
-              <>
-                Next
-                <ChevronRight className="h-4 w-4" />
-              </>
+              <>Next <ChevronRight className="h-4 w-4" /></>
             )}
           </Button>
         </div>
@@ -358,15 +372,29 @@ function PageShell({ children, theme }: { children: React.ReactNode; theme?: Boo
         } : {}),
       }}
     >
-      <div className="flex-1 flex items-start justify-center px-4 py-12">
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-lg">
           {theme?.bannerImage && (
             <div
-              className="w-full h-36 sm:h-44 rounded-t-[16px] bg-cover bg-center"
+              className="w-full h-36 sm:h-44 rounded-t-[20px] bg-cover bg-center"
               style={{ backgroundImage: `url(${theme.bannerImage})` }}
             />
           )}
-          <div className={theme?.bannerImage ? "rounded-b-[16px] border-x border-b border-border bg-card overflow-hidden" : ""}>
+          <div
+            className={cn(
+              "bg-card p-6 sm:p-8",
+              theme?.bannerImage
+                ? "rounded-b-[20px]"
+                : "rounded-[20px]"
+            )}
+            style={{
+              borderRadius: theme?.borderRadius != null
+                ? theme.bannerImage
+                  ? `0 0 ${theme.borderRadius}px ${theme.borderRadius}px`
+                  : `${theme.borderRadius}px`
+                : undefined,
+            }}
+          >
             {children}
           </div>
         </div>
@@ -412,9 +440,9 @@ function FieldRenderer({
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder ?? undefined}
           required={field.required}
-          rows={4}
+          rows={3}
           className={cn(
-            "flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 resize-y",
+            "flex w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 resize-y",
             error && "border-destructive"
           )}
         />
@@ -425,7 +453,7 @@ function FieldRenderer({
           onChange={(e) => onChange(e.target.value)}
           required={field.required}
           className={cn(
-            "flex h-10 w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
+            "flex h-10 w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
             !value && "text-muted-foreground",
             error && "border-destructive"
           )}

@@ -415,7 +415,7 @@ export default function Availability() {
                   {DAYS.map((day, idx) => (
                     <div
                       key={day}
-                      className="flex items-center gap-4 py-2 border-b last:border-0"
+                      className="flex items-center gap-4 py-2"
                     >
                       <Switch
                         checked={dayConfigs[idx].enabled}
@@ -504,7 +504,7 @@ export default function Availability() {
                   {overrides.map((override) => (
                     <div
                       key={override.id}
-                      className="flex items-center gap-4 py-2 border-b last:border-0"
+                      className="flex items-center gap-4 py-2"
                     >
                       <span className="text-sm font-medium text-foreground min-w-[160px]">
                         {formatOverrideDate(override.date)}
@@ -519,12 +519,17 @@ export default function Availability() {
                       <div className="flex-1" />
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
+                        size="sm"
+                        className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
                         onClick={() => deleteOverrideMutation.mutate(override.id)}
                         disabled={deleteOverrideMutation.isPending}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        {deleteOverrideMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                        Remove
                       </Button>
                     </div>
                   ))}
@@ -611,8 +616,10 @@ export default function Availability() {
                 Cancel
               </Button>
               <Button type="submit" disabled={addOverrideMutation.isPending}>
-                {addOverrideMutation.isPending && (
+                {addOverrideMutation.isPending ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
                 )}
                 Add Override
               </Button>

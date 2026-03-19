@@ -100,6 +100,7 @@ const SVG_ARROW_LEFT = `<svg width="14" height="14" viewBox="0 0 16 16" fill="no
 
 function initBookingWidget(options: BookingWidgetOptions): void {
   const { projectSlug, eventTypeSlug, theme } = options;
+  const widgetLoadedAt = btoa(String(Date.now()));
 
   const root =
     typeof options.container === "string"
@@ -550,8 +551,8 @@ function initBookingWidget(options: BookingWidgetOptions): void {
           timezone: state.timezone,
           name: state.form.name.trim(),
           email: state.form.email.trim(),
-          phone: state.form.phone.trim() || undefined,
           notes: state.form.notes.trim() || undefined,
+          _token: widgetLoadedAt,
         }),
       });
       state.step = "confirmed";

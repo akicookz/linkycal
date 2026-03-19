@@ -8,6 +8,7 @@ import {
   Unplug,
   ExternalLink,
   Trash2,
+  Save,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -296,8 +297,8 @@ export default function Settings() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="divide-y divide-border">
-              <div className="flex items-center justify-between gap-6 py-4 first:pt-0 last:pb-0">
+            <div className="space-y-6">
+              <div className="flex items-center justify-between gap-6">
                 <div className="shrink-0">
                   <p className="text-sm font-medium">Project Name</p>
                   <p className="text-xs text-muted-foreground">Display name for this project.</p>
@@ -322,16 +323,13 @@ export default function Settings() {
                         projectName === project?.name
                       }
                     >
-                      {updateProjectMutation.isPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        "Update"
-                      )}
+                      {updateProjectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Update
                     </Button>
                   </div>
                 )}
               </div>
-              <div className="flex items-center justify-between gap-6 py-4 first:pt-0 last:pb-0">
+              <div className="flex items-center justify-between gap-6">
                 <div className="shrink-0">
                   <p className="text-sm font-medium">Timezone</p>
                   <p className="text-xs text-muted-foreground">Default for bookings and availability.</p>
@@ -471,11 +469,11 @@ export default function Settings() {
             ) : (
               <div className="space-y-3">
                 {calendarConnections && calendarConnections.length > 0 ? (
-                  <div className="divide-y divide-border">
+                  <div className="space-y-2">
                     {calendarConnections.map((conn) => (
                       <div
                         key={conn.id}
-                        className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0"
+                        className="flex items-center gap-3 py-2.5"
                       >
                         <div className="h-7 w-7 rounded-full bg-red-50 flex items-center justify-center shrink-0">
                           <CalendarDays className="h-3.5 w-3.5 text-red-600" />
@@ -491,11 +489,12 @@ export default function Settings() {
                         <Badge variant="success">Connected</Badge>
                         <Button
                           variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-destructive hover:text-destructive shrink-0"
                           onClick={() => openDisconnectDialog(conn.id)}
                         >
-                          <Unplug className="h-3.5 w-3.5" />
+                          <Unplug className="h-3 w-3" />
+                          Disconnect
                         </Button>
                       </div>
                     ))}

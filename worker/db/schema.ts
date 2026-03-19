@@ -71,6 +71,9 @@ export const eventTypes = sqliteTable(
     requiresConfirmation: integer("requires_confirmation", { mode: "boolean" })
       .notNull()
       .default(false),
+    bookingFormId: text("booking_form_id").references(() => forms.id, {
+      onDelete: "set null",
+    }),
     settings: text("settings", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -205,7 +208,6 @@ export const bookings = sqliteTable(
     }),
     name: text("name").notNull(),
     email: text("email").notNull(),
-    phone: text("phone"),
     notes: text("notes"),
     startTime: integer("start_time", { mode: "timestamp" }).notNull(),
     endTime: integer("end_time", { mode: "timestamp" }).notNull(),
@@ -216,6 +218,10 @@ export const bookings = sqliteTable(
       .notNull()
       .default("confirmed"),
     expiresAt: integer("expires_at", { mode: "timestamp" }),
+    formResponseId: text("form_response_id").references(
+      () => formResponses.id,
+      { onDelete: "set null" },
+    ),
     gcalEventId: text("gcal_event_id"),
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
@@ -341,8 +347,7 @@ export const formResponses = sqliteTable(
   {
     id: text("id").primaryKey(),
     formId: text("form_id")
-      .notNull()
-      .references(() => forms.id, { onDelete: "cascade" }),
+      .references(() => forms.id, { onDelete: "set null" }),
     currentStepIndex: integer("current_step_index").notNull().default(0),
     status: text("status", {
       enum: ["in_progress", "completed", "abandoned"],

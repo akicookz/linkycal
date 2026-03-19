@@ -50,7 +50,7 @@ interface FormConfig {
 }
 
 interface StartResponseResult {
-  responseId: string;
+  response: { id: string };
 }
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -604,20 +604,18 @@ function initFormWidget(options: FormWidgetOptions): void {
     btn.style.opacity = "0.7";
 
     try {
-      // Collect values for this step's fields
-      const stepValues: Record<string, any> = {};
-      for (const field of step.fields) {
-        if (state.values[field.id] !== undefined) {
-          stepValues[field.id] = state.values[field.id];
-        }
-      }
+      // Collect values for this step's fields as array (matches server schema)
+      const stepFields = step.fields.map((field) => ({
+        fieldId: field.id,
+        value: state.values[field.id] ?? "",
+      }));
 
       // Submit step data
       await fetchApi(
         `/api/v1/forms/${formSlug}/responses/${state.responseId}/steps/${state.currentStep}`,
         {
           method: "PATCH",
-          body: JSON.stringify({ fields: stepValues }),
+          body: JSON.stringify({ fields: stepFields }),
         },
       );
 
@@ -656,13 +654,15 @@ function initFormWidget(options: FormWidgetOptions): void {
     }
   }
 
+  const widgetLoadedAt = btoa(String(Date.now()));
+
   async function startResponse(): Promise<void> {
     try {
       const result = await fetchApi<StartResponseResult>(
         `/api/v1/forms/${formSlug}/responses?projectSlug=${encodeURIComponent(projectSlug)}`,
-        { method: "POST", body: JSON.stringify({}) },
+        { method: "POST", body: JSON.stringify({ _token: widgetLoadedAt }) },
       );
-      state.responseId = result.responseId;
+      state.responseId = result.response.id;
     } catch (err) {
       // Non-critical: we'll still show the form and retry on submit
       console.warn("[LinkyCal] Failed to start response:", err);

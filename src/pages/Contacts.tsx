@@ -5,7 +5,7 @@ import {
   Plus,
   Users,
   Search,
-  Eye,
+
   Pencil,
   Trash2,
   Tags,
@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,12 +27,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-  TooltipProvider,
-} from "@/components/ui/tooltip";
+
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 
@@ -313,42 +309,11 @@ export default function Contacts() {
 
   // ─── Render helpers ───
 
-  function renderTagBadges(contactTags: ContactTag[]) {
-    const maxShown = 3;
-    const visible = contactTags.slice(0, maxShown);
-    const overflow = contactTags.length - maxShown;
-
-    return (
-      <div className="flex items-center gap-1 flex-wrap">
-        {visible.map((tag) => (
-          <span
-            key={tag.id}
-            className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium border"
-            style={{
-              backgroundColor: tag.color ? `${tag.color}15` : undefined,
-              borderColor: tag.color ?? undefined,
-              color: tag.color ?? undefined,
-            }}
-          >
-            <span
-              className="h-1.5 w-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: tag.color ?? "#94a3b8" }}
-            />
-            {tag.name}
-          </span>
-        ))}
-        {overflow > 0 && (
-          <span className="text-xs text-muted-foreground">+{overflow}</span>
-        )}
-      </div>
-    );
-  }
-
   function renderSkeletonRows() {
     return (
-      <div className="divide-y">
+      <div className="space-y-1 px-6">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="px-6 py-4 flex items-center gap-4">
+          <div key={i} className="py-3 flex items-center gap-4">
             <Skeleton className="h-9 w-9 rounded-full shrink-0" />
             <div className="flex-1 space-y-2">
               <Skeleton className="h-4 w-32" />
@@ -406,113 +371,83 @@ export default function Contacts() {
     if (contacts.length === 0) return renderEmptyState();
 
     return (
-      <div>
-        {/* Header */}
-        <div className="px-6 py-3 border-b hidden sm:block">
-          <div className="grid grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)_100px_96px] gap-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            <span>Contact</span>
-            <span>Phone</span>
-            <span>Tags</span>
-            <span>Created</span>
-            <span />
-          </div>
-        </div>
+      <div className="space-y-1 px-6">
+        {contacts.map((contact) => (
+          <div key={contact.id}>
+            <div className="flex items-center gap-4 py-3">
+              {/* Avatar */}
+              <div
+                className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0 cursor-pointer"
+                style={{ backgroundColor: getAvatarColor(contact.name) }}
+                onClick={() => navigateToContact(contact.id)}
+              >
+                {getInitial(contact.name)}
+              </div>
 
-        {/* Rows */}
-        <div className="divide-y">
-          {contacts.map((contact) => (
-            <div
-              key={contact.id}
-              className="px-6 py-4 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_120px_minmax(0,1fr)_100px_96px] gap-2 sm:gap-4 items-center hover:bg-muted/30 transition-colors"
-            >
-              {/* Contact */}
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className="h-9 w-9 rounded-full flex items-center justify-center text-white text-sm font-medium shrink-0"
-                  style={{ backgroundColor: getAvatarColor(contact.name) }}
-                >
-                  {getInitial(contact.name)}
-                </div>
-                <div className="min-w-0">
+              {/* Info */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">
                   <button
                     type="button"
-                    className="text-sm font-medium text-foreground truncate block hover:underline text-left"
+                    className="hover:underline text-left"
                     onClick={() => navigateToContact(contact.id)}
                   >
                     {contact.name}
                   </button>
                   {contact.email && (
-                    <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
+                    <span className="font-normal text-muted-foreground ml-1.5 text-xs">{contact.email}</span>
                   )}
-                </div>
-              </div>
-
-              {/* Phone */}
-              <div className="text-sm text-muted-foreground truncate hidden sm:block">
-                {contact.phone ?? "—"}
-              </div>
-
-              {/* Tags */}
-              <div className="hidden sm:block">
-                {contact.tags.length > 0 ? renderTagBadges(contact.tags) : (
-                  <span className="text-xs text-muted-foreground">—</span>
-                )}
-              </div>
-
-              {/* Created */}
-              <div className="text-xs text-muted-foreground hidden sm:block">
-                {formatDate(contact.createdAt)}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {contact.phone ? `${contact.phone} · ` : ""}
+                  Added {formatDate(contact.createdAt)}
+                  {contact.tags.length > 0 && (
+                    <span className="ml-2 inline-flex gap-1">
+                      {contact.tags.slice(0, 3).map((tag) => (
+                        <span
+                          key={tag.id}
+                          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          style={{
+                            backgroundColor: `${tag.color ?? "#6366f1"}15`,
+                            color: tag.color ?? "#6366f1",
+                          }}
+                        >
+                          {tag.name}
+                        </span>
+                      ))}
+                      {contact.tags.length > 3 && (
+                        <span className="text-[10px] text-muted-foreground">+{contact.tags.length - 3}</span>
+                      )}
+                    </span>
+                  )}
+                </p>
               </div>
 
               {/* Actions */}
-              <div className="flex items-center justify-end gap-1">
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => navigateToContact(contact.id)}
-                      >
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>View details</TooltipContent>
-                  </Tooltip>
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8"
-                        onClick={() => openEditDialog(contact)}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Edit</TooltipContent>
-                  </Tooltip>
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive hover:text-destructive"
-                        onClick={() => openDeleteDialog(contact)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>Delete</TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                  onClick={() => openEditDialog(contact)}
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs text-destructive hover:text-destructive"
+                  onClick={() => openDeleteDialog(contact)}
+                >
+                  <Trash2 className="h-3 w-3" />
+                  Delete
+                </Button>
               </div>
             </div>
-          ))}
-        </div>
+
+          </div>
+        ))}
       </div>
     );
   }
@@ -650,11 +585,11 @@ export default function Contacts() {
       )}
 
       {/* Contact list */}
-      <div className="rounded-[20px] border overflow-hidden">
+      <Card>
         {loadingContacts && renderSkeletonRows()}
         {errorContacts && !loadingContacts && renderErrorState()}
         {!loadingContacts && !errorContacts && renderTable()}
-      </div>
+      </Card>
 
       {/* ─── Create Contact Dialog ─── */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -814,19 +749,20 @@ export default function Contacts() {
                 </div>
                 <Button
                   variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
+                  size="sm"
+                  className="h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
                   onClick={() => deleteTagMutation.mutate(tag.id)}
                   disabled={deleteTagMutation.isPending}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  {deleteTagMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                  Delete
                 </Button>
               </div>
             ))}
           </div>
 
           {/* Create new tag */}
-          <form onSubmit={handleCreateTag} className="border-t pt-4">
+          <form onSubmit={handleCreateTag} className="mt-4 pt-4">
             <p className="text-sm font-medium mb-3">Create new tag</p>
             <div className="flex items-end gap-3">
               <div className="flex-1 space-y-2">

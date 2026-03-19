@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { X, Loader2, ImageIcon } from "lucide-react";
+import { X, Loader2, ImageIcon, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -99,6 +99,7 @@ export function ImageUpload({
                 className="h-7 text-xs"
                 onClick={() => inputRef.current?.click()}
               >
+                <ImagePlus className="h-3 w-3" />
                 Replace
               </Button>
               <Button

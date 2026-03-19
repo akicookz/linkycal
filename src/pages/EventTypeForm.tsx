@@ -53,6 +53,7 @@ interface EventType {
   maxPerDay: number | null;
   enabled: boolean;
   requiresConfirmation: boolean;
+  bookingFormId: string | null;
   scheduleId: string | null;
 }
 
@@ -94,6 +95,7 @@ interface EventTypeFormData {
   bufferBefore: number;
   bufferAfter: number;
   requiresConfirmation: boolean;
+  bookingFormId: string | null;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ const defaultFormData: EventTypeFormData = {
   bufferBefore: 0,
   bufferAfter: 0,
   requiresConfirmation: false,
+  bookingFormId: null as string | null,
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -225,6 +228,18 @@ export default function EventTypeForm() {
     enabled: !!eventTypeId,
   });
 
+  // Fetch project forms for booking form picker
+  const { data: projectForms } = useQuery<Array<{ id: string; name: string; type: string; status: string }>>({
+    queryKey: ["projects", projectId, "forms"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/forms`);
+      if (!res.ok) throw new Error("Failed to fetch forms");
+      const data = await res.json();
+      return (data.forms ?? []).filter((f: { status: string }) => f.status === "active");
+    },
+    enabled: !!projectId,
+  });
+
   // Fetch connected calendar accounts
   const { data: calendarAccounts } = useQuery<{
     accounts: Array<{
@@ -276,6 +291,7 @@ export default function EventTypeForm() {
       bufferBefore: et.bufferBefore,
       bufferAfter: et.bufferAfter,
       requiresConfirmation: et.requiresConfirmation ?? false,
+      bookingFormId: et.bookingFormId ?? null,
     });
     setSlugManuallyEdited(true);
 
@@ -693,8 +709,7 @@ export default function EventTypeForm() {
             onClick={handleSubmit}
             disabled={isSaving || !formData.name || !formData.slug}
           >
-            {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-            <Save className="h-4 w-4" />
+            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {isEditing ? "Save Changes" : "Create Event Type"}
           </Button>
         </div>
@@ -854,6 +869,37 @@ export default function EventTypeForm() {
                     setFormData((prev) => ({ ...prev, requiresConfirmation: checked }))
                   }
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Booking Form</Label>
+                <Select
+                  value={formData.bookingFormId ?? "none"}
+                  onValueChange={(val) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      bookingFormId: val === "none" ? null : val,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="No custom form" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No custom form</SelectItem>
+                    {projectForms?.map((form) => (
+                      <SelectItem key={form.id} value={form.id}>
+                        {form.name}
+                        <span className="text-muted-foreground ml-1">
+                          ({form.type === "multi_step" ? "Multi-step" : "Single"})
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Attach a form to collect additional information during booking.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -1151,14 +1197,15 @@ export default function EventTypeForm() {
                         <Button
                           type="button"
                           variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-destructive hover:text-destructive"
+                          size="sm"
+                          className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                           onClick={() =>
                             deleteOverrideMutation.mutate(override.id)
                           }
                           disabled={deleteOverrideMutation.isPending}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          {deleteOverrideMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                          Remove
                         </Button>
                       </div>
                     ))}

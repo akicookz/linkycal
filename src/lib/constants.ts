@@ -151,3 +151,33 @@ export const plans: PlanDefinition[] = [
     limits: [],
   },
 ];
+
+// ─── Form Field Defaults ──────────────────────────────────────────────────────
+
+export const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
+  text: "Start typing...",
+  textarea: "Start typing...",
+  email: "name@example.com",
+  phone: "+1 (555) 000-0000",
+  number: "0",
+  date: "Select a date",
+  time: "Select a time",
+  select: "Select an option",
+  multi_select: "Select options",
+  radio: null,
+  checkbox: null,
+  rating: null,
+  file: "Choose a file",
+};
+
+export function normalizeToFieldId(label: string): string {
+  return (
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 50) || "field"
+  );
+}

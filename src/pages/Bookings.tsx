@@ -8,10 +8,13 @@ import {
   Loader2,
   AlertCircle,
   Clock,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -32,13 +35,13 @@ interface Booking {
   contactId: string | null;
   name: string;
   email: string;
-  phone: string | null;
   notes: string | null;
   startTime: string;
   endTime: string;
   timezone: string;
   status: "confirmed" | "cancelled" | "rescheduled" | "pending" | "declined";
   expiresAt: string | null;
+  formResponseId: string | null;
   createdAt: string;
 }
 
@@ -114,6 +117,9 @@ export default function Bookings() {
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   const [decliningId, setDecliningId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(initialTab);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [formResponseCache, setFormResponseCache] = useState<Record<string, Array<{ label: string; type: string; value: string }>>>({});
+  const [loadingFormResponse, setLoadingFormResponse] = useState<string | null>(null);
 
   // Fetch bookings
   const {
@@ -239,6 +245,30 @@ export default function Bookings() {
     setCancelDialogOpen(true);
   }
 
+  async function toggleExpand(bookingId: string) {
+    if (expandedBookingId === bookingId) {
+      setExpandedBookingId(null);
+      return;
+    }
+    setExpandedBookingId(bookingId);
+
+    // Fetch form response if not cached
+    if (!formResponseCache[bookingId]) {
+      setLoadingFormResponse(bookingId);
+      try {
+        const res = await fetch(`/api/projects/${projectId}/bookings/${bookingId}/form-response`);
+        if (res.ok) {
+          const data = await res.json();
+          setFormResponseCache((prev) => ({ ...prev, [bookingId]: data.fields ?? [] }));
+        }
+      } catch {
+        // silently fail
+      } finally {
+        setLoadingFormResponse(null);
+      }
+    }
+  }
+
   function openDeclineDialog(id: string) {
     setDecliningId(id);
     setDeclineDialogOpen(true);
@@ -268,47 +298,24 @@ export default function Bookings() {
     if (filteredBookings.length === 0) return renderEmptyState();
 
     return (
-      <div>
-        {/* Header */}
-        <div className="px-6 py-3 border-b hidden sm:block">
-          <div className="grid grid-cols-[1fr_1fr_1fr_100px_140px] gap-4 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            <span>Guest</span>
-            <span>Event Type</span>
-            <span>Date & Time</span>
-            <span>Status</span>
-            <span />
-          </div>
-        </div>
-
-        {/* Rows */}
-        <div className="divide-y">
+      <div className="space-y-1 px-6">
           {filteredBookings.map((booking) => (
-            <div
-              key={booking.id}
-              className="px-6 py-4 grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_100px_140px] gap-2 sm:gap-4 items-center"
-            >
-              {/* Guest */}
-              <div className="min-w-0">
+          <div key={booking.id}>
+            <div className="flex items-center gap-4 py-3">
+              {/* Avatar */}
+              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
+                {booking.name.charAt(0).toUpperCase()}
+              </div>
+
+              {/* Info */}
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
                   {booking.name}
+                  <span className="font-normal text-muted-foreground ml-1.5 text-xs">{booking.email}</span>
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {booking.email}
-                </p>
-              </div>
-
-              {/* Event Type */}
-              <div className="text-sm text-muted-foreground truncate">
-                {eventTypeMap.get(booking.eventTypeId) ?? "—"}
-              </div>
-
-              {/* Date & Time */}
-              <div className="min-w-0">
-                <p className="text-sm text-foreground">
-                  {formatDate(booking.startTime)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {formatTime(booking.startTime)} – {formatTime(booking.endTime)}
+                  {eventTypeMap.get(booking.eventTypeId) ?? "Event"} &middot;{" "}
+                  {formatDate(booking.startTime)}, {formatTime(booking.startTime)} – {formatTime(booking.endTime)}
                 </p>
                 {booking.status === "pending" && booking.expiresAt && (
                   <p className="text-[11px] text-amber-600 flex items-center gap-1 mt-0.5">
@@ -318,15 +325,28 @@ export default function Bookings() {
                 )}
               </div>
 
-              {/* Status */}
-              <div>
+              {/* Status + Actions */}
+              <div className="flex items-center gap-2 shrink-0">
                 <Badge variant={statusVariant(booking.status)}>
                   {booking.status}
                 </Badge>
-              </div>
 
-              {/* Actions */}
-              <div className="flex justify-end gap-1">
+                {booking.formResponseId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => toggleExpand(booking.id)}
+                  >
+                    {expandedBookingId === booking.id ? (
+                      <ChevronUp className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    )}
+                    Details
+                  </Button>
+                )}
+
                 {booking.status === "pending" && (
                   <>
                     <Button
@@ -354,6 +374,7 @@ export default function Bookings() {
                     </Button>
                   </>
                 )}
+
                 {booking.status === "confirmed" && (
                   <Button
                     variant="ghost"
@@ -367,8 +388,32 @@ export default function Bookings() {
                 )}
               </div>
             </div>
-          ))}
-        </div>
+
+            {/* Expanded form response */}
+            {expandedBookingId === booking.id && (
+              <div className="pl-14 pb-3">
+                {loadingFormResponse === booking.id ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Loading form data...
+                  </div>
+                ) : formResponseCache[booking.id]?.length ? (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 bg-muted/30 rounded-[12px] px-4 py-3">
+                    {formResponseCache[booking.id].map((field, i) => (
+                      <div key={i} className="min-w-0">
+                        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">{field.label}</p>
+                        <p className="text-sm text-foreground truncate">{field.value || "—"}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-2">No form data available.</p>
+                )}
+              </div>
+            )}
+
+          </div>
+        ))}
       </div>
     );
   }
@@ -394,12 +439,12 @@ export default function Bookings() {
         </TabsList>
       </Tabs>
 
-      <div className="rounded-[20px] border overflow-hidden">
+      <Card>
         {/* Loading */}
         {loadingBookings && (
-          <div className="divide-y">
+          <div className="space-y-1 px-6">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="px-6 py-4 flex items-center gap-4">
+              <div key={i} className="py-3 flex items-center gap-4">
                 <div className="flex-1 space-y-2">
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-3 w-48" />
@@ -427,7 +472,7 @@ export default function Bookings() {
 
         {/* Content */}
         {!loadingBookings && !errorBookings && renderTable()}
-      </div>
+      </Card>
 
       {/* Cancel Confirmation Dialog */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>

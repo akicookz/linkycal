@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   XCircle,
   RotateCw,
+  RefreshCw,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,6 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -425,11 +425,12 @@ export default function WorkflowBuilder() {
         <div className="flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0"
+            size="sm"
+            className="h-8 px-2.5 shrink-0"
             onClick={() => navigate(`/app/projects/${projectId}/workflows`)}
           >
             <ArrowLeft className="h-4 w-4" />
+            Back
           </Button>
           <div className="min-w-0">
             <Input
@@ -534,19 +535,21 @@ export default function WorkflowBuilder() {
                         <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs"
                             onClick={() => openEditStepDialog(step)}
                           >
                             <Settings2 className="h-3.5 w-3.5" />
+                            Edit
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 text-destructive hover:text-destructive"
+                            size="sm"
+                            className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
                             onClick={() => setDeleteStepId(step.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
+                            Delete
                           </Button>
                         </div>
                       </CardContent>
@@ -713,12 +716,13 @@ export default function WorkflowBuilder() {
                         setStepConfig({});
                       }}
                     >
+                      <RefreshCw className="h-3 w-3" />
                       Change type
                     </Button>
                   )}
                 </div>
 
-                <Separator />
+                <div className="pt-2" />
 
                 <StepConfigForm
                   type={selectedStepType}
@@ -749,8 +753,12 @@ export default function WorkflowBuilder() {
                   type="submit"
                   disabled={addStepMutation.isPending || updateStepMutation.isPending}
                 >
-                  {(addStepMutation.isPending || updateStepMutation.isPending) && (
+                  {(addStepMutation.isPending || updateStepMutation.isPending) ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : editingStepId ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
                   )}
                   {editingStepId ? "Save Changes" : "Add Step"}
                 </Button>
@@ -782,8 +790,10 @@ export default function WorkflowBuilder() {
               onClick={() => deleteStepId && deleteStepMutation.mutate(deleteStepId)}
               disabled={deleteStepMutation.isPending}
             >
-              {deleteStepMutation.isPending && (
+              {deleteStepMutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
               )}
               Delete
             </Button>

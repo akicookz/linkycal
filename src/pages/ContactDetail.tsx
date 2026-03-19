@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
@@ -325,7 +325,7 @@ export default function ContactDetailPage() {
                     <Skeleton className="h-4 w-56" />
                   </div>
                 </div>
-                <Separator />
+                <div className="pt-4" />
                 <Skeleton className="h-4 w-64" />
                 <Skeleton className="h-4 w-48" />
                 <Skeleton className="h-4 w-80" />
@@ -455,8 +455,6 @@ export default function ContactDetailPage() {
                   )}
                 </div>
               </div>
-
-              <Separator />
 
               {/* Details */}
               <div className="space-y-3">

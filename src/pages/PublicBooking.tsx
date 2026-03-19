@@ -10,7 +10,11 @@ import {
   Loader2,
   AlertCircle,
   Globe,
+  ArrowRight,
+  CalendarCheck as CalendarCheckIcon,
+  CalendarPlus,
 } from "lucide-react";
+import { FormFieldRenderer, type FormFieldData } from "@/components/FormFieldRenderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -147,11 +151,16 @@ export default function PublicBooking() {
 
   const [guestName, setGuestName] = useState("");
   const [guestEmail, setGuestEmail] = useState("");
-  const [guestPhone, setGuestPhone] = useState("");
   const [guestNotes, setGuestNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingStatus, setBookingStatus] = useState<"confirmed" | "pending">("confirmed");
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [formFieldErrors, setFormFieldErrors] = useState<Record<string, string>>({});
+
+  // Spam prevention
+  const [spamField, setSpamField] = useState("");
+  const [formToken] = useState(() => btoa(String(Date.now())));
 
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const gmtOffset = useMemo(() => getGmtOffset(timezone), [timezone]);
@@ -162,6 +171,18 @@ export default function PublicBooking() {
   const { data, isLoading, isError } = useQuery<{
     project: ProjectInfo;
     eventType: EventType;
+    bookingForm: {
+      id: string;
+      name: string;
+      type: string;
+      steps: Array<{
+        id: string;
+        sortOrder: number;
+        title: string | null;
+        description: string | null;
+        fields: FormFieldData[];
+      }>;
+    } | null;
   }>({
     queryKey: ["public-event-type", projectSlug, eventSlug],
     queryFn: async () => {
@@ -175,6 +196,15 @@ export default function PublicBooking() {
   const eventType = data?.eventType;
   const project = data?.project;
   const theme = project?.settings?.theme;
+  const bookingForm = data?.bookingForm;
+
+  // Dynamic step calculation:
+  // Step 1: date/time, Step 2: name/email/notes
+  // Step 3..N: custom form steps (if any)
+  // Step N+1: confirmed/pending
+  const formSteps = bookingForm?.steps ?? [];
+  const totalSteps = 2 + formSteps.length + 1; // date + details + form steps + confirmation
+  const confirmationStep = totalSteps;
 
   // ─── Apply theme ───────────────────────────────────────────────────────
 
@@ -262,23 +292,53 @@ export default function PublicBooking() {
     setSelectedSlot(null);
   }
 
+  function validateFormStep(stepIndex: number): boolean {
+    const formStepIndex = stepIndex - 3; // step 3 = form step 0
+    const formStep = formSteps[formStepIndex];
+    if (!formStep) return true;
+
+    const errors: Record<string, string> = {};
+    for (const field of formStep.fields) {
+      if (field.required && !formValues[field.id]?.trim()) {
+        errors[field.id] = "This field is required";
+      }
+      if (
+        field.type === "email" &&
+        formValues[field.id]?.trim() &&
+        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formValues[field.id])
+      ) {
+        errors[field.id] = "Please enter a valid email";
+      }
+    }
+    setFormFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  }
+
   async function handleBook() {
     if (!selectedSlot || !guestName || !guestEmail || !eventSlug || !projectSlug) return;
     setSubmitting(true);
     setBookingError(null);
 
     try {
+      const payload: Record<string, unknown> = {
+        projectSlug, eventTypeSlug: eventSlug,
+        startTime: selectedSlot.start,
+        name: guestName, email: guestEmail,
+        notes: guestNotes || undefined,
+        timezone,
+        website: spamField,
+        _token: formToken,
+      };
+
+      // Include form field values if a booking form is attached
+      if (bookingForm && Object.keys(formValues).length > 0) {
+        payload.formFields = formValues;
+      }
+
       const res = await fetch("/api/v1/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectSlug, eventTypeSlug: eventSlug,
-          startTime: selectedSlot.start,
-          name: guestName, email: guestEmail,
-          phone: guestPhone || undefined,
-          notes: guestNotes || undefined,
-          timezone,
-        }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -286,7 +346,7 @@ export default function PublicBooking() {
       }
       const result = await res.json().catch(() => ({})) as { booking?: { status?: string } };
       setBookingStatus(result.booking?.status === "pending" ? "pending" : "confirmed");
-      setStep(3);
+      setStep(confirmationStep);
     } catch (err) {
       setBookingError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
@@ -298,7 +358,8 @@ export default function PublicBooking() {
     setStep(1);
     setSelectedDate(null);
     setSelectedSlot(null);
-    setGuestName(""); setGuestEmail(""); setGuestPhone(""); setGuestNotes("");
+    setGuestName(""); setGuestEmail(""); setGuestNotes("");
+    setFormValues({}); setFormFieldErrors({});
     setBookingError(null);
   }
 
@@ -325,7 +386,7 @@ export default function PublicBooking() {
           <p className="text-sm text-muted-foreground">
             This booking link may be invalid or the event type has been disabled.
           </p>
-          <Button variant="outline" asChild><Link to="/">Go to LinkyCal</Link></Button>
+          <Button variant="outline" asChild><Link to="/"><ArrowRight className="h-4 w-4" />Go to LinkyCal</Link></Button>
         </div>
       </div>
     );
@@ -549,6 +610,7 @@ export default function PublicBooking() {
                   style={primaryStyle}
                 >
                   Next
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -569,6 +631,19 @@ export default function PublicBooking() {
               )}
 
               <div className="space-y-4">
+                <div className="sr-only" aria-hidden="true">
+                  <label htmlFor="website">Website</label>
+                  <input
+                    id="website"
+                    type="text"
+                    name="website"
+                    autoComplete="url"
+                    tabIndex={-1}
+                    value={spamField}
+                    onChange={(e) => setSpamField(e.target.value)}
+                  />
+                </div>
+
                 <div>
                   <Label htmlFor="name">Name *</Label>
                   <Input id="name" value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Your full name" />
@@ -578,21 +653,17 @@ export default function PublicBooking() {
                   <Input id="email" type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="you@example.com" />
                 </div>
                 <div>
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" type="tel" value={guestPhone} onChange={(e) => setGuestPhone(e.target.value)} placeholder="+1 (555) 000-0000" />
-                </div>
-                <div>
                   <Label htmlFor="notes">Notes</Label>
                   <textarea
                     id="notes"
                     value={guestNotes}
                     onChange={(e) => setGuestNotes(e.target.value)}
                     placeholder="Anything you'd like us to know"
-                    className="w-full min-h-[80px] rounded-[12px] border border-input bg-white px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none resize-vertical"
+                    className="w-full min-h-[80px] rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none resize-vertical"
                   />
                 </div>
 
-                {bookingError && (
+                {bookingError && !formSteps.length && (
                   <p className="text-sm text-destructive">{bookingError}</p>
                 )}
               </div>
@@ -605,24 +676,122 @@ export default function PublicBooking() {
                 >
                   Back
                 </button>
-                <Button
-                  disabled={!guestName || !guestEmail || submitting}
-                  onClick={handleBook}
-                  className="px-10"
-                  style={primaryStyle}
-                >
-                  {submitting ? (
-                    <><Loader2 className="h-4 w-4 animate-spin" /> Booking...</>
-                  ) : (
-                    "Confirm Booking"
-                  )}
-                </Button>
+                {formSteps.length > 0 ? (
+                  <Button
+                    disabled={!guestName || !guestEmail}
+                    onClick={() => setStep(3)}
+                    className="px-10"
+                    style={primaryStyle}
+                  >
+                    Next
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    disabled={!guestName || !guestEmail || submitting}
+                    onClick={handleBook}
+                    className="px-10"
+                    style={primaryStyle}
+                  >
+                    {submitting ? (
+                      <><Loader2 className="h-4 w-4 animate-spin" /> Booking...</>
+                    ) : (
+                      <><CalendarCheckIcon className="h-4 w-4" /> Confirm Booking</>
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           )}
 
-          {/* ─── Step 3: Success ─── */}
-          {step === 3 && (
+          {/* ─── Step 3+: Custom Form Steps ─── */}
+          {step >= 3 && step < confirmationStep && formSteps.length > 0 && (() => {
+            const formStepIndex = step - 3;
+            const formStep = formSteps[formStepIndex];
+            if (!formStep) return null;
+            const isLastFormStep = formStepIndex === formSteps.length - 1;
+
+            return (
+              <div>
+                {formStep.title && (
+                  <h2 className="text-base font-semibold mb-1">{formStep.title}</h2>
+                )}
+                {formStep.description && (
+                  <p className="text-[13px] text-muted-foreground mb-5">
+                    {formStep.description}
+                  </p>
+                )}
+
+                <div className="space-y-4">
+                  {formStep.fields
+                    .sort((a, b) => (a as unknown as { sortOrder: number }).sortOrder - (b as unknown as { sortOrder: number }).sortOrder)
+                    .map((field) => (
+                      <FormFieldRenderer
+                        key={field.id}
+                        field={field}
+                        value={formValues[field.id] ?? ""}
+                        onChange={(val) => {
+                          setFormValues((prev) => ({ ...prev, [field.id]: val }));
+                          setFormFieldErrors((prev) => {
+                            const next = { ...prev };
+                            delete next[field.id];
+                            return next;
+                          });
+                        }}
+                        error={formFieldErrors[field.id]}
+                      />
+                    ))}
+
+                  {bookingError && isLastFormStep && (
+                    <p className="text-sm text-destructive">{bookingError}</p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-between mt-6">
+                  <button
+                    onClick={() => setStep(step - 1)}
+                    className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    Back
+                  </button>
+                  {isLastFormStep ? (
+                    <Button
+                      disabled={submitting}
+                      onClick={() => {
+                        if (validateFormStep(step)) {
+                          handleBook();
+                        }
+                      }}
+                      className="px-10"
+                      style={primaryStyle}
+                    >
+                      {submitting ? (
+                        <><Loader2 className="h-4 w-4 animate-spin" /> Booking...</>
+                      ) : (
+                        <><CalendarCheckIcon className="h-4 w-4" /> Confirm Booking</>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      onClick={() => {
+                        if (validateFormStep(step)) {
+                          setStep(step + 1);
+                        }
+                      }}
+                      className="px-10"
+                      style={primaryStyle}
+                    >
+                      Next
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ─── Confirmation Step ─── */}
+          {step === confirmationStep && (
             <div className="text-center py-8">
               {bookingStatus === "pending" ? (
                 <>
@@ -670,6 +839,7 @@ export default function PublicBooking() {
               </p>
 
               <Button variant="outline" size="sm" onClick={handleBookAnother}>
+                <CalendarPlus className="h-4 w-4" />
                 Book another time
               </Button>
             </div>

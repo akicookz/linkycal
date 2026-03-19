@@ -27,7 +27,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Separator } from "@/components/ui/separator";
+
 import { MobileSidebarContext } from "@/lib/mobile-sidebar";
 
 interface Project {
@@ -222,7 +222,7 @@ function Layout() {
                     </button>
                   ))}
                 </div>
-                <Separator className="my-1" />
+                <div className="pt-1" />
                 <Link
                   to="/app/new-project"
                   onClick={() => setSelectorOpen(false)}
@@ -295,7 +295,7 @@ function Layout() {
                 <CreditCard className="w-4 h-4 shrink-0" />
                 Billing
               </Link>
-              <Separator className="my-1" />
+              <div className="pt-1" />
               <button
                 onClick={handleSignOut}
                 className="w-full flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"

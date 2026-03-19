@@ -2,6 +2,36 @@ import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 
+// ─── Field Helpers ───────────────────────────────────────────────────────────
+
+const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
+  text: "Start typing...",
+  textarea: "Start typing...",
+  email: "name@example.com",
+  phone: "+1 (555) 000-0000",
+  number: "0",
+  date: "Select a date",
+  time: "Select a time",
+  select: "Select an option",
+  multi_select: "Select options",
+  radio: null,
+  checkbox: null,
+  rating: null,
+  file: "Choose a file",
+};
+
+function normalizeToFieldId(label: string): string {
+  return (
+    label
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, "")
+      .replace(/\s+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 50) || "field"
+  );
+}
+
 // ─── Form Service ────────────────────────────────────────────────────────────
 
 export class FormService {
@@ -217,6 +247,15 @@ export class FormService {
 
   // ─── Fields CRUD ─────────────────────────────────────────────────────────
 
+  async reorderFields(_stepId: string, fieldIds: string[]) {
+    for (let i = 0; i < fieldIds.length; i++) {
+      await this.db
+        .update(dbSchema.formFields)
+        .set({ sortOrder: i })
+        .where(eq(dbSchema.formFields.id, fieldIds[i]));
+    }
+  }
+
   async listFields(formId: string) {
     const steps = await this.listSteps(formId);
     if (steps.length === 0) return [];
@@ -259,7 +298,26 @@ export class FormService {
     validation?: Record<string, unknown>;
     options?: Array<{ label: string; value: string }>;
   }) {
-    const id = crypto.randomUUID();
+    // Generate ID from normalized label
+    const baseId = normalizeToFieldId(data.label);
+
+    // Get the form ID from the step to check for duplicate IDs across the whole form
+    const [step] = await this.db
+      .select()
+      .from(dbSchema.formSteps)
+      .where(eq(dbSchema.formSteps.id, data.stepId))
+      .limit(1);
+
+    let id = baseId;
+    if (step) {
+      const existingFields = await this.listFields(step.formId);
+      const existingIds = new Set(existingFields.map((f) => f.id));
+      let counter = 2;
+      while (existingIds.has(id)) {
+        id = `${baseId}_${counter}`;
+        counter++;
+      }
+    }
 
     let sortOrder = data.sortOrder ?? 0;
     if (data.sortOrder === undefined) {
@@ -267,13 +325,17 @@ export class FormService {
       sortOrder = fields.length;
     }
 
+    // Auto-populate placeholder from field type if not provided
+    const placeholder =
+      data.placeholder ?? FIELD_TYPE_PLACEHOLDERS[data.type] ?? null;
+
     await this.db.insert(dbSchema.formFields).values({
       id,
       stepId: data.stepId,
       sortOrder,
       type: data.type as any,
       label: data.label,
-      placeholder: data.placeholder ?? null,
+      placeholder,
       required: data.required ?? false,
       validation: data.validation ? JSON.stringify(data.validation) : null,
       options: data.options ? JSON.stringify(data.options) : null,
@@ -296,7 +358,13 @@ export class FormService {
   ) {
     const values: Record<string, unknown> = {};
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
-    if (data.type !== undefined) values.type = data.type;
+    if (data.type !== undefined) {
+      values.type = data.type;
+      // Auto-update placeholder when type changes (unless placeholder is explicitly provided)
+      if (data.placeholder === undefined) {
+        values.placeholder = FIELD_TYPE_PLACEHOLDERS[data.type] ?? null;
+      }
+    }
     if (data.label !== undefined) values.label = data.label;
     if (data.placeholder !== undefined) values.placeholder = data.placeholder;
     if (data.required !== undefined) values.required = data.required;
@@ -379,6 +447,7 @@ export class FormService {
     const response = await this.getResponseById(responseId);
     if (!response) return null;
 
+    if (!response.formId) return null;
     const steps = await this.listSteps(response.formId);
     const nextStepIndex = stepIndex + 1;
     const isComplete = nextStepIndex >= steps.length;

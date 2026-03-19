@@ -31,6 +31,7 @@ import {
   createApiKeySchema,
   checkAvailabilitySchema,
   updateEventTypeCalendarsSchema,
+  reorderFieldsSchema,
   validate,
 } from "./validation";
 
@@ -116,6 +117,35 @@ function cleanupRateLimits() {
       }
     }
   }
+}
+
+// ─── Spam Prevention ─────────────────────────────────────────────────────────
+
+const MIN_SUBMISSION_TIME_MS = 2000; // 2 seconds
+
+/**
+ * Checks for spam signals in a request body.
+ * - Honeypot: "website" field — bots eagerly fill it, humans never see it
+ * - Time check: "_token" field contains base64-encoded load timestamp
+ * Returns true if the request is spam (should be silently rejected).
+ */
+function isSpam(body: Record<string, unknown>): boolean {
+  // Honeypot — named "website" to look like a real field bots auto-fill
+  if (body.website && String(body.website).trim() !== "") {
+    return true;
+  }
+
+  // Time-based check — "_token" is a base64-encoded timestamp
+  if (body._token) {
+    try {
+      const loadedAt = Number(atob(String(body._token)));
+      if (!isNaN(loadedAt) && Date.now() - loadedAt < MIN_SUBMISSION_TIME_MS) {
+        return true;
+      }
+    } catch { /* invalid token, skip check */ }
+  }
+
+  return false;
 }
 
 // ─── App ─────────────────────────────────────────────────────────────────────
@@ -278,6 +308,12 @@ app.post("/api/v1/bookings", async (c) => {
 
   try {
     const body = await c.req.json();
+
+    // Spam prevention — return fake success to fool bots
+    if (isSpam(body as Record<string, unknown>)) {
+      return c.json({ booking: { id: crypto.randomUUID(), status: "confirmed" } }, 201);
+    }
+
     const data = validate(createBookingSchema, body);
 
     const db = drizzle(c.env.DB, { schema });
@@ -359,13 +395,34 @@ app.post("/api/v1/bookings", async (c) => {
       expiresAt = twentyFourHoursLater < oneHourBefore ? twentyFourHoursLater : oneHourBefore;
     }
 
-    // 6. Create the booking
+    // 6. Create form response if event type has a booking form
+    let formResponseId: string | undefined;
+    if (eventType.bookingFormId && data.formFields && Object.keys(data.formFields).length > 0) {
+      const formService = new FormService(db);
+      const formResponse = await formService.createResponse(eventType.bookingFormId);
+      if (formResponse) {
+        formResponseId = formResponse.id;
+        // Insert all field values
+        const fields = Object.entries(data.formFields).map(([fieldId, value]) => ({
+          fieldId,
+          value,
+        }));
+        // Submit as a single step (all fields at once)
+        await formService.submitStep(formResponse.id, 0, fields);
+        // Mark as completed
+        await db
+          .update(dbSchema.formResponses)
+          .set({ status: "completed", respondentEmail: data.email })
+          .where(eq(dbSchema.formResponses.id, formResponse.id));
+      }
+    }
+
+    // 7. Create the booking
     const bookingService = new BookingService(db);
     const booking = await bookingService.create({
       eventTypeId: eventType.id,
       name: data.name,
       email: data.email,
-      phone: data.phone,
       notes: data.notes,
       startTime,
       endTime,
@@ -373,6 +430,7 @@ app.post("/api/v1/bookings", async (c) => {
       metadata: data.metadata,
       status: isPending ? "pending" : "confirmed",
       expiresAt,
+      formResponseId,
     });
 
     // 7. Look up project owner for calendar invite + email notification
@@ -556,6 +614,12 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
     }
 
     const body = await c.req.json().catch(() => ({}));
+
+    // Spam prevention — return fake success to fool bots
+    if (isSpam(body as Record<string, unknown>)) {
+      return c.json({ response: { id: crypto.randomUUID(), formId: form.id, status: "in_progress", currentStepIndex: 0 } }, 201);
+    }
+
     const response = await service.createResponse(form.id, body.metadata);
     const fullForm = await service.getFullForm(form.id);
 
@@ -671,6 +735,17 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
     const settings = project.settings
       ? JSON.parse(project.settings as string)
       : {};
+
+    // If event type has a booking form, fetch its steps + fields
+    let bookingForm = null;
+    if (eventType.bookingFormId) {
+      const formService = new FormService(db);
+      const fullForm = await formService.getFullForm(eventType.bookingFormId);
+      if (fullForm && fullForm.status === "active") {
+        bookingForm = fullForm;
+      }
+    }
+
     return c.json({
       project: {
         id: project.id,
@@ -679,6 +754,7 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
         settings,
       },
       eventType,
+      bookingForm,
     });
   } catch (err) {
     console.error("Event type detail error:", err);
@@ -777,6 +853,12 @@ app.post("/api/public/forms/:slug/responses", async (c) => {
     }
 
     const body = await c.req.json().catch(() => ({}));
+
+    // Spam prevention — return fake success to fool bots
+    if (isSpam(body as Record<string, unknown>)) {
+      return c.json({ response: { id: crypto.randomUUID(), formId: form.id, status: "in_progress", currentStepIndex: 0 } }, 201);
+    }
+
     const response = await service.createResponse(form.id, body.metadata);
 
     return c.json({ response }, 201);
@@ -1654,6 +1736,58 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
   }
 });
 
+// ─── Booking Form Response ───────────────────────────────────────────────────
+
+app.get("/api/projects/:projectId/bookings/:id/form-response", async (c) => {
+  try {
+    const bookingId = c.req.param("id");
+    const db = c.get("db");
+
+    const [booking] = await db
+      .select()
+      .from(dbSchema.bookings)
+      .where(eq(dbSchema.bookings.id, bookingId))
+      .limit(1);
+
+    if (!booking || !booking.formResponseId) {
+      return c.json({ fields: [] });
+    }
+
+    // Get field values
+    const fieldValues = await db
+      .select()
+      .from(dbSchema.formFieldValues)
+      .where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
+
+    // Fetch field definitions for labels
+    const allFieldDefs: Array<{ id: string; label: string; type: string }> = [];
+    for (const fv of fieldValues) {
+      const [field] = await db
+        .select()
+        .from(dbSchema.formFields)
+        .where(eq(dbSchema.formFields.id, fv.fieldId))
+        .limit(1);
+      if (field) {
+        allFieldDefs.push({ id: field.id, label: field.label, type: field.type });
+      }
+    }
+
+    const fields = fieldValues.map((fv) => {
+      const def = allFieldDefs.find((d) => d.id === fv.fieldId);
+      return {
+        label: def?.label ?? "Unknown",
+        type: def?.type ?? "text",
+        value: fv.value ?? "",
+      };
+    });
+
+    return c.json({ fields });
+  } catch (err) {
+    console.error("Form response fetch error:", err);
+    return c.json({ error: "Failed to fetch form response" }, 500);
+  }
+});
+
 // ─── Confirm Booking ─────────────────────────────────────────────────────────
 
 app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
@@ -2061,6 +2195,23 @@ app.post("/api/projects/:projectId/forms/:formId/fields", async (c) => {
     }
     console.error("Form field creation error:", err);
     return c.json({ error: "Failed to create form field" }, 500);
+  }
+});
+
+app.put("/api/projects/:projectId/forms/:formId/fields/reorder", async (c) => {
+  try {
+    const body = await c.req.json();
+    const data = validate(reorderFieldsSchema, body);
+    const db = c.get("db");
+    const service = new FormService(db);
+    await service.reorderFields(data.stepId, data.fieldIds);
+    return c.json({ success: true });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Field reorder error:", err);
+    return c.json({ error: "Failed to reorder fields" }, 500);
   }
 });
 

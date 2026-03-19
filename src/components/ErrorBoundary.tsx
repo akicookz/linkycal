@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
-import { AlertTriangle, RotateCcw } from "lucide-react";
+import { AlertTriangle, RotateCcw, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -65,7 +65,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Try again
               </Button>
-              <Button onClick={this.handleReload}>Reload page</Button>
+              <Button onClick={this.handleReload}>
+                <RefreshCw className="w-4 h-4" />
+                Reload page
+              </Button>
             </div>
           </div>
         </div>

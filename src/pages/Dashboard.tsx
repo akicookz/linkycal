@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
+
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -284,7 +284,7 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="space-y-1">
-              {recentBookings.map((booking, idx) => (
+              {recentBookings.map((booking) => (
                 <div key={booking.id}>
                   <div className="flex items-center gap-4 py-3">
                     <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-sm font-semibold text-primary shrink-0">
@@ -303,7 +303,7 @@ export default function Dashboard() {
                       {booking.status}
                     </Badge>
                   </div>
-                  {idx < recentBookings.length - 1 && <Separator />}
+
                 </div>
               ))}
             </div>

@@ -18,7 +18,7 @@ interface UpgradeDialogProps {
   description: string;
 }
 
-export function UpgradeDialog({ open, onClose, projectId, feature: _feature, description }: UpgradeDialogProps) {
+export function UpgradeDialog({ open, onClose, projectId: _projectId, feature: _feature, description }: UpgradeDialogProps) {
   const navigate = useNavigate();
 
   return (
@@ -43,6 +43,7 @@ export function UpgradeDialog({ open, onClose, projectId, feature: _feature, des
               navigate("/app/account/billing");
             }}
           >
+            <Sparkles className="h-4 w-4" />
             View Plans
           </Button>
         </DialogFooter>
