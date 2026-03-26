@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   FileText,
   CalendarCheck,
   Users,
   Code2,
-  Blocks,
   Zap,
   ArrowRight,
   Check,
@@ -14,15 +13,11 @@ import {
   Tag,
   Globe,
   Mail,
-  Phone,
-  Hash,
   Star,
   Send,
   Palette,
   Terminal,
-  MessageSquare,
   Sparkles,
-  User,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { PricingCards } from "@/components/PricingCards";
@@ -87,7 +82,7 @@ function HeroWebsiteCard() {
             For Your Website
           </h3>
         </div>
-        <p className="text-[13px] text-muted-foreground leading-relaxed">
+        <p className="text-sm text-brand font-medium text-shadow-md leading-relaxed">
           Embed booking pages and forms directly into your site with one line of
           code.
         </p>
@@ -390,7 +385,7 @@ function HeroAgentChat() {
             For Your Agents
           </h3>
         </div>
-        <p className="text-[13px] text-muted-foreground leading-relaxed">
+        <p className="text-sm text-brand font-medium text-shadow-md leading-relaxed">
           Let AI agents create bookings and manage contacts through a simple
           API.
         </p>
@@ -403,7 +398,7 @@ function HeroAgentChat() {
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" className="text-[#4EA4F6] shrink-0">
             <path d="M15 19l-7-7 7-7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <div className="w-8 h-8 rounded-full bg-[#FF6B4A] flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-full bg-[#4EA4C0] flex items-center justify-center shrink-0">
             <span className="text-sm leading-none">🦀</span>
           </div>
           <div className="min-w-0">
@@ -1162,7 +1157,7 @@ function MockContactCrmUI() {
   }, [phase === 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="card-glow-secondary p-6 rounded-[20px]">
+    <div className="card-glow-secondary p-6 rounded-[20px] min-h-[320px]">
       {/* Window dots */}
       <div className="flex items-center gap-1.5 mb-5">
         <div className="w-2.5 h-2.5 rounded-full bg-red-400/60" />
@@ -1256,139 +1251,6 @@ function MockContactCrmUI() {
                 Submitted contact form
               </div>
               <div className="text-[11px] text-muted-foreground">1d ago</div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─── Mock Widget Embed UI ────────────────────────────────────────────────── */
-
-function MockWidgetEmbedUI() {
-  const [phase, setPhase] = useState(0);
-  const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  useEffect(() => {
-    timersRef.current.forEach(clearTimeout);
-    timersRef.current = [];
-
-    const t = (fn: () => void, delay: number) => {
-      const id = setTimeout(fn, delay);
-      timersRef.current.push(id);
-    };
-
-    t(() => setPhase(1), 1000);   // name fills
-    t(() => setPhase(2), 1800);   // email fills
-    t(() => setPhase(3), 2600);   // message fills
-    t(() => setPhase(4), 3400);   // submit activates
-    t(() => setPhase(5), 4200);   // success
-    t(() => setPhase(0), 6500);
-
-    return () => timersRef.current.forEach(clearTimeout);
-  }, [phase === 0]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <div className="card-glow-secondary p-6 rounded-xl">
-      {/* Browser chrome */}
-      <div className="rounded-3xl border border-border/40 overflow-hidden">
-        {/* Browser bar */}
-        <div className="flex items-center gap-2.5 px-4 py-[7px] bg-muted/40 border-b border-border/30">
-          <div className="flex gap-[6px]">
-            <div className="w-[8px] h-[8px] rounded-full bg-[#EC6A5E]" />
-            <div className="w-[8px] h-[8px] rounded-full bg-[#F5BF4F]" />
-            <div className="w-[8px] h-[8px] rounded-full bg-[#61C554]" />
-          </div>
-          <div className="flex-1 h-[20px] rounded-md bg-white/80 flex items-center justify-center px-2">
-            <span className="text-[9px] text-muted-foreground truncate">
-              yourwebsite.com/contact
-            </span>
-          </div>
-        </div>
-
-        {/* Page */}
-        <div className="bg-white relative overflow-hidden">
-          {/* Site nav skeleton */}
-          <div className="flex items-center gap-4 px-5 py-2.5 border-b border-muted/80">
-            <div className="w-[18px] h-[18px] rounded-sm bg-muted/80" />
-            <div className="h-[5px] w-10 rounded-full bg-muted/70" />
-            <div className="h-[5px] w-8 rounded-full bg-muted/60" />
-            <div className="h-[5px] w-9 rounded-full bg-muted/60" />
-            <div className="ml-auto h-[18px] w-14 rounded-full bg-muted/70" />
-          </div>
-
-          {/* Page content */}
-          <div className="px-5 py-4">
-            {/* Page heading skeleton */}
-            <div className="mb-1">
-              <div className="h-[7px] w-28 rounded-full bg-muted mb-[6px]" />
-              <div className="h-[5px] w-44 rounded-full bg-muted/60" />
-            </div>
-
-            {/* Injected form widget — no borders, inline */}
-            <div className="max-w-[240px] mx-auto mt-5 mb-4">
-              <div className="text-[11px] font-semibold text-foreground text-center mb-3">
-                Get in Touch
-              </div>
-
-              <div className="space-y-2">
-                <div className={cn(
-                  "h-[26px] rounded-full border px-3 flex items-center text-[10px] transition-all duration-500",
-                  phase >= 1 ? "border-brand/30 text-foreground" : "border-border",
-                )}>
-                  {phase >= 1 && <span className="animate-[messageIn_0.3s_ease-out_forwards]">Sarah Chen</span>}
-                  {phase < 1 && <span className="text-muted-foreground/40">Name</span>}
-                </div>
-                <div className={cn(
-                  "h-[26px] rounded-full border px-3 flex items-center text-[10px] transition-all duration-500",
-                  phase >= 2 ? "border-brand/30 text-foreground" : "border-border",
-                )}>
-                  {phase >= 2 && <span className="animate-[messageIn_0.3s_ease-out_forwards]">sarah@acme.com</span>}
-                  {phase < 2 && <span className="text-muted-foreground/40">Email</span>}
-                </div>
-                <div className={cn(
-                  "h-[40px] rounded-lg border px-3 pt-1.5 text-[10px] transition-all duration-500",
-                  phase >= 3 ? "border-brand/30 text-foreground" : "border-border",
-                )}>
-                  {phase >= 3 && <span className="animate-[messageIn_0.3s_ease-out_forwards]">Interested in a demo</span>}
-                  {phase < 3 && <span className="text-muted-foreground/40">Message</span>}
-                </div>
-
-                <div className={cn(
-                  "h-[26px] rounded-full flex items-center justify-center text-[9px] font-medium transition-all duration-500",
-                  phase >= 5
-                    ? "bg-brand/10 text-brand"
-                    : phase >= 4
-                      ? "bg-brand text-primary-foreground"
-                      : "bg-muted text-muted-foreground/50",
-                )}>
-                  {phase >= 5 ? (
-                    <span className="flex items-center gap-1">
-                      <Check className="w-3 h-3" />
-                      Sent!
-                    </span>
-                  ) : "Submit"}
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom page skeleton */}
-            <div className="pt-3 border-t border-muted/60">
-              <div className="flex gap-6">
-                <div className="space-y-[5px]">
-                  <div className="h-[5px] w-12 rounded-full bg-muted/60" />
-                  <div className="h-[4px] w-16 rounded-full bg-muted/40" />
-                </div>
-                <div className="space-y-[5px]">
-                  <div className="h-[5px] w-10 rounded-full bg-muted/60" />
-                  <div className="h-[4px] w-14 rounded-full bg-muted/40" />
-                </div>
-                <div className="space-y-[5px]">
-                  <div className="h-[5px] w-14 rounded-full bg-muted/60" />
-                  <div className="h-[4px] w-10 rounded-full bg-muted/40" />
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1696,7 +1558,7 @@ function FaqItem({ question, answer }: FaqItemData) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div>
+    <div className="landing-scene-panel px-6">
       <button
         onClick={() => setOpen(!open)}
         className="flex items-center justify-between w-full py-5 text-left group"
@@ -1762,6 +1624,343 @@ const faqItems: FaqItemData[] = [
   },
 ];
 
+interface LandingSceneSectionProps {
+  children: ReactNode;
+  className?: string;
+  contentClassName?: string;
+  fullHeight?: boolean;
+  id?: string;
+}
+
+interface FeatureShowcaseCapability {
+  title: string;
+  description: string;
+}
+
+interface FeatureShowcaseItem {
+  id: string;
+  railLabel: string;
+  eyebrow: string;
+  title: string;
+  highlightedTitle?: string;
+  description: string;
+  capabilities: FeatureShowcaseCapability[];
+  DemoComponent: () => ReactNode;
+}
+
+function LandingSceneBackground() {
+  return (
+    <>
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-cover bg-center opacity-95 pointer-events-none"
+        style={{ backgroundImage: "url('/bg-image.webp')" }}
+      />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(248, 252, 249, 0.74) 26%, rgba(244, 250, 246, 0.7) 55%, rgba(249, 252, 250, 0.78) 100%)",
+          backdropFilter: "blur(22px)",
+          WebkitBackdropFilter: "blur(22px)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(circle at top left, rgba(255, 255, 255, 0.44), transparent 34%), radial-gradient(circle at 80% 18%, rgba(45, 106, 79, 0.18), transparent 30%), radial-gradient(circle at 50% 85%, rgba(27, 67, 50, 0.12), transparent 38%)",
+        }}
+      />
+      <div
+        aria-hidden="true"
+        className="absolute top-[8%] -left-32 h-[28rem] w-[28rem] rounded-full bg-brand/[0.08] blur-[140px] pointer-events-none"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute top-[32%] right-[-8rem] h-[24rem] w-[24rem] rounded-full bg-brand-dark/[0.08] blur-[130px] pointer-events-none"
+      />
+      <div
+        aria-hidden="true"
+        className="absolute bottom-[6%] left-[18%] h-[22rem] w-[22rem] rounded-full bg-white/40 blur-[120px] pointer-events-none"
+      />
+    </>
+  );
+}
+
+function LandingSceneSection({
+  children,
+  className,
+  contentClassName,
+  fullHeight = true,
+  id,
+}: LandingSceneSectionProps) {
+  return (
+    <section
+      id={id}
+      className={cn(
+        "relative py-24",
+        fullHeight && "min-h-screen flex items-center",
+        className,
+      )}
+    >
+      <div className={cn("max-w-7xl mx-auto px-6 w-full", contentClassName)}>
+        {children}
+      </div>
+    </section>
+  );
+}
+
+const featureShowcaseItems: FeatureShowcaseItem[] = [
+  {
+    id: "feature-scheduling",
+    railLabel: "Scheduling",
+    eyebrow: "Scheduling",
+    title: "Schedule without the back-and-forth.",
+    description:
+      "Share booking pages and widgets that stay in sync with your calendar, handle timezones correctly, and confirm every slot the moment it is reserved.",
+    capabilities: [
+      {
+        title: "Google Calendar sync",
+        description:
+          "Block busy time automatically and surface live availability.",
+      },
+      {
+        title: "Buffer times",
+        description:
+          "Add breathing room before and after meetings without manual cleanup.",
+      },
+      {
+        title: "Timezone aware",
+        description:
+          "Show the right local slot for every visitor without confusion.",
+      },
+      {
+        title: "Confirmation emails",
+        description:
+          "Send booking details instantly once a slot is locked in.",
+      },
+    ],
+    DemoComponent: MockBookingUI,
+  },
+  {
+    id: "feature-forms",
+    railLabel: "Forms",
+    eyebrow: "Forms",
+    title: "Build forms that adapt.",
+    description:
+      "Create multi-step flows that branch based on answers, collect files, and validate the right fields before anything gets submitted.",
+    capabilities: [
+      {
+        title: "Conditional logic",
+        description:
+          "Reveal the next question from what the visitor already told you.",
+      },
+      {
+        title: "File uploads",
+        description:
+          "Collect briefs, assets, and supporting documents in the same flow.",
+      },
+      {
+        title: "Multi-step",
+        description:
+          "Break longer forms into short screens that are easier to finish.",
+      },
+      {
+        title: "Validation",
+        description:
+          "Catch missing or malformed inputs before the response is stored.",
+      },
+    ],
+    DemoComponent: MockFormBuilderUI,
+  },
+  {
+    id: "feature-contacts",
+    railLabel: "Contacts",
+    eyebrow: "Contacts",
+    title: "Keep every contact organized.",
+    description:
+      "Turn every form response and booking into a contact record with tags, history, and enough context for your team to act immediately.",
+    capabilities: [
+      {
+        title: "Auto-tagging",
+        description:
+          "Apply tags from answers, event type, or workflow branch automatically.",
+      },
+      {
+        title: "Activity timeline",
+        description:
+          "See submissions, bookings, and follow-up actions in one stream.",
+      },
+      {
+        title: "CSV import",
+        description:
+          "Bring existing contacts in without rebuilding your data manually.",
+      },
+      {
+        title: "Smart search",
+        description:
+          "Filter people by tag, source, or recent activity in seconds.",
+      },
+    ],
+    DemoComponent: MockContactCrmUI,
+  },
+  {
+    id: "feature-workflows",
+    railLabel: "Workflows",
+    eyebrow: "Workflows",
+    title: "Automate the busywork.",
+    description:
+      "Trigger follow-ups from submissions and bookings, branch logic based on context, and keep repetitive post-submit tasks off your plate.",
+    capabilities: [
+      {
+        title: "Email triggers",
+        description:
+          "Send confirmations, reminders, and follow-ups from one event.",
+      },
+      {
+        title: "Tag automation",
+        description:
+          "Segment leads automatically as new activity comes in.",
+      },
+      {
+        title: "Webhooks",
+        description:
+          "Push bookings and submissions into the tools you already use.",
+      },
+      {
+        title: "Conditional logic",
+        description:
+          "Branch actions based on answers, timing, or event details.",
+      },
+    ],
+    DemoComponent: MockWorkflowUI,
+  },
+  {
+    id: "feature-api",
+    railLabel: "API",
+    eyebrow: "API",
+    title: "Let your agents",
+    highlightedTitle: "handle everything.",
+    description:
+      "Expose the same scheduling, forms, and contact workflows through an API so custom apps and AI agents can do the work programmatically.",
+    capabilities: [
+      {
+        title: "Check availability",
+        description:
+          "Query live scheduling windows before you show the next step.",
+      },
+      {
+        title: "Create bookings",
+        description:
+          "Reserve slots directly from agents or custom application flows.",
+      },
+      {
+        title: "Submit forms",
+        description:
+          "Post structured responses into your workflows without the widget.",
+      },
+      {
+        title: "Manage contacts",
+        description:
+          "Read and update people records while your agents operate.",
+      },
+    ],
+    DemoComponent: MockApiUI,
+  },
+];
+
+interface FeatureShowcasePanelProps {
+  item: FeatureShowcaseItem;
+  index: number;
+  total: number;
+}
+
+function FeatureShowcasePanel({
+  item,
+  index,
+  total,
+}: FeatureShowcasePanelProps) {
+  const DemoComponent = item.DemoComponent;
+  const step = String(index + 1).padStart(2, "0");
+  const totalSteps = String(total).padStart(2, "0");
+  const progressWidth = `${((index + 1) / total) * 100}%`;
+
+  return (
+    <article
+      id={item.id}
+      className="feature-editorial-panel scroll-mt-32 p-5 sm:p-7 lg:p-8"
+    >
+      <div className="flex items-center gap-4 mb-7">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-1.5 h-1.5 rounded-full bg-brand" />
+          <span className="text-[10px] uppercase tracking-[0.28em] text-muted-foreground">
+            {item.eyebrow}
+          </span>
+        </div>
+        <div className="relative h-px flex-1 bg-brand/12 overflow-hidden">
+          <div
+            className="absolute inset-y-0 left-0 bg-brand"
+            style={{ width: progressWidth }}
+          />
+        </div>
+        <span className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground tabular-nums">
+          {step}/{totalSteps}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mb-8">
+        {item.capabilities.map((capability, capabilityIndex) => (
+          <div
+            key={capability.title}
+            className="rounded-[20px] border border-brand/10 bg-white/45 px-4 pt-4 pb-5 backdrop-blur-xl min-h-[112px]"
+          >
+            <div className="text-[10px] uppercase tracking-[0.24em] text-muted-foreground tabular-nums mb-3">
+              {String(capabilityIndex + 1).padStart(2, "0")}
+            </div>
+            <h3 className="text-sm font-semibold text-foreground mb-2">
+              {capability.title}
+            </h3>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {capability.description}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.92fr)] gap-8 xl:gap-10 items-start border-t border-brand/12 pt-8">
+        <div className="space-y-7">
+          <h2 className="max-w-4xl text-[2.75rem] sm:text-[3.35rem] lg:text-[4.15rem] font-medium tracking-tight leading-[0.94] text-foreground">
+            {item.title}{" "}
+            {item.highlightedTitle && (
+              <span className="text-brand">{item.highlightedTitle}</span>
+            )}
+          </h2>
+
+          <div className="max-w-2xl">
+            <p className="text-base leading-relaxed text-muted-foreground">
+              {item.description}
+            </p>
+            <Link
+              to="/docs"
+              className="inline-flex items-center gap-2 mt-6 text-sm font-medium text-foreground hover:text-brand transition-colors"
+            >
+              View documentation
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+        </div>
+
+        <div className="xl:pl-2">
+          <DemoComponent />
+        </div>
+      </div>
+    </article>
+  );
+}
+
 /* ─── Landing Page ────────────────────────────────────────────────────────── */
 
 export default function Landing() {
@@ -1773,11 +1972,42 @@ export default function Landing() {
   const [otpEmail, setOtpEmail] = useState("");
   const [otpValues, setOtpValues] = useState<string[]>(Array(6).fill(""));
   const [otpError, setOtpError] = useState<string | null>(null);
+  const [activeFeatureShowcase, setActiveFeatureShowcase] = useState(
+    featureShowcaseItems[0].id,
+  );
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
     setAuthOpen(showAuth);
   }, [showAuth]);
+
+  useEffect(() => {
+    const panels = featureShowcaseItems
+      .map((item) => document.getElementById(item.id))
+      .filter((panel): panel is HTMLElement => panel instanceof HTMLElement);
+
+    if (!panels.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleEntry = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+
+        if (visibleEntry?.target.id) {
+          setActiveFeatureShowcase(visibleEntry.target.id);
+        }
+      },
+      {
+        rootMargin: "-18% 0px -55% 0px",
+        threshold: [0.18, 0.35, 0.55, 0.75],
+      },
+    );
+
+    panels.forEach((panel) => observer.observe(panel));
+
+    return () => observer.disconnect();
+  }, []);
 
   const handleClose = useCallback(() => {
     setAuthOpen(false);
@@ -1882,10 +2112,10 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
+    <div className="min-h-screen bg-background text-foreground overflow-x-clip">
       {/* ── 1. Floating Header ──────────────────────────────────────────── */}
       <header className="fixed top-0 left-0 right-0 z-50 flex justify-center pt-4 px-4">
-        <nav className="card-glow-secondary bg-white/70 backdrop-blur-2xl rounded-2xl md:rounded-full px-2 py-1.5 w-full md:w-auto flex items-center gap-1">
+        <nav className="bg-white/50 backdrop-blur-2xl rounded-2xl md:rounded-full px-2 py-1.5 w-full md:w-auto flex items-center gap-1">
           <Link to="/" className="px-2">
             <Logo size="md" />
           </Link>
@@ -1932,7 +2162,28 @@ export default function Landing() {
       </header>
 
       {/* ── 2. Hero ─────────────────────────────────────────────────────── */}
-      <section className="relative pt-28 pb-20 overflow-hidden">
+      <section
+        className="relative isolate pt-28 pb-20 overflow-hidden"
+        style={{
+          backgroundImage: "url('/bg-image.webp')",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
+      >
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.34) 48%, rgba(255,255,255,0) 100%)",
+            backdropFilter: "blur(18px)",
+            WebkitBackdropFilter: "blur(18px)",
+            maskImage:
+              "linear-gradient(135deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.94) 18%, rgba(0,0,0,0.74) 40%, rgba(0,0,0,0.38) 64%, rgba(0,0,0,0.12) 82%, transparent 100%)",
+            WebkitMaskImage:
+              "linear-gradient(135deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.94) 18%, rgba(0,0,0,0.74) 40%, rgba(0,0,0,0.38) 64%, rgba(0,0,0,0.12) 82%, transparent 100%)",
+          }}
+        />
         {/* Background glow orbs */}
         <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-brand/[0.04] rounded-full blur-[120px] animate-[glowPulse_6s_ease-in-out_infinite] pointer-events-none" />
         <div className="absolute -bottom-20 -right-20 w-[400px] h-[400px] bg-brand-dark/[0.03] rounded-full blur-[100px] animate-[glowPulse_8s_ease-in-out_infinite_2s] pointer-events-none" />
@@ -1943,7 +2194,7 @@ export default function Landing() {
             <h1 className="text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-medium tracking-tight leading-[1.06]">
               Scheduling and Forms for <span className="text-brand">your business</span> and <span className="text-brand">AI agents</span>
             </h1>
-            <p className="text-lg text-muted-foreground max-w-xl leading-relaxed mt-6 mb-10">
+            <p className="text-lg text-brand font-medium text-shadow-md max-w-xl leading-relaxed mt-6 mb-10">
               Multi-step forms, calendar booking links, contact management, and
               embeddable widgets. Embed on your site or integrate with AI agents
               through a simple API.
@@ -1963,32 +2214,31 @@ export default function Landing() {
                 View Documentation
               </Link>
             </div>
-            <div className="flex items-center gap-6 mt-6 text-sm text-muted-foreground">
+            <div className="flex items-center gap-6 mt-6 text-sm font-medium text-foreground">
               <span className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-brand" />
-                Free plan available
+                Start for free
               </span>
               <span className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-brand" />
-                5-minute setup
+                Setup in minutes
               </span>
             </div>
           </div>
 
           {/* Two hero cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-14">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-14 max-w-5xl mr-auto">
             <HeroWebsiteCard />
             <HeroAgentChat />
           </div>
         </div>
       </section>
 
-      {/* ── 3. Feature Bento Grid ───────────────────────────────────────── */}
-      <section
-        id="features"
-        className="min-h-screen flex items-center py-24"
-      >
-        <div className="max-w-7xl mx-auto px-6 w-full">
+      <div className="relative isolate">
+        <LandingSceneBackground />
+
+        {/* ── 3. Feature Bento Grid ─────────────────────────────────────── */}
+        <LandingSceneSection id="features">
           <div className="mb-12">
             <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
               Features
@@ -1998,752 +2248,667 @@ export default function Landing() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Left — Tall animated multi-step form card */}
-            <BentoMultiStepForm />
+          <div className="landing-scene-panel p-6 sm:p-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Left — Tall animated multi-step form card */}
+              <BentoMultiStepForm />
 
-            {/* Right — Stacked cards */}
-            {/* Embed */}
-            <div className="card-glow-secondary p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
-                  <Code2 className="w-4 h-4 text-brand" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">
-                    One-line embed
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Add forms and booking to any website
-                  </p>
-                </div>
-              </div>
-              <div className="rounded-2xl bg-[#0f1a14] p-4">
-                <div className="flex items-center gap-[5px] mb-2.5">
-                  <div className="w-[7px] h-[7px] rounded-full bg-[#EC6A5E]/60" />
-                  <div className="w-[7px] h-[7px] rounded-full bg-[#F5BF4F]/60" />
-                  <div className="w-[7px] h-[7px] rounded-full bg-[#61C554]/60" />
-                </div>
-                <code className="text-[11px] text-[#d4e8dc] leading-relaxed block">
-                  <span className="text-[#81c995]">&lt;script</span>{" "}
-                  <span className="text-[#7ec8a0]">src</span>=
-                  <span className="text-[#a8d8b9]">
-                    "https://cdn.linkycal.com/widgets/booking.js"
-                  </span>
-                  <span className="text-[#81c995]">&gt;&lt;/script&gt;</span>
-                  {"\n"}
-                  <span className="text-[#81c995]">&lt;script&gt;</span>
-                  <span className="text-[#d4e8dc]">
-                    LinkyCal.booking({"{"}{" "}
-                  </span>
-                  <span className="text-[#7ec8a0]">projectSlug</span>:{" "}
-                  <span className="text-[#a8d8b9]">"acme"</span>
-                  <span className="text-[#d4e8dc]"> {"}"})</span>
-                  <span className="text-[#81c995]">&lt;/script&gt;</span>
-                </code>
-              </div>
-            </div>
-
-            {/* Customization */}
-            <div className="card-glow-secondary p-6">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
-                  <Palette className="w-4 h-4 text-brand" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Full customization
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Match your brand perfectly
-                  </p>
-                </div>
-              </div>
-              {/* Color palette row */}
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex gap-2">
-                  {[
-                    { bg: "bg-brand", ring: true },
-                    { bg: "bg-[#3B82F6]", ring: false },
-                    { bg: "bg-[#8B5CF6]", ring: false },
-                    { bg: "bg-[#F97316]", ring: false },
-                  ].map((c, i) => (
-                    <div
-                      key={i}
-                      className={cn(
-                        "w-6 h-6 rounded-full",
-                        c.bg,
-                        c.ring && "ring-2 ring-brand/30 ring-offset-2",
-                      )}
-                    />
-                  ))}
-                </div>
-                <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
-                  <span className="font-medium text-foreground">Satoshi</span>
-                  <span>·</span>
-                  <span className="font-medium text-foreground">Round</span>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Calendar integration — weekly availability */}
-            <div className="card-glow-secondary p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
-                  <CalendarCheck className="w-4 h-4 text-brand" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Calendar integration
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Sync availability in real-time
-                  </p>
-                </div>
-                {/* Google Calendar logo */}
-                <svg className="w-7 h-7 shrink-0" viewBox="0 0 24 24" fill="none">
-                  <rect x="3" y="4" width="18" height="18" rx="3" fill="#fff" stroke="#E0E0E0" strokeWidth="1" />
-                  <rect x="3" y="4" width="18" height="6" rx="3" fill="#4285F4" />
-                  <path d="M8 2.5v3M16 2.5v3" stroke="#4285F4" strokeWidth="1.5" strokeLinecap="round" />
-                  <text x="12" y="18.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="#4285F4">31</text>
-                </svg>
-              </div>
-              <div className="space-y-[6px]">
-                {[
-                  { day: "Mon", hours: "9:00 AM — 5:00 PM", faded: false },
-                  { day: "Tue", hours: "9:00 AM — 5:00 PM", faded: false },
-                  { day: "Wed", hours: "9:00 AM — 1:00 PM", faded: true },
-                ].map((row) => (
-                  <div key={row.day} className={cn("flex items-center gap-2.5", row.faded && "opacity-30")}>
-                    <div className="w-[6px] h-[6px] rounded-full bg-brand" />
-                    <span className="text-[11px] w-7 font-medium text-foreground">
-                      {row.day}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {row.hours}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Contact CRM */}
-            <div className="card-glow-secondary p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
-                  <Users className="w-4 h-4 text-brand" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Contact CRM
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Organize every interaction
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-3">
-                {[
-                  {
-                    initial: "S",
-                    color: "bg-[#1B4332]/10 text-brand",
-                    name: "Sarah Johnson",
-                    email: "sarah@acme.com",
-                    badges: [
-                      { label: "Pro", dot: "bg-[#3B82F6]", bg: "bg-[#3B82F6]/8" },
-                      { label: "Partner", dot: "bg-brand", bg: "bg-brand/8" },
-                    ],
-                  },
-                  {
-                    initial: "A",
-                    color: "bg-[#3B82F6]/10 text-[#3B82F6]",
-                    name: "Alex Martinez",
-                    email: "alex@startup.io",
-                    badges: [
-                      { label: "Contacted", dot: "bg-[#F59E0B]", bg: "bg-[#F59E0B]/8" },
-                    ],
-                  },
-                  {
-                    initial: "J",
-                    color: "bg-[#8B5CF6]/10 text-[#8B5CF6]",
-                    name: "Jordan Kim",
-                    email: "jordan@agency.co",
-                    badges: [
-                      { label: "Lead", dot: "bg-[#8B5CF6]", bg: "bg-[#8B5CF6]/8" },
-                      { label: "VIP", dot: "bg-[#F97316]", bg: "bg-[#F97316]/8" },
-                    ],
-                  },
-                ].map((contact) => (
-                  <div key={contact.name} className="flex items-start gap-2.5">
-                    <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0", contact.color)}>
-                      {contact.initial}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[12px] font-medium text-foreground leading-tight">{contact.name}</div>
-                      <div className="text-[10px] text-muted-foreground leading-tight mt-px">{contact.email}</div>
-                      <div className="flex gap-1 mt-1">
-                        {contact.badges.map((b) => (
-                          <span key={b.label} className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[8px] font-medium text-foreground", b.bg)}>
-                            <span className={cn("w-[4px] h-[4px] rounded-full", b.dot)} />
-                            {b.label}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Workflow automation — vertical flow */}
-            <div className="card-glow-secondary p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
-                  <Zap className="w-4 h-4 text-brand" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">
-                    Workflow automation
-                  </h3>
-                  <p className="text-xs text-muted-foreground">
-                    Automate repetitive tasks
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-col items-center">
-                {/* Trigger node */}
-                <div className="w-full flex items-center gap-2.5 bg-brand/5 rounded-sm px-3 py-2">
-                  <div className="w-7 h-7 rounded-[8px] bg-brand/10 flex items-center justify-center shrink-0">
-                    <Zap className="w-3.5 h-3.5 text-brand" />
+              {/* Right — Stacked cards */}
+              {/* Embed */}
+              <div className="card-glow-secondary p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
+                    <Code2 className="w-4 h-4 text-brand" />
                   </div>
                   <div>
-                    <div className="text-[9px] text-brand font-medium leading-none">Trigger</div>
-                    <div className="text-[11px] font-medium text-foreground leading-tight mt-px">Form submitted</div>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      One-line embed
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Add forms and booking to any website
+                    </p>
                   </div>
                 </div>
-                {/* Connector */}
-                <div className="w-px h-4 bg-border" />
-                {/* Step 1 */}
-                <div className="w-full flex items-center gap-2.5 bg-muted rounded-sm px-3 py-2">
-                  <div className="w-7 h-7 rounded-[8px] bg-white flex items-center justify-center shrink-0">
-                    <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                <div className="rounded-2xl bg-[#0f1a14] p-4">
+                  <div className="flex items-center gap-[5px] mb-2.5">
+                    <div className="w-[7px] h-[7px] rounded-full bg-[#EC6A5E]/60" />
+                    <div className="w-[7px] h-[7px] rounded-full bg-[#F5BF4F]/60" />
+                    <div className="w-[7px] h-[7px] rounded-full bg-[#61C554]/60" />
                   </div>
-                  <span className="text-[11px] font-medium text-foreground">Send confirmation email</span>
-                </div>
-                {/* Connector */}
-                <div className="w-px h-4 bg-border" />
-                {/* Step 2 */}
-                <div className="w-full flex items-center gap-2.5 bg-muted rounded-sm px-3 py-2">
-                  <div className="w-7 h-7 rounded-[8px] bg-white flex items-center justify-center shrink-0">
-                    <Tag className="w-3.5 h-3.5 text-muted-foreground" />
-                  </div>
-                  <span className="text-[11px] font-medium text-foreground">Add &ldquo;Lead&rdquo; tag</span>
-                </div>
-                {/* Connector */}
-                <div className="w-px h-4 bg-border" />
-                {/* Step 3 */}
-                <div className="w-full flex items-center gap-2.5 bg-muted rounded-sm px-3 py-2">
-                  <div className="w-7 h-7 rounded-[8px] bg-white flex items-center justify-center shrink-0">
-                    <Globe className="w-3.5 h-3.5 text-muted-foreground" />
-                  </div>
-                  <span className="text-[11px] font-medium text-foreground">Notify via webhook</span>
+                  <code className="text-[11px] text-[#d4e8dc] leading-relaxed block">
+                    <span className="text-[#81c995]">&lt;script</span>{" "}
+                    <span className="text-[#7ec8a0]">src</span>=
+                    <span className="text-[#a8d8b9]">
+                      "https://cdn.linkycal.com/widgets/booking.js"
+                    </span>
+                    <span className="text-[#81c995]">&gt;&lt;/script&gt;</span>
+                    {"\n"}
+                    <span className="text-[#81c995]">&lt;script&gt;</span>
+                    <span className="text-[#d4e8dc]">
+                      LinkyCal.booking({"{"}{" "}
+                    </span>
+                    <span className="text-[#7ec8a0]">projectSlug</span>:{" "}
+                    <span className="text-[#a8d8b9]">"acme"</span>
+                    <span className="text-[#d4e8dc]"> {"}"})</span>
+                    <span className="text-[#81c995]">&lt;/script&gt;</span>
+                  </code>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <section className="min-h-screen flex items-center py-24">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center max-w-7xl mx-auto px-6">
-          {/* Copy */}
-          <div>
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              Scheduling
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
-              Scheduling on your website and email
-            </h2>
-            <p className="text-base text-muted-foreground leading-relaxed mb-8">
-              Scheduling links and widgets to book any kind of appointment.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: CalendarCheck, label: "Google Calendar sync" },
-                { icon: Clock, label: "Buffer times" },
-                { icon: Globe, label: "Timezone aware" },
-                { icon: Mail, label: "Confirmation emails" },
-              ].map((pill) => (
-                <div key={pill.label} className="feature-pill">
-                  <pill.icon className="w-3.5 h-3.5 text-brand" />
-                  {pill.label}
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Demo */}
-          <div>
-            <MockBookingUI />
-          </div>
-        </div>
-      </section>
-
-      {/* ── 4. Feature: Forms ───────────────────────────────────────────── */}
-      <section className="min-h-screen flex items-center py-24 section-tinted">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center max-w-7xl mx-auto px-6">
-          {/* Copy */}
-          <div>
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              Forms
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
-              Build forms that adapt
-            </h2>
-            <p className="text-base text-muted-foreground leading-relaxed mb-8">
-              Create multi-step forms with conditional logic fields and steps.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: Sparkles, label: "Conditional logic" },
-                { icon: FileText, label: "File uploads" },
-                { icon: Blocks, label: "Multi-step" },
-                { icon: Check, label: "Validation" },
-              ].map((pill) => (
-                <div key={pill.label} className="feature-pill">
-                  <pill.icon className="w-3.5 h-3.5 text-brand" />
-                  {pill.label}
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Demo */}
-          <div>
-            <MockFormBuilderUI />
-          </div>
-        </div>
-      </section>
-
-      {/* ── 6. Feature: Contacts ────────────────────────────────────────── */}
-      <section className="min-h-screen flex items-center py-24 section-tinted">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center max-w-7xl mx-auto px-6">
-          {/* Demo (left on desktop, second on mobile) */}
-          <div className="order-2 lg:order-1">
-            <MockContactCrmUI />
-          </div>
-          {/* Copy (right on desktop, first on mobile) */}
-          <div className="order-1 lg:order-2">
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              Contacts
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
-              Every interaction organized
-            </h2>
-            <p className="text-base text-muted-foreground leading-relaxed mb-8">
-              Contacts are created automatically from form submissions and
-              bookings. Tag them, view their full activity timeline, import via
-              CSV, and search across everything.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: Tag, label: "Auto-tagging" },
-                { icon: Clock, label: "Activity timeline" },
-                { icon: FileText, label: "CSV import" },
-                { icon: Hash, label: "Smart search" },
-              ].map((pill) => (
-                <div key={pill.label} className="feature-pill">
-                  <pill.icon className="w-3.5 h-3.5 text-brand" />
-                  {pill.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="min-h-screen flex items-center py-24">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center max-w-7xl mx-auto px-6">
-          {/* Copy */}
-          <div>
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              Workflows
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
-              Automate the busywork
-            </h2>
-            <p className="text-base text-muted-foreground leading-relaxed mb-8">
-              Set up trigger-based automations that fire when forms are
-              submitted or meetings are booked. Send emails, add tags, fire
-              webhooks, and build multi-step flows with delays and conditions.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: Mail, label: "Email triggers" },
-                { icon: Tag, label: "Tag automation" },
-                { icon: Globe, label: "Webhooks" },
-                { icon: Sparkles, label: "Conditional logic" },
-              ].map((pill) => (
-                <div key={pill.label} className="feature-pill">
-                  <pill.icon className="w-3.5 h-3.5 text-brand" />
-                  {pill.label}
-                </div>
-              ))}
-            </div>
-          </div>
-          {/* Demo */}
-          <div>
-            <MockWorkflowUI />
-          </div>
-        </div>
-      </section>
-
-      {/* ── 8. Feature: API ─────────────────────────────────────────────── */}
-      <section className="min-h-screen flex items-center py-24 section-tinted">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center max-w-7xl mx-auto px-6">
-          {/* Demo (left on desktop, second on mobile) */}
-          <div className="order-2 lg:order-1">
-            <MockApiUI />
-          </div>
-          {/* Copy (right on desktop, first on mobile) */}
-          <div className="order-1 lg:order-2">
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              API
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
-              Allow your agents to handle everything
-            </h2>
-            <p className="text-base text-muted-foreground leading-relaxed mb-8">
-              Scheduling and form building is now via chat interface.
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { icon: CalendarCheck, label: "Check availability" },
-                { icon: Clock, label: "Create bookings" },
-                { icon: Send, label: "Submit forms" },
-                { icon: Users, label: "Manage contacts" },
-              ].map((pill) => (
-                <div key={pill.label} className="feature-pill">
-                  <pill.icon className="w-3.5 h-3.5 text-brand" />
-                  {pill.label}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── 10. How It Works ────────────────────────────────────────────── */}
-      <section
-        id="how-it-works"
-        className="min-h-screen flex items-center py-24 section-tinted"
-      >
-        <div className="max-w-7xl mx-auto px-6 w-full">
-          <div className="text-center mb-14">
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              How It Works
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
-              Up and running in three steps
-            </h2>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Step 1 */}
-            <div className="card-glow-secondary p-7">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
-                  1
-                </div>
-                <Terminal className="w-5 h-5 text-brand" />
-              </div>
-              <h3 className="text-base font-semibold text-foreground mb-2">
-                Create your project
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Pick a name and slug for your project. This becomes your
-                namespace for forms, events, and contacts.
-              </p>
-              <div className="rounded-xl border border-border bg-white p-3 space-y-2">
-                <div>
-                  <div className="text-[10px] text-muted-foreground mb-1">
-                    Project name
+              {/* Customization */}
+              <div className="card-glow-secondary p-6">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
+                    <Palette className="w-4 h-4 text-brand" />
                   </div>
-                  <div className="h-7 rounded-lg border border-border px-2 flex items-center text-xs text-foreground">
-                    Acme Corp
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Full customization
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Match your brand perfectly
+                    </p>
                   </div>
                 </div>
-                <div>
-                  <div className="text-[10px] text-muted-foreground mb-1">
-                    Slug
+                {/* Color palette row */}
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="flex gap-2">
+                    {[
+                      { bg: "bg-brand", ring: true },
+                      { bg: "bg-[#3B82F6]", ring: false },
+                      { bg: "bg-[#8B5CF6]", ring: false },
+                      { bg: "bg-[#F97316]", ring: false },
+                    ].map((c, i) => (
+                      <div
+                        key={i}
+                        className={cn(
+                          "w-6 h-6 rounded-full",
+                          c.bg,
+                          c.ring && "ring-2 ring-brand/30 ring-offset-2",
+                        )}
+                      />
+                    ))}
                   </div>
-                  <div className="h-7 rounded-lg border border-border px-2 flex items-center text-xs text-muted-foreground">
-                    acme-corp
+                  <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <span className="font-medium text-foreground">Satoshi</span>
+                    <span>·</span>
+                    <span className="font-medium text-foreground">Round</span>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Step 2 */}
-            <div className="card-glow-secondary p-7">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
-                  2
-                </div>
-                <FileText className="w-5 h-5 text-brand" />
-              </div>
-              <h3 className="text-base font-semibold text-foreground mb-2">
-                Build forms &amp; event types
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Add fields to your forms, set up event types with availability
-                rules, and configure your booking page.
-              </p>
-              <div className="rounded-xl border border-border bg-white p-3">
-                <div className="flex items-center gap-2 mb-2">
-                  <div className="text-[10px] font-medium text-brand bg-brand/10 px-2 py-0.5 rounded-full">
-                    Fields
+              {/* Calendar integration — weekly availability */}
+              <div className="card-glow-secondary p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
+                    <CalendarCheck className="w-4 h-4 text-brand" />
                   </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Calendar integration
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Sync availability in real-time
+                    </p>
+                  </div>
+                  {/* Google Calendar logo */}
+                  <svg className="w-7 h-7 shrink-0" viewBox="0 0 24 24" fill="none">
+                    <rect x="3" y="4" width="18" height="18" rx="3" fill="#fff" stroke="#E0E0E0" strokeWidth="1" />
+                    <rect x="3" y="4" width="18" height="6" rx="3" fill="#4285F4" />
+                    <path d="M8 2.5v3M16 2.5v3" stroke="#4285F4" strokeWidth="1.5" strokeLinecap="round" />
+                    <text x="12" y="18.5" textAnchor="middle" fontSize="8" fontWeight="700" fill="#4285F4">31</text>
+                  </svg>
                 </div>
-                <div className="space-y-1.5">
-                  {["Name", "Email", "Date", "Message"].map((f) => (
-                    <div
-                      key={f}
-                      className="flex items-center gap-2 text-[11px] text-foreground bg-muted/30 rounded-lg px-2.5 py-1.5"
-                    >
-                      <div className="w-1 h-3 rounded-full bg-brand/30" />
-                      {f}
+                <div className="space-y-[6px]">
+                  {[
+                    { day: "Mon", hours: "9:00 AM — 5:00 PM", faded: false },
+                    { day: "Tue", hours: "9:00 AM — 5:00 PM", faded: false },
+                    { day: "Wed", hours: "9:00 AM — 1:00 PM", faded: true },
+                  ].map((row) => (
+                    <div key={row.day} className={cn("flex items-center gap-2.5", row.faded && "opacity-30")}>
+                      <div className="w-[6px] h-[6px] rounded-full bg-brand" />
+                      <span className="text-[11px] w-7 font-medium text-foreground">
+                        {row.day}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {row.hours}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
 
-            {/* Step 3 */}
-            <div className="card-glow-secondary p-7">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
-                  3
+              {/* Contact CRM */}
+              <div className="card-glow-secondary p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
+                    <Users className="w-4 h-4 text-brand" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Contacts CRM
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Organize every interaction
+                    </p>
+                  </div>
                 </div>
-                <Code2 className="w-5 h-5 text-brand" />
-              </div>
-              <h3 className="text-base font-semibold text-foreground mb-2">
-                Embed &amp; go live
-              </h3>
-              <p className="text-sm text-muted-foreground leading-relaxed mb-4">
-                Copy the script tag, paste it into your website, and your forms
-                and booking widgets are live.
-              </p>
-              <div className="rounded-xl bg-[#0f1a14] p-3">
-                <div className="flex items-center gap-1.5 mb-2">
-                  <div className="w-2 h-2 rounded-full bg-red-400/50" />
-                  <div className="w-2 h-2 rounded-full bg-yellow-400/50" />
-                  <div className="w-2 h-2 rounded-full bg-green-400/50" />
+                <div className="space-y-3">
+                  {[
+                    {
+                      initial: "S",
+                      color: "bg-[#1B4332]/10 text-brand",
+                      name: "Sarah Johnson",
+                      email: "sarah@acme.com",
+                      badges: [
+                        { label: "Pro", dot: "bg-[#3B82F6]", bg: "bg-[#3B82F6]/8" },
+                        { label: "Partner", dot: "bg-brand", bg: "bg-brand/8" },
+                      ],
+                    },
+                    {
+                      initial: "A",
+                      color: "bg-[#3B82F6]/10 text-[#3B82F6]",
+                      name: "Alex Martinez",
+                      email: "alex@startup.io",
+                      badges: [
+                        { label: "Contacted", dot: "bg-[#F59E0B]", bg: "bg-[#F59E0B]/8" },
+                      ],
+                    },
+                    {
+                      initial: "J",
+                      color: "bg-[#8B5CF6]/10 text-[#8B5CF6]",
+                      name: "Jordan Kim",
+                      email: "jordan@agency.co",
+                      badges: [
+                        { label: "Lead", dot: "bg-[#8B5CF6]", bg: "bg-[#8B5CF6]/8" },
+                        { label: "VIP", dot: "bg-[#F97316]", bg: "bg-[#F97316]/8" },
+                      ],
+                    },
+                  ].map((contact) => (
+                    <div key={contact.name} className="flex items-start gap-2.5">
+                      <div className={cn("w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0", contact.color)}>
+                        {contact.initial}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[12px] font-medium text-foreground leading-tight">{contact.name}</div>
+                        <div className="text-[10px] text-muted-foreground leading-tight mt-px">{contact.email}</div>
+                        <div className="flex gap-1 mt-1">
+                          {contact.badges.map((b) => (
+                            <span key={b.label} className={cn("inline-flex items-center gap-1 rounded-full px-1.5 py-px text-[8px] font-medium text-foreground", b.bg)}>
+                              <span className={cn("w-[4px] h-[4px] rounded-full", b.dot)} />
+                              {b.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <code className="text-[10px] text-[#d4e8dc] leading-relaxed block">
-                  <span className="text-[#81c995]">&lt;script</span>{" "}
-                  <span className="text-[#7ec8a0]">src</span>=
-                  <span className="text-[#a8d8b9]">"...booking.js"</span>
-                  <span className="text-[#81c995]">&gt;</span>
-                  {"\n"}
-                  <span className="text-[#81c995]">&lt;/script&gt;</span>
-                </code>
+              </div>
+
+              {/* Workflow automation — vertical flow */}
+              <div className="card-glow-secondary p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
+                    <Zap className="w-4 h-4 text-brand" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      Workflow automation
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      Automate repetitive tasks
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center">
+                  {/* Trigger node */}
+                  <div className="w-full flex items-center gap-2.5 bg-brand/5 rounded-sm px-3 py-2">
+                    <div className="w-7 h-7 rounded-[8px] bg-brand/10 flex items-center justify-center shrink-0">
+                      <Zap className="w-3.5 h-3.5 text-brand" />
+                    </div>
+                    <div>
+                      <div className="text-[9px] text-brand font-medium leading-none">Trigger</div>
+                      <div className="text-[11px] font-medium text-foreground leading-tight mt-px">Form submitted</div>
+                    </div>
+                  </div>
+                  {/* Connector */}
+                  <div className="w-px h-4 bg-border" />
+                  {/* Step 1 */}
+                  <div className="w-full flex items-center gap-2.5 bg-muted rounded-sm px-3 py-2">
+                    <div className="w-7 h-7 rounded-[8px] bg-white flex items-center justify-center shrink-0">
+                      <Mail className="w-3.5 h-3.5 text-muted-foreground" />
+                    </div>
+                    <span className="text-[11px] font-medium text-foreground">Send confirmation email</span>
+                  </div>
+                  {/* Connector */}
+                  <div className="w-px h-4 bg-border" />
+                  {/* Step 2 */}
+                  <div className="w-full flex items-center gap-2.5 bg-muted rounded-sm px-3 py-2">
+                    <div className="w-7 h-7 rounded-[8px] bg-white flex items-center justify-center shrink-0">
+                      <Tag className="w-3.5 h-3.5 text-muted-foreground" />
+                    </div>
+                    <span className="text-[11px] font-medium text-foreground">Add &ldquo;Lead&rdquo; tag</span>
+                  </div>
+                  {/* Connector */}
+                  <div className="w-px h-4 bg-border" />
+                  {/* Step 3 */}
+                  <div className="w-full flex items-center gap-2.5 bg-muted rounded-sm px-3 py-2">
+                    <div className="w-7 h-7 rounded-[8px] bg-white flex items-center justify-center shrink-0">
+                      <Globe className="w-3.5 h-3.5 text-muted-foreground" />
+                    </div>
+                    <span className="text-[11px] font-medium text-foreground">Notify via webhook</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </LandingSceneSection>
 
-      {/* ── 11. Pricing ─────────────────────────────────────────────────── */}
-      <section id="pricing" className="min-h-screen flex items-center py-24">
-        <div className="max-w-7xl mx-auto px-6 w-full">
-          <div className="text-center mb-12">
-            <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-              Pricing
-            </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
-              ... And it does not cost arm and a leg
-            </h2>
-          </div>
-          <PricingCards onGetStarted={openAuth} />
-        </div>
-      </section>
+        <LandingSceneSection
+          id="feature-showcase"
+          fullHeight={false}
+          contentClassName="max-w-[90rem]"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)] gap-6 lg:gap-8">
+            <aside className="lg:w-60 shrink-0 lg:self-start lg:sticky lg:top-28">
+              <div className="feature-showcase-rail">
+                <div className="text-[10px] uppercase tracking-[0.28em] text-white/70 mb-4">
+                  Product Surface
+                </div>
 
-      {/* ── 12. FAQ ─────────────────────────────────────────────────────── */}
-      <section id="faq" className="py-24 max-w-3xl mx-auto px-6">
-        <div className="text-center mb-12">
-          <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
-            FAQ
-          </div>
-          <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
-            Frequently asked questions
-          </h2>
-        </div>
-        <div>
-          {faqItems.map((item) => (
-            <FaqItem key={item.question} {...item} />
-          ))}
-        </div>
-      </section>
+                <div className="lg:hidden -mx-1 overflow-x-auto pb-1">
+                  <div className="flex min-w-max gap-2 px-1">
+                    {featureShowcaseItems.map((item, index) => {
+                      const isActive = activeFeatureShowcase === item.id;
+                      return (
+                        <a
+                          key={item.id}
+                          href={`#${item.id}`}
+                          onClick={() => setActiveFeatureShowcase(item.id)}
+                          className={cn(
+                            "rounded-full border px-4 py-2 text-[11px] uppercase tracking-[0.24em] transition-colors whitespace-nowrap",
+                            isActive
+                              ? "border-brand-soft/30 bg-brand-soft/20 text-white"
+                              : "border-white/10 text-white/65 hover:text-white hover:border-white/20",
+                          )}
+                        >
+                          {String(index + 1).padStart(2, "0")} {item.railLabel}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
 
-      {/* ── 13. Final CTA ───────────────────────────────────────────────── */}
-      <section className="py-24 relative overflow-hidden">
-        {/* Background glow */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-brand/[0.04] rounded-full blur-[100px] pointer-events-none" />
+                <div className="hidden lg:block space-y-1.5">
+                  {featureShowcaseItems.map((item, index) => {
+                    const isActive = activeFeatureShowcase === item.id;
 
-        <div className="max-w-3xl mx-auto px-6 text-center relative">
-          <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
-            Ready to get started?
-          </h2>
-          <p className="text-base text-muted-foreground leading-relaxed mb-8 max-w-xl mx-auto">
-            Create your free account and build your first form or booking page
-            in minutes. No credit card required.
-          </p>
-          <button
-            onClick={openAuth}
-            className="glow-surface rounded-full h-12 px-8 text-sm font-medium inline-flex items-center justify-center gap-2"
-          >
-            Get Started Free
-            <ArrowRight className="w-4 h-4" />
-          </button>
-        </div>
-      </section>
-
-      {/* ── 14. Footer ──────────────────────────────────────────────────── */}
-      <footer className="pb-8 px-6">
-        <div className="card-glow-secondary max-w-7xl mx-auto p-10 rounded-3xl">
-          <div className="grid grid-cols-1 md:grid-cols-[1.5fr_1fr_1fr] gap-10">
-            {/* Brand */}
-            <div>
-              <Logo size="md" />
-              <p className="text-sm text-muted-foreground leading-relaxed mt-4 max-w-xs">
-                Form and Scheduling infrastructure for modern teams. Multi-step
-                forms, calendar scheduling, contact management, and embeddable
-                widgets — all API-first.
-              </p>
-              <div className="flex items-center gap-3 mt-5">
-                {/* Twitter/X */}
-                <a
-                  href="https://twitter.com/linkycal"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                </a>
-                {/* LinkedIn */}
-                <a
-                  href="https://linkedin.com/company/linkycal"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors"
-                >
-                  <svg
-                    className="w-4 h-4"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
-                  </svg>
-                </a>
-              </div>
-            </div>
-
-            {/* Pages */}
-            <div>
-              <h4 className="text-sm font-semibold text-foreground mb-4">
-                Pages
-              </h4>
-              <ul className="space-y-2.5">
-                {[
-                  { label: "Home", href: "/" },
-                  { label: "Features", href: "#features" },
-                  { label: "Pricing", href: "#pricing" },
-                  { label: "FAQ", href: "#faq" },
-                  { label: "Documentation", href: "/docs", isLink: true },
-                ].map((item) =>
-                  item.isLink ? (
-                    <li key={item.label}>
-                      <Link
-                        to={item.href}
-                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                      >
-                        {item.label}
-                      </Link>
-                    </li>
-                  ) : (
-                    <li key={item.label}>
+                    return (
                       <a
-                        href={item.href}
-                        className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        key={item.id}
+                        href={`#${item.id}`}
+                        onClick={() => setActiveFeatureShowcase(item.id)}
+                        className={cn(
+                          "group block rounded-2xl px-3 py-3 transition-colors",
+                          isActive && "bg-white/6",
+                        )}
                       >
-                        {item.label}
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={cn(
+                              "text-[11px] uppercase tracking-[0.24em] tabular-nums transition-colors",
+                              isActive ? "text-white" : "text-white/45",
+                            )}
+                          >
+                            {String(index + 1).padStart(2, "0")}
+                          </span>
+                          <span
+                            className={cn(
+                              "text-[11px] uppercase tracking-[0.24em] transition-colors",
+                              isActive ? "text-white" : "text-white/62 group-hover:text-white/88",
+                            )}
+                          >
+                            {item.railLabel}
+                          </span>
+                        </div>
+                        <div className="mt-2 h-px bg-white/10 overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full transition-all duration-300",
+                              isActive ? "w-full bg-brand-soft" : "w-0 bg-white/35 group-hover:w-14",
+                            )}
+                          />
+                        </div>
                       </a>
-                    </li>
-                  ),
-                )}
-              </ul>
-            </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </aside>
 
-            {/* Information */}
-            <div>
-              <h4 className="text-sm font-semibold text-foreground mb-4">
-                Information
-              </h4>
-              <ul className="space-y-2.5">
-                <li>
-                  <a
-                    href="mailto:hello@linkycal.com"
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Contact
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="/privacy"
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Privacy Policy
-                  </a>
-                </li>
-                <li>
-                  <a
-                    href="/terms"
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    Terms of Service
-                  </a>
-                </li>
-              </ul>
+            <div className="flex-1 space-y-8 lg:space-y-10">
+              {featureShowcaseItems.map((item, index) => (
+                <FeatureShowcasePanel
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  total={featureShowcaseItems.length}
+                />
+              ))}
             </div>
           </div>
+        </LandingSceneSection>
 
-          {/* Copyright */}
-          <div className="mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">
-              &copy; 2026 LinkyCal
-            </p>
-            <p className="text-sm text-muted-foreground">
-              A{" "}
-              <a
-                href="https://launchfast.pro"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-foreground hover:text-brand transition-colors"
-              >
-                LaunchFast
-              </a>{" "}
-              product
-            </p>
+        {/* ── 10. How It Works ──────────────────────────────────────────── */}
+        <LandingSceneSection id="how-it-works">
+          <div className="landing-scene-panel p-6 sm:p-8 lg:p-10">
+            <div className="text-center mb-14">
+              <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
+                How It Works
+              </div>
+              <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
+                Up and running in three steps
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Step 1 */}
+              <div className="card-glow-secondary p-7">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
+                    1
+                  </div>
+                  <Terminal className="w-5 h-5 text-brand" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground mb-2">
+                  Create your project
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                  Pick a name and slug for your project. This becomes your
+                  namespace for forms, events, and contacts.
+                </p>
+                <div className="rounded-xl border border-border bg-white p-3 space-y-2">
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-1">
+                      Project name
+                    </div>
+                    <div className="h-7 rounded-lg border border-border px-2 flex items-center text-xs text-foreground">
+                      Acme Corp
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-muted-foreground mb-1">
+                      Slug
+                    </div>
+                    <div className="h-7 rounded-lg border border-border px-2 flex items-center text-xs text-muted-foreground">
+                      acme-corp
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2 */}
+              <div className="card-glow-secondary p-7">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
+                    2
+                  </div>
+                  <FileText className="w-5 h-5 text-brand" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground mb-2">
+                  Build forms &amp; event types
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                  Add fields to your forms, set up event types with availability
+                  rules, and configure your booking page.
+                </p>
+                <div className="rounded-xl border border-border bg-white p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="text-[10px] font-medium text-brand bg-brand/10 px-2 py-0.5 rounded-full">
+                      Fields
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    {["Name", "Email", "Date", "Message"].map((f) => (
+                      <div
+                        key={f}
+                        className="flex items-center gap-2 text-[11px] text-foreground bg-muted/30 rounded-lg px-2.5 py-1.5"
+                      >
+                        <div className="w-1 h-3 rounded-full bg-brand/30" />
+                        {f}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 3 */}
+              <div className="card-glow-secondary p-7">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 rounded-full bg-brand text-white flex items-center justify-center text-sm font-semibold">
+                    3
+                  </div>
+                  <Code2 className="w-5 h-5 text-brand" />
+                </div>
+                <h3 className="text-base font-semibold text-foreground mb-2">
+                  Embed &amp; go live
+                </h3>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">
+                  Copy the script tag, paste it into your website, and your forms
+                  and booking widgets are live.
+                </p>
+                <div className="rounded-xl bg-[#0f1a14] p-3">
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <div className="w-2 h-2 rounded-full bg-red-400/50" />
+                    <div className="w-2 h-2 rounded-full bg-yellow-400/50" />
+                    <div className="w-2 h-2 rounded-full bg-green-400/50" />
+                  </div>
+                  <code className="text-[10px] text-[#d4e8dc] leading-relaxed block">
+                    <span className="text-[#81c995]">&lt;script</span>{" "}
+                    <span className="text-[#7ec8a0]">src</span>=
+                    <span className="text-[#a8d8b9]">"...booking.js"</span>
+                    <span className="text-[#81c995]">&gt;</span>
+                    {"\n"}
+                    <span className="text-[#81c995]">&lt;/script&gt;</span>
+                  </code>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      </footer>
+        </LandingSceneSection>
+
+        {/* ── 11. Pricing ───────────────────────────────────────────────── */}
+        <LandingSceneSection id="pricing">
+          <div className="landing-scene-panel p-6 sm:p-8 lg:p-10">
+            <div className="text-center mb-12">
+              <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
+                Pricing
+              </div>
+              <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
+                ... And it does not cost arm and a leg
+              </h2>
+            </div>
+            <PricingCards onGetStarted={openAuth} />
+          </div>
+        </LandingSceneSection>
+
+        {/* ── 12. FAQ ───────────────────────────────────────────────────── */}
+        <LandingSceneSection id="faq" fullHeight={false} contentClassName="max-w-3xl">
+          <div className="landing-scene-panel p-6 sm:p-8 lg:p-10">
+            <div className="text-center mb-12">
+              <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
+                FAQ
+              </div>
+              <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
+                Frequently asked questions
+              </h2>
+            </div>
+            <div className="space-y-3">
+              {faqItems.map((item) => (
+                <FaqItem key={item.question} {...item} />
+              ))}
+            </div>
+          </div>
+        </LandingSceneSection>
+
+        {/* ── 13. Final CTA ─────────────────────────────────────────────── */}
+        <LandingSceneSection fullHeight={false} contentClassName="max-w-5xl">
+          <div className="landing-scene-panel text-center px-6 py-10 sm:px-8 sm:py-12">
+            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
+              Ready to get started?
+            </h2>
+            <p className="text-base text-muted-foreground leading-relaxed mb-8 max-w-xl mx-auto">
+              Create your free account and build your first form or booking page
+              in minutes. No credit card required.
+            </p>
+            <button
+              onClick={openAuth}
+              className="glow-surface rounded-full h-12 px-8 text-sm font-medium inline-flex items-center justify-center gap-2"
+            >
+              Get Started Free
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+        </LandingSceneSection>
+
+        {/* ── 14. Footer ────────────────────────────────────────────────── */}
+        <footer className="relative pb-8 px-6">
+          <div className="landing-scene-panel max-w-7xl mx-auto p-10">
+            <div className="grid grid-cols-1 md:grid-cols-[1.5fr_1fr_1fr] gap-10">
+              {/* Brand */}
+              <div>
+                <Logo size="md" />
+                <p className="text-sm text-muted-foreground leading-relaxed mt-4 max-w-xs">
+                  Form and Scheduling infrastructure for modern teams. Multi-step
+                  forms, calendar scheduling, contact management, and embeddable
+                  widgets — all API-first.
+                </p>
+                <div className="flex items-center gap-3 mt-5">
+                  {/* Twitter/X */}
+                  <a
+                    href="https://twitter.com/linkycal"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                  </a>
+                  {/* LinkedIn */}
+                  <a
+                    href="https://linkedin.com/company/linkycal"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-9 h-9 rounded-full border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:border-foreground/20 transition-colors"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+                    </svg>
+                  </a>
+                </div>
+              </div>
+
+              {/* Pages */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-4">
+                  Pages
+                </h4>
+                <ul className="space-y-2.5">
+                  {[
+                    { label: "Home", href: "/" },
+                    { label: "Features", href: "#features" },
+                    { label: "Pricing", href: "#pricing" },
+                    { label: "FAQ", href: "#faq" },
+                    { label: "Documentation", href: "/docs", isLink: true },
+                  ].map((item) =>
+                    item.isLink ? (
+                      <li key={item.label}>
+                        <Link
+                          to={item.href}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {item.label}
+                        </Link>
+                      </li>
+                    ) : (
+                      <li key={item.label}>
+                        <a
+                          href={item.href}
+                          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                        >
+                          {item.label}
+                        </a>
+                      </li>
+                    ),
+                  )}
+                </ul>
+              </div>
+
+              {/* Information */}
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-4">
+                  Information
+                </h4>
+                <ul className="space-y-2.5">
+                  <li>
+                    <a
+                      href="mailto:hello@linkycal.com"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Contact
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="/privacy"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Privacy Policy
+                    </a>
+                  </li>
+                  <li>
+                    <a
+                      href="/terms"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Terms of Service
+                    </a>
+                  </li>
+                </ul>
+              </div>
+            </div>
+
+            {/* Copyright */}
+            <div className="mt-12 pt-6 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <p className="text-sm text-muted-foreground">
+                &copy; 2026 LinkyCal
+              </p>
+              <p className="text-sm text-muted-foreground">
+                A{" "}
+                <a
+                  href="https://launchfast.pro"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-foreground hover:text-brand transition-colors"
+                >
+                  LaunchFast
+                </a>{" "}
+                product
+              </p>
+            </div>
+          </div>
+        </footer>
+      </div>
 
       {/* ── 15. Auth Dialog ─────────────────────────────────────────────── */}
       <Dialog

@@ -71,7 +71,7 @@ function PricingCards({ onGetStarted }: PricingCardsProps) {
     <div>
       {/* Billing toggle */}
       <div className="flex items-center justify-center gap-3 mb-10">
-        <div className="inline-flex items-center rounded-full border border-border bg-white p-1">
+        <div className="inline-flex items-center rounded-full border border-border/70 bg-white/45 p-1 backdrop-blur-xl">
           <button
             onClick={() => setAnnual(false)}
             className={cn(
