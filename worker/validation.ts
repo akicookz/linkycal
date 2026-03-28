@@ -190,6 +190,7 @@ export const createFormFieldSchema = z.object({
 });
 
 export const updateFormFieldSchema = z.object({
+  stepId: z.string().min(1).optional(),
   sortOrder: z.number().int().min(0).optional(),
   type: z
     .enum([

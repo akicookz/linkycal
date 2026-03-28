@@ -481,6 +481,7 @@ export class FormService {
   async updateField(
     id: string,
     data: {
+      stepId?: string;
       sortOrder?: number;
       type?: string;
       label?: string;
@@ -490,8 +491,10 @@ export class FormService {
       options?: Array<{ label: string; value: string }> | null;
     },
   ) {
+    const currentField = await this.getFieldById(id);
+    if (!currentField) return null;
+
     const values: Record<string, unknown> = {};
-    if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.type !== undefined) {
       values.type = data.type;
       // Auto-update placeholder when type changes (unless placeholder is explicitly provided)
@@ -509,7 +512,86 @@ export class FormService {
     if (data.options !== undefined)
       values.options = data.options ? JSON.stringify(data.options) : null;
 
-    if (Object.keys(values).length === 0) return this.getFieldById(id);
+    const targetStepId = data.stepId ?? currentField.stepId;
+    const isMovingSteps = targetStepId !== currentField.stepId;
+    const hasPositionChange = isMovingSteps || data.sortOrder !== undefined;
+
+    if (hasPositionChange) {
+      const sourceStep = await this.getStepById(currentField.stepId);
+      const targetStep = await this.getStepById(targetStepId);
+      if (!sourceStep || !targetStep) {
+        return null;
+      }
+
+      if (sourceStep.formId !== targetStep.formId) {
+        throw new Error("Cannot move field across forms");
+      }
+
+      const sourceFieldIds = (await this.listFieldsByStep(currentField.stepId))
+        .map((field) => field.id)
+        .filter((fieldId) => fieldId !== id);
+
+      if (targetStepId === currentField.stepId) {
+        const insertionIndex = Math.max(
+          0,
+          Math.min(data.sortOrder ?? sourceFieldIds.length, sourceFieldIds.length),
+        );
+        sourceFieldIds.splice(insertionIndex, 0, id);
+
+        for (let index = 0; index < sourceFieldIds.length; index++) {
+          const nextValues =
+            sourceFieldIds[index] === id
+              ? {
+                  ...values,
+                  sortOrder: index,
+                }
+              : { sortOrder: index };
+
+          await this.db
+            .update(dbSchema.formFields)
+            .set(nextValues)
+            .where(eq(dbSchema.formFields.id, sourceFieldIds[index]));
+        }
+
+        return this.getFieldById(id);
+      }
+
+      const targetFieldIds = (await this.listFieldsByStep(targetStepId)).map(
+        (field) => field.id,
+      );
+      const insertionIndex = Math.max(
+        0,
+        Math.min(data.sortOrder ?? targetFieldIds.length, targetFieldIds.length),
+      );
+      targetFieldIds.splice(insertionIndex, 0, id);
+
+      for (let index = 0; index < sourceFieldIds.length; index++) {
+        await this.db
+          .update(dbSchema.formFields)
+          .set({ sortOrder: index })
+          .where(eq(dbSchema.formFields.id, sourceFieldIds[index]));
+      }
+
+      for (let index = 0; index < targetFieldIds.length; index++) {
+        const nextValues =
+          targetFieldIds[index] === id
+            ? {
+                ...values,
+                stepId: targetStepId,
+                sortOrder: index,
+              }
+            : { sortOrder: index };
+
+        await this.db
+          .update(dbSchema.formFields)
+          .set(nextValues)
+          .where(eq(dbSchema.formFields.id, targetFieldIds[index]));
+      }
+
+      return this.getFieldById(id);
+    }
+
+    if (Object.keys(values).length === 0) return currentField;
 
     await this.db
       .update(dbSchema.formFields)

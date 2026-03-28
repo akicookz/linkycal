@@ -61,10 +61,17 @@ import { cn, copyToClipboard } from "@/lib/utils";
 import { normalizeToFieldId } from "@/lib/constants";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   PointerSensor,
+  pointerWithin,
   useSensor,
   useSensors,
+  useDroppable,
+  type CollisionDetection,
+  type DragCancelEvent,
+  type DragOverEvent,
+  type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import {
@@ -134,6 +141,9 @@ interface FormSettings {
 }
 
 const DEFAULT_NATIVE_SUCCESS_MESSAGE = "Your response has been submitted successfully.";
+const STEP_CANVAS_DROPPABLE_ID_PREFIX = "step-canvas:";
+const STEP_DROP_TARGET_ID_PREFIX = "step-drop-target:";
+const NEW_STEP_DROP_TARGET_ID = "step-drop-target:new";
 
 // ─── Field Type Definitions ──────────────────────────────────────────────────
 
@@ -232,12 +242,148 @@ function toPersistedFieldOptions(options: DraftFieldOption[]): FieldOption[] {
     }));
 }
 
-// Field icon lookup (used by field type picker in sidebar)
-function _getFieldIcon(type: string) {
+function getFieldIcon(type: string) {
   const found = FIELD_TYPES.find((ft) => ft.type === type);
   return found?.icon ?? Type;
 }
-void _getFieldIcon;
+
+function sortFields(fields: FormField[]): FormField[] {
+  return [...fields].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function normalizeFieldOrders(fields: FormField[]): FormField[] {
+  return fields.map((field, index) => ({
+    ...field,
+    sortOrder: index,
+  }));
+}
+
+function getStepCanvasDroppableId(stepId: string): string {
+  return `${STEP_CANVAS_DROPPABLE_ID_PREFIX}${stepId}`;
+}
+
+function getStepDropTargetId(stepId: string): string {
+  return `${STEP_DROP_TARGET_ID_PREFIX}${stepId}`;
+}
+
+function getIdValue(id: string | number | null | undefined): string | null {
+  if (id === null || id === undefined) return null;
+  return String(id);
+}
+
+function isStepDropTargetId(id: string | null): boolean {
+  return id?.startsWith(STEP_DROP_TARGET_ID_PREFIX) ?? false;
+}
+
+function getStepIdFromDropTargetId(id: string): string | null {
+  if (!isStepDropTargetId(id) || id === NEW_STEP_DROP_TARGET_ID) {
+    return null;
+  }
+
+  return id.slice(STEP_DROP_TARGET_ID_PREFIX.length);
+}
+
+function moveFieldBetweenSteps(
+  steps: FormStep[],
+  fieldId: string,
+  targetStepId: string,
+  targetIndex?: number,
+  updates?: Partial<FormField>,
+): FormStep[] {
+  let sourceStepId: string | null = null;
+  let movingField: FormField | null = null;
+
+  const stepsWithoutField = steps.map((step) => {
+    const sortedFields = sortFields(step.fields);
+    const fieldIndex = sortedFields.findIndex((field) => field.id === fieldId);
+    if (fieldIndex === -1) {
+      return {
+        ...step,
+        fields: sortedFields,
+      };
+    }
+
+    sourceStepId = step.id;
+    movingField = sortedFields[fieldIndex];
+
+    return {
+      ...step,
+      fields: sortedFields.filter((field) => field.id !== fieldId),
+    };
+  });
+
+  if (!movingField || !sourceStepId) {
+    return steps;
+  }
+
+  const fieldToMove = movingField as FormField;
+
+  const targetStep = stepsWithoutField.find((step) => step.id === targetStepId);
+  if (!targetStep) {
+    return steps;
+  }
+
+  const nextField = {
+    ...fieldToMove,
+    ...(updates ?? {}),
+    stepId: targetStepId,
+  };
+  const nextFields = [...targetStep.fields];
+  const insertionIndex = Math.max(
+    0,
+    Math.min(targetIndex ?? nextFields.length, nextFields.length),
+  );
+  nextFields.splice(insertionIndex, 0, nextField);
+
+  return stepsWithoutField.map((step) => {
+    if (step.id !== sourceStepId && step.id !== targetStepId) {
+      return step;
+    }
+
+    if (step.id === targetStepId) {
+      return {
+        ...step,
+        fields: normalizeFieldOrders(nextFields).map((field) =>
+          field.id === fieldId
+            ? { ...field, ...(updates ?? {}), stepId: targetStepId }
+            : field,
+        ),
+      };
+    }
+
+    return {
+      ...step,
+      fields: normalizeFieldOrders(step.fields),
+    };
+  });
+}
+
+function updateFieldInSteps(
+  steps: FormStep[],
+  fieldId: string,
+  data: Partial<FormField> & {
+    stepId?: string;
+    sortOrder?: number;
+  },
+): FormStep[] {
+  const currentStep = steps.find((step) =>
+    step.fields.some((field) => field.id === fieldId),
+  );
+  if (!currentStep) return steps;
+
+  if (data.stepId || data.sortOrder !== undefined) {
+    const targetStepId = data.stepId ?? currentStep.id;
+    const targetIndex = data.sortOrder;
+    return moveFieldBetweenSteps(steps, fieldId, targetStepId, targetIndex, data);
+  }
+
+  return steps.map((step) => ({
+    ...step,
+    fields: step.fields.map((field) =>
+      field.id === fieldId ? { ...field, ...data } : field,
+    ),
+  }));
+}
 
 function generateSlug(name: string): string {
   return name
@@ -261,6 +407,14 @@ export default function FormBuilder() {
     Record<string, DraftFieldOption[]>
   >({});
   const [autoFocusLastField, setAutoFocusLastField] = useState(false);
+  const [activeStepTabDragId, setActiveStepTabDragId] = useState<string | null>(
+    null,
+  );
+  const [draggingField, setDraggingField] = useState<FormField | null>(null);
+  const [showStepDropTargets, setShowStepDropTargets] = useState(false);
+  const [hoveredStepDropTargetId, setHoveredStepDropTargetId] = useState<
+    string | null
+  >(null);
 
   const [linkCopied, setLinkCopied] = useState(false);
   const [promptCopiedId, setPromptCopiedId] = useState<string | null>(null);
@@ -385,8 +539,12 @@ export default function FormBuilder() {
   const activeStep = activeStepId
     ? sortedSteps.find((step) => step.id === activeStepId) ?? null
     : sortedSteps[0] ?? null;
-  const activeFields = activeStep
-    ? [...activeStep.fields].sort((a, b) => a.sortOrder - b.sortOrder)
+  const activeFields = activeStep ? sortFields(activeStep.fields) : [];
+  const activeStepCanvasDroppableId = activeStep
+    ? getStepCanvasDroppableId(activeStep.id)
+    : null;
+  const fieldDropTargetSteps = draggingField
+    ? sortedSteps.filter((step) => step.id !== draggingField.stepId)
     : [];
 
   // Sync active step when form loads
@@ -769,10 +927,12 @@ export default function FormBuilder() {
       fieldId: string;
       data: Partial<{
         label: string;
-        placeholder: string;
+        placeholder: string | null;
         required: boolean;
         type: string;
-        options: FieldOption[];
+        options: FieldOption[] | null;
+        stepId: string;
+        sortOrder: number;
       }>;
     }) => {
       const res = await fetch(
@@ -791,12 +951,7 @@ export default function FormBuilder() {
       const snapshot = snapshotForm();
       optimisticSetForm((old) => ({
         ...old,
-        steps: old.steps.map((s) => ({
-          ...s,
-          fields: s.fields.map((f) =>
-            f.id === fieldId ? { ...f, ...data } : f
-          ),
-        })),
+        steps: updateFieldInSteps(old.steps, fieldId, data),
       }));
       return { snapshot };
     },
@@ -926,6 +1081,107 @@ export default function FormBuilder() {
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
+  const fieldCollisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const collisions = pointerWithin(args);
+      if (collisions.length === 0) {
+        return [];
+      }
+
+      if (!activeStepCanvasDroppableId) {
+        return collisions;
+      }
+
+      const focusedCollisions = collisions.filter(
+        (collision) => collision.id !== activeStepCanvasDroppableId,
+      );
+
+      return focusedCollisions.length > 0 ? focusedCollisions : collisions;
+    },
+    [activeStepCanvasDroppableId],
+  );
+
+  function clearFieldDragState() {
+    setDraggingField(null);
+    setShowStepDropTargets(false);
+    setHoveredStepDropTargetId(null);
+  }
+
+  function handleFieldDragStart(event: DragStartEvent) {
+    if (!activeStep) return;
+
+    const activeId = getIdValue(event.active.id);
+    if (!activeId) return;
+
+    const field = activeFields.find((candidate) => candidate.id === activeId);
+    if (!field) return;
+
+    setDraggingField(field);
+  }
+
+  function handleFieldDragOver(event: DragOverEvent) {
+    const overId = getIdValue(event.over?.id);
+    const isInsideActiveStep =
+      overId !== null &&
+      (overId === activeStepCanvasDroppableId || activeFields.some((field) => field.id === overId));
+
+    setShowStepDropTargets(Boolean(draggingField) && !isInsideActiveStep);
+
+    if (overId === NEW_STEP_DROP_TARGET_ID || isStepDropTargetId(overId)) {
+      setHoveredStepDropTargetId(overId);
+      return;
+    }
+
+    setHoveredStepDropTargetId(null);
+  }
+
+  function handleFieldDragCancel(_event: DragCancelEvent) {
+    clearFieldDragState();
+  }
+
+  async function moveFieldToStep(fieldId: string, targetStepId: string) {
+    const sourceStepId = draggingField?.stepId;
+    const targetStep = sortedSteps.find((step) => step.id === targetStepId);
+    if (!targetStep || !sourceStepId) return;
+
+    setActiveStepId(targetStepId);
+
+    try {
+      await updateFieldMutation.mutateAsync({
+        fieldId,
+        data: {
+          stepId: targetStepId,
+          sortOrder: targetStep.fields.length,
+        },
+      });
+    } catch {
+      setActiveStepId(sourceStepId);
+    }
+  }
+
+  async function moveFieldToNewStep(fieldId: string) {
+    const sourceStepId = draggingField?.stepId;
+    if (!sourceStepId) return;
+
+    try {
+      const response = await addStepMutation.mutateAsync();
+      const nextStep = response?.step as FormStep | undefined;
+      if (!nextStep) {
+        throw new Error("Failed to create destination step");
+      }
+
+      setActiveStepId(nextStep.id);
+      await updateFieldMutation.mutateAsync({
+        fieldId,
+        data: {
+          stepId: nextStep.id,
+          sortOrder: 0,
+        },
+      });
+    } catch {
+      setActiveStepId(sourceStepId);
+    }
+  }
 
   const reorderFieldsMutation = useMutation({
     mutationFn: async ({ stepId, fieldIds }: { stepId: string; fieldIds: string[] }) => {
@@ -963,12 +1219,32 @@ export default function FormBuilder() {
     },
   });
 
-  function handleFieldDragEnd(event: DragEndEvent) {
+  async function handleFieldDragEnd(event: DragEndEvent) {
     const { active, over } = event;
-    if (!over || active.id === over.id || !activeStep) return;
+    const activeId = getIdValue(active.id);
+    const overId = getIdValue(over?.id);
 
-    const oldIndex = activeFields.findIndex((f) => f.id === active.id);
-    const newIndex = activeFields.findIndex((f) => f.id === over.id);
+    clearFieldDragState();
+
+    if (!activeId || !activeStep) return;
+
+    if (overId === NEW_STEP_DROP_TARGET_ID) {
+      await moveFieldToNewStep(activeId);
+      return;
+    }
+
+    if (overId && isStepDropTargetId(overId)) {
+      const targetStepId = getStepIdFromDropTargetId(overId);
+      if (targetStepId && targetStepId !== activeStep.id) {
+        await moveFieldToStep(activeId, targetStepId);
+      }
+      return;
+    }
+
+    if (!overId || activeId === overId) return;
+
+    const oldIndex = activeFields.findIndex((field) => field.id === activeId);
+    const newIndex = activeFields.findIndex((field) => field.id === overId);
     if (oldIndex === -1 || newIndex === -1) return;
 
     const reordered = arrayMove(activeFields, oldIndex, newIndex);
@@ -988,8 +1264,18 @@ export default function FormBuilder() {
     });
   }
 
+  function handleStepDragStart(event: DragStartEvent) {
+    const activeId = getIdValue(event.active.id);
+    setActiveStepTabDragId(activeId);
+  }
+
+  function handleStepDragCancel(_event: DragCancelEvent) {
+    setActiveStepTabDragId(null);
+  }
+
   function handleStepDragEnd(event: DragEndEvent) {
     const { active, over } = event;
+    setActiveStepTabDragId(null);
     if (!over || active.id === over.id) return;
 
     const oldIndex = sortedSteps.findIndex((step) => step.id === active.id);
@@ -1523,20 +1809,38 @@ export default function FormBuilder() {
         <div className="space-y-4">
           {/* Step tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragStart={handleStepDragStart}
+              onDragCancel={handleStepDragCancel}
+              onDragEnd={handleStepDragEnd}
+            >
               <SortableContext items={sortedSteps.map((step) => step.id)} strategy={horizontalListSortingStrategy}>
                 {sortedSteps.map((step, idx) => (
-                    <SortableStepTab
-                      key={step.id}
-                      step={step}
-                      idx={idx}
-                      isActive={step.id === activeStep?.id}
-                      showDelete={sortedSteps.length > 1}
-                      onSelect={() => setActiveStepId(step.id)}
-                      onDelete={() => deleteStepMutation.mutate(step.id)}
-                    />
-                  ))}
+                  <SortableStepTab
+                    key={step.id}
+                    step={step}
+                    idx={idx}
+                    isActive={step.id === activeStep?.id}
+                    showDelete={sortedSteps.length > 1}
+                    onSelect={() => setActiveStepId(step.id)}
+                    onDelete={() => deleteStepMutation.mutate(step.id)}
+                  />
+                ))}
               </SortableContext>
+              <DragOverlay>
+                {activeStepTabDragId ? (
+                  <StepTabShell
+                    label={
+                      sortedSteps.find((step) => step.id === activeStepTabDragId)?.title ||
+                      `Step ${sortedSteps.findIndex((step) => step.id === activeStepTabDragId) + 1}`
+                    }
+                    isActive
+                    isOverlay
+                  />
+                ) : null}
+              </DragOverlay>
             </DndContext>
             <Button
               variant="outline"
@@ -1552,239 +1856,276 @@ export default function FormBuilder() {
 
           {/* Active step content */}
           {activeStep ? (
-            <Card>
-              <CardContent className="space-y-4">
-                {/* Step title & description */}
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">
-                    Step Title
-                  </Label>
-                  <Input
-                    defaultValue={activeStep.title ?? ""}
-                    key={`step-title-${activeStep.id}`}
-                    placeholder="Step title"
-                    className="h-9"
-                    onBlur={(e) => {
-                      if (e.target.value !== (activeStep.title ?? "")) {
-                        updateStepMutation.mutate({
-                          stepId: activeStep.id,
-                          data: { title: e.target.value },
-                        });
-                      }
-                    }}
-                  />
-                  <Label className="text-xs text-muted-foreground">
-                    Step Description
-                  </Label>
-                  <Input
-                    defaultValue={activeStep.description ?? ""}
-                    key={`step-desc-${activeStep.id}`}
-                    placeholder="Optional description"
-                    className="h-9"
-                    onBlur={(e) => {
-                      if (
-                        e.target.value !== (activeStep.description ?? "")
-                      ) {
-                        updateStepMutation.mutate({
-                          stepId: activeStep.id,
-                          data: { description: e.target.value },
-                        });
-                      }
-                    }}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={fieldCollisionDetection}
+              onDragStart={handleFieldDragStart}
+              onDragOver={handleFieldDragOver}
+              onDragCancel={handleFieldDragCancel}
+              onDragEnd={handleFieldDragEnd}
+            >
+              {showStepDropTargets && (
+                <div className="flex items-stretch gap-3 overflow-x-auto pb-1">
+                  {fieldDropTargetSteps.map((step) => {
+                    const stepNumber = sortedSteps.findIndex((candidate) => candidate.id === step.id) + 1;
+                    return (
+                      <StepDropTarget
+                        key={step.id}
+                        id={getStepDropTargetId(step.id)}
+                        title={step.title || `Step ${stepNumber}`}
+                        description="Move question here"
+                        isHovered={hoveredStepDropTargetId === getStepDropTargetId(step.id)}
+                      />
+                    );
+                  })}
+                  <StepDropTarget
+                    id={NEW_STEP_DROP_TARGET_ID}
+                    title="New Step"
+                    description="Create and move here"
+                    isHovered={hoveredStepDropTargetId === NEW_STEP_DROP_TARGET_ID}
+                    isNew
                   />
                 </div>
+              )}
 
-                {/* Fields list */}
-                {activeFields.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <Type className="h-8 w-8 text-muted-foreground mb-3" />
-                    <p className="text-sm font-medium text-foreground mb-1">
-                      No fields yet
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Click a field type from the left panel to add it.
-                    </p>
-                  </div>
-                ) : (
-                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
-                    <SortableContext items={activeFields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
-                      <div className="space-y-2">
-                        {activeFields.map((field, fieldIdx) => {
-                          const options = getFieldOptions(field);
-                          const hasOptions = OPTION_FIELD_TYPES.includes(field.type);
-                          const isLastField = fieldIdx === activeFields.length - 1;
-                          const shouldAutoFocus = autoFocusLastField && isLastField;
-                          return (
-                            <SortableFieldCard
-                              key={field.id}
-                              id={field.id}
-                              shouldAutoFocus={shouldAutoFocus}
-                              onAutoFocused={() => setAutoFocusLastField(false)}
-                            >
-                              {(dragHandleProps) => (<>
-                                {/* Row 1: Handle + Label + Required + Remove */}
-                                <div className="flex items-center gap-3">
-                                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                                  <InlineEditableLabel
-                                    value={field.label}
-                                    autoFocus={shouldAutoFocus}
-                                    onSave={(label) =>
-                                      updateFieldMutation.mutate({
-                                        fieldId: field.id,
-                                        data: { label },
-                                      })
-                                    }
-                                  />
-                                  <div className="flex items-center gap-3 ml-auto shrink-0">
-                                    <Select
-                                      value={field.type}
-                                      onValueChange={(val) => {
-                                        const wasOptionType = isOptionFieldType(field.type);
-                                        const isOptionType = isOptionFieldType(val);
-                                        const updateData: Record<string, unknown> = { type: val };
-                                        if (wasOptionType && !isOptionType) {
-                                          updateData.options = null;
-                                          setFieldOptionsState((prev) => {
-                                            const next = { ...prev };
-                                            delete next[field.id];
-                                            return next;
-                                          });
-                                        }
-                                        if (!wasOptionType && isOptionType) {
-                                          const seedOptions = val === "multi_select"
-                                            ? toDraftFieldOptions([
-                                              { label: "Option 1", value: "option_1" },
-                                              { label: "Option 2", value: "option_2" },
-                                            ])
-                                            : toDraftFieldOptions([
-                                              { label: "Option 1", value: "option_1" },
-                                            ]);
-                                          updateData.options = toPersistedFieldOptions(seedOptions);
-                                          setFieldOptions(field.id, seedOptions);
-                                        }
-                                        // If switching to multi_select and only 1 option, add a second
-                                        if (wasOptionType && isOptionType && val === "multi_select") {
-                                          const currentOpts = getFieldOptions(field);
-                                          if (currentOpts.length < 2) {
-                                            const seedOptions = [
-                                              ...currentOpts,
-                                              createDraftFieldOption({
-                                                label: "Option 2",
-                                                value: "option_2",
-                                              }),
-                                            ];
+              <StepCanvasDropZone
+                id={activeStepCanvasDroppableId ?? getStepCanvasDroppableId(activeStep.id)}
+                isDraggingField={Boolean(draggingField)}
+                isCrossStepMode={showStepDropTargets}
+              >
+                <Card>
+                  <CardContent className="space-y-4">
+                    {/* Step title & description */}
+                    <div className="space-y-2">
+                      <Label className="text-xs text-muted-foreground">
+                        Step Title
+                      </Label>
+                      <Input
+                        defaultValue={activeStep.title ?? ""}
+                        key={`step-title-${activeStep.id}`}
+                        placeholder="Step title"
+                        className="h-9"
+                        onBlur={(e) => {
+                          if (e.target.value !== (activeStep.title ?? "")) {
+                            updateStepMutation.mutate({
+                              stepId: activeStep.id,
+                              data: { title: e.target.value },
+                            });
+                          }
+                        }}
+                      />
+                      <Label className="text-xs text-muted-foreground">
+                        Step Description
+                      </Label>
+                      <Input
+                        defaultValue={activeStep.description ?? ""}
+                        key={`step-desc-${activeStep.id}`}
+                        placeholder="Optional description"
+                        className="h-9"
+                        onBlur={(e) => {
+                          if (
+                            e.target.value !== (activeStep.description ?? "")
+                          ) {
+                            updateStepMutation.mutate({
+                              stepId: activeStep.id,
+                              data: { description: e.target.value },
+                            });
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* Fields list */}
+                    {activeFields.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <Type className="h-8 w-8 text-muted-foreground mb-3" />
+                        <p className="text-sm font-medium text-foreground mb-1">
+                          No fields yet
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Click a field type from the left panel to add it.
+                        </p>
+                      </div>
+                    ) : (
+                      <SortableContext items={activeFields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+                        <div className="space-y-2">
+                          {activeFields.map((field, fieldIdx) => {
+                            const options = getFieldOptions(field);
+                            const hasOptions = OPTION_FIELD_TYPES.includes(field.type);
+                            const isLastField = fieldIdx === activeFields.length - 1;
+                            const shouldAutoFocus = autoFocusLastField && isLastField;
+                            return (
+                              <SortableFieldCard
+                                key={field.id}
+                                id={field.id}
+                                shouldAutoFocus={shouldAutoFocus}
+                                onAutoFocused={() => setAutoFocusLastField(false)}
+                              >
+                                {(dragHandleProps) => (<>
+                                  {/* Row 1: Handle + Label + Required + Remove */}
+                                  <div className="flex items-center gap-3">
+                                    <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
+                                    <InlineEditableLabel
+                                      value={field.label}
+                                      autoFocus={shouldAutoFocus}
+                                      onSave={(label) =>
+                                        updateFieldMutation.mutate({
+                                          fieldId: field.id,
+                                          data: { label },
+                                        })
+                                      }
+                                    />
+                                    <div className="flex items-center gap-3 ml-auto shrink-0">
+                                      <Select
+                                        value={field.type}
+                                        onValueChange={(val) => {
+                                          const wasOptionType = isOptionFieldType(field.type);
+                                          const isOptionType = isOptionFieldType(val);
+                                          const updateData: Record<string, unknown> = { type: val };
+                                          if (wasOptionType && !isOptionType) {
+                                            updateData.options = null;
+                                            setFieldOptionsState((prev) => {
+                                              const next = { ...prev };
+                                              delete next[field.id];
+                                              return next;
+                                            });
+                                          }
+                                          if (!wasOptionType && isOptionType) {
+                                            const seedOptions = val === "multi_select"
+                                              ? toDraftFieldOptions([
+                                                { label: "Option 1", value: "option_1" },
+                                                { label: "Option 2", value: "option_2" },
+                                              ])
+                                              : toDraftFieldOptions([
+                                                { label: "Option 1", value: "option_1" },
+                                              ]);
                                             updateData.options = toPersistedFieldOptions(seedOptions);
                                             setFieldOptions(field.id, seedOptions);
                                           }
+                                          if (wasOptionType && isOptionType && val === "multi_select") {
+                                            const currentOpts = getFieldOptions(field);
+                                            if (currentOpts.length < 2) {
+                                              const seedOptions = [
+                                                ...currentOpts,
+                                                createDraftFieldOption({
+                                                  label: "Option 2",
+                                                  value: "option_2",
+                                                }),
+                                              ];
+                                              updateData.options = toPersistedFieldOptions(seedOptions);
+                                              setFieldOptions(field.id, seedOptions);
+                                            }
+                                          }
+                                          updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
+                                        }}
+                                      >
+                                        <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {FIELD_TYPES.map((ft) => (
+                                            <SelectItem key={ft.type} value={ft.type}>
+                                              {ft.label}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[11px] text-muted-foreground">
+                                          Required
+                                        </span>
+                                        <Switch
+                                          checked={field.required}
+                                          onCheckedChange={(checked) =>
+                                            updateFieldMutation.mutate({
+                                              fieldId: field.id,
+                                              data: { required: checked },
+                                            })
+                                          }
+                                          className="scale-75"
+                                        />
+                                      </div>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                        onClick={() =>
+                                          deleteFieldMutation.mutate(field.id)
                                         }
-                                        updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {FIELD_TYPES.map((ft) => (
-                                          <SelectItem key={ft.type} value={ft.type}>
-                                            {ft.label}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-[11px] text-muted-foreground">
-                                        Required
-                                      </span>
-                                      <Switch
-                                        checked={field.required}
-                                        onCheckedChange={(checked) =>
-                                          updateFieldMutation.mutate({
-                                            fieldId: field.id,
-                                            data: { required: checked },
-                                          })
-                                        }
-                                        className="scale-75"
-                                      />
+                                        disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
+                                      >
+                                        {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
+                                          <Loader className="h-3.5 w-3.5 animate-spin" />
+                                        ) : (
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        )}
+                                        Remove
+                                      </Button>
                                     </div>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                      onClick={() =>
-                                        deleteFieldMutation.mutate(field.id)
-                                      }
-                                      disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
-                                    >
-                                      {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
-                                        <Loader className="h-3.5 w-3.5 animate-spin" />
-                                      ) : (
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      )}
-                                      Remove
-                                    </Button>
                                   </div>
-                                </div>
 
+                                  {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
+                                    const minOptions = field.type === "multi_select" ? 2 : 1;
+                                    return (
+                                      <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
+                                        {options.map((opt, idx) => {
+                                          const isLast = idx === options.length - 1;
+                                          const canRemove = options.length > minOptions;
+                                          return (
+                                            <div key={opt.id} className="flex items-center gap-1.5">
+                                              <Input
+                                                placeholder={`Option ${idx + 1}`}
+                                                value={opt.label}
+                                                onChange={(e) =>
+                                                  updateFieldOption(field.id, idx, e.target.value, field)
+                                                }
+                                                onBlur={() => saveFieldOptions(field.id)}
+                                                className="h-7 text-xs"
+                                              />
+                                              {isLast && (
+                                                <Button
+                                                  type="button"
+                                                  variant="outline"
+                                                  size="sm"
+                                                  className="h-7 px-2 shrink-0 text-xs"
+                                                  onClick={() => addFieldOption(field.id, field)}
+                                                >
+                                                  <Plus className="h-3 w-3" />
+                                                  Add
+                                                </Button>
+                                              )}
+                                              {canRemove && (
+                                                <Button
+                                                  type="button"
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
+                                                  onClick={() => removeFieldOption(field.id, idx, field)}
+                                                >
+                                                  <X className="h-3 w-3" />
+                                                </Button>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    );
+                                  })()}
+                                </>)}
+                              </SortableFieldCard>
+                            );
+                          })}
+                        </div>
+                      </SortableContext>
+                    )}
+                  </CardContent>
+                </Card>
+              </StepCanvasDropZone>
 
-
-                                {/* Row 3: Options (conditional) */}
-                                {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
-                                  const minOptions = field.type === "multi_select" ? 2 : 1;
-                                  return (
-                                    <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
-                                      {options.map((opt, idx) => {
-                                        const isLast = idx === options.length - 1;
-                                        const canRemove = options.length > minOptions;
-                                        return (
-                                          <div key={opt.id} className="flex items-center gap-1.5">
-                                            <Input
-                                              placeholder={`Option ${idx + 1}`}
-                                              value={opt.label}
-                                              onChange={(e) =>
-                                                updateFieldOption(field.id, idx, e.target.value, field)
-                                              }
-                                              onBlur={() => saveFieldOptions(field.id)}
-                                              className="h-7 text-xs"
-                                            />
-                                            {isLast && (
-                                              <Button
-                                                type="button"
-                                                variant="outline"
-                                                size="sm"
-                                                className="h-7 px-2 shrink-0 text-xs"
-                                                onClick={() => addFieldOption(field.id, field)}
-                                              >
-                                                <Plus className="h-3 w-3" />
-                                                Add
-                                              </Button>
-                                            )}
-                                            {canRemove && (
-                                              <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
-                                                onClick={() => removeFieldOption(field.id, idx, field)}
-                                              >
-                                                <X className="h-3 w-3" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                    </div>
-                                  );
-                                })()}
-                              </>)}
-                            </SortableFieldCard>
-                          );
-                        })}
-                      </div>
-                    </SortableContext>
-                  </DndContext>
-                )}
-              </CardContent>
-            </Card>
+              <DragOverlay>
+                {draggingField ? <FieldDragPreview field={draggingField} /> : null}
+              </DragOverlay>
+            </DndContext>
           ) : (
             <div className="flex flex-col items-center justify-center rounded-[20px] border border-dashed min-h-[400px]">
               <p className="text-sm text-muted-foreground mb-3">
@@ -1833,7 +2174,7 @@ function SortableFieldCard({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.15 : 1,
   };
 
   return (
@@ -1850,7 +2191,153 @@ function SortableFieldCard({
   );
 }
 
+function StepCanvasDropZone({
+  id,
+  isDraggingField,
+  isCrossStepMode,
+  children,
+}: {
+  id: string;
+  isDraggingField: boolean;
+  isCrossStepMode: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id,
+  });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "rounded-[24px] transition-all",
+        isDraggingField && !isCrossStepMode && "ring-2 ring-primary/15 ring-offset-4 ring-offset-background",
+        isOver && !isCrossStepMode && "ring-primary/25",
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
+function StepDropTarget({
+  id,
+  title,
+  description,
+  isHovered,
+  isNew = false,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  isHovered: boolean;
+  isNew?: boolean;
+}) {
+  const { setNodeRef } = useDroppable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex h-[116px] w-[116px] shrink-0 flex-col justify-between rounded-[22px] border border-dashed bg-muted/40 p-3 text-left transition-all",
+        isHovered
+          ? "border-primary bg-primary/8 shadow-sm scale-[1.02]"
+          : "border-border/70",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <Badge variant={isHovered ? "default" : "secondary"} className="rounded-full px-2 py-0.5 text-[10px]">
+          {isNew ? "New Step" : "Step"}
+        </Badge>
+        {isNew && <Plus className="h-4 w-4 text-muted-foreground" />}
+      </div>
+      <div className="space-y-1">
+        <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
+          {title}
+        </p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          {description}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function FieldDragPreview({ field }: { field: FormField }) {
+  const FieldIcon = getFieldIcon(field.type);
+
+  return (
+    <div className="w-[min(520px,calc(100vw-3rem))] rounded-[16px] border bg-background px-3 py-2.5 shadow-lg">
+      <div className="flex items-center gap-3">
+        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <FieldIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <p className="truncate text-sm font-medium text-foreground">
+          {field.label}
+        </p>
+        <Badge variant="secondary" className="ml-auto rounded-full px-2 py-0.5 text-[10px]">
+          {FIELD_TYPES.find((entry) => entry.type === field.type)?.label ?? field.type}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sortable Step Tab ───────────────────────────────────────────────────────
+
+function StepTabShell({
+  label,
+  isActive,
+  onSelect,
+  onDelete,
+  showDelete = false,
+  dragHandleProps,
+  isOverlay = false,
+}: {
+  label: string;
+  isActive: boolean;
+  onSelect?: () => void;
+  onDelete?: () => void;
+  showDelete?: boolean;
+  dragHandleProps?: Record<string, unknown>;
+  isOverlay?: boolean;
+}) {
+  return (
+    <div
+      className={cn(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-[14px] border px-2 py-1.5 shadow-sm transition-colors",
+        isActive
+          ? "border-primary/30 bg-primary/8 text-primary"
+          : "border-border bg-background text-foreground",
+        isOverlay && "shadow-lg",
+      )}
+    >
+      <span
+        className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground cursor-grab active:cursor-grabbing hover:bg-black/5"
+        onClick={(event) => event.stopPropagation()}
+        {...dragHandleProps}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </span>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="whitespace-nowrap text-sm font-medium"
+      >
+        {label}
+      </button>
+      {showDelete && onDelete && (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground"
+          aria-label={`Delete ${label}`}
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 function SortableStepTab({
   step,
@@ -1879,45 +2366,23 @@ function SortableStepTab({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging ? 0.15 : 1,
   };
 
   return (
-    <button
+    <div
       ref={setNodeRef}
       style={style}
-      type="button"
-      onClick={onSelect}
-      className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-[12px] px-3 py-1.5 text-sm font-medium transition-colors",
-        isActive
-          ? "bg-primary text-primary-foreground shadow-sm"
-          : "bg-muted text-muted-foreground hover:bg-accent",
-      )}
-      {...attributes}
-      {...listeners}
     >
-      {step.title || `Step ${idx + 1}`}
-      {showDelete && (
-        <span
-          role="button"
-          tabIndex={0}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.stopPropagation();
-              onDelete();
-            }
-          }}
-          className="ml-1 rounded-full p-0.5 hover:bg-white/20"
-        >
-          <X className="h-3 w-3" />
-        </span>
-      )}
-    </button>
+      <StepTabShell
+        label={step.title || `Step ${idx + 1}`}
+        isActive={isActive}
+        onSelect={onSelect}
+        onDelete={onDelete}
+        showDelete={showDelete}
+        dragHandleProps={{ ...listeners, ...attributes }}
+      />
+    </div>
   );
 }
 
