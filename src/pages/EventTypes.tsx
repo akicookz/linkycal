@@ -7,7 +7,7 @@ import {
   Copy,
   Pencil,
   Trash2,
-  Loader2,
+  Loader,
   AlertCircle,
   Check,
   MoreHorizontal,
@@ -409,7 +409,7 @@ export default function EventTypes() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}

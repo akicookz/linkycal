@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Loader2,
+  Loader,
   AlertCircle,
   CheckCircle2,
   ChevronRight,
@@ -216,7 +216,7 @@ export default function PublicForm() {
     return (
       <PageShell theme={theme}>
         <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       </PageShell>
     );
@@ -341,7 +341,7 @@ export default function PublicForm() {
             style={theme?.primaryBg ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg } : undefined}
           >
             {submitting ? (
-              <><Loader2 className="h-4 w-4 animate-spin" /> {isLastStep ? "Submitting..." : "Next"}</>
+              <><Loader className="h-4 w-4 animate-spin" /> {isLastStep ? "Submitting..." : "Next"}</>
             ) : isLastStep ? (
               <><CheckCircle2 className="h-4 w-4" /> Submit</>
             ) : (

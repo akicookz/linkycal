@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Save,
-  Loader2,
+  Loader,
   AlertCircle,
   Plus,
   Trash2,
@@ -709,7 +709,7 @@ export default function EventTypeForm() {
             onClick={handleSubmit}
             disabled={isSaving || !formData.name || !formData.slug}
           >
-            {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {isSaving ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {isEditing ? "Save Changes" : "Create Event Type"}
           </Button>
         </div>
@@ -917,13 +917,13 @@ export default function EventTypeForm() {
                 disabled={connectCalendarMutation.isPending}
               >
                 {connectCalendarMutation.isPending ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                  <Loader className="h-3.5 w-3.5 animate-spin mr-1" />
                 ) : (
                   <svg className="h-3.5 w-3.5 mr-1" viewBox="0 0 24 24" fill="none">
-                    <path d="M21.35 11.1h-9.18v2.73h5.51c-.24 1.28-.97 2.36-2.06 3.08v2.56h3.33c1.95-1.79 3.07-4.43 3.07-7.55 0-.52-.05-1.02-.14-1.5l-.53.68z" fill="#4285F4"/>
-                    <path d="M12.17 22c2.78 0 5.11-.92 6.82-2.49l-3.33-2.56c-.92.62-2.1.99-3.49.99-2.68 0-4.95-1.81-5.76-4.24H3.01v2.64C4.72 19.78 8.17 22 12.17 22z" fill="#34A853"/>
-                    <path d="M6.41 14.09c-.21-.62-.33-1.28-.33-1.97s.12-1.35.33-1.97V7.51H3.01A9.996 9.996 0 0 0 2 12.12c0 1.61.39 3.14 1.01 4.49l3.4-2.52z" fill="#FBBC05"/>
-                    <path d="M12.17 5.91c1.51 0 2.87.52 3.94 1.54l2.95-2.95C17.27 2.86 14.94 2 12.17 2 8.17 2 4.72 4.22 3.01 7.51l3.4 2.61c.81-2.43 3.08-4.21 5.76-4.21z" fill="#EA4335"/>
+                    <path d="M21.35 11.1h-9.18v2.73h5.51c-.24 1.28-.97 2.36-2.06 3.08v2.56h3.33c1.95-1.79 3.07-4.43 3.07-7.55 0-.52-.05-1.02-.14-1.5l-.53.68z" fill="#4285F4" />
+                    <path d="M12.17 22c2.78 0 5.11-.92 6.82-2.49l-3.33-2.56c-.92.62-2.1.99-3.49.99-2.68 0-4.95-1.81-5.76-4.24H3.01v2.64C4.72 19.78 8.17 22 12.17 22z" fill="#34A853" />
+                    <path d="M6.41 14.09c-.21-.62-.33-1.28-.33-1.97s.12-1.35.33-1.97V7.51H3.01A9.996 9.996 0 0 0 2 12.12c0 1.61.39 3.14 1.01 4.49l3.4-2.52z" fill="#FBBC05" />
+                    <path d="M12.17 5.91c1.51 0 2.87.52 3.94 1.54l2.95-2.95C17.27 2.86 14.94 2 12.17 2 8.17 2 4.72 4.22 3.01 7.51l3.4 2.61c.81-2.43 3.08-4.21 5.76-4.21z" fill="#EA4335" />
                   </svg>
                 )}
                 Connect
@@ -1020,8 +1020,8 @@ export default function EventTypeForm() {
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground py-2 text-center">
-                No calendar connected yet. Use the Connect button above to get started.
-              </p>
+                  No calendar connected yet. Use the Connect button above to get started.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -1115,11 +1115,10 @@ export default function EventTypeForm() {
                       }
                     />
                     <span
-                      className={`text-sm font-medium w-28 ${
-                        !dayConfigs[idx].enabled
+                      className={`text-sm font-medium w-28 ${!dayConfigs[idx].enabled
                           ? "text-muted-foreground"
                           : "text-foreground"
-                      }`}
+                        }`}
                     >
                       {day}
                     </span>
@@ -1204,7 +1203,7 @@ export default function EventTypeForm() {
                           }
                           disabled={deleteOverrideMutation.isPending}
                         >
-                          {deleteOverrideMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                          {deleteOverrideMutation.isPending ? <Loader className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                           Remove
                         </Button>
                       </div>
@@ -1305,7 +1304,7 @@ export default function EventTypeForm() {
               </Button>
               <Button type="submit" disabled={addOverrideMutation.isPending}>
                 {addOverrideMutation.isPending && (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader className="h-4 w-4 animate-spin" />
                 )}
                 Add Override
               </Button>

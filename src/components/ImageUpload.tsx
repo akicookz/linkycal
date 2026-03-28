@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from "react";
-import { X, Loader2, ImageIcon, ImagePlus } from "lucide-react";
+import { X, Loader, ImageIcon, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -150,7 +150,7 @@ export function ImageUpload({
         )}
       >
         {uploading ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader className="h-5 w-5 animate-spin" />
         ) : (
           <>
             <ImageIcon className="h-5 w-5" />

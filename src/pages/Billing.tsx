@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Check, CreditCard, ExternalLink, Loader2 } from "lucide-react";
+import { Check, CreditCard, ExternalLink, Loader } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -111,7 +111,7 @@ export default function Billing() {
             disabled={portalMutation.isPending}
           >
             {portalMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader className="h-4 w-4 animate-spin" />
             ) : (
               <ExternalLink className="h-4 w-4" />
             )}
@@ -253,8 +253,8 @@ export default function Billing() {
                   }}
                 >
                   {(checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id) ||
-                  (action === "downgrade" && portalMutation.isPending) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    (action === "downgrade" && portalMutation.isPending) ? (
+                    <Loader className="h-4 w-4 animate-spin" />
                   ) : null}
                   {isCurrent
                     ? "Current Plan"

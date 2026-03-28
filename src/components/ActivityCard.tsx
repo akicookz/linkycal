@@ -1,4 +1,4 @@
-import { CalendarCheck, FileText, CheckCircle2, XCircle, Loader2, Video, Calendar, Info, Trash2 } from "lucide-react";
+import { CalendarCheck, FileText, CheckCircle2, XCircle, Loader, Video, Calendar, Info, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -173,13 +173,12 @@ export function ActivityCard({
         {/* Status indicator */}
         {isConfirmed && relTime ? (
           <span
-            className={`shrink-0 text-[11px] font-medium ${
-              relTime.isHappening
+            className={`shrink-0 text-[11px] font-medium ${relTime.isHappening
                 ? "text-amber-600 animate-pulse"
                 : relTime.isUpcoming
                   ? "text-emerald-600"
                   : "text-muted-foreground"
-            }`}
+              }`}
           >
             {relTime.label}
           </span>
@@ -202,7 +201,7 @@ export function ActivityCard({
               onClick={onConfirm}
               disabled={confirmLoading || declineLoading}
             >
-              {confirmLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              {confirmLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
               Confirm
             </Button>
             <Button
@@ -212,7 +211,7 @@ export function ActivityCard({
               onClick={onDecline}
               disabled={confirmLoading || declineLoading}
             >
-              {declineLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
+              {declineLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
               Decline
             </Button>
           </>
@@ -291,7 +290,7 @@ export function ActivityCard({
                 onClick={onDelete}
                 disabled={deleteLoading}
               >
-                {deleteLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                {deleteLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                 Delete
               </Button>
             )}

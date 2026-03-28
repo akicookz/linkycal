@@ -6,7 +6,7 @@ import {
   Save,
   Plus,
   Trash2,
-  Loader2,
+  Loader,
   AlertCircle,
   Globe,
   CalendarOff,
@@ -338,7 +338,7 @@ export default function Availability() {
             disabled={saveRulesMutation.isPending}
           >
             {saveRulesMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />
             )}
@@ -424,11 +424,10 @@ export default function Availability() {
                         }
                       />
                       <span
-                        className={`text-sm font-medium w-28 ${
-                          !dayConfigs[idx].enabled
+                        className={`text-sm font-medium w-28 ${!dayConfigs[idx].enabled
                             ? "text-muted-foreground"
                             : "text-foreground"
-                        }`}
+                          }`}
                       >
                         {day}
                       </span>
@@ -525,7 +524,7 @@ export default function Availability() {
                         disabled={deleteOverrideMutation.isPending}
                       >
                         {deleteOverrideMutation.isPending ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Loader className="h-3 w-3 animate-spin" />
                         ) : (
                           <Trash2 className="h-3.5 w-3.5" />
                         )}
@@ -617,7 +616,7 @@ export default function Availability() {
               </Button>
               <Button type="submit" disabled={addOverrideMutation.isPending}>
                 {addOverrideMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader className="h-4 w-4 animate-spin" />
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}

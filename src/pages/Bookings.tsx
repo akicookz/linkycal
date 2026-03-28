@@ -3,7 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   CalendarCheck,
-  Loader2,
+  Loader,
   AlertCircle,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
@@ -349,7 +349,7 @@ export default function Bookings() {
               disabled={cancelMutation.isPending}
             >
               {cancelMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               )}
               Cancel Booking
             </Button>
@@ -384,7 +384,7 @@ export default function Bookings() {
               disabled={declineMutation.isPending}
             >
               {declineMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               )}
               Decline
             </Button>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CalendarCheck, FileText, Loader2, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check } from "lucide-react";
+import { CalendarCheck, FileText, Loader, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -158,7 +158,7 @@ export function ActivityDrawer({
         .then((data) => {
           if (data) setFormDetail(data as FormResponseDetail);
         })
-        .catch(() => {})
+        .catch(() => { })
         .finally(() => setLoading(false));
     }
   }, [open, item, projectId]);
@@ -207,7 +207,7 @@ export function ActivityDrawer({
 
         {loading ? (
           <div className="flex items-center justify-center py-12 flex-1">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto space-y-5">
@@ -222,17 +222,15 @@ export function ActivityDrawer({
             {/* Relative time badge for confirmed bookings */}
             {isBooking && isConfirmed && relTime && (
               <div
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${
-                  relTime.isHappening
+                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${relTime.isHappening
                     ? "bg-amber-50 text-amber-700"
                     : relTime.isUpcoming
                       ? "bg-emerald-50 text-emerald-700"
                       : "bg-muted text-muted-foreground"
-                }`}
+                  }`}
               >
-                <span className={`h-1.5 w-1.5 rounded-full ${
-                  relTime.isHappening ? "bg-amber-500 animate-pulse" : relTime.isUpcoming ? "bg-emerald-500" : "bg-muted-foreground"
-                }`} />
+                <span className={`h-1.5 w-1.5 rounded-full ${relTime.isHappening ? "bg-amber-500 animate-pulse" : relTime.isUpcoming ? "bg-emerald-500" : "bg-muted-foreground"
+                  }`} />
                 {relTime.label}
               </div>
             )}
@@ -311,7 +309,7 @@ export function ActivityDrawer({
                   disabled={confirmLoading || declineLoading}
                   className="flex-1"
                 >
-                  {confirmLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  {confirmLoading ? <Loader className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   Confirm Booking
                 </Button>
                 <Button
@@ -320,7 +318,7 @@ export function ActivityDrawer({
                   onClick={() => onDecline(item.id)}
                   disabled={confirmLoading || declineLoading}
                 >
-                  {declineLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                  {declineLoading ? <Loader className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                   Decline
                 </Button>
               </div>
@@ -345,7 +343,7 @@ export function ActivityDrawer({
                     onClick={() => onCancel(item.id)}
                     disabled={cancelLoading}
                   >
-                    {cancelLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                    {cancelLoading ? <Loader className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                     Cancel
                   </Button>
                 )}
@@ -369,7 +367,7 @@ export function ActivityDrawer({
                     onClick={() => onCancel(item.id)}
                     disabled={cancelLoading}
                   >
-                    {cancelLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                    {cancelLoading ? <Loader className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                     Cancel
                   </Button>
                 )}
@@ -396,7 +394,7 @@ export function ActivityDrawer({
                     onClick={() => onDeleteFormResponse(item.id)}
                     disabled={deleteLoading}
                   >
-                    {deleteLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                    {deleteLoading ? <Loader className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                     Delete
                   </Button>
                 )}

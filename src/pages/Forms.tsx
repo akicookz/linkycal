@@ -7,7 +7,7 @@ import {
   Copy,
   Pencil,
   Trash2,
-  Loader2,
+  Loader,
   AlertCircle,
   Check,
   BarChart3,
@@ -549,7 +549,7 @@ export default function Forms() {
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
                 {createMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader className="h-4 w-4 animate-spin" />
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
@@ -587,7 +587,7 @@ export default function Forms() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}

@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
-  Loader2,
+  Loader,
   CalendarDays,
   Unplug,
   ExternalLink,
@@ -323,7 +323,7 @@ export default function Settings() {
                         projectName === project?.name
                       }
                     >
-                      {updateProjectMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      {updateProjectMutation.isPending ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                       Update
                     </Button>
                   </div>
@@ -446,7 +446,7 @@ export default function Settings() {
               disabled={saveThemeMutation.isPending}
             >
               {saveThemeMutation.isPending ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Saving...</>
+                <><Loader className="h-4 w-4 animate-spin" /> Saving...</>
               ) : "Save Appearance"}
             </Button>
           </CardContent>
@@ -514,7 +514,7 @@ export default function Settings() {
                   disabled={connectCalendarMutation.isPending}
                 >
                   {connectCalendarMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader className="h-4 w-4 animate-spin" />
                   ) : (
                     <ExternalLink className="h-4 w-4" />
                   )}
@@ -581,7 +581,7 @@ export default function Settings() {
               disabled={deleteProjectMutation.isPending}
             >
               {deleteProjectMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               )}
               Delete Permanently
             </Button>
@@ -619,7 +619,7 @@ export default function Settings() {
               disabled={disconnectCalendarMutation.isPending}
             >
               {disconnectCalendarMutation.isPending && (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               )}
               Disconnect
             </Button>

@@ -6,7 +6,7 @@ import {
   ArrowDown,
   Plus,
   Trash2,
-  Loader2,
+  Loader,
   AlertCircle,
   Mail,
   Tag,
@@ -609,7 +609,7 @@ export default function WorkflowBuilder() {
                           <XCircle className="h-5 w-5 text-destructive" />
                         )}
                         {run.status === "running" && (
-                          <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+                          <Loader className="h-5 w-5 text-blue-600 animate-spin" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
@@ -754,7 +754,7 @@ export default function WorkflowBuilder() {
                   disabled={addStepMutation.isPending || updateStepMutation.isPending}
                 >
                   {(addStepMutation.isPending || updateStepMutation.isPending) ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader className="h-4 w-4 animate-spin" />
                   ) : editingStepId ? (
                     <CheckCircle2 className="h-4 w-4" />
                   ) : (
@@ -791,7 +791,7 @@ export default function WorkflowBuilder() {
               disabled={deleteStepMutation.isPending}
             >
               {deleteStepMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}

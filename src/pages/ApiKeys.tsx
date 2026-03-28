@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -183,7 +183,7 @@ export default function ApiKeys() {
                     disabled={createMutation.isPending}
                   >
                     {createMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader className="h-4 w-4 animate-spin" />
                     ) : (
                       <Plus className="h-4 w-4" />
                     )}
@@ -261,7 +261,7 @@ export default function ApiKeys() {
       <Card>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <Loader className="h-8 w-8 animate-spin text-muted-foreground" />
             <p className="text-sm text-muted-foreground mt-4">Loading API keys...</p>
           </div>
         ) : apiKeys.length === 0 ? (
@@ -334,7 +334,7 @@ export default function ApiKeys() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}

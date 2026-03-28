@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Check, ArrowRight, ArrowLeft } from "lucide-react";
+import { Loader, Check, ArrowRight, ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -141,13 +141,13 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
   // ─── Step 2: Availability ──────────────────────────────────────────────────
   const [scheduleId, setScheduleId] = useState<string | null>(null);
   const [days, setDays] = useState<Record<string, { enabled: boolean; label: string; dayOfWeek: number; startTime: string; endTime: string }>>({
-    monday:    { enabled: true,  label: "Monday",    dayOfWeek: 1, startTime: "09:00", endTime: "17:00" },
-    tuesday:   { enabled: true,  label: "Tuesday",   dayOfWeek: 2, startTime: "09:00", endTime: "17:00" },
-    wednesday: { enabled: true,  label: "Wednesday", dayOfWeek: 3, startTime: "09:00", endTime: "17:00" },
-    thursday:  { enabled: true,  label: "Thursday",  dayOfWeek: 4, startTime: "09:00", endTime: "17:00" },
-    friday:    { enabled: true,  label: "Friday",    dayOfWeek: 5, startTime: "09:00", endTime: "17:00" },
-    saturday:  { enabled: false, label: "Saturday",  dayOfWeek: 6, startTime: "09:00", endTime: "17:00" },
-    sunday:    { enabled: false, label: "Sunday",    dayOfWeek: 0, startTime: "09:00", endTime: "17:00" },
+    monday: { enabled: true, label: "Monday", dayOfWeek: 1, startTime: "09:00", endTime: "17:00" },
+    tuesday: { enabled: true, label: "Tuesday", dayOfWeek: 2, startTime: "09:00", endTime: "17:00" },
+    wednesday: { enabled: true, label: "Wednesday", dayOfWeek: 3, startTime: "09:00", endTime: "17:00" },
+    thursday: { enabled: true, label: "Thursday", dayOfWeek: 4, startTime: "09:00", endTime: "17:00" },
+    friday: { enabled: true, label: "Friday", dayOfWeek: 5, startTime: "09:00", endTime: "17:00" },
+    saturday: { enabled: false, label: "Saturday", dayOfWeek: 6, startTime: "09:00", endTime: "17:00" },
+    sunday: { enabled: false, label: "Sunday", dayOfWeek: 0, startTime: "09:00", endTime: "17:00" },
   });
 
   // ─── Step 3: Branding ────────────────────────────────────────────────────
@@ -369,7 +369,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
         <Logo size="lg" />
         <div className="mt-8 flex items-center gap-3 text-muted-foreground">
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader className="h-5 w-5 animate-spin" />
           <span className="text-sm">{completing ? "Finishing setup..." : "Loading..."}</span>
         </div>
       </div>
@@ -464,7 +464,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                 >
                   {createProjectMutation.isPending ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
                       Creating...
                     </>
                   ) : (
@@ -553,7 +553,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                 >
                   {createEventTypeMutation.isPending ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
                       Creating...
                     </>
                   ) : (
@@ -656,7 +656,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                 >
                   {saveAvailabilityMutation.isPending ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
                       Saving...
                     </>
                   ) : (
@@ -756,7 +756,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                 >
                   {saveBrandingMutation.isPending ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
                       Saving...
                     </>
                   ) : (
@@ -834,10 +834,10 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                       onClick={() => handleSelectPlan(plan.id)}
                     >
                       {checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                        <Loader className="h-4 w-4 animate-spin mr-1.5" />
                       ) : null}
                       {completeMutation.isPending && plan.id === "free" ? (
-                        <Loader2 className="h-4 w-4 animate-spin mr-1.5" />
+                        <Loader className="h-4 w-4 animate-spin mr-1.5" />
                       ) : null}
                       {plan.id === "free"
                         ? "Continue for free"

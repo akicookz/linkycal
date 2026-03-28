@@ -5,7 +5,7 @@ import {
   Plus,
   Zap,
   Trash2,
-  Loader2,
+  Loader,
   AlertCircle,
   FileText,
   CalendarPlus,
@@ -375,7 +375,7 @@ export default function Workflows() {
               </Button>
               <Button type="submit" disabled={createMutation.isPending}>
                 {createMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader className="h-4 w-4 animate-spin" />
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
@@ -413,7 +413,7 @@ export default function Workflows() {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader className="h-4 w-4 animate-spin" />
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}

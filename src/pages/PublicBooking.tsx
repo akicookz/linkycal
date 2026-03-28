@@ -7,7 +7,7 @@ import {
   Clock,
   MapPin,
   Check,
-  Loader2,
+  Loader,
   AlertCircle,
   Globe,
   ArrowRight,
@@ -374,7 +374,7 @@ export default function PublicBooking() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <Loader className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -432,7 +432,7 @@ export default function PublicBooking() {
 
         {/* ─── Card ─── */}
         <div
-           className={cn(
+          className={cn(
             "bg-card p-6 sm:p-8 transition-all duration-500",
             theme?.bannerImage ? "rounded-b-[16px]" : "rounded-[16px]",
           )}
@@ -569,7 +569,7 @@ export default function PublicBooking() {
                             !day.disabled && "hover:bg-accent cursor-pointer",
                             day.isToday && !day.disabled && "font-bold",
                             selectedDate === day.dateStr && !primaryStyle &&
-                              "bg-primary text-primary-foreground",
+                            "bg-primary text-primary-foreground",
                           )}
                           style={selectedDate === day.dateStr && primaryStyle ? primaryStyle : undefined}
                         >
@@ -724,7 +724,7 @@ export default function PublicBooking() {
                     style={primaryStyle}
                   >
                     {submitting ? (
-                      <><Loader2 className="h-4 w-4 animate-spin" /> Booking...</>
+                      <><Loader className="h-4 w-4 animate-spin" /> Booking...</>
                     ) : (
                       <><CalendarCheckIcon className="h-4 w-4" /> Confirm Booking</>
                     )}
@@ -796,7 +796,7 @@ export default function PublicBooking() {
                       style={primaryStyle}
                     >
                       {submitting ? (
-                        <><Loader2 className="h-4 w-4 animate-spin" /> Booking...</>
+                        <><Loader className="h-4 w-4 animate-spin" /> Booking...</>
                       ) : (
                         <><CalendarCheckIcon className="h-4 w-4" /> Confirm Booking</>
                       )}

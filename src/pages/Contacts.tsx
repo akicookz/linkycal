@@ -9,7 +9,7 @@ import {
   Pencil,
   Trash2,
   Tags,
-  Loader2,
+  Loader,
   AlertCircle,
   X,
 } from "lucide-react";
@@ -615,7 +615,7 @@ export default function Contacts() {
                 Cancel
               </Button>
               <Button type="submit" disabled={createMutation.isPending || !createForm.name.trim()}>
-                {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {createMutation.isPending && <Loader className="h-4 w-4 animate-spin" />}
                 Create Contact
               </Button>
             </DialogFooter>
@@ -657,7 +657,7 @@ export default function Contacts() {
                 Cancel
               </Button>
               <Button type="submit" disabled={editMutation.isPending || !editForm.name.trim()}>
-                {editMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editMutation.isPending && <Loader className="h-4 w-4 animate-spin" />}
                 Save Changes
               </Button>
             </DialogFooter>
@@ -698,7 +698,7 @@ export default function Contacts() {
               onClick={() => deletingContact && deleteMutation.mutate(deletingContact.id)}
               disabled={deleteMutation.isPending}
             >
-              {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+              {deleteMutation.isPending && <Loader className="h-4 w-4 animate-spin" />}
               Delete
             </Button>
           </DialogFooter>
@@ -754,7 +754,7 @@ export default function Contacts() {
                   onClick={() => deleteTagMutation.mutate(tag.id)}
                   disabled={deleteTagMutation.isPending}
                 >
-                  {deleteTagMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                  {deleteTagMutation.isPending ? <Loader className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
                   Delete
                 </Button>
               </div>
@@ -797,7 +797,7 @@ export default function Contacts() {
                 disabled={createTagMutation.isPending || !newTagName.trim()}
               >
                 {createTagMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader className="h-4 w-4 animate-spin" />
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}

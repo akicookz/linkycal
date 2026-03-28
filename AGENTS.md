@@ -6,22 +6,22 @@ LinkyCal is a form and Scheduling infrastructure SaaS. Users create projects, bu
 
 ## Tech Stack
 
-| Layer        | Technology                               |
-| ------------ | ---------------------------------------- |
-| Runtime      | Bun                                      |
-| Frontend     | React 19 SPA, Vite, React Router 7       |
-| Styling      | Tailwind CSS v4 + shadcn/ui (customized) |
-| Backend      | Hono on Cloudflare Workers               |
-| Database     | Cloudflare D1 via Drizzle ORM (SQLite)   |
-| Cache        | Cloudflare KV                            |
-| File Storage | Cloudflare R2                            |
-| Queue        | Cloudflare Queues (workflow execution)   |
-| Auth         | Better Auth (Google + Facebook OAuth + Email OTP (5-step onboarding: project, event type, form, branding, plan))      |
-| Payments     | Stripe (Free / Pro / Business)           |
-| Email        | Resend                                   |
-| Validation   | Zod                                      |
-| Calendar     | Google Calendar API (per-event-type destination + freeBusy) |
-| Widgets      | Self-contained IIFE bundles on R2        |
+| Layer        | Technology                                                                                                       |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Runtime      | Bun                                                                                                              |
+| Frontend     | React 19 SPA, Vite, React Router 7                                                                               |
+| Styling      | Tailwind CSS v4 + shadcn/ui (customized)                                                                         |
+| Backend      | Hono on Cloudflare Workers                                                                                       |
+| Database     | Cloudflare D1 via Drizzle ORM (SQLite)                                                                           |
+| Cache        | Cloudflare KV                                                                                                    |
+| File Storage | Cloudflare R2                                                                                                    |
+| Queue        | Cloudflare Queues (workflow execution)                                                                           |
+| Auth         | Better Auth (Google + Facebook OAuth + Email OTP (5-step onboarding: project, event type, form, branding, plan)) |
+| Payments     | Stripe (Free / Pro / Business)                                                                                   |
+| Email        | Resend                                                                                                           |
+| Validation   | Zod                                                                                                              |
+| Calendar     | Google Calendar API (per-event-type destination + freeBusy)                                                      |
+| Widgets      | Self-contained IIFE bundles on R2                                                                                |
 
 ## Directory Structure
 
@@ -124,19 +124,22 @@ app/
 ## UI Conventions
 
 ### Buttons
+
 - **All buttons must have icon + text** — no icon-only buttons, no text-only buttons
 - **Exception**: Cancel/Close buttons in dialogs may be text-only
-- **Loading state**: Replace the primary icon with `<Loader2 className="animate-spin" />`, keep the text. Never show both the original icon and the spinner simultaneously.
+- **Loading state**: Replace the primary icon with `<Loader className="animate-spin" />`, keep the text. Never show both the original icon and the spinner simultaneously.
 - **Disabled state**: The icon stays as-is (Tailwind `disabled:opacity-50` handles the visual). Do not swap to a Ban icon unless explicitly needed.
 - Use lucide-react icons consistently (e.g., Save, Plus, Trash2, Pencil, ArrowRight, ArrowLeft, etc.)
 
 ### Separators
+
 - **Never use borders as visual separators between list rows** — no `<Separator />`, no `divide-y`, no `border-b`, no `border-t` between items in a list
 - Use `space-y-*` or `gap-*` for spacing between rows/items instead
 - **Structural borders are fine** — page headers, sidebars, layout boundaries, card borders
 - **Decorative borders are fine** — mock browser UIs on the landing page
 
 ### Lists & Tables
+
 - Use the Dashboard "recent bookings" pattern: avatar circle + flex row + badge, inside a `<Card>`
 - No table headers — use clean list layouts
 - Expandable rows indent with `pl-14` to align past the avatar

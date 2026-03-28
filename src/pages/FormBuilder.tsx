@@ -4,7 +4,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Plus,
-  Loader2,
+  Loader,
   AlertCircle,
   GripVertical,
   Type,
@@ -284,7 +284,7 @@ export default function FormBuilder() {
         : "message",
     successMessage:
       typeof formSettings.nativeAction?.successMessage === "string" &&
-      formSettings.nativeAction.successMessage.trim()
+        formSettings.nativeAction.successMessage.trim()
         ? formSettings.nativeAction.successMessage
         : DEFAULT_NATIVE_SUCCESS_MESSAGE,
     redirectUrl:
@@ -536,23 +536,23 @@ export default function FormBuilder() {
         steps: old.steps.map((s) =>
           s.id === stepId
             ? {
-                ...s,
-                fields: [
-                  ...s.fields,
-                  {
-                    id: tempId,
-                    stepId,
-                    sortOrder: s.fields.length,
-                    type,
-                    label,
-                    placeholder: null,
-                    required: false,
-                    validation: null,
-                    options: null,
-                    createdAt: new Date().toISOString(),
-                  },
-                ],
-              }
+              ...s,
+              fields: [
+                ...s.fields,
+                {
+                  id: tempId,
+                  stepId,
+                  sortOrder: s.fields.length,
+                  type,
+                  label,
+                  placeholder: null,
+                  required: false,
+                  validation: null,
+                  options: null,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
             : s
         ),
       }));
@@ -973,7 +973,7 @@ export default function FormBuilder() {
                   disabled={createFormMutation.isPending}
                 >
                   {createFormMutation.isPending && (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <Loader className="h-4 w-4 animate-spin" />
                   )}
                   Create Form
                 </Button>
@@ -1127,7 +1127,7 @@ export default function FormBuilder() {
             disabled={form.status === "active" || updateFormMutation.isPending}
           >
             {updateFormMutation.isPending ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
+              <Loader className="h-3 w-3 animate-spin" />
             ) : (
               <Globe className="h-3 w-3" />
             )}
@@ -1380,167 +1380,167 @@ export default function FormBuilder() {
                 ) : (
                   <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleFieldDragEnd}>
                     <SortableContext items={activeFields.map((f) => f.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-2">
-                    {activeFields.map((field, fieldIdx) => {
-                      const options = getFieldOptions(field);
-                      const hasOptions = OPTION_FIELD_TYPES.includes(field.type);
-                      const isLastField = fieldIdx === activeFields.length - 1;
-                      const shouldAutoFocus = autoFocusLastField && isLastField;
-                      return (
-                        <SortableFieldCard
-                          key={field.id}
-                          id={field.id}
-                          shouldAutoFocus={shouldAutoFocus}
-                          onAutoFocused={() => setAutoFocusLastField(false)}
-                        >
-                          {(dragHandleProps) => (<>
-                          {/* Row 1: Handle + Label + Required + Remove */}
-                          <div className="flex items-center gap-3">
-                            <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                            <InlineEditableLabel
-                              value={field.label}
-                              autoFocus={shouldAutoFocus}
-                              onSave={(label) =>
-                                updateFieldMutation.mutate({
-                                  fieldId: field.id,
-                                  data: { label },
-                                })
-                              }
-                            />
-                            <div className="flex items-center gap-3 ml-auto shrink-0">
-                              <Select
-                                value={field.type}
-                                onValueChange={(val) => {
-                                  const wasOptionType = OPTION_FIELD_TYPES.includes(field.type);
-                                  const isOptionType = OPTION_FIELD_TYPES.includes(val);
-                                  const updateData: Record<string, unknown> = { type: val };
-                                  if (wasOptionType && !isOptionType) {
-                                    updateData.options = null;
-                                    setFieldOptionsState((prev) => {
-                                      const next = { ...prev };
-                                      delete next[field.id];
-                                      return next;
-                                    });
-                                  }
-                                if (!wasOptionType && isOptionType) {
-                                  const seedOptions = val === "multi_select"
-                                    ? [{ label: "Option 1", value: "option_1" }, { label: "Option 2", value: "option_2" }]
-                                    : [{ label: "Option 1", value: "option_1" }];
-                                  updateData.options = seedOptions;
-                                  setFieldOptions(field.id, seedOptions);
-                                }
-                                // If switching to multi_select and only 1 option, add a second
-                                if (wasOptionType && isOptionType && val === "multi_select") {
-                                  const currentOpts = fieldOptionsState[field.id] ?? field.options ?? [];
-                                  if (currentOpts.length < 2) {
-                                    const seedOptions = [...currentOpts, { label: "Option 2", value: "option_2" }];
-                                    updateData.options = seedOptions;
-                                    setFieldOptions(field.id, seedOptions);
-                                  }
-                                }
-                                  updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
-                                }}
-                              >
-                                <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {FIELD_TYPES.map((ft) => (
-                                    <SelectItem key={ft.type} value={ft.type}>
-                                      {ft.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              <div className="flex items-center gap-1">
-                                <span className="text-[11px] text-muted-foreground">
-                                  Required
-                                </span>
-                                <Switch
-                                  checked={field.required}
-                                  onCheckedChange={(checked) =>
-                                    updateFieldMutation.mutate({
-                                      fieldId: field.id,
-                                      data: { required: checked },
-                                    })
-                                  }
-                                  className="scale-75"
-                                />
-                              </div>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                onClick={() =>
-                                  deleteFieldMutation.mutate(field.id)
-                                }
-                                disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
-                              >
-                                {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
-                                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                                ) : (
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                )}
-                                Remove
-                              </Button>
-                            </div>
-                          </div>
-
-
-
-                          {/* Row 3: Options (conditional) */}
-                          {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
-                            const minOptions = field.type === "multi_select" ? 2 : 1;
-                            return (
-                              <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
-                                {options.map((opt, idx) => {
-                                  const isLast = idx === options.length - 1;
-                                  const canRemove = options.length > minOptions;
-                                  return (
-                                    <div key={idx} className="flex items-center gap-1.5">
-                                      <Input
-                                        placeholder={`Option ${idx + 1}`}
-                                        value={opt.label}
-                                        onChange={(e) =>
-                                          updateFieldOption(field.id, idx, e.target.value)
+                      <div className="space-y-2">
+                        {activeFields.map((field, fieldIdx) => {
+                          const options = getFieldOptions(field);
+                          const hasOptions = OPTION_FIELD_TYPES.includes(field.type);
+                          const isLastField = fieldIdx === activeFields.length - 1;
+                          const shouldAutoFocus = autoFocusLastField && isLastField;
+                          return (
+                            <SortableFieldCard
+                              key={field.id}
+                              id={field.id}
+                              shouldAutoFocus={shouldAutoFocus}
+                              onAutoFocused={() => setAutoFocusLastField(false)}
+                            >
+                              {(dragHandleProps) => (<>
+                                {/* Row 1: Handle + Label + Required + Remove */}
+                                <div className="flex items-center gap-3">
+                                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
+                                  <InlineEditableLabel
+                                    value={field.label}
+                                    autoFocus={shouldAutoFocus}
+                                    onSave={(label) =>
+                                      updateFieldMutation.mutate({
+                                        fieldId: field.id,
+                                        data: { label },
+                                      })
+                                    }
+                                  />
+                                  <div className="flex items-center gap-3 ml-auto shrink-0">
+                                    <Select
+                                      value={field.type}
+                                      onValueChange={(val) => {
+                                        const wasOptionType = OPTION_FIELD_TYPES.includes(field.type);
+                                        const isOptionType = OPTION_FIELD_TYPES.includes(val);
+                                        const updateData: Record<string, unknown> = { type: val };
+                                        if (wasOptionType && !isOptionType) {
+                                          updateData.options = null;
+                                          setFieldOptionsState((prev) => {
+                                            const next = { ...prev };
+                                            delete next[field.id];
+                                            return next;
+                                          });
                                         }
-                                        onBlur={() => saveFieldOptions(field.id)}
-                                        className="h-7 text-xs"
+                                        if (!wasOptionType && isOptionType) {
+                                          const seedOptions = val === "multi_select"
+                                            ? [{ label: "Option 1", value: "option_1" }, { label: "Option 2", value: "option_2" }]
+                                            : [{ label: "Option 1", value: "option_1" }];
+                                          updateData.options = seedOptions;
+                                          setFieldOptions(field.id, seedOptions);
+                                        }
+                                        // If switching to multi_select and only 1 option, add a second
+                                        if (wasOptionType && isOptionType && val === "multi_select") {
+                                          const currentOpts = fieldOptionsState[field.id] ?? field.options ?? [];
+                                          if (currentOpts.length < 2) {
+                                            const seedOptions = [...currentOpts, { label: "Option 2", value: "option_2" }];
+                                            updateData.options = seedOptions;
+                                            setFieldOptions(field.id, seedOptions);
+                                          }
+                                        }
+                                        updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {FIELD_TYPES.map((ft) => (
+                                          <SelectItem key={ft.type} value={ft.type}>
+                                            {ft.label}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-[11px] text-muted-foreground">
+                                        Required
+                                      </span>
+                                      <Switch
+                                        checked={field.required}
+                                        onCheckedChange={(checked) =>
+                                          updateFieldMutation.mutate({
+                                            fieldId: field.id,
+                                            data: { required: checked },
+                                          })
+                                        }
+                                        className="scale-75"
                                       />
-                                      {isLast && (
-                                        <Button
-                                          type="button"
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-7 px-2 shrink-0 text-xs"
-                                          onClick={() => addFieldOption(field.id, field)}
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                          Add
-                                        </Button>
+                                    </div>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                      onClick={() =>
+                                        deleteFieldMutation.mutate(field.id)
+                                      }
+                                      disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
+                                    >
+                                      {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
+                                        <Loader className="h-3.5 w-3.5 animate-spin" />
+                                      ) : (
+                                        <Trash2 className="h-3.5 w-3.5" />
                                       )}
-                                      {canRemove && (
-                                        <Button
-                                          type="button"
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
-                                          onClick={() => removeFieldOption(field.id, idx, field)}
-                                        >
-                                          <X className="h-3 w-3" />
-                                        </Button>
-                                      )}
+                                      Remove
+                                    </Button>
+                                  </div>
+                                </div>
+
+
+
+                                {/* Row 3: Options (conditional) */}
+                                {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
+                                  const minOptions = field.type === "multi_select" ? 2 : 1;
+                                  return (
+                                    <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
+                                      {options.map((opt, idx) => {
+                                        const isLast = idx === options.length - 1;
+                                        const canRemove = options.length > minOptions;
+                                        return (
+                                          <div key={idx} className="flex items-center gap-1.5">
+                                            <Input
+                                              placeholder={`Option ${idx + 1}`}
+                                              value={opt.label}
+                                              onChange={(e) =>
+                                                updateFieldOption(field.id, idx, e.target.value)
+                                              }
+                                              onBlur={() => saveFieldOptions(field.id)}
+                                              className="h-7 text-xs"
+                                            />
+                                            {isLast && (
+                                              <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-7 px-2 shrink-0 text-xs"
+                                                onClick={() => addFieldOption(field.id, field)}
+                                              >
+                                                <Plus className="h-3 w-3" />
+                                                Add
+                                              </Button>
+                                            )}
+                                            {canRemove && (
+                                              <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
+                                                onClick={() => removeFieldOption(field.id, idx, field)}
+                                              >
+                                                <X className="h-3 w-3" />
+                                              </Button>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   );
-                                })}
-                              </div>
-                            );
-                          })()}
-                        </>)}
-                        </SortableFieldCard>
-                      );
-                    })}
-                  </div>
+                                })()}
+                              </>)}
+                            </SortableFieldCard>
+                          );
+                        })}
+                      </div>
                     </SortableContext>
                   </DndContext>
                 )}

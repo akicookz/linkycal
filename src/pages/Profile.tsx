@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Save, Loader2, Camera, User } from "lucide-react";
+import { Save, Loader, Camera, User } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -106,7 +106,7 @@ export default function Profile() {
             <div className="relative group">
               <div className="h-20 w-20 rounded-full bg-muted/50 overflow-hidden flex items-center justify-center shrink-0">
                 {uploading ? (
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
                 ) : image ? (
                   <img
                     src={image}
@@ -175,7 +175,7 @@ export default function Profile() {
             disabled={saving || !hasChanges}
           >
             {saving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader className="h-4 w-4 animate-spin" />
             ) : saved ? (
               <Save className="h-4 w-4" />
             ) : (

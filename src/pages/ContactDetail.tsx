@@ -12,7 +12,7 @@ import {
   FileText,
   Tag,
   Plus,
-  Loader2,
+  Loader,
   AlertCircle,
   Clock,
 } from "lucide-react";
@@ -586,7 +586,7 @@ export default function ContactDetailPage() {
                             />
                             <span className="truncate">{tag.name}</span>
                             {addTagMutation.isPending && addTagMutation.variables === tag.id && (
-                              <Loader2 className="h-3 w-3 animate-spin ml-auto" />
+                              <Loader className="h-3 w-3 animate-spin ml-auto" />
                             )}
                           </button>
                         ))}
@@ -748,7 +748,7 @@ export default function ContactDetailPage() {
                 Cancel
               </Button>
               <Button type="submit" disabled={editMutation.isPending || !editForm.name.trim()}>
-                {editMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editMutation.isPending && <Loader className="h-4 w-4 animate-spin" />}
                 Save Changes
               </Button>
             </DialogFooter>
