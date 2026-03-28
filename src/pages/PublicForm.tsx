@@ -256,7 +256,7 @@ export default function PublicForm() {
 
   return (
     <PageShell theme={theme}>
-      <div className="space-y-1 mb-5">
+      <div className="space-y-1.5 mb-7">
         <h1 className="text-lg font-semibold">{form.name}</h1>
         {steps.length > 1 && currentStep?.title && (
           <p className="text-sm text-muted-foreground">{currentStep.title}</p>
@@ -270,7 +270,7 @@ export default function PublicForm() {
 
       {/* Step progress indicator */}
       {steps.length > 1 && (
-        <div className="flex gap-1.5 mb-5">
+        <div className="flex gap-1.5 mb-7">
           {steps.map((_, idx) => (
             <div
               key={idx}
@@ -288,7 +288,7 @@ export default function PublicForm() {
           e.preventDefault();
           submitCurrentStep();
         }}
-        className="space-y-4"
+        className="space-y-5 sm:space-y-6"
       >
         <div className="sr-only" aria-hidden="true">
           <label htmlFor="website">Website</label>
@@ -321,7 +321,7 @@ export default function PublicForm() {
           </p>
         )}
 
-        <div className="flex items-center gap-3 pt-4">
+        <div className="flex items-center gap-3 pt-6">
           {!isFirstStep && (
             <Button
               type="button"
@@ -371,17 +371,17 @@ function PageShell({ children, theme }: { children: React.ReactNode; theme?: Boo
         } : {}),
       }}
     >
-      <div className="flex-1 flex items-center justify-center px-4 py-12">
-        <div className="w-full max-w-lg">
+      <div className="flex-1 flex items-center justify-center px-5 py-10 sm:px-6 sm:py-14">
+        <div className="w-full max-w-[44rem]">
           {theme?.bannerImage && (
             <div
-              className="w-full h-36 sm:h-44 rounded-t-[20px] bg-cover bg-center"
+              className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"
               style={{ backgroundImage: `url(${theme.bannerImage})` }}
             />
           )}
           <div
             className={cn(
-              "bg-card p-6 sm:p-8",
+              "bg-card px-6 py-7 sm:px-10 sm:py-9",
               theme?.bannerImage
                 ? "rounded-b-[20px]"
                 : "rounded-[20px]"
