@@ -55,6 +55,7 @@ const sidebarSections: SidebarSection[] = [
     children: [
       { id: "create-response", title: "Create Response" },
       { id: "submit-step", title: "Submit Step" },
+      { id: "native-html-form", title: "Native HTML Form" },
       { id: "get-form-config", title: "Get Form Config" },
     ],
   },
@@ -549,6 +550,37 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
 
             <Callout type="tip">
               When the response status changes to <IC>completed</IC>, all steps have been submitted.
+            </Callout>
+
+            <SectionHeading id="native-html-form" level="h2">
+              Native HTML Form
+            </SectionHeading>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-2">
+              <IC>POST /api/public/forms/:formSlug/submit</IC>
+            </p>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Post a regular browser form directly to LinkyCal without any client-side JavaScript.
+              LinkyCal returns a hosted thank-you page by default, or a redirect if you configure one
+              in the form builder.
+            </p>
+
+            <CodeBlock title="HTML Form Action" language="html">
+{`<form action="https://linkycal.com/api/public/forms/contact/submit" method="post">
+  <input type="text" name="full_name" required />
+  <input type="email" name="email" required />
+  <textarea name="message"></textarea>
+  <button type="submit">Send</button>
+</form>`}
+            </CodeBlock>
+
+            <Callout type="tip">
+              Use your form field IDs as the HTML input <IC>name</IC> values. You can get the exact
+              IDs from the form builder or the generated form API prompt.
+            </Callout>
+
+            <Callout type="warning">
+              Native HTML submissions do not support file inputs yet. Use the widget or JSON API flow
+              if your form includes file upload fields.
             </Callout>
 
             <SectionHeading id="get-form-config" level="h2">

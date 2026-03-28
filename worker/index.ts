@@ -149,6 +149,244 @@ function isSpam(body: Record<string, unknown>): boolean {
   return false;
 }
 
+type NativeFormSuccessMode = "message" | "redirect";
+
+interface NativeFormSettings {
+  successMode: NativeFormSuccessMode;
+  successMessage: string;
+  redirectUrl: string | null;
+}
+
+interface NativeFormFieldValue {
+  fieldId: string;
+  value?: string | null;
+  fileUrl?: string | null;
+}
+
+interface NativePublicFormField {
+  id: string;
+  stepId: string;
+  type: string;
+  label: string;
+  required: boolean;
+  options: Array<{ label: string; value: string }> | null;
+}
+
+function getNativeFormSettings(settings: unknown): NativeFormSettings {
+  const settingsRecord =
+    settings && typeof settings === "object"
+      ? (settings as Record<string, unknown>)
+      : {};
+  const nativeAction =
+    settingsRecord.nativeAction &&
+    typeof settingsRecord.nativeAction === "object"
+      ? (settingsRecord.nativeAction as Record<string, unknown>)
+      : {};
+
+  const successMode =
+    nativeAction.successMode === "redirect" ? "redirect" : "message";
+  const successMessage =
+    typeof nativeAction.successMessage === "string" &&
+    nativeAction.successMessage.trim()
+      ? nativeAction.successMessage.trim()
+      : "Your response has been submitted successfully.";
+  const redirectUrl =
+    typeof nativeAction.redirectUrl === "string" &&
+    nativeAction.redirectUrl.trim()
+      ? nativeAction.redirectUrl.trim()
+      : null;
+
+  return { successMode, successMessage, redirectUrl };
+}
+
+function getNativeFieldOptions(
+  options: unknown,
+): Array<{ label: string; value: string }> | null {
+  if (!Array.isArray(options)) return null;
+
+  const normalized = options
+    .filter(
+      (option): option is { label: string; value: string } =>
+        !!option &&
+        typeof option === "object" &&
+        typeof (option as { label?: unknown }).label === "string" &&
+        typeof (option as { value?: unknown }).value === "string",
+    )
+    .map((option) => ({
+      label: option.label,
+      value: option.value,
+    }));
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function createHtmlPageResponse(
+  title: string,
+  message: string,
+  status: number,
+): Response {
+  const headingColor = status >= 400 ? "#991b1b" : "#1B4332";
+  const body = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #f6f8f7;
+        color: #0f172a;
+      }
+      .wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+      }
+      .card {
+        width: min(100%, 520px);
+        background: #ffffff;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        border-radius: 24px;
+        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.08);
+        padding: 32px;
+      }
+      h1 {
+        margin: 0 0 12px;
+        font-size: 1.5rem;
+        line-height: 1.2;
+        color: ${headingColor};
+      }
+      p {
+        margin: 0;
+        line-height: 1.6;
+        color: #475569;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="card">
+        <h1>${escapeHtml(title)}</h1>
+        <p>${escapeHtml(message)}</p>
+      </section>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(body, {
+    status,
+    headers: { "Content-Type": "text/html; charset=UTF-8" },
+  });
+}
+
+function createNativeFormSuccessResponse(settings: unknown): Response {
+  const nativeSettings = getNativeFormSettings(settings);
+  if (nativeSettings.successMode === "redirect" && nativeSettings.redirectUrl) {
+    try {
+      const redirectUrl = new URL(nativeSettings.redirectUrl);
+      return Response.redirect(redirectUrl.toString(), 303);
+    } catch {
+      // Fall back to a hosted success page if the saved URL is invalid.
+    }
+  }
+
+  return createHtmlPageResponse("Thanks, your response has been sent.", nativeSettings.successMessage, 200);
+}
+
+function getNativeFormStringValues(
+  formData: FormData,
+  fieldId: string,
+): string[] {
+  return formData
+    .getAll(fieldId)
+    .filter((entry): entry is string => typeof entry === "string");
+}
+
+function parseNativeFormFieldValue(
+  formData: FormData,
+  field: NativePublicFormField,
+): { field: NativeFormFieldValue; respondentEmail?: string | null } | { error: string } {
+  const allEntries = formData.getAll(field.id);
+  if (allEntries.some((entry) => entry instanceof File && entry.size > 0)) {
+    return {
+      error: `File fields are not supported for native HTML submissions yet. Remove "${field.label}" or use the widget/API flow instead.`,
+    };
+  }
+
+  const optionValues = new Set((field.options ?? []).map((option) => option.value));
+  const rawValues = getNativeFormStringValues(formData, field.id);
+  const trimmedValues = rawValues.map((value) => value.trim());
+
+  let value = "";
+  if (field.type === "multi_select") {
+    value = trimmedValues.filter(Boolean).join(",");
+  } else if (field.type === "checkbox" && optionValues.size > 0) {
+    value = trimmedValues.filter(Boolean).join(",");
+  } else if (field.type === "checkbox") {
+    value = allEntries.length > 0 ? "true" : "";
+  } else {
+    value = trimmedValues[0] ?? "";
+  }
+
+  if (field.required && !value) {
+    return { error: `${field.label} is required.` };
+  }
+
+  if (
+    field.type === "email" &&
+    value &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)
+  ) {
+    return { error: `${field.label} must be a valid email address.` };
+  }
+
+  if (
+    (field.type === "select" || field.type === "radio") &&
+    value &&
+    optionValues.size > 0 &&
+    !optionValues.has(value)
+  ) {
+    return { error: `${field.label} contains an invalid option.` };
+  }
+
+  if (
+    (field.type === "multi_select" ||
+      (field.type === "checkbox" && optionValues.size > 0)) &&
+    value
+  ) {
+    const values = value.split(",").filter(Boolean);
+    const hasInvalidOption = values.some((entry) => !optionValues.has(entry));
+    if (hasInvalidOption) {
+      return { error: `${field.label} contains an invalid option.` };
+    }
+  }
+
+  if (field.type === "rating" && value && !["1", "2", "3", "4", "5"].includes(value)) {
+    return { error: `${field.label} must be between 1 and 5.` };
+  }
+
+  return {
+    field: { fieldId: field.id, value },
+    respondentEmail: field.type === "email" && value ? value : null,
+  };
+}
+
 // ─── Form Response Email Notification (Paid Users) ──────────────────────────
 
 async function notifyFormResponseCompleted(
@@ -1088,6 +1326,137 @@ app.patch(
     }
   },
 );
+
+app.post("/api/public/forms/:slug/submit", async (c) => {
+  const slug = c.req.param("slug");
+  const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+  if (!checkRateLimit(`formhtml:${ip}`, 30, 60_000)) {
+    return createHtmlPageResponse(
+      "Too many submissions",
+      "Please wait a moment and try again.",
+      429,
+    );
+  }
+
+  try {
+    const db = drizzle(c.env.DB, { schema });
+    const service = new FormService(db);
+    const form = await service.getFullFormBySlugGlobal(slug);
+
+    if (!form || form.status !== "active") {
+      return createHtmlPageResponse(
+        "Form not found",
+        "This form may have been removed or is not currently accepting responses.",
+        404,
+      );
+    }
+
+    const submittedFormData = await c.req.formData();
+    const spamPayload: Record<string, unknown> = {};
+    for (const [key, value] of submittedFormData.entries()) {
+      if (typeof value === "string") {
+        spamPayload[key] = value;
+      }
+    }
+
+    if (isSpam(spamPayload)) {
+      return createNativeFormSuccessResponse(form.settings);
+    }
+
+    const steps = [...form.steps].sort((a, b) => a.sortOrder - b.sortOrder);
+    const fieldConfigs: NativePublicFormField[] = steps.flatMap((step) =>
+      step.fields.map((field) => ({
+        id: field.id,
+        stepId: step.id,
+        type: field.type,
+        label: field.label,
+        required: field.required,
+        options: getNativeFieldOptions(field.options),
+      })),
+    );
+
+    const fieldsByStep = new Map<string, NativeFormFieldValue[]>(
+      steps.map((step) => [step.id, []]),
+    );
+    let respondentEmail: string | null = null;
+
+    for (const field of fieldConfigs) {
+      const parsed = parseNativeFormFieldValue(submittedFormData, field);
+      if ("error" in parsed) {
+        return createHtmlPageResponse("Submission failed", parsed.error, 400);
+      }
+
+      const stepFields = fieldsByStep.get(field.stepId);
+      if (stepFields) {
+        stepFields.push(parsed.field);
+      }
+      if (!respondentEmail && parsed.respondentEmail) {
+        respondentEmail = parsed.respondentEmail;
+      }
+    }
+
+    const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+    const geoIp = c.req.header("cf-connecting-ip") ?? null;
+    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCity = (cf?.city as string) ?? null;
+
+    const response = await service.createResponse(form.id, {
+      source: "native_action",
+    });
+
+    if (geoIp || geoCountry || geoCity || respondentEmail) {
+      await db
+        .update(dbSchema.formResponses)
+        .set({
+          ipAddress: geoIp,
+          country: geoCountry,
+          city: geoCity,
+          respondentEmail,
+        })
+        .where(eq(dbSchema.formResponses.id, response.id));
+    }
+
+    let latestResponse: typeof response | null = response;
+    for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
+      latestResponse = await service.submitStep(
+        response.id,
+        stepIndex,
+        fieldsByStep.get(steps[stepIndex].id) ?? [],
+      );
+
+      if (!latestResponse) {
+        return createHtmlPageResponse(
+          "Submission failed",
+          "We couldn't store your response. Please try again.",
+          500,
+        );
+      }
+    }
+
+    if (steps.length === 0) {
+      await db
+        .update(dbSchema.formResponses)
+        .set({ status: "completed" })
+        .where(eq(dbSchema.formResponses.id, response.id));
+      latestResponse = await service.getResponseById(response.id);
+    }
+
+    if (latestResponse?.status === "completed" && latestResponse.formId) {
+      c.executionCtx.waitUntil(
+        notifyFormResponseCompleted(db, c.env, latestResponse.id, latestResponse.formId),
+      );
+    }
+
+    return createNativeFormSuccessResponse(form.settings);
+  } catch (err) {
+    console.error("Native HTML form submission error:", err);
+    return createHtmlPageResponse(
+      "Submission failed",
+      "Something went wrong while processing this form.",
+      500,
+    );
+  }
+});
 
 // ─── Stripe Helpers ──────────────────────────────────────────────────────────
 

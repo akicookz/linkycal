@@ -246,6 +246,8 @@ export function generateFormApiPrompt(
 ): string {
   // Collect all fields across all steps for the example body
   const firstStepFields = form.steps?.[0]?.fields ?? [];
+  const allFields = form.steps?.flatMap((step) => step.fields) ?? [];
+  const hasFileFields = allFields.some((field) => field.type === "file");
 
   // Generate example values based on field type
   function exampleValue(field: FormFieldForPrompt): string {
@@ -348,6 +350,38 @@ ${exampleFields}
 
 The response status changes to \`"completed"\` after the last step is submitted.
 `;
+
+  const htmlNameField = allFields.find((field) => field.type !== "email") ?? allFields[0];
+  const htmlEmailField = allFields.find((field) => field.type === "email");
+
+  prompt += `
+## 3. Native HTML Form Action
+
+If you want to submit from a plain browser form without JavaScript, post directly to:
+
+\`\`\`
+POST ${origin}/api/public/forms/${form.slug}/submit
+\`\`\`
+
+Use the real field IDs from this form as your HTML input \`name\` attributes.
+
+\`\`\`html
+<form action="${origin}/api/public/forms/${form.slug}/submit" method="post">
+  <input type="text" name="${htmlNameField?.id ?? "field_id"}" />
+  <input type="email" name="${htmlEmailField?.id ?? "email"}" />
+  <button type="submit">Submit</button>
+</form>
+\`\`\`
+
+By default LinkyCal returns a hosted thank-you page after a successful submission. If the form's native action settings are configured for redirects, the browser is redirected instead.
+`;
+
+  if (hasFileFields) {
+    prompt += `
+
+> **Note:** This form includes file fields, and native HTML submissions do not support file uploads yet. Use the widget or JSON API flow for this form.
+`;
+  }
 
   if (form.steps && form.steps.length > 0) {
     prompt += `\n## Form Structure\n`;

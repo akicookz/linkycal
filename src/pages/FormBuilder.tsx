@@ -114,6 +114,18 @@ interface FieldOption {
   value: string;
 }
 
+interface NativeActionSettings {
+  successMode?: "message" | "redirect";
+  successMessage?: string;
+  redirectUrl?: string;
+}
+
+interface FormSettings {
+  nativeAction?: NativeActionSettings;
+}
+
+const DEFAULT_NATIVE_SUCCESS_MESSAGE = "Your response has been submitted successfully.";
+
 // ─── Field Type Definitions ──────────────────────────────────────────────────
 
 const FIELD_TYPES = [
@@ -163,6 +175,11 @@ export default function FormBuilder() {
   const [autoFocusLastField, setAutoFocusLastField] = useState(false);
 
   const [linkCopied, setLinkCopied] = useState(false);
+  const [actionUrlCopied, setActionUrlCopied] = useState(false);
+  const [nativeSuccessMessage, setNativeSuccessMessage] = useState(
+    DEFAULT_NATIVE_SUCCESS_MESSAGE,
+  );
+  const [nativeRedirectUrl, setNativeRedirectUrl] = useState("");
 
   // Inline-editing state for form name/slug
   const [editingName, setEditingName] = useState<string>("");
@@ -238,6 +255,31 @@ export default function FormBuilder() {
 
 
   const steps = form?.steps ?? [];
+  const formSettings =
+    form?.settings && typeof form.settings === "object"
+      ? (form.settings as FormSettings)
+      : {};
+  const nativeActionSettings = {
+    successMode:
+      formSettings.nativeAction?.successMode === "redirect"
+        ? "redirect"
+        : "message",
+    successMessage:
+      typeof formSettings.nativeAction?.successMessage === "string" &&
+      formSettings.nativeAction.successMessage.trim()
+        ? formSettings.nativeAction.successMessage
+        : DEFAULT_NATIVE_SUCCESS_MESSAGE,
+    redirectUrl:
+      typeof formSettings.nativeAction?.redirectUrl === "string"
+        ? formSettings.nativeAction.redirectUrl
+        : "",
+  } as const;
+  const hasFileFields = steps.some((step) =>
+    step.fields.some((field) => field.type === "file")
+  );
+  const nativeActionUrl = form
+    ? `${window.location.origin}/api/public/forms/${form.slug}/submit`
+    : "";
   const activeStep = steps.find((s) => s.id === activeStepId) ?? steps[0] ?? null;
   const activeFields = activeStep
     ? [...activeStep.fields].sort((a, b) => a.sortOrder - b.sortOrder)
@@ -257,6 +299,14 @@ export default function FormBuilder() {
       setEditingSlug(form.slug);
     }
   }, [form]);
+
+  useEffect(() => {
+    setNativeSuccessMessage(nativeActionSettings.successMessage);
+    setNativeRedirectUrl(nativeActionSettings.redirectUrl);
+  }, [
+    nativeActionSettings.redirectUrl,
+    nativeActionSettings.successMessage,
+  ]);
 
   // ─── Optimistic update helpers ────────────────────────────────────────────
 
@@ -279,7 +329,14 @@ export default function FormBuilder() {
   // ─── Form mutations ─────────────────────────────────────────────────────
 
   const updateFormMutation = useMutation({
-    mutationFn: async (data: Partial<{ name: string; slug: string; status: string }>) => {
+    mutationFn: async (
+      data: Partial<{
+        name: string;
+        slug: string;
+        status: string;
+        settings: FormSettings | null;
+      }>
+    ) => {
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}`,
         {
@@ -579,6 +636,57 @@ export default function FormBuilder() {
       updateFormMutation.mutate({ slug: editingSlug.trim() });
     }
   }, [form, editingSlug, updateFormMutation]);
+
+  function buildUpdatedFormSettings(
+    patch: Partial<NativeActionSettings>,
+  ): FormSettings {
+    return {
+      ...formSettings,
+      nativeAction: {
+        ...formSettings.nativeAction,
+        ...patch,
+      },
+    };
+  }
+
+  const handleNativeActionModeChange = useCallback(
+    (value: "message" | "redirect") => {
+      updateFormMutation.mutate({
+        settings: buildUpdatedFormSettings({ successMode: value }),
+      });
+    },
+    [formSettings, updateFormMutation],
+  );
+
+  const handleNativeSuccessMessageBlur = useCallback(() => {
+    const nextMessage =
+      nativeSuccessMessage.trim() || DEFAULT_NATIVE_SUCCESS_MESSAGE;
+    if (nextMessage !== nativeActionSettings.successMessage) {
+      setNativeSuccessMessage(nextMessage);
+      updateFormMutation.mutate({
+        settings: buildUpdatedFormSettings({ successMessage: nextMessage }),
+      });
+    }
+  }, [
+    nativeActionSettings.successMessage,
+    nativeSuccessMessage,
+    formSettings,
+    updateFormMutation,
+  ]);
+
+  const handleNativeRedirectUrlBlur = useCallback(() => {
+    const nextRedirectUrl = nativeRedirectUrl.trim();
+    if (nextRedirectUrl !== nativeActionSettings.redirectUrl) {
+      updateFormMutation.mutate({
+        settings: buildUpdatedFormSettings({ redirectUrl: nextRedirectUrl }),
+      });
+    }
+  }, [
+    nativeActionSettings.redirectUrl,
+    nativeRedirectUrl,
+    formSettings,
+    updateFormMutation,
+  ]);
 
   // ─── Drag and Drop ─────────────────────────────────────────────────────
 
@@ -1021,6 +1129,104 @@ export default function FormBuilder() {
                   }
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                HTML Action
+              </p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Action URL
+                </Label>
+                <Input
+                  readOnly
+                  value={nativeActionUrl}
+                  className="h-8 text-xs"
+                />
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() => {
+                  navigator.clipboard.writeText(nativeActionUrl);
+                  setActionUrlCopied(true);
+                  setTimeout(() => setActionUrlCopied(false), 2000);
+                }}
+              >
+                {actionUrlCopied ? (
+                  <Check className="h-3.5 w-3.5" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+                {actionUrlCopied ? "Copied Action URL" : "Copy Action URL"}
+              </Button>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Success Behavior
+                </Label>
+                <Select
+                  value={nativeActionSettings.successMode}
+                  onValueChange={(value: "message" | "redirect") =>
+                    handleNativeActionModeChange(value)
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="message">Hosted thank-you page</SelectItem>
+                    <SelectItem value="redirect">Redirect to URL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {nativeActionSettings.successMode === "redirect" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Redirect URL
+                  </Label>
+                  <Input
+                    type="url"
+                    value={nativeRedirectUrl}
+                    onChange={(e) => setNativeRedirectUrl(e.target.value)}
+                    onBlur={handleNativeRedirectUrlBlur}
+                    placeholder="https://your-site.com/thanks"
+                    className="h-8 text-xs"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Success Message
+                  </Label>
+                  <Input
+                    value={nativeSuccessMessage}
+                    onChange={(e) => setNativeSuccessMessage(e.target.value)}
+                    onBlur={handleNativeSuccessMessageBlur}
+                    placeholder={DEFAULT_NATIVE_SUCCESS_MESSAGE}
+                    className="h-8 text-xs"
+                  />
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Use form field IDs as your HTML input names when posting directly
+                to LinkyCal.
+              </p>
+              {hasFileFields && (
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  File fields are not supported on the native HTML action
+                  endpoint yet. Use the widget or JSON API for file uploads.
+                </p>
+              )}
             </CardContent>
           </Card>
         </div>

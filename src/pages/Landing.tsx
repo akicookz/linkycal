@@ -15,7 +15,6 @@ import {
   Mail,
   Star,
   Send,
-  Palette,
   Terminal,
   Sparkles,
 } from "lucide-react";
@@ -83,8 +82,7 @@ function HeroWebsiteCard() {
           </h3>
         </div>
         <p className="text-sm text-brand font-medium text-shadow-md leading-relaxed">
-          Embed booking pages and forms directly into your site with one line of
-          code.
+          Embed contact forms and booking pages into your site no-code.
         </p>
       </div>
 
@@ -386,13 +384,12 @@ function HeroAgentChat() {
           </h3>
         </div>
         <p className="text-sm text-brand font-medium text-shadow-md leading-relaxed">
-          Let AI agents create bookings and manage contacts through a simple
-          API.
+          Let your agent take care of scheduling and inquiries.
         </p>
       </div>
 
       {/* Telegram-style chat mock */}
-      <div className="rounded-3xl border border-border/40 overflow-hidden flex flex-col flex-1">
+      <div className="rounded-3xl border min-h-[400px] border-border/40 overflow-hidden flex flex-col flex-1">
         {/* Telegram header */}
         <div className="flex items-center gap-2 px-3 py-2 bg-white border-b border-border/30 shrink-0">
           <svg width="10" height="10" viewBox="0 0 24 24" fill="none" className="text-[#4EA4F6] shrink-0">
@@ -1718,7 +1715,7 @@ const featureShowcaseItems: FeatureShowcaseItem[] = [
     id: "feature-scheduling",
     railLabel: "Scheduling",
     eyebrow: "Scheduling",
-    title: "Schedule without the back-and-forth.",
+    title: "Branded scheduling linksd and widgets.",
     description:
       "Share booking pages and widgets that stay in sync with your calendar, handle timezones correctly, and confirm every slot the moment it is reserved.",
     capabilities: [
@@ -2192,12 +2189,28 @@ export default function Landing() {
           {/* Top: headline + description + CTAs */}
           <div className="max-w-4xl">
             <h1 className="text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-medium tracking-tight leading-[1.06]">
-              Scheduling and Forms for <span className="text-brand">your business</span> and <span className="text-brand">AI agents</span>
+              Effortless forms and scheduling for <span className="text-brand">your website</span>
             </h1>
-            <p className="text-lg text-brand font-medium text-shadow-md max-w-xl leading-relaxed mt-6 mb-10">
-              Multi-step forms, calendar booking links, contact management, and
-              embeddable widgets. Embed on your site or integrate with AI agents
-              through a simple API.
+            <p className="text-lg text-brand font-semibold max-w-xl leading-relaxed mt-6 mb-10">
+              Set up contact forms, booking pages and inquiries on your website built with{" "}
+              <span className="inline-flex items-center gap-2 px-2">
+                <img
+                  src="/builder-logos/lovable.svg"
+                  alt="Lovable"
+                  className="inline-block shrink-0 object-contain w-[5.5rem]"
+                />{" "}
+                <img
+                  src="/builder-logos/base44.svg"
+                  alt="Base44"
+                  className="inline-block shrink-0 object-contain w-[5.5rem]"
+                />{" "}
+                <img
+                  src="/builder-logos/bolt.svg"
+                  alt="Bolt"
+                  className="inline-block shrink-0 h-10 w-10"
+                />
+              </span>
+              and other AI web builders
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
@@ -2299,41 +2312,46 @@ export default function Landing() {
               <div className="card-glow-secondary p-6">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="w-8 h-8 rounded-sm bg-brand/10 flex items-center justify-center">
-                    <Palette className="w-4 h-4 text-brand" />
+                    <Code2 className="w-4 h-4 text-brand" />
                   </div>
                   <div>
                     <h3 className="text-sm font-semibold text-foreground">
-                      Full customization
+                      Native HTML forms
                     </h3>
                     <p className="text-xs text-muted-foreground">
-                      Match your brand perfectly
+                      Post directly with `action=`
                     </p>
                   </div>
                 </div>
-                {/* Color palette row */}
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex gap-2">
-                    {[
-                      { bg: "bg-brand", ring: true },
-                      { bg: "bg-[#3B82F6]", ring: false },
-                      { bg: "bg-[#8B5CF6]", ring: false },
-                      { bg: "bg-[#F97316]", ring: false },
-                    ].map((c, i) => (
-                      <div
-                        key={i}
-                        className={cn(
-                          "w-6 h-6 rounded-full",
-                          c.bg,
-                          c.ring && "ring-2 ring-brand/30 ring-offset-2",
-                        )}
-                      />
-                    ))}
-                  </div>
-                  <div className="ml-auto flex items-center gap-3 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground">Satoshi</span>
-                    <span>·</span>
-                    <span className="font-medium text-foreground">Round</span>
-                  </div>
+                <div className="rounded-xl bg-[#0f1a14] p-4 font-mono text-[11px] leading-5 overflow-hidden">
+                  <pre className="whitespace-pre-wrap break-words text-[#d4e8dc]">
+                    <span className="text-[#5f7668]">
+                      {"<!-- LinkyCal native form endpoint -->"}
+                    </span>
+                    {"\n"}
+                    <span className="text-[#81c995]">&lt;form</span>{"\n"}
+                    {"  "}
+                    <span className="text-[#7ec8a0]">action</span>=
+                    <span className="text-[#a8d8b9]">
+                      &quot;https://linkycal.com/api/public/forms/contact/submit&quot;
+                    </span>{"\n"}
+                    {"  "}
+                    <span className="text-[#7ec8a0]">method</span>=
+                    <span className="text-[#a8d8b9]">&quot;post&quot;</span>
+                    <span className="text-[#81c995]">&gt;</span>
+                    {"\n  "}
+                    <span className="text-[#81c995]">&lt;input</span>{" "}
+                    <span className="text-[#7ec8a0]">name</span>=
+                    <span className="text-[#a8d8b9]">&quot;full_name&quot;</span>{" "}
+                    <span className="text-[#81c995]">/&gt;</span>
+                    {"\n  "}
+                    <span className="text-[#81c995]">&lt;input</span>{" "}
+                    <span className="text-[#7ec8a0]">name</span>=
+                    <span className="text-[#a8d8b9]">&quot;email&quot;</span>{" "}
+                    <span className="text-[#81c995]">/&gt;</span>
+                    {"\n"}
+                    <span className="text-[#81c995]">&lt;/form&gt;</span>
+                  </pre>
                 </div>
               </div>
 
