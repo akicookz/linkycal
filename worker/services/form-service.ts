@@ -95,6 +95,64 @@ function normalizeFieldRow<
   };
 }
 
+function normalizeResponseRow<T extends { metadata: unknown }>(response: T) {
+  return {
+    ...response,
+    metadata: parseJsonValue(response.metadata),
+  };
+}
+
+function formatResponseDisplayValue(
+  field:
+    | {
+        type: string;
+        options: Array<{ label: string; value: string }> | null;
+      }
+    | undefined,
+  value: string | null,
+  fileUrl: string | null,
+): string {
+  if (fileUrl) return fileUrl;
+
+  const rawValue = value?.trim() ?? "";
+  if (!rawValue) return "";
+  if (!field) return rawValue;
+
+  if (field.type === "select" || field.type === "radio") {
+    return (
+      field.options?.find((option) => option.value === rawValue)?.label ??
+      rawValue
+    );
+  }
+
+  if (
+    field.type === "multi_select" ||
+    (field.type === "checkbox" && (field.options?.length ?? 0) > 0)
+  ) {
+    const labels = rawValue
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map(
+        (entry) =>
+          field.options?.find((option) => option.value === entry)?.label ??
+          entry,
+      );
+
+    return labels.join(", ");
+  }
+
+  if (field.type === "checkbox") {
+    return rawValue === "true" ? "Yes" : rawValue;
+  }
+
+  if (field.type === "rating") {
+    return `${rawValue}/5`;
+  }
+
+  return rawValue;
+}
+
 // ─── Form Service ────────────────────────────────────────────────────────────
 
 export class FormService {
@@ -470,11 +528,13 @@ export class FormService {
   // ─── Responses ───────────────────────────────────────────────────────────
 
   async listResponses(formId: string) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.formResponses)
       .where(eq(dbSchema.formResponses.formId, formId))
       .orderBy(desc(dbSchema.formResponses.createdAt));
+
+    return rows.map(normalizeResponseRow);
   }
 
   async getResponseById(id: string) {
@@ -483,7 +543,8 @@ export class FormService {
       .from(dbSchema.formResponses)
       .where(eq(dbSchema.formResponses.id, id))
       .limit(1);
-    return rows[0] ?? null;
+
+    return rows[0] ? normalizeResponseRow(rows[0]) : null;
   }
 
   async createResponse(formId: string, metadata?: Record<string, unknown>) {
@@ -495,7 +556,13 @@ export class FormService {
       status: "in_progress",
       metadata: metadata ? JSON.stringify(metadata) : null,
     });
-    return this.getResponseById(id);
+
+    const response = await this.getResponseById(id);
+    if (!response) {
+      throw new Error("Failed to load created form response");
+    }
+
+    return response;
   }
 
   async submitStep(
@@ -543,13 +610,18 @@ export class FormService {
   async getResponseWithValues(responseId: string) {
     const response = await this.getResponseById(responseId);
     if (!response) return null;
+    if (!response.formId) {
+      return { ...response, values: [] };
+    }
 
     const values = await this.db
       .select()
       .from(dbSchema.formFieldValues)
       .where(eq(dbSchema.formFieldValues.responseId, responseId));
 
-    return { ...response, values };
+    const enrichedValues = await this.enrichResponseValues(response.formId, values);
+
+    return { ...response, values: enrichedValues };
   }
 
   async listResponsesWithValues(formId: string) {
@@ -562,10 +634,54 @@ export class FormService {
       .from(dbSchema.formFieldValues)
       .where(inArray(dbSchema.formFieldValues.responseId, responseIds));
 
+    const enrichedValues = await this.enrichResponseValues(formId, allValues);
+
     return responses.map((r) => ({
       ...r,
-      values: allValues.filter((v) => v.responseId === r.id),
+      values: enrichedValues.filter((value) => value.responseId === r.id),
     }));
+  }
+
+  async enrichResponseValues(
+    formId: string,
+    values: Array<typeof dbSchema.formFieldValues.$inferSelect>,
+  ) {
+    const [steps, fields] = await Promise.all([
+      this.listSteps(formId),
+      this.listFields(formId),
+    ]);
+
+    const stepSortOrderById = new Map(
+      steps.map((step) => [step.id, step.sortOrder]),
+    );
+    const fieldById = new Map(fields.map((field) => [field.id, field]));
+
+    return values
+      .map((value) => {
+        const field = fieldById.get(value.fieldId);
+        return {
+          ...value,
+          fieldLabel: field?.label ?? "Unknown field",
+          fieldType: field?.type ?? "text",
+          displayValue: formatResponseDisplayValue(
+            field,
+            value.value,
+            value.fileUrl,
+          ),
+          _stepSortOrder: field
+            ? (stepSortOrderById.get(field.stepId) ?? Number.MAX_SAFE_INTEGER)
+            : Number.MAX_SAFE_INTEGER,
+          _fieldSortOrder: field?.sortOrder ?? Number.MAX_SAFE_INTEGER,
+        };
+      })
+      .sort((a, b) => {
+        if (a._stepSortOrder !== b._stepSortOrder) {
+          return a._stepSortOrder - b._stepSortOrder;
+        }
+
+        return a._fieldSortOrder - b._fieldSortOrder;
+      })
+      .map(({ _stepSortOrder, _fieldSortOrder, ...value }) => value);
   }
 
   // ─── Full Form with Steps + Fields ───────────────────────────────────────

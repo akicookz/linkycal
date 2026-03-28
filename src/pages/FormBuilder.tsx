@@ -356,6 +356,7 @@ export default function FormBuilder() {
 
 
   const steps = form?.steps ?? [];
+  const sortedSteps = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
   const formSettings =
     form?.settings && typeof form.settings === "object"
       ? (form.settings as FormSettings)
@@ -381,17 +382,19 @@ export default function FormBuilder() {
   const nativeActionUrl = form
     ? `${window.location.origin}/api/public/forms/${form.slug}/submit`
     : "";
-  const activeStep = steps.find((s) => s.id === activeStepId) ?? steps[0] ?? null;
+  const activeStep = activeStepId
+    ? sortedSteps.find((step) => step.id === activeStepId) ?? null
+    : sortedSteps[0] ?? null;
   const activeFields = activeStep
     ? [...activeStep.fields].sort((a, b) => a.sortOrder - b.sortOrder)
     : [];
 
   // Sync active step when form loads
   useEffect(() => {
-    if (form && steps.length > 0 && !activeStepId) {
-      setActiveStepId(steps[0].id);
+    if (form && sortedSteps.length > 0 && !activeStepId) {
+      setActiveStepId(sortedSteps[0].id);
     }
-  }, [form, steps, activeStepId]);
+  }, [form, sortedSteps, activeStepId]);
 
   // Sync editing name/slug when form loads
   useEffect(() => {
@@ -540,15 +543,30 @@ export default function FormBuilder() {
         ],
       }));
       setActiveStepId(tempId);
-      return { snapshot };
+      return { snapshot, tempId };
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);
+      setActiveStepId(ctx?.snapshot?.steps[0]?.id ?? null);
     },
-    onSuccess: (data) => {
-      if (data?.step?.id) {
-        setActiveStepId(data.step.id);
-      }
+    onSuccess: (data, _variables, ctx) => {
+      const step = data?.step as FormStep | undefined;
+      if (!step) return;
+
+      const optimisticTempId = (ctx as { tempId?: string } | undefined)?.tempId;
+
+      optimisticSetForm((old) => ({
+        ...old,
+        steps: old.steps.some((existingStep) => existingStep.id === step.id)
+          ? old.steps
+          : optimisticTempId && old.steps.some((existingStep) => existingStep.id === optimisticTempId)
+            ? old.steps.map((existingStep) =>
+              existingStep.id === optimisticTempId ? step : existingStep,
+            )
+            : [...old.steps, step],
+      }));
+
+      setActiveStepId(step.id);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: formQueryKey });
@@ -608,8 +626,8 @@ export default function FormBuilder() {
         ...old,
         steps: old.steps.filter((s) => s.id !== stepId),
       }));
-      if (activeStepId === stepId && steps.length > 1) {
-        const remaining = steps.filter((s) => s.id !== stepId);
+      if (activeStepId === stepId && sortedSteps.length > 1) {
+        const remaining = sortedSteps.filter((step) => step.id !== stepId);
         setActiveStepId(remaining[0]?.id ?? null);
       }
       return { snapshot };
@@ -645,22 +663,71 @@ export default function FormBuilder() {
       if (!res.ok) throw new Error("Failed to add field");
       return res.json();
     },
-    onMutate: () => {
+    onMutate: async ({ stepId, type, label }) => {
+      await queryClient.cancelQueries({ queryKey: formQueryKey });
+      const snapshot = snapshotForm();
+      const tempId = `temp-${crypto.randomUUID()}`;
       setAutoFocusLastField(true);
+      optimisticSetForm((old) => ({
+        ...old,
+        steps: old.steps.map((step) =>
+          step.id === stepId
+            ? {
+              ...step,
+              fields: [
+                ...step.fields,
+                {
+                  id: tempId,
+                  stepId,
+                  sortOrder: step.fields.length,
+                  type,
+                  label,
+                  placeholder: null,
+                  required: false,
+                  validation: null,
+                  options: null,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+            : step,
+        ),
+      }));
+
+      return { snapshot, tempId };
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (data, variables, ctx) => {
       const field = data?.field as FormField | undefined;
       if (!field) return;
+      const tempId = (ctx as { tempId?: string } | undefined)?.tempId;
 
       optimisticSetForm((old) => ({
         ...old,
         steps: old.steps.map((step) =>
-          step.id === variables.stepId &&
-            !step.fields.some((existingField) => existingField.id === field.id)
-            ? { ...step, fields: [...step.fields, field] }
+          step.id === variables.stepId
+            ? {
+              ...step,
+              fields: step.fields.some((existingField) => existingField.id === field.id)
+                ? step.fields
+                : tempId && step.fields.some((existingField) => existingField.id === tempId)
+                  ? step.fields.map((existingField) =>
+                    existingField.id === tempId ? field : existingField,
+                  )
+                  : [...step.fields, field],
+            }
             : step,
         ),
       }));
+
+      if (tempId) {
+        setFieldOptionsState((prev) => {
+          if (!prev[tempId]) return prev;
+
+          const next = { ...prev, [field.id]: prev[tempId] };
+          delete next[tempId];
+          return next;
+        });
+      }
 
       if (isOptionFieldType(field.type)) {
         setFieldOptionsState((prev) =>
@@ -675,7 +742,18 @@ export default function FormBuilder() {
         );
       }
     },
-    onError: () => {
+    onError: (_err, _variables, ctx) => {
+      if (ctx?.snapshot) rollback(ctx.snapshot);
+      const tempId = (ctx as { tempId?: string } | undefined)?.tempId;
+      if (tempId) {
+        setFieldOptionsState((prev) => {
+          if (!prev[tempId]) return prev;
+
+          const next = { ...prev };
+          delete next[tempId];
+          return next;
+        });
+      }
       setAutoFocusLastField(false);
     },
     onSettled: () => {
@@ -914,11 +992,11 @@ export default function FormBuilder() {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
 
-    const oldIndex = steps.findIndex((s) => s.id === active.id);
-    const newIndex = steps.findIndex((s) => s.id === over.id);
+    const oldIndex = sortedSteps.findIndex((step) => step.id === active.id);
+    const newIndex = sortedSteps.findIndex((step) => step.id === over.id);
     if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = arrayMove(steps, oldIndex, newIndex);
+    const reordered = arrayMove(sortedSteps, oldIndex, newIndex);
 
     optimisticSetForm((old) => ({
       ...old,
@@ -933,8 +1011,9 @@ export default function FormBuilder() {
   // ─── Add field from palette ──────────────────────────────────────────────
 
   function handleAddField(type: string, label: string) {
-    if (!activeStep) return;
-    addFieldMutation.mutate({ stepId: activeStep.id, type, label });
+    const targetStepId = activeStepId ?? sortedSteps[0]?.id;
+    if (!targetStepId) return;
+    addFieldMutation.mutate({ stepId: targetStepId, type, label });
   }
 
   // ─── Field options helpers (auto-save) ──────────────────────────────────
@@ -1300,7 +1379,7 @@ export default function FormBuilder() {
                   key={ft.type}
                   type="button"
                   onClick={() => handleAddField(ft.type, ft.label)}
-                  disabled={!activeStep}
+                  disabled={sortedSteps.length === 0}
                   className="flex w-full items-center gap-3 rounded-[16px] border px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ft.icon className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1445,16 +1524,14 @@ export default function FormBuilder() {
           {/* Step tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleStepDragEnd}>
-              <SortableContext items={steps.map((s) => s.id)} strategy={horizontalListSortingStrategy}>
-                {steps
-                  .sort((a, b) => a.sortOrder - b.sortOrder)
-                  .map((step, idx) => (
+              <SortableContext items={sortedSteps.map((step) => step.id)} strategy={horizontalListSortingStrategy}>
+                {sortedSteps.map((step, idx) => (
                     <SortableStepTab
                       key={step.id}
                       step={step}
                       idx={idx}
                       isActive={step.id === activeStep?.id}
-                      showDelete={steps.length > 1}
+                      showDelete={sortedSteps.length > 1}
                       onSelect={() => setActiveStepId(step.id)}
                       onDelete={() => deleteStepMutation.mutate(step.id)}
                     />

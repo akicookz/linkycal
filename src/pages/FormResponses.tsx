@@ -71,6 +71,9 @@ interface ResponseValue {
   fieldId: string;
   value: string | null;
   fileUrl: string | null;
+  fieldLabel: string;
+  fieldType: string;
+  displayValue: string;
 }
 
 interface FormResponse {
@@ -176,15 +179,6 @@ export default function FormResponses() {
   const isLoading = isFormLoading || isResponsesLoading;
   const isError = isFormError || isResponsesError;
 
-  // Flatten all fields from all steps
-  const allFields: FormField[] = form
-    ? form.steps
-        .sort((a, b) => a.sortOrder - b.sortOrder)
-        .flatMap((step) =>
-          [...step.fields].sort((a, b) => a.sortOrder - b.sortOrder)
-        )
-    : [];
-
   // ─── Stats ───────────────────────────────────────────────────────────────
 
   const totalResponses = responses.length;
@@ -197,17 +191,6 @@ export default function FormResponses() {
   const abandonedCount = responses.filter(
     (r) => r.status === "abandoned"
   ).length;
-
-  // ─── Helpers ─────────────────────────────────────────────────────────────
-
-  function getValueForField(
-    response: FormResponse,
-    fieldId: string
-  ): string | null {
-    const val = response.values.find((v) => v.fieldId === fieldId);
-    if (!val) return null;
-    return val.fileUrl || val.value;
-  }
 
   // ─── Render: Loading ─────────────────────────────────────────────────────
 
@@ -447,27 +430,24 @@ export default function FormResponses() {
               </div>
 
               {/* Field values */}
-              {allFields.length > 0 && (
+              {drawerItem.values.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                     Responses
                   </p>
-                  {allFields.map((field) => {
-                    const rawValue = getValueForField(drawerItem, field.id);
-                    return (
-                      <CopyableField
-                        key={field.id}
-                        label={field.label}
-                        value={rawValue ?? ""}
-                      />
-                    );
-                  })}
+                  {drawerItem.values.map((value) => (
+                    <CopyableField
+                      key={value.id}
+                      label={value.fieldLabel}
+                      value={value.displayValue}
+                    />
+                  ))}
                 </div>
               )}
 
-              {allFields.length === 0 && (
+              {drawerItem.values.length === 0 && (
                 <p className="text-sm text-muted-foreground">
-                  No fields configured for this form.
+                  No submitted field values for this response.
                 </p>
               )}
 
