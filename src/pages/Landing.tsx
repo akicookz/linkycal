@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   FileText,
   CalendarCheck,
@@ -27,7 +27,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { signIn, emailOtp } from "@/lib/auth-client";
+import { signIn, emailOtp, useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 
 /* ─── Hero: Website Card (Calendar → Form → Confirmation) ────────────────── */
@@ -1961,9 +1961,11 @@ function FeatureShowcasePanel({
 /* ─── Landing Page ────────────────────────────────────────────────────────── */
 
 export default function Landing() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { data: session, isPending: isSessionPending } = useSession();
   const showAuth = searchParams.get("show_auth") === "true";
-  const [authOpen, setAuthOpen] = useState(showAuth);
+  const [authOpen, setAuthOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [authStep, setAuthStep] = useState<"social" | "otp">("social");
   const [otpEmail, setOtpEmail] = useState("");
@@ -1975,8 +1977,16 @@ export default function Landing() {
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   useEffect(() => {
+    if (isSessionPending) return;
+
+    if (session && showAuth) {
+      setAuthOpen(false);
+      navigate("/app", { replace: true });
+      return;
+    }
+
     setAuthOpen(showAuth);
-  }, [showAuth]);
+  }, [isSessionPending, navigate, session, showAuth]);
 
   useEffect(() => {
     const panels = featureShowcaseItems
@@ -2016,9 +2026,19 @@ export default function Landing() {
   }, [setSearchParams]);
 
   const openAuth = useCallback(() => {
+    if (isSessionPending) {
+      setSearchParams({ show_auth: "true" }, { replace: true });
+      return;
+    }
+
+    if (session) {
+      navigate("/app");
+      return;
+    }
+
     setAuthOpen(true);
     setSearchParams({ show_auth: "true" }, { replace: true });
-  }, [setSearchParams]);
+  }, [isSessionPending, navigate, session, setSearchParams]);
 
   async function handleSignIn(provider: "google" | "facebook") {
     setLoading(provider);
