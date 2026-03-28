@@ -1,4 +1,5 @@
-import { Star } from "lucide-react";
+import type { ReactNode } from "react";
+import { Check, Star } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -21,20 +22,38 @@ export function FormFieldRenderer({
   value,
   onChange,
   error,
+  textareaRows = 4,
 }: {
   field: FormFieldData;
   value: string;
   onChange: (value: string) => void;
   error?: string;
+  textareaRows?: number;
 }) {
   const id = `field-${field.id}`;
+  const showsFieldLabel = field.type !== "checkbox";
+  const showsChoiceHint =
+    field.type !== "checkbox" &&
+    isChoiceField(field.type) &&
+    !!field.placeholder &&
+    !(field.type === "select" && !field.required);
+  const labelTargetId =
+    field.type === "rating" || isChoiceField(field.type) ? undefined : id;
 
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-sm font-medium">
-        {field.label}
-        {field.required && <span className="text-destructive ml-0.5">*</span>}
-      </Label>
+      {showsFieldLabel && (
+        <Label htmlFor={labelTargetId} className="text-sm font-medium">
+          {field.label}
+          {field.required && <span className="text-destructive ml-0.5">*</span>}
+        </Label>
+      )}
+
+      {showsChoiceHint && (
+        <p className="text-xs leading-5 text-muted-foreground">
+          {field.placeholder}
+        </p>
+      )}
 
       {field.type === "textarea" ? (
         <textarea
@@ -43,98 +62,64 @@ export function FormFieldRenderer({
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder ?? undefined}
           required={field.required}
-          rows={4}
+          rows={textareaRows}
           className={cn(
             "flex w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 resize-y",
             error && "border-destructive",
           )}
         />
       ) : field.type === "select" ? (
-        <select
+        <ChoiceFieldGroup
           id={id}
+          mode="select"
+          options={field.options}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          required={field.required}
-          className={cn(
-            "flex h-10 w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50",
-            !value && "text-muted-foreground",
-            error && "border-destructive",
-          )}
-        >
-          <option value="">{field.placeholder || "Select an option"}</option>
-          {field.options?.map((opt, idx) => (
-            <option key={`${opt.value}-${idx}`} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={onChange}
+          allowEmpty={!field.required}
+          emptyLabel={field.placeholder || "No selection"}
+          error={error}
+        />
       ) : field.type === "multi_select" ? (
-        <div className="space-y-1.5">
-          {field.options?.map((opt, idx) => {
-            const selected = value
-              .split(",")
-              .filter(Boolean)
-              .includes(opt.value);
-            return (
-              <label
-                key={`${opt.value}-${idx}`}
-                className={cn(
-                  "flex items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-sm cursor-pointer transition-colors",
-                  selected
-                    ? "border-primary bg-primary/5"
-                    : "border-input hover:border-primary/30",
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={() => {
-                    const current = value.split(",").filter(Boolean);
-                    const next = selected
-                      ? current.filter((v) => v !== opt.value)
-                      : [...current, opt.value];
-                    onChange(next.join(","));
-                  }}
-                  className="rounded"
-                />
-                {opt.label}
-              </label>
-            );
-          })}
-        </div>
+        <ChoiceFieldGroup
+          id={id}
+          mode="multi_select"
+          options={field.options}
+          value={value}
+          onChange={onChange}
+          error={error}
+        />
       ) : field.type === "radio" ? (
-        <div className="space-y-1.5">
-          {field.options?.map((opt, idx) => (
-            <label
-              key={`${opt.value}-${idx}`}
-              className={cn(
-                "flex items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-sm cursor-pointer transition-colors",
-                value === opt.value
-                  ? "border-primary bg-primary/5"
-                  : "border-input hover:border-primary/30",
-              )}
-            >
-              <input
-                type="radio"
-                name={id}
-                value={opt.value}
-                checked={value === opt.value}
-                onChange={() => onChange(opt.value)}
-              />
-              {opt.label}
-            </label>
-          ))}
-        </div>
+        <ChoiceFieldGroup
+          id={id}
+          mode="radio"
+          options={field.options}
+          value={value}
+          onChange={onChange}
+          error={error}
+        />
       ) : field.type === "checkbox" ? (
-        <label className="flex items-center gap-2.5 cursor-pointer">
+        <ChoiceCard
+          title={
+            <>
+              {field.label}
+              {field.required && <span className="text-destructive ml-0.5">*</span>}
+            </>
+          }
+          description={field.placeholder}
+          selected={value === "true"}
+          control="checkbox"
+          error={!!error}
+        >
           <input
+            id={id}
             type="checkbox"
             checked={value === "true"}
             onChange={(e) => onChange(e.target.checked ? "true" : "")}
-            className="rounded"
+            required={field.required}
+            className="sr-only"
+            aria-invalid={error ? true : undefined}
           />
-          <span className="text-sm">{field.placeholder || field.label}</span>
-        </label>
+        </ChoiceCard>
       ) : field.type === "rating" ? (
         <RatingInput value={value} onChange={onChange} />
       ) : (
@@ -163,6 +148,185 @@ export function FormFieldRenderer({
 
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
+  );
+}
+
+// ─── Choice Fields ────────────────────────────────────────────────────────────
+
+type ChoiceMode = "select" | "multi_select" | "radio";
+
+function isChoiceField(type: string): type is ChoiceMode {
+  return type === "select" || type === "multi_select" || type === "radio";
+}
+
+function ChoiceFieldGroup({
+  id,
+  mode,
+  options,
+  value,
+  onChange,
+  allowEmpty = false,
+  emptyLabel,
+  error,
+}: {
+  id: string;
+  mode: ChoiceMode;
+  options: Array<{ label: string; value: string }> | null;
+  value: string;
+  onChange: (value: string) => void;
+  allowEmpty?: boolean;
+  emptyLabel?: string;
+  error?: string;
+}) {
+  const selectedValues = value.split(",").filter(Boolean);
+  const usesRadioIndicator = mode === "radio";
+
+  return (
+    <div className="space-y-2">
+      {mode === "select" && allowEmpty && (
+        <ChoiceCard
+          title={emptyLabel || "No selection"}
+          description="Leave this blank for now"
+          selected={!value}
+          control="checkbox"
+          error={!!error}
+        >
+          <input
+            type="radio"
+            name={id}
+            value=""
+            checked={!value}
+            onChange={() => onChange("")}
+            className="sr-only"
+            aria-invalid={error ? true : undefined}
+          />
+        </ChoiceCard>
+      )}
+
+      {options?.map((option, index) => {
+        const selected =
+          mode === "multi_select"
+            ? selectedValues.includes(option.value)
+            : value === option.value;
+
+        return (
+          <ChoiceCard
+            key={`${option.value}-${index}`}
+            title={option.label}
+            selected={selected}
+            control={usesRadioIndicator ? "radio" : "checkbox"}
+            error={!!error}
+          >
+            <input
+              type={mode === "multi_select" ? "checkbox" : "radio"}
+              name={mode === "multi_select" ? undefined : id}
+              value={option.value}
+              checked={selected}
+              onChange={() => handleChoiceChange(mode, value, option.value, onChange)}
+              className="sr-only"
+              aria-invalid={error ? true : undefined}
+            />
+          </ChoiceCard>
+        );
+      })}
+    </div>
+  );
+}
+
+function handleChoiceChange(
+  mode: ChoiceMode,
+  value: string,
+  optionValue: string,
+  onChange: (value: string) => void,
+) {
+  if (mode === "multi_select") {
+    const current = value.split(",").filter(Boolean);
+    const next = current.includes(optionValue)
+      ? current.filter((item) => item !== optionValue)
+      : [...current, optionValue];
+    onChange(next.join(","));
+    return;
+  }
+
+  onChange(optionValue);
+}
+
+function ChoiceCard({
+  title,
+  description,
+  selected,
+  control,
+  error,
+  children,
+}: {
+  title: ReactNode;
+  description?: string | null;
+  selected: boolean;
+  control: "checkbox" | "radio";
+  error?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <label
+      className={cn(
+        "flex cursor-pointer items-center gap-4 rounded-[16px] border px-4 py-3.5 transition-all",
+        "bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,247,245,0.92))]",
+        "shadow-[0_12px_26px_-24px_rgba(15,26,20,0.42)]",
+        selected
+          ? "border-primary/40 bg-primary/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_16px_32px_-28px_rgba(27,67,50,0.35)]"
+          : "border-[rgba(27,67,50,0.10)] hover:border-primary/25 hover:bg-white",
+        error && !selected && "border-destructive/35",
+      )}
+    >
+      {children}
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium leading-5 text-foreground">
+          {title}
+        </div>
+        {description && (
+          <p className="mt-1 text-xs leading-5 text-muted-foreground">
+            {description}
+          </p>
+        )}
+      </div>
+      <ChoiceIndicator selected={selected} control={control} />
+    </label>
+  );
+}
+
+function ChoiceIndicator({
+  selected,
+  control,
+}: {
+  selected: boolean;
+  control: "checkbox" | "radio";
+}) {
+  return (
+    <span
+      className={cn(
+        "ml-3 flex h-5 w-5 shrink-0 items-center justify-center border transition-all",
+        control === "radio" ? "rounded-full" : "rounded-[6px]",
+        selected
+          ? "border-primary bg-primary text-primary-foreground"
+          : "border-[rgba(27,67,50,0.18)] bg-white text-transparent",
+      )}
+    >
+      {control === "radio" ? (
+        <span
+          className={cn(
+            "h-2 w-2 rounded-full bg-current transition-opacity",
+            selected ? "opacity-100" : "opacity-0",
+          )}
+        />
+      ) : (
+        <Check
+          className={cn(
+            "h-3.5 w-3.5 transition-opacity",
+            selected ? "opacity-100" : "opacity-0",
+          )}
+        />
+      )}
+    </span>
   );
 }
 
