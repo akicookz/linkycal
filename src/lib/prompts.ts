@@ -1,5 +1,7 @@
 // ─── Prompt Generation for Copy Prompt Feature ──────────────────────────────
 
+import { richTextToPlainText } from "@/lib/rich-text";
+
 interface EventTypeForPrompt {
   name: string;
   slug: string;
@@ -25,6 +27,7 @@ interface FormFieldForPrompt {
 interface FormStepForPrompt {
   title: string | null;
   description: string | null;
+  richDescription?: string | null;
   fields: FormFieldForPrompt[];
 }
 
@@ -394,11 +397,13 @@ export function generateFormApiPrompt(
     for (let i = 0; i < (form.steps?.length ?? 0); i++) {
       const step = form.steps?.[i];
       if (!step) continue;
+      const stepDescription =
+        richTextToPlainText(step.richDescription) || step.description || "";
 
       lines.push(`  <!-- Step ${i + 1}${step.title ? `: ${escapeHtml(step.title)}` : ""} -->`);
 
-      if (step.description) {
-        lines.push(`  <!-- ${escapeHtml(step.description)} -->`);
+      if (stepDescription) {
+        lines.push(`  <!-- ${escapeHtml(stepDescription)} -->`);
       }
 
       for (const field of step.fields) {
@@ -550,8 +555,10 @@ By default LinkyCal returns a hosted thank-you page after a successful submissio
 
     for (let i = 0; i < form.steps.length; i++) {
       const step = form.steps[i];
+      const stepDescription =
+        richTextToPlainText(step.richDescription) || step.description || "";
       prompt += `\n### Step ${i + 1} (stepIndex: ${i})${step.title ? ` — ${step.title}` : ""}
-${step.description ? `${step.description}\n` : ""}
+${stepDescription ? `${stepDescription}\n` : ""}
 | Field ID | Label | Type | Required | Options |
 |----------|-------|------|----------|---------|
 `;

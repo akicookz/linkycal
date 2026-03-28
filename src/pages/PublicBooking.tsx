@@ -15,6 +15,7 @@ import {
   CalendarPlus,
 } from "lucide-react";
 import { FormFieldRenderer, type FormFieldData } from "@/components/FormFieldRenderer";
+import { RichTextContent } from "@/components/RichTextContent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -181,6 +182,7 @@ export default function PublicBooking() {
         sortOrder: number;
         title: string | null;
         description: string | null;
+        richDescription: string | null;
         fields: FormFieldData[];
       }>;
     } | null;
@@ -746,11 +748,11 @@ export default function PublicBooking() {
                 {formStep.title && (
                   <h2 className="text-base font-semibold mb-1">{formStep.title}</h2>
                 )}
-                {formStep.description && (
-                  <p className="text-[13px] text-muted-foreground mb-5">
-                    {formStep.description}
-                  </p>
-                )}
+                <RichTextContent
+                  value={formStep.richDescription}
+                  fallbackPlainText={formStep.description}
+                  className="mb-5 text-[13px]"
+                />
 
                 <div className="space-y-4">
                   {formStep.fields

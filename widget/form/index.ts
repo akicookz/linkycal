@@ -1,4 +1,5 @@
 import { fetchApi } from "@widget/api";
+import { getRenderableRichTextHtml } from "@widget/rich-text";
 import { injectStyles, type WidgetTheme } from "@widget/styles";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -40,6 +41,7 @@ interface FormField {
 interface FormStep {
   title?: string;
   description?: string;
+  richDescription?: string | null;
   fields: FormField[];
 }
 
@@ -118,6 +120,25 @@ function renderProgressIndicator(current: number, total: number, labels?: string
     container.appendChild(step);
   }
   return container;
+}
+
+function renderRichTextBlock(
+  richValue: string | null | undefined,
+  fallbackPlainText: string | null | undefined,
+  className: string,
+): HTMLElement | null {
+  const html = getRenderableRichTextHtml(richValue, fallbackPlainText);
+  if (!html) return null;
+
+  const element = el("div", { className });
+  element.innerHTML = html;
+
+  Array.from(element.querySelectorAll("a")).forEach((link) => {
+    link.setAttribute("target", "_blank");
+    link.setAttribute("rel", "noopener noreferrer");
+  });
+
+  return element;
 }
 
 // ── Field Renderers ──────────────────────────────────────────────────────
@@ -435,10 +456,13 @@ function initFormWidget(options: FormWidgetOptions): void {
     card.appendChild(el("div", { className: "lc-title", textContent: title }));
 
     // Description
-    if (step.description) {
-      card.appendChild(
-        el("div", { className: "lc-subtitle", textContent: step.description }),
-      );
+    const richDescription = renderRichTextBlock(
+      step.richDescription,
+      step.description,
+      "lc-subtitle",
+    );
+    if (richDescription) {
+      card.appendChild(richDescription);
     } else if (state.currentStep === 0 && config.description) {
       card.appendChild(
         el("div", { className: "lc-subtitle", textContent: config.description }),

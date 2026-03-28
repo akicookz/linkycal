@@ -71,6 +71,13 @@
       "when": 1774416000000,
       "tag": "0010_fix_timestamps",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1774681200000,
+      "tag": "0012_step_rich_description",
+      "breakpoints": true
     }
   ]
 }

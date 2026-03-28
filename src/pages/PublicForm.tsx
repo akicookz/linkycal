@@ -8,6 +8,7 @@ import {
   ChevronRight,
   ChevronLeft,
 } from "lucide-react";
+import { RichTextContent } from "@/components/RichTextContent";
 import { Button } from "@/components/ui/button";
 import { FormFieldRenderer } from "@/components/FormFieldRenderer";
 import { Logo } from "@/components/Logo";
@@ -31,6 +32,7 @@ interface FormStep {
   sortOrder: number;
   title: string | null;
   description: string | null;
+  richDescription: string | null;
   fields: FormField[];
 }
 
@@ -261,11 +263,10 @@ export default function PublicForm() {
         {steps.length > 1 && currentStep?.title && (
           <p className="text-sm text-muted-foreground">{currentStep.title}</p>
         )}
-        {currentStep?.description && (
-          <p className="text-sm text-muted-foreground">
-            {currentStep.description}
-          </p>
-        )}
+        <RichTextContent
+          value={currentStep?.richDescription}
+          fallbackPlainText={currentStep?.description}
+        />
       </div>
 
       {/* Step progress indicator */}

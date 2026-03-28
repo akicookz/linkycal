@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
+import { RichTextEditor } from "@/components/RichTextEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +58,7 @@ import {
   generateFormApiPrompt,
   generateFormEmbedPrompt,
 } from "@/lib/prompts";
+import { getRenderableRichTextHtml, richTextToPlainText } from "@/lib/rich-text";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { normalizeToFieldId } from "@/lib/constants";
 import {
@@ -104,6 +106,7 @@ interface FormStep {
   sortOrder: number;
   title: string | null;
   description: string | null;
+  richDescription: string | null;
   settings: unknown;
   fields: FormField[];
 }
@@ -695,6 +698,7 @@ export default function FormBuilder() {
             sortOrder: old.steps.length,
             title: `Step ${old.steps.length + 1}`,
             description: null,
+            richDescription: null,
             settings: null,
             fields: [],
           },
@@ -737,7 +741,11 @@ export default function FormBuilder() {
       data,
     }: {
       stepId: string;
-      data: Partial<{ title: string; description: string }>;
+      data: Partial<{
+        title: string;
+        description: string | null;
+        richDescription: string | null;
+      }>;
     }) => {
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/steps/${stepId}`,
@@ -1865,7 +1873,7 @@ export default function FormBuilder() {
               onDragEnd={handleFieldDragEnd}
             >
               {showStepDropTargets && (
-                <div className="flex items-stretch gap-3 overflow-x-auto pb-1">
+                <div className="flex min-h-[136px] items-stretch gap-3 overflow-x-auto px-1 pt-1 pb-3">
                   {fieldDropTargetSteps.map((step) => {
                     const stepNumber = sortedSteps.findIndex((candidate) => candidate.id === step.id) + 1;
                     return (
@@ -1917,22 +1925,37 @@ export default function FormBuilder() {
                       <Label className="text-xs text-muted-foreground">
                         Step Description
                       </Label>
-                      <Input
-                        defaultValue={activeStep.description ?? ""}
-                        key={`step-desc-${activeStep.id}`}
-                        placeholder="Optional description"
-                        className="h-9"
-                        onBlur={(e) => {
+                      <RichTextEditor
+                        key={`step-rich-desc-${activeStep.id}`}
+                        value={getRenderableRichTextHtml(
+                          activeStep.richDescription,
+                          activeStep.description,
+                        )}
+                        placeholder="Add a short intro, context, or instructions for this step."
+                        onSave={(richDescription) => {
+                          const currentValue = getRenderableRichTextHtml(
+                            activeStep.richDescription,
+                            activeStep.description,
+                          );
+                          const plainDescription =
+                            richTextToPlainText(richDescription) || null;
                           if (
-                            e.target.value !== (activeStep.description ?? "")
+                            richDescription !== currentValue ||
+                            plainDescription !== (activeStep.description ?? null)
                           ) {
                             updateStepMutation.mutate({
                               stepId: activeStep.id,
-                              data: { description: e.target.value },
+                              data: {
+                                description: plainDescription,
+                                richDescription,
+                              },
                             });
                           }
                         }}
                       />
+                      <p className="text-xs leading-relaxed text-muted-foreground">
+                        Supports paragraphs, line breaks, bold, italic, and links.
+                      </p>
                     </div>
 
                     {/* Fields list */}
@@ -2239,7 +2262,7 @@ function StepDropTarget({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex h-[116px] w-[116px] shrink-0 flex-col justify-between rounded-[22px] border border-dashed bg-muted/40 p-3 text-left transition-all",
+        "flex h-[124px] w-[124px] shrink-0 flex-col justify-between rounded-[22px] border border-dashed bg-muted/40 p-3.5 text-left transition-all",
         isHovered
           ? "border-primary bg-primary/8 shadow-sm scale-[1.02]"
           : "border-border/70",

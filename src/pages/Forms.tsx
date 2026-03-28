@@ -254,7 +254,21 @@ export default function Forms() {
   function handleCopyApiPrompt(form: Form) {
     const projectSlug = currentProject?.slug ?? projectId ?? "";
     const textPromise = (async () => {
-      let fullForm = form as Form & { steps?: Array<{ title: string | null; description: string | null; fields: Array<{ id: string; label: string; type: string; required: boolean; placeholder: string | null; options: Array<{ label: string; value: string }> | null }> }> };
+      let fullForm = form as Form & {
+        steps?: Array<{
+          title: string | null;
+          description: string | null;
+          richDescription?: string | null;
+          fields: Array<{
+            id: string;
+            label: string;
+            type: string;
+            required: boolean;
+            placeholder: string | null;
+            options: Array<{ label: string; value: string }> | null;
+          }>;
+        }>;
+      };
       try {
         const res = await fetch(`/api/projects/${projectId}/forms/${form.id}`);
         if (res.ok) {

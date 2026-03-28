@@ -1,6 +1,7 @@
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
+import { plainTextToRichTextHtml } from "../lib/rich-text";
 
 // ─── Field Helpers ───────────────────────────────────────────────────────────
 
@@ -78,9 +79,17 @@ function normalizeFormRow<T extends { settings: unknown }>(form: T) {
   };
 }
 
-function normalizeStepRow<T extends { settings: unknown }>(step: T) {
+function normalizeStepRow<
+  T extends {
+    settings: unknown;
+    description?: string | null;
+    richDescription?: string | null;
+  },
+>(step: T) {
   return {
     ...step,
+    richDescription:
+      step.richDescription ?? plainTextToRichTextHtml(step.description ?? null),
     settings: parseJsonObject(step.settings),
   };
 }
@@ -303,6 +312,7 @@ export class FormService {
       sortOrder?: number;
       title?: string;
       description?: string;
+      richDescription?: string;
       settings?: Record<string, unknown>;
     },
   ) {
@@ -321,6 +331,7 @@ export class FormService {
       sortOrder,
       title: data.title ?? `Step ${sortOrder + 1}`,
       description: data.description ?? null,
+      richDescription: data.richDescription ?? null,
       settings: data.settings ? JSON.stringify(data.settings) : null,
     });
 
@@ -333,6 +344,7 @@ export class FormService {
       sortOrder?: number;
       title?: string;
       description?: string | null;
+      richDescription?: string | null;
       settings?: Record<string, unknown> | null;
     },
   ) {
@@ -340,6 +352,8 @@ export class FormService {
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.title !== undefined) values.title = data.title;
     if (data.description !== undefined) values.description = data.description;
+    if (data.richDescription !== undefined)
+      values.richDescription = data.richDescription;
     if (data.settings !== undefined)
       values.settings = data.settings ? JSON.stringify(data.settings) : null;
 

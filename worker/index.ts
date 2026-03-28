@@ -20,6 +20,7 @@ import {
   createFormSchema,
   updateFormSchema,
   createFormStepSchema,
+  updateFormStepSchema,
   createFormFieldSchema,
   updateFormFieldSchema,
   submitFormStepSchema,
@@ -2772,10 +2773,11 @@ app.put("/api/projects/:projectId/forms/:formId/steps/:id", async (c) => {
   try {
     const id = c.req.param("id");
     const body = await c.req.json();
+    const data = validate(updateFormStepSchema, body);
 
     const db = c.get("db");
     const service = new FormService(db);
-    const step = await service.updateStep(id, body);
+    const step = await service.updateStep(id, data);
 
     if (!step) {
       return c.json({ error: "Step not found" }, 404);
@@ -2783,6 +2785,9 @@ app.put("/api/projects/:projectId/forms/:formId/steps/:id", async (c) => {
 
     return c.json({ step });
   } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
     console.error("Form step update error:", err);
     return c.json({ error: "Failed to update form step" }, 500);
   }

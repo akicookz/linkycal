@@ -66,7 +66,11 @@ export function getWidgetCSS(): string {
     }
 
     .lc-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; color: var(--lc-text, #0f1a14); }
-    .lc-subtitle { font-size: 14px; color: color-mix(in srgb, var(--lc-text, #0f1a14) 55%, transparent); margin-bottom: 20px; }
+    .lc-subtitle { font-size: 14px; color: color-mix(in srgb, var(--lc-text, #0f1a14) 55%, transparent); margin-bottom: 20px; line-height: 1.6; }
+    .lc-subtitle p:not(:last-child) { margin-bottom: 8px; }
+    .lc-subtitle a { color: var(--lc-primary-bg, #1B4332); text-decoration: underline; text-underline-offset: 2px; }
+    .lc-subtitle strong { font-weight: 600; }
+    .lc-subtitle em { font-style: italic; }
 
     .lc-btn {
       display: inline-flex; align-items: center; justify-content: center; gap: 8px;

@@ -294,6 +294,7 @@ export const formSteps = sqliteTable(
     sortOrder: integer("sort_order").notNull().default(0),
     title: text("title"),
     description: text("description"),
+    richDescription: text("rich_description"),
     settings: text("settings", { mode: "json" }),
   },
   (t) => [index("form_steps_form_id_idx").on(t.formId)],
