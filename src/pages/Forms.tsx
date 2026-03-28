@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
-  Sparkles,
   FileText,
   Copy,
   Pencil,
@@ -12,10 +11,10 @@ import {
   AlertCircle,
   Check,
   BarChart3,
-  ChevronDown,
   MoreHorizontal,
   Code,
 } from "lucide-react";
+import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -272,7 +271,7 @@ export default function Forms() {
   }
 
   function handleCopyEmbedPrompt(form: Form) {
-    const prompt = generateFormEmbedPrompt(form);
+    const prompt = generateFormEmbedPrompt(form, window.location.origin);
     copyToClipboard(prompt);
     setCopiedId(`embedprompt-${form.id}`);
     setTimeout(() => setCopiedId(null), 2000);
@@ -399,31 +398,24 @@ export default function Forms() {
                     {copiedId === `link-${form.id}` ? "Copied" : "Copy link"}
                   </Button>
 
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 px-2.5 text-xs">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Copy prompt
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-72 p-1.5">
-                      <button
-                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
-                        onClick={() => handleCopyApiPrompt(form)}
-                      >
-                        <p className="text-sm font-medium">{copiedId === `api-${form.id}` ? "Copied!" : "Copy API Prompt"}</p>
-                        <p className="text-[11px] text-muted-foreground">Full API documentation for AI assistants</p>
-                      </button>
-                      <button
-                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
-                        onClick={() => handleCopyEmbedPrompt(form)}
-                      >
-                        <p className="text-sm font-medium">{copiedId === `embedprompt-${form.id}` ? "Copied!" : "Copy Embed Prompt"}</p>
-                        <p className="text-[11px] text-muted-foreground">Instructions for embedding on a website</p>
-                      </button>
-                    </PopoverContent>
-                  </Popover>
+                  <CopyPromptButton
+                    items={[
+                      {
+                        id: `api-${form.id}`,
+                        label: "Copy API/Form Action Prompt",
+                        description: "API + native form action guidance for AI assistants",
+                        onClick: () => handleCopyApiPrompt(form),
+                        copied: copiedId === `api-${form.id}`,
+                      },
+                      {
+                        id: `embedprompt-${form.id}`,
+                        label: "Copy Embed Prompt",
+                        description: "Instructions for embedding on a website",
+                        onClick: () => handleCopyEmbedPrompt(form),
+                        copied: copiedId === `embedprompt-${form.id}`,
+                      },
+                    ]}
+                  />
 
                   <Button
                     variant="ghost"

@@ -10,11 +10,10 @@ import {
   Loader2,
   AlertCircle,
   Check,
-  ChevronDown,
   MoreHorizontal,
   Code,
-  Sparkles,
 } from "lucide-react";
+import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -315,31 +314,24 @@ export default function EventTypes() {
                     {copiedId === `link-${et.id}` ? "Copied" : "Copy link"}
                   </Button>
 
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 px-2.5 text-xs">
-                        <Sparkles className="h-3.5 w-3.5" />
-                        Copy prompt
-                        <ChevronDown className="h-3 w-3" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="start" className="w-72 p-1.5">
-                      <button
-                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
-                        onClick={() => handleCopyApiPrompt(et)}
-                      >
-                        <p className="text-sm font-medium">{copiedId === `api-${et.id}` ? "Copied!" : "Copy API Prompt"}</p>
-                        <p className="text-[11px] text-muted-foreground">Full API documentation for AI assistants</p>
-                      </button>
-                      <button
-                        className="w-full text-left rounded-[10px] px-3 py-2 hover:bg-muted/50 transition-colors"
-                        onClick={() => handleCopyEmbedPrompt(et)}
-                      >
-                        <p className="text-sm font-medium">{copiedId === `embedprompt-${et.id}` ? "Copied!" : "Copy Embed Prompt"}</p>
-                        <p className="text-[11px] text-muted-foreground">Instructions for embedding on a website</p>
-                      </button>
-                    </PopoverContent>
-                  </Popover>
+                  <CopyPromptButton
+                    items={[
+                      {
+                        id: `api-${et.id}`,
+                        label: "Copy API Prompt",
+                        description: "Full API documentation for AI assistants",
+                        onClick: () => handleCopyApiPrompt(et),
+                        copied: copiedId === `api-${et.id}`,
+                      },
+                      {
+                        id: `embedprompt-${et.id}`,
+                        label: "Copy Embed Prompt",
+                        description: "Instructions for embedding on a website",
+                        onClick: () => handleCopyEmbedPrompt(et),
+                        copied: copiedId === `embedprompt-${et.id}`,
+                      },
+                    ]}
+                  />
 
                   <Button
                     variant="ghost"

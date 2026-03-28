@@ -249,6 +249,15 @@ export function generateFormApiPrompt(
   const allFields = form.steps?.flatMap((step) => step.fields) ?? [];
   const hasFileFields = allFields.some((field) => field.type === "file");
 
+  function escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   // Generate example values based on field type
   function exampleValue(field: FormFieldForPrompt): string {
     switch (field.type) {
@@ -269,7 +278,157 @@ export function generateFormApiPrompt(
     }
   }
 
-  let prompt = `# LinkyCal Form API — "${form.name}"
+  function exampleApiField(field: FormFieldForPrompt): Record<string, string> {
+    if (field.type === "file") {
+      return {
+        fieldId: field.id,
+        fileUrl: "https://example.com/uploads/brief.pdf",
+      };
+    }
+
+    return {
+      fieldId: field.id,
+      value: exampleValue(field),
+    };
+  }
+
+  function renderHtmlField(field: FormFieldForPrompt): string {
+    const id = escapeHtml(field.id);
+    const label = escapeHtml(field.label);
+    const placeholder = field.placeholder
+      ? ` placeholder="${escapeHtml(field.placeholder)}"`
+      : "";
+    const required = field.required ? " required" : "";
+
+    switch (field.type) {
+      case "textarea":
+        return [
+          `<label for="${id}">${label}</label>`,
+          `<textarea id="${id}" name="${id}"${placeholder}${required}></textarea>`,
+        ].join("\n");
+
+      case "select":
+        return [
+          `<label for="${id}">${label}</label>`,
+          `<select id="${id}" name="${id}"${required}>`,
+          `  <option value="">Select an option</option>`,
+          ...(field.options ?? []).map(
+            (option) =>
+              `  <option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`,
+          ),
+          `</select>`,
+        ].join("\n");
+
+      case "multi_select":
+        return [
+          `<fieldset>`,
+          `  <legend>${label}</legend>`,
+          ...(field.options ?? []).map(
+            (option) =>
+              `  <label><input type="checkbox" name="${id}" value="${escapeHtml(option.value)}" /> ${escapeHtml(option.label)}</label>`,
+          ),
+          `</fieldset>`,
+        ].join("\n");
+
+      case "radio":
+        return [
+          `<fieldset>`,
+          `  <legend>${label}</legend>`,
+          ...(field.options ?? []).map(
+            (option) =>
+              `  <label><input type="radio" name="${id}" value="${escapeHtml(option.value)}"${required} /> ${escapeHtml(option.label)}</label>`,
+          ),
+          `</fieldset>`,
+        ].join("\n");
+
+      case "checkbox":
+        return `<label><input type="checkbox" name="${id}" value="true"${required} /> ${label}</label>`;
+
+      case "rating":
+        return [
+          `<label for="${id}">${label}</label>`,
+          `<select id="${id}" name="${id}"${required}>`,
+          `  <option value="">Select a rating</option>`,
+          `  <option value="1">1</option>`,
+          `  <option value="2">2</option>`,
+          `  <option value="3">3</option>`,
+          `  <option value="4">4</option>`,
+          `  <option value="5">5</option>`,
+          `</select>`,
+        ].join("\n");
+
+      case "file":
+        return [
+          `<!-- File upload fields are not supported on the native HTML action endpoint yet -->`,
+          `<!-- <label for="${id}">${label}</label> -->`,
+          `<!-- <input id="${id}" name="${id}" type="file"${required} /> -->`,
+        ].join("\n");
+
+      default: {
+        const inputType =
+          field.type === "email"
+            ? "email"
+            : field.type === "phone"
+              ? "tel"
+              : field.type === "number"
+                ? "number"
+                : field.type === "date"
+                  ? "date"
+                  : field.type === "time"
+                    ? "time"
+                    : "text";
+
+        return [
+          `<label for="${id}">${label}</label>`,
+          `<input id="${id}" name="${id}" type="${inputType}"${placeholder}${required} />`,
+        ].join("\n");
+      }
+    }
+  }
+
+  function renderHtmlFormExample(): string {
+    const lines = [
+      `<form action="${origin}/api/public/forms/${form.slug}/submit" method="post">`,
+    ];
+
+    for (let i = 0; i < (form.steps?.length ?? 0); i++) {
+      const step = form.steps?.[i];
+      if (!step) continue;
+
+      lines.push(`  <!-- Step ${i + 1}${step.title ? `: ${escapeHtml(step.title)}` : ""} -->`);
+
+      if (step.description) {
+        lines.push(`  <!-- ${escapeHtml(step.description)} -->`);
+      }
+
+      for (const field of step.fields) {
+        const rendered = renderHtmlField(field)
+          .split("\n")
+          .map((line) => `  ${line}`);
+        lines.push(...rendered, "");
+      }
+    }
+
+    lines.push(`  <button type="submit">Submit</button>`, `</form>`);
+    return lines.join("\n").replace(/\n\n\n+/g, "\n\n");
+  }
+
+  function renderApiExampleForStep(stepIndex: number, fields: FormFieldForPrompt[]): string {
+    const requestBody = JSON.stringify(
+      {
+        fields: fields.map((field) => exampleApiField(field)),
+      },
+      null,
+      2,
+    );
+
+    return `# ${stepIndex + 2}. Submit step ${stepIndex}
+curl -X PATCH "${origin}/api/v1/forms/${form.slug}/responses/RESPONSE_ID/steps/${stepIndex}" \\
+  -H "Content-Type: application/json" \\
+  -d '${requestBody}'`;
+  }
+
+  let prompt = `# LinkyCal Form API / Form Action Prompt — "${form.name}"
 
 ## Form Details
 - Name: ${form.name}
@@ -277,6 +436,16 @@ export function generateFormApiPrompt(
 - Type: ${form.type === "multi_step" ? "Multi-step" : "Single step"}
 ${form.steps ? `- Steps: ${form.steps.length}` : ""}
 - Authentication: None required (public endpoint)
+
+## AI Agent Instructions
+
+- You are integrating a LinkyCal form into the user's project.
+- There are two plausible integration directions here:
+  1. LinkyCal widget / JSON API flow
+  2. Native HTML \`<form action>\` flow
+- If both directions are plausible for this project, ask the user which path they want before generating implementation code.
+- Prefer native HTML form actions for simple server-rendered or static sites.
+- Prefer the widget or JSON API flow for multi-step experiences, richer UX, custom validation, or file uploads.
 
 ## 1. Start a Form Response
 
@@ -310,7 +479,7 @@ Content-Type: application/json
   // Generate example body using real field IDs from step 1
   if (firstStepFields.length > 0) {
     const exampleFields = firstStepFields
-      .map((f) => `    { "fieldId": "${f.id}", "value": "${exampleValue(f)}" }`)
+      .map((field) => `    ${JSON.stringify(exampleApiField(field))}`)
       .join(",\n");
 
     prompt += `
@@ -351,9 +520,6 @@ ${exampleFields}
 The response status changes to \`"completed"\` after the last step is submitted.
 `;
 
-  const htmlNameField = allFields.find((field) => field.type !== "email") ?? allFields[0];
-  const htmlEmailField = allFields.find((field) => field.type === "email");
-
   prompt += `
 ## 3. Native HTML Form Action
 
@@ -366,11 +532,7 @@ POST ${origin}/api/public/forms/${form.slug}/submit
 Use the real field IDs from this form as your HTML input \`name\` attributes.
 
 \`\`\`html
-<form action="${origin}/api/public/forms/${form.slug}/submit" method="post">
-  <input type="text" name="${htmlNameField?.id ?? "field_id"}" />
-  <input type="email" name="${htmlEmailField?.id ?? "email"}" />
-  <button type="submit">Submit</button>
-</form>
+${renderHtmlFormExample()}
 \`\`\`
 
 By default LinkyCal returns a hosted thank-you page after a successful submission. If the form's native action settings are configured for redirects, the browser is redirected instead.
@@ -426,13 +588,21 @@ curl -X POST "${origin}/api/v1/forms/${form.slug}/responses?projectSlug=${projec
   -H "Content-Type: application/json"
 
 # Save the response ID from the result: response.id
-
-# 2. Submit step 0
-curl -X PATCH "${origin}/api/v1/forms/${form.slug}/responses/RESPONSE_ID/steps/0" \\
-  -H "Content-Type: application/json" \\
-  -d '${JSON.stringify({ fields: firstStepFields.map((f) => ({ fieldId: f.id, value: exampleValue(f) })) })}'
+\n${(form.steps ?? [])
+  .map((step, index) => renderApiExampleForStep(index, step.fields))
+  .join("\n\n")}
 \`\`\`
-${form.steps && form.steps.length > 1 ? `\nRepeat step 2 for each additional step (1 through ${form.steps.length - 1}).\n` : ""}
+
+The example above includes every step in order using the real field IDs from this form.
+
+## Documentation
+
+- General docs: ${origin}/docs
+- Create response: ${origin}/docs#create-response
+- Submit step: ${origin}/docs#submit-step
+- Native HTML form action: ${origin}/docs#native-html-form
+- Form widget: ${origin}/docs#form-widget
+
 **Where in your application would you like to collect this form data?**
 `;
 
@@ -441,6 +611,7 @@ ${form.steps && form.steps.length > 1 ? `\nRepeat step 2 for each additional ste
 
 export function generateFormEmbedPrompt(
   form: FormForPrompt,
+  origin = "https://linkycal.com",
 ): string {
   return `# Embed LinkyCal Form Widget — "${form.name}"
 
@@ -498,6 +669,12 @@ ${form.type === "multi_step" ? "- Multi-step navigation with progress indicator"
 - The script loads asynchronously and won't block your page rendering
 - The widget is self-contained — no additional CSS or dependencies needed
 - Multiple forms can coexist on the same page with different container IDs
+
+## Documentation
+- General docs: ${origin}/docs
+- Form widget: ${origin}/docs#form-widget
+- Native HTML form action: ${origin}/docs#native-html-form
+- Forms API: ${origin}/docs#create-response
 
 **Where on your website would you like to embed this form?** (e.g., contact page, signup page, feedback section)
 `.trim();

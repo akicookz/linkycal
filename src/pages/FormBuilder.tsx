@@ -27,6 +27,7 @@ import {
   Globe,
   Trash2,
 } from "lucide-react";
+import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -52,7 +53,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
-import { cn } from "@/lib/utils";
+import {
+  generateFormApiPrompt,
+  generateFormEmbedPrompt,
+} from "@/lib/prompts";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { normalizeToFieldId } from "@/lib/constants";
 import {
   DndContext,
@@ -175,6 +180,7 @@ export default function FormBuilder() {
   const [autoFocusLastField, setAutoFocusLastField] = useState(false);
 
   const [linkCopied, setLinkCopied] = useState(false);
+  const [promptCopiedId, setPromptCopiedId] = useState<string | null>(null);
   const [actionUrlCopied, setActionUrlCopied] = useState(false);
   const [nativeSuccessMessage, setNativeSuccessMessage] = useState(
     DEFAULT_NATIVE_SUCCESS_MESSAGE,
@@ -234,6 +240,17 @@ export default function FormBuilder() {
 
   // ─── Fetch full form ────────────────────────────────────────────────────
 
+  const { data: projects } = useQuery<Array<{ id: string; slug: string }>>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects");
+      if (!res.ok) throw new Error("Failed to fetch projects");
+      const data = await res.json();
+      return data.projects ?? [];
+    },
+    enabled: !!projectId,
+  });
+
   const {
     data: formData,
     isLoading,
@@ -252,6 +269,7 @@ export default function FormBuilder() {
   });
 
   const form = formData;
+  const currentProject = projects?.find((project) => project.id === projectId);
 
 
   const steps = form?.steps ?? [];
@@ -636,6 +654,26 @@ export default function FormBuilder() {
       updateFormMutation.mutate({ slug: editingSlug.trim() });
     }
   }, [form, editingSlug, updateFormMutation]);
+
+  function markPromptCopied(promptId: string) {
+    setPromptCopiedId(promptId);
+    setTimeout(() => setPromptCopiedId(null), 2000);
+  }
+
+  function handleCopyApiPrompt() {
+    if (!form) return;
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+    const prompt = generateFormApiPrompt(form, projectSlug, window.location.origin);
+    copyToClipboard(prompt);
+    markPromptCopied("api");
+  }
+
+  function handleCopyEmbedPrompt() {
+    if (!form) return;
+    const prompt = generateFormEmbedPrompt(form, window.location.origin);
+    copyToClipboard(prompt);
+    markPromptCopied("embedprompt");
+  }
 
   function buildUpdatedFormSettings(
     patch: Partial<NativeActionSettings>,
@@ -1033,6 +1071,26 @@ export default function FormBuilder() {
           </Badge>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <CopyPromptButton
+            buttonVariant="outline"
+            buttonSize="sm"
+            items={[
+              {
+                id: "api",
+                label: "Copy API/Form Action Prompt",
+                description: "API + native form action guidance for AI agents",
+                onClick: handleCopyApiPrompt,
+                copied: promptCopiedId === "api",
+              },
+              {
+                id: "embedprompt",
+                label: "Copy Embed Prompt",
+                description: "Widget embed instructions with docs references",
+                onClick: handleCopyEmbedPrompt,
+                copied: promptCopiedId === "embedprompt",
+              },
+            ]}
+          />
           <Button
             variant="outline"
             size="sm"
