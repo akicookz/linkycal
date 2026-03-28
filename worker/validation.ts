@@ -189,6 +189,35 @@ export const createFormFieldSchema = z.object({
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
 });
 
+export const updateFormFieldSchema = z.object({
+  sortOrder: z.number().int().min(0).optional(),
+  type: z
+    .enum([
+      "text",
+      "textarea",
+      "email",
+      "phone",
+      "number",
+      "select",
+      "multi_select",
+      "checkbox",
+      "radio",
+      "date",
+      "time",
+      "file",
+      "rating",
+    ])
+    .optional(),
+  label: z.string().min(1).max(200).optional(),
+  placeholder: z.string().max(200).nullable().optional(),
+  required: z.boolean().optional(),
+  validation: z.record(z.string(), z.unknown()).nullable().optional(),
+  options: z
+    .array(z.object({ label: z.string(), value: z.string() }))
+    .nullable()
+    .optional(),
+});
+
 export const submitFormStepSchema = z.object({
   fields: z.array(
     z.object({

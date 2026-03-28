@@ -119,6 +119,10 @@ interface FieldOption {
   value: string;
 }
 
+interface DraftFieldOption extends FieldOption {
+  id: string;
+}
+
 interface NativeActionSettings {
   successMode?: "message" | "redirect";
   successMessage?: string;
@@ -151,6 +155,83 @@ const FIELD_TYPES = [
 
 const OPTION_FIELD_TYPES = ["select", "multi_select", "radio", "checkbox"];
 
+function isOptionFieldType(type: string): boolean {
+  return OPTION_FIELD_TYPES.includes(type);
+}
+
+function createDraftFieldOption(option?: Partial<FieldOption>): DraftFieldOption {
+  return {
+    id: crypto.randomUUID(),
+    label: option?.label ?? "",
+    value: option?.value ?? "",
+  };
+}
+
+function parseStoredFieldOptions(options: FormField["options"]): FieldOption[] {
+  if (!options) return [];
+
+  let parsed: unknown = options;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .filter(
+      (option): option is FieldOption =>
+        !!option &&
+        typeof option === "object" &&
+        typeof (option as { label?: unknown }).label === "string" &&
+        typeof (option as { value?: unknown }).value === "string",
+    )
+    .map((option) => ({
+      label: option.label,
+      value: option.value,
+    }));
+}
+
+function dedupeDraftFieldOptions(
+  options: DraftFieldOption[],
+): DraftFieldOption[] {
+  const seenValues = new Map<string, number>();
+
+  return options.map((option) => {
+    const baseValue = option.value.trim();
+    if (!baseValue) {
+      return { ...option, value: "" };
+    }
+
+    const nextCount = (seenValues.get(baseValue) ?? 0) + 1;
+    seenValues.set(baseValue, nextCount);
+
+    return {
+      ...option,
+      value: nextCount === 1 ? baseValue : `${baseValue}_${nextCount}`,
+    };
+  });
+}
+
+function toDraftFieldOptions(options: FieldOption[]): DraftFieldOption[] {
+  const source = options.length > 0 ? options : [{ label: "", value: "" }];
+  return dedupeDraftFieldOptions(
+    source.map((option) => createDraftFieldOption(option)),
+  );
+}
+
+function toPersistedFieldOptions(options: DraftFieldOption[]): FieldOption[] {
+  return options
+    .filter((option) => option.label.trim() || option.value.trim())
+    .map((option) => ({
+      label: option.label.trim(),
+      value: option.value.trim(),
+    }));
+}
+
 // Field icon lookup (used by field type picker in sidebar)
 function _getFieldIcon(type: string) {
   const found = FIELD_TYPES.find((ft) => ft.type === type);
@@ -176,7 +257,9 @@ export default function FormBuilder() {
 
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   // Local options state for auto-save (keyed by field ID)
-  const [fieldOptionsState, setFieldOptionsState] = useState<Record<string, FieldOption[]>>({});
+  const [fieldOptionsState, setFieldOptionsState] = useState<
+    Record<string, DraftFieldOption[]>
+  >({});
   const [autoFocusLastField, setAutoFocusLastField] = useState(false);
 
   const [linkCopied, setLinkCopied] = useState(false);
@@ -325,6 +408,42 @@ export default function FormBuilder() {
     nativeActionSettings.redirectUrl,
     nativeActionSettings.successMessage,
   ]);
+
+  useEffect(() => {
+    if (!form) {
+      setFieldOptionsState((prev) =>
+        Object.keys(prev).length === 0 ? prev : {},
+      );
+      return;
+    }
+
+    setFieldOptionsState((prev) => {
+      const nextState: Record<string, DraftFieldOption[]> = {};
+      let changed = false;
+
+      for (const step of form.steps) {
+        for (const field of step.fields) {
+          if (!isOptionFieldType(field.type)) continue;
+
+          if (prev[field.id]) {
+            nextState[field.id] = prev[field.id];
+            continue;
+          }
+
+          nextState[field.id] = toDraftFieldOptions(
+            parseStoredFieldOptions(field.options),
+          );
+          changed = true;
+        }
+      }
+
+      if (!changed && Object.keys(prev).length !== Object.keys(nextState).length) {
+        changed = true;
+      }
+
+      return changed ? nextState : prev;
+    });
+  }, [form]);
 
   // ─── Optimistic update helpers ────────────────────────────────────────────
 
@@ -526,40 +645,38 @@ export default function FormBuilder() {
       if (!res.ok) throw new Error("Failed to add field");
       return res.json();
     },
-    onMutate: async ({ stepId, type, label }) => {
-      await queryClient.cancelQueries({ queryKey: formQueryKey });
-      const snapshot = snapshotForm();
-      const tempId = `temp-${crypto.randomUUID()}`;
+    onMutate: () => {
       setAutoFocusLastField(true);
+    },
+    onSuccess: (data, variables) => {
+      const field = data?.field as FormField | undefined;
+      if (!field) return;
+
       optimisticSetForm((old) => ({
         ...old,
-        steps: old.steps.map((s) =>
-          s.id === stepId
-            ? {
-              ...s,
-              fields: [
-                ...s.fields,
-                {
-                  id: tempId,
-                  stepId,
-                  sortOrder: s.fields.length,
-                  type,
-                  label,
-                  placeholder: null,
-                  required: false,
-                  validation: null,
-                  options: null,
-                  createdAt: new Date().toISOString(),
-                },
-              ],
-            }
-            : s
+        steps: old.steps.map((step) =>
+          step.id === variables.stepId &&
+            !step.fields.some((existingField) => existingField.id === field.id)
+            ? { ...step, fields: [...step.fields, field] }
+            : step,
         ),
       }));
-      return { snapshot };
+
+      if (isOptionFieldType(field.type)) {
+        setFieldOptionsState((prev) =>
+          prev[field.id]
+            ? prev
+            : {
+              ...prev,
+              [field.id]: toDraftFieldOptions(
+                parseStoredFieldOptions(field.options),
+              ),
+            },
+        );
+      }
     },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.snapshot) rollback(ctx.snapshot);
+    onError: () => {
+      setAutoFocusLastField(false);
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: formQueryKey });
@@ -822,36 +939,57 @@ export default function FormBuilder() {
 
   // ─── Field options helpers (auto-save) ──────────────────────────────────
 
-  function getFieldOptions(field: FormField): FieldOption[] {
+  function getFieldOptions(field: FormField): DraftFieldOption[] {
     if (fieldOptionsState[field.id]) {
       const cached = fieldOptionsState[field.id];
-      return Array.isArray(cached) ? cached : [{ label: "", value: "" }];
+      return Array.isArray(cached)
+        ? cached
+        : toDraftFieldOptions(parseStoredFieldOptions(field.options));
     }
-    if (!field.options) return [{ label: "", value: "" }];
-    // Handle case where options is a JSON string from the DB
-    let parsed = field.options;
-    if (typeof parsed === "string") {
-      try { parsed = JSON.parse(parsed); } catch { return [{ label: "", value: "" }]; }
-    }
-    return Array.isArray(parsed) ? parsed as FieldOption[] : [{ label: "", value: "" }];
+
+    return toDraftFieldOptions(parseStoredFieldOptions(field.options));
   }
 
-  function setFieldOptions(fieldId: string, options: FieldOption[]) {
-    setFieldOptionsState((prev) => ({ ...prev, [fieldId]: options }));
+  function setFieldOptions(fieldId: string, options: DraftFieldOption[]) {
+    setFieldOptionsState((prev) => ({
+      ...prev,
+      [fieldId]: dedupeDraftFieldOptions(options),
+    }));
   }
 
   function saveFieldOptions(fieldId: string) {
     const options = fieldOptionsState[fieldId];
     if (!options || !Array.isArray(options)) return;
-    const filtered = options.filter((o) => o.label.trim() || o.value.trim());
-    if (filtered.length === 0) return;
-    updateFieldMutation.mutate({ fieldId, data: { options: filtered } });
+    const persistedOptions = toPersistedFieldOptions(options);
+    const nextOptions =
+      persistedOptions.length > 0
+        ? options
+            .filter((option) => option.label.trim() || option.value.trim())
+            .map((option, index) => ({
+              ...option,
+              label: persistedOptions[index]?.label ?? option.label.trim(),
+              value: persistedOptions[index]?.value ?? option.value.trim(),
+            }))
+        : toDraftFieldOptions([]);
+
+    setFieldOptions(fieldId, nextOptions);
+
+    updateFieldMutation.mutate({
+      fieldId,
+      data: { options: persistedOptions },
+    });
   }
 
   function addFieldOption(fieldId: string, field: FormField) {
     const current = getFieldOptions(field);
     const nextNum = current.length + 1;
-    const updated = [...current, { label: `Option ${nextNum}`, value: `option_${nextNum}` }];
+    const updated = [
+      ...current,
+      createDraftFieldOption({
+        label: `Option ${nextNum}`,
+        value: `option_${nextNum}`,
+      }),
+    ];
     setFieldOptions(fieldId, updated);
     // Don't mutate here — saved on blur when user edits the new option label
   }
@@ -860,14 +998,27 @@ export default function FormBuilder() {
     const current = getFieldOptions(field);
     const updated = current.filter((_, i) => i !== index);
     setFieldOptions(fieldId, updated);
-    const filtered = updated.filter((o) => o.label.trim() || o.value.trim());
-    updateFieldMutation.mutate({ fieldId, data: { options: filtered } });
+    updateFieldMutation.mutate({
+      fieldId,
+      data: { options: toPersistedFieldOptions(updated) },
+    });
   }
 
-  function updateFieldOption(fieldId: string, index: number, val: string) {
-    const current = fieldOptionsState[fieldId] ?? [];
+  function updateFieldOption(
+    fieldId: string,
+    index: number,
+    val: string,
+    field: FormField,
+  ) {
+    const current = getFieldOptions(field);
     const updated = current.map((o, i) =>
-      i === index ? { label: val, value: normalizeToFieldId(val) } : o,
+      i === index
+        ? {
+          ...o,
+          label: val,
+          value: val.trim() ? normalizeToFieldId(val) : "",
+        }
+        : o,
     );
     setFieldOptions(fieldId, updated);
   }
@@ -1411,8 +1562,8 @@ export default function FormBuilder() {
                                     <Select
                                       value={field.type}
                                       onValueChange={(val) => {
-                                        const wasOptionType = OPTION_FIELD_TYPES.includes(field.type);
-                                        const isOptionType = OPTION_FIELD_TYPES.includes(val);
+                                        const wasOptionType = isOptionFieldType(field.type);
+                                        const isOptionType = isOptionFieldType(val);
                                         const updateData: Record<string, unknown> = { type: val };
                                         if (wasOptionType && !isOptionType) {
                                           updateData.options = null;
@@ -1424,17 +1575,28 @@ export default function FormBuilder() {
                                         }
                                         if (!wasOptionType && isOptionType) {
                                           const seedOptions = val === "multi_select"
-                                            ? [{ label: "Option 1", value: "option_1" }, { label: "Option 2", value: "option_2" }]
-                                            : [{ label: "Option 1", value: "option_1" }];
-                                          updateData.options = seedOptions;
+                                            ? toDraftFieldOptions([
+                                              { label: "Option 1", value: "option_1" },
+                                              { label: "Option 2", value: "option_2" },
+                                            ])
+                                            : toDraftFieldOptions([
+                                              { label: "Option 1", value: "option_1" },
+                                            ]);
+                                          updateData.options = toPersistedFieldOptions(seedOptions);
                                           setFieldOptions(field.id, seedOptions);
                                         }
                                         // If switching to multi_select and only 1 option, add a second
                                         if (wasOptionType && isOptionType && val === "multi_select") {
-                                          const currentOpts = fieldOptionsState[field.id] ?? field.options ?? [];
+                                          const currentOpts = getFieldOptions(field);
                                           if (currentOpts.length < 2) {
-                                            const seedOptions = [...currentOpts, { label: "Option 2", value: "option_2" }];
-                                            updateData.options = seedOptions;
+                                            const seedOptions = [
+                                              ...currentOpts,
+                                              createDraftFieldOption({
+                                                label: "Option 2",
+                                                value: "option_2",
+                                              }),
+                                            ];
+                                            updateData.options = toPersistedFieldOptions(seedOptions);
                                             setFieldOptions(field.id, seedOptions);
                                           }
                                         }
@@ -1497,12 +1659,12 @@ export default function FormBuilder() {
                                         const isLast = idx === options.length - 1;
                                         const canRemove = options.length > minOptions;
                                         return (
-                                          <div key={idx} className="flex items-center gap-1.5">
+                                          <div key={opt.id} className="flex items-center gap-1.5">
                                             <Input
                                               placeholder={`Option ${idx + 1}`}
                                               value={opt.label}
                                               onChange={(e) =>
-                                                updateFieldOption(field.id, idx, e.target.value)
+                                                updateFieldOption(field.id, idx, e.target.value, field)
                                               }
                                               onBlur={() => saveFieldOptions(field.id)}
                                               className="h-7 text-xs"

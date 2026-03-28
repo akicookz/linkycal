@@ -32,6 +32,69 @@ function normalizeToFieldId(label: string): string {
   );
 }
 
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return value;
+  }
+}
+
+function parseJsonObject(value: unknown): Record<string, unknown> | null {
+  const parsed = parseJsonValue(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return null;
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function parseFieldOptions(
+  value: unknown,
+): Array<{ label: string; value: string }> | null {
+  const parsed = parseJsonValue(value);
+  if (!Array.isArray(parsed)) return null;
+
+  return parsed
+    .filter(
+      (option): option is { label: string; value: string } =>
+        !!option &&
+        typeof option === "object" &&
+        typeof (option as { label?: unknown }).label === "string" &&
+        typeof (option as { value?: unknown }).value === "string",
+    )
+    .map((option) => ({
+      label: option.label,
+      value: option.value,
+    }));
+}
+
+function normalizeFormRow<T extends { settings: unknown }>(form: T) {
+  return {
+    ...form,
+    settings: parseJsonObject(form.settings),
+  };
+}
+
+function normalizeStepRow<T extends { settings: unknown }>(step: T) {
+  return {
+    ...step,
+    settings: parseJsonObject(step.settings),
+  };
+}
+
+function normalizeFieldRow<
+  T extends { validation: unknown; options: unknown },
+>(field: T) {
+  return {
+    ...field,
+    validation: parseJsonObject(field.validation),
+    options: parseFieldOptions(field.options),
+  };
+}
+
 // ─── Form Service ────────────────────────────────────────────────────────────
 
 export class FormService {
@@ -40,11 +103,13 @@ export class FormService {
   // ─── Forms CRUD ──────────────────────────────────────────────────────────
 
   async list(projectId: string) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.forms)
       .where(eq(dbSchema.forms.projectId, projectId))
       .orderBy(desc(dbSchema.forms.createdAt));
+
+    return rows.map(normalizeFormRow);
   }
 
   async getById(id: string) {
@@ -53,7 +118,8 @@ export class FormService {
       .from(dbSchema.forms)
       .where(eq(dbSchema.forms.id, id))
       .limit(1);
-    return rows[0] ?? null;
+
+    return rows[0] ? normalizeFormRow(rows[0]) : null;
   }
 
   async getBySlug(projectId: string, slug: string) {
@@ -67,7 +133,8 @@ export class FormService {
         ),
       )
       .limit(1);
-    return rows[0] ?? null;
+
+    return rows[0] ? normalizeFormRow(rows[0]) : null;
   }
 
   async getBySlugGlobal(slug: string) {
@@ -76,7 +143,8 @@ export class FormService {
       .from(dbSchema.forms)
       .where(eq(dbSchema.forms.slug, slug))
       .limit(1);
-    return rows[0] ?? null;
+
+    return rows[0] ? normalizeFormRow(rows[0]) : null;
   }
 
   async getFullFormBySlugGlobal(slug: string) {
@@ -152,11 +220,13 @@ export class FormService {
   // ─── Steps CRUD ──────────────────────────────────────────────────────────
 
   async listSteps(formId: string) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.formSteps)
       .where(eq(dbSchema.formSteps.formId, formId))
       .orderBy(asc(dbSchema.formSteps.sortOrder));
+
+    return rows.map(normalizeStepRow);
   }
 
   async getStepById(id: string) {
@@ -165,7 +235,8 @@ export class FormService {
       .from(dbSchema.formSteps)
       .where(eq(dbSchema.formSteps.id, id))
       .limit(1);
-    return rows[0] ?? null;
+
+    return rows[0] ? normalizeStepRow(rows[0]) : null;
   }
 
   async createStep(
@@ -261,7 +332,7 @@ export class FormService {
     if (steps.length === 0) return [];
 
     const stepIds = steps.map((s) => s.id);
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.formFields)
       .where(inArray(dbSchema.formFields.stepId, stepIds))
@@ -269,14 +340,18 @@ export class FormService {
         asc(dbSchema.formFields.stepId),
         asc(dbSchema.formFields.sortOrder),
       );
+
+    return rows.map(normalizeFieldRow);
   }
 
   async listFieldsByStep(stepId: string) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.formFields)
       .where(eq(dbSchema.formFields.stepId, stepId))
       .orderBy(asc(dbSchema.formFields.sortOrder));
+
+    return rows.map(normalizeFieldRow);
   }
 
   async getFieldById(id: string) {
@@ -285,7 +360,8 @@ export class FormService {
       .from(dbSchema.formFields)
       .where(eq(dbSchema.formFields.id, id))
       .limit(1);
-    return rows[0] ?? null;
+
+    return rows[0] ? normalizeFieldRow(rows[0]) : null;
   }
 
   async createField(data: {

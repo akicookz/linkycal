@@ -62,22 +62,22 @@ export function FormFieldRenderer({
           )}
         >
           <option value="">{field.placeholder || "Select an option"}</option>
-          {field.options?.map((opt) => (
-            <option key={opt.value} value={opt.value}>
+          {field.options?.map((opt, idx) => (
+            <option key={`${opt.value}-${idx}`} value={opt.value}>
               {opt.label}
             </option>
           ))}
         </select>
       ) : field.type === "multi_select" ? (
         <div className="space-y-1.5">
-          {field.options?.map((opt) => {
+          {field.options?.map((opt, idx) => {
             const selected = value
               .split(",")
               .filter(Boolean)
               .includes(opt.value);
             return (
               <label
-                key={opt.value}
+                key={`${opt.value}-${idx}`}
                 className={cn(
                   "flex items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-sm cursor-pointer transition-colors",
                   selected
@@ -104,9 +104,9 @@ export function FormFieldRenderer({
         </div>
       ) : field.type === "radio" ? (
         <div className="space-y-1.5">
-          {field.options?.map((opt) => (
+          {field.options?.map((opt, idx) => (
             <label
-              key={opt.value}
+              key={`${opt.value}-${idx}`}
               className={cn(
                 "flex items-center gap-2.5 rounded-[12px] border px-3 py-2.5 text-sm cursor-pointer transition-colors",
                 value === opt.value
