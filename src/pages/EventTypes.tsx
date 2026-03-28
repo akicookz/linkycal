@@ -153,15 +153,48 @@ export default function EventTypes() {
     const projectSlug = currentProject?.slug ?? projectId ?? "";
 
     const textPromise = (async () => {
-      let fullEt = et as EventType & { requiresConfirmation?: boolean; bookingFormId?: string | null };
+      let fullEt = et as EventType & {
+        requiresConfirmation?: boolean;
+        bookingFormId?: string | null;
+      };
+      let bookingFormFields:
+        | Array<{
+            id: string;
+            label: string;
+            type: string;
+            required: boolean;
+            placeholder: string | null;
+            options: Array<{ label: string; value: string }> | null;
+          }>
+        | undefined;
+
       try {
         const res = await fetch(`/api/projects/${projectId}/event-types/${et.id}`);
         if (res.ok) {
           const data = await res.json();
           fullEt = data.eventType ?? et;
+          bookingFormFields = data.bookingForm?.steps?.flatMap(
+            (
+              step: {
+                fields?: Array<{
+                  id: string;
+                  label: string;
+                  type: string;
+                  required: boolean;
+                  placeholder: string | null;
+                  options: Array<{ label: string; value: string }> | null;
+                }>;
+              },
+            ) => step.fields ?? [],
+          );
         }
       } catch { /* use basic data */ }
-      return generateEventTypeApiPrompt(fullEt, projectSlug, window.location.origin);
+      return generateEventTypeApiPrompt(
+        fullEt,
+        projectSlug,
+        window.location.origin,
+        bookingFormFields,
+      );
     })();
 
     copyToClipboardLazy(textPromise);

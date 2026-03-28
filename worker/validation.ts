@@ -96,12 +96,55 @@ export const createScheduleSchema = z.object({
 
 const availabilityRuleSchema = z.object({
   dayOfWeek: z.number().int().min(0).max(6),
-  startTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm format"),
-  endTime: z.string().regex(/^\d{2}:\d{2}$/, "Must be HH:mm format"),
-});
+  startTime: z
+    .string()
+    .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "Must be HH:mm format"),
+  endTime: z
+    .string()
+    .regex(/^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/, "Must be HH:mm format"),
+})
+  .refine(
+    (value) => timeToMinutes(value.startTime) < timeToMinutes(value.endTime),
+    {
+      message: "End time must be after start time",
+      path: ["endTime"],
+    },
+  );
 
 export const updateAvailabilityRulesSchema = z.object({
-  rules: z.array(availabilityRuleSchema).min(0).max(28),
+  rules: z.array(availabilityRuleSchema).min(0).max(56),
+}).superRefine((value, ctx) => {
+  const rulesByDay = new Map<number, typeof value.rules>();
+
+  for (const rule of value.rules) {
+    const dayRules = rulesByDay.get(rule.dayOfWeek) ?? [];
+    dayRules.push(rule);
+    rulesByDay.set(rule.dayOfWeek, dayRules);
+  }
+
+  for (const [dayOfWeek, dayRules] of rulesByDay.entries()) {
+    const sortedRules = [...dayRules].sort(
+      (left, right) =>
+        timeToMinutes(left.startTime) - timeToMinutes(right.startTime),
+    );
+
+    for (let index = 1; index < sortedRules.length; index += 1) {
+      const previousRule = sortedRules[index - 1];
+      const currentRule = sortedRules[index];
+
+      if (
+        timeToMinutes(currentRule.startTime) <=
+        timeToMinutes(previousRule.endTime)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Availability blocks for day ${dayOfWeek} must not overlap`,
+          path: ["rules"],
+        });
+        return;
+      }
+    }
+  }
 });
 
 // ─── Bookings ────────────────────────────────────────────────────────────────
@@ -117,6 +160,13 @@ export const createBookingSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
   formFields: z.record(z.string(), z.string()).optional(),
 });
+
+function timeToMinutes(time: string): number {
+  if (time === "24:00") return 24 * 60;
+
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
 
 export const cancelBookingSchema = z.object({
   reason: z.string().max(500).optional(),

@@ -34,6 +34,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { WeeklyAvailabilityEditor } from "@/components/WeeklyAvailabilityEditor";
+import {
+  dayConfigsToRules,
+  defaultDayConfigs,
+  getTimeOptions,
+  parseTimeToMinutes,
+  rulesToDayConfigs,
+  type DayAvailabilityConfig,
+} from "@/lib/availability";
 import { queryClient } from "@/lib/query-client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -64,23 +73,7 @@ interface ScheduleOverride {
   isBlocked: boolean;
 }
 
-interface DayConfig {
-  enabled: boolean;
-  startTime: string;
-  endTime: string;
-}
-
 // ─── Constants ───────────────────────────────────────────────────────────────
-
-const DAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
 
 const COMMON_TIMEZONES = [
   "America/New_York",
@@ -102,20 +95,14 @@ const COMMON_TIMEZONES = [
   "UTC",
 ];
 
-function defaultDayConfigs(): DayConfig[] {
-  return DAYS.map((_, i) => ({
-    enabled: i < 5, // Mon-Fri enabled by default
-    startTime: "09:00",
-    endTime: "17:00",
-  }));
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Availability() {
   const { projectId } = useParams<{ projectId: string }>();
 
-  const [dayConfigs, setDayConfigs] = useState<DayConfig[]>(defaultDayConfigs());
+  const [dayConfigs, setDayConfigs] = useState<DayAvailabilityConfig[]>(
+    defaultDayConfigs(),
+  );
   const [timezone, setTimezone] = useState("America/New_York");
   const [hasChanges, setHasChanges] = useState(false);
 
@@ -184,18 +171,7 @@ export default function Availability() {
   // Populate day configs from fetched rules
   useEffect(() => {
     if (!rules) return;
-    const configs = defaultDayConfigs().map((c) => ({ ...c, enabled: false }));
-    for (const rule of rules) {
-      const idx = rule.dayOfWeek;
-      if (idx >= 0 && idx < 7) {
-        configs[idx] = {
-          enabled: true,
-          startTime: rule.startTime,
-          endTime: rule.endTime,
-        };
-      }
-    }
-    setDayConfigs(configs);
+    setDayConfigs(rulesToDayConfigs(rules));
     setHasChanges(false);
   }, [rules]);
 
@@ -209,14 +185,7 @@ export default function Availability() {
   // Save rules mutation
   const saveRulesMutation = useMutation({
     mutationFn: async () => {
-      const newRules = dayConfigs
-        .map((config, idx) => ({
-          dayOfWeek: idx,
-          startTime: config.startTime,
-          endTime: config.endTime,
-          enabled: config.enabled,
-        }))
-        .filter((r) => r.enabled);
+      const newRules = dayConfigsToRules(dayConfigs);
 
       const res = await fetch(
         `/api/projects/${projectId}/schedules/${defaultSchedule!.id}/rules`,
@@ -284,10 +253,8 @@ export default function Availability() {
     },
   });
 
-  function updateDay(index: number, changes: Partial<DayConfig>) {
-    setDayConfigs((prev) =>
-      prev.map((config, i) => (i === index ? { ...config, ...changes } : config)),
-    );
+  function handleDayConfigsChange(nextDayConfigs: DayAvailabilityConfig[]) {
+    setDayConfigs(nextDayConfigs);
     setHasChanges(true);
   }
 
@@ -324,6 +291,16 @@ export default function Availability() {
   }
 
   const isLoading = loadingSchedules || loadingRules;
+  const overrideStartOptions = getTimeOptions({
+    minMinutes: 0,
+    maxMinutes: parseTimeToMinutes(overrideEndTime) - 15,
+    includeMidnight: false,
+  });
+  const overrideEndOptions = getTimeOptions({
+    minMinutes: parseTimeToMinutes(overrideStartTime) + 15,
+    maxMinutes: 24 * 60,
+    includeMidnight: true,
+  });
 
   return (
     <div>
@@ -411,55 +388,10 @@ export default function Availability() {
                   ))}
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {DAYS.map((day, idx) => (
-                    <div
-                      key={day}
-                      className="flex items-center gap-4 py-2"
-                    >
-                      <Switch
-                        checked={dayConfigs[idx].enabled}
-                        onCheckedChange={(checked) =>
-                          updateDay(idx, { enabled: checked })
-                        }
-                      />
-                      <span
-                        className={`text-sm font-medium w-28 ${!dayConfigs[idx].enabled
-                            ? "text-muted-foreground"
-                            : "text-foreground"
-                          }`}
-                      >
-                        {day}
-                      </span>
-
-                      {dayConfigs[idx].enabled ? (
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="time"
-                            value={dayConfigs[idx].startTime}
-                            onChange={(e) =>
-                              updateDay(idx, { startTime: e.target.value })
-                            }
-                            className="w-[120px]"
-                          />
-                          <span className="text-sm text-muted-foreground">to</span>
-                          <Input
-                            type="time"
-                            value={dayConfigs[idx].endTime}
-                            onChange={(e) =>
-                              updateDay(idx, { endTime: e.target.value })
-                            }
-                            className="w-[120px]"
-                          />
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">
-                          Unavailable
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                <WeeklyAvailabilityEditor
+                  dayConfigs={dayConfigs}
+                  onChange={handleDayConfigsChange}
+                />
               )}
 
               {saveRulesMutation.isError && (
@@ -579,19 +511,37 @@ export default function Availability() {
               <div className="space-y-2">
                 <Label>Custom Hours</Label>
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="time"
+                  <Select
                     value={overrideStartTime}
-                    onChange={(e) => setOverrideStartTime(e.target.value)}
-                    className="w-[120px]"
-                  />
+                    onValueChange={setOverrideStartTime}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {overrideStartOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <span className="text-sm text-muted-foreground">to</span>
-                  <Input
-                    type="time"
+                  <Select
                     value={overrideEndTime}
-                    onChange={(e) => setOverrideEndTime(e.target.value)}
-                    className="w-[120px]"
-                  />
+                    onValueChange={setOverrideEndTime}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {overrideEndOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             )}

@@ -9,6 +9,7 @@ interface BookingConfirmationParams {
   timezone: string;
   location?: string;
   notes?: string;
+  submittedFields?: Array<{ label: string; value: string }>;
 }
 
 interface BookingCancellationParams {
@@ -28,6 +29,7 @@ interface BookingNotificationParams {
   eventTypeName: string;
   startTime: Date;
   endTime: Date;
+  submittedFields?: Array<{ label: string; value: string }>;
 }
 
 interface BookingRequestReceivedParams {
@@ -37,6 +39,7 @@ interface BookingRequestReceivedParams {
   startTime: Date;
   endTime: Date;
   timezone: string;
+  submittedFields?: Array<{ label: string; value: string }>;
 }
 
 interface BookingRequestNotificationParams {
@@ -48,6 +51,7 @@ interface BookingRequestNotificationParams {
   startTime: Date;
   endTime: Date;
   dashboardUrl: string;
+  submittedFields?: Array<{ label: string; value: string }>;
 }
 
 interface BookingDeclinedParams {
@@ -126,6 +130,34 @@ function emailButton(text: string, url: string): string {
     </div>`;
 }
 
+function bookingSubmittedFieldsSection(
+  submittedFields?: Array<{ label: string; value: string }>,
+): string {
+  const visibleFields = (submittedFields ?? []).filter((field) =>
+    field.value.trim(),
+  );
+  if (visibleFields.length === 0) return "";
+
+  const rows = visibleFields
+    .slice(0, 8)
+    .map((field) => ({
+      label: escapeHtml(field.label),
+      value: escapeHtml(field.value),
+    }));
+
+  if (visibleFields.length > 8) {
+    rows.push({
+      label: "",
+      value: `+ ${visibleFields.length - 8} more responses`,
+    });
+  }
+
+  return (
+    emailHeading("Submitted Details", "#374151") +
+    emailInfoTable(rows)
+  );
+}
+
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class EmailService {
@@ -145,6 +177,7 @@ export class EmailService {
       timezone,
       location,
       notes,
+      submittedFields,
     } = params;
 
     const dateStr = formatDate(startTime, timezone);
@@ -161,7 +194,8 @@ export class EmailService {
     const html = emailWrapper(
       emailHeading("Booking Confirmed") +
       emailBody(`Hi ${escapeHtml(guestName)}, your booking has been confirmed.`) +
-      emailInfoTable(rows)
+      emailInfoTable(rows) +
+      bookingSubmittedFieldsSection(submittedFields)
     );
 
     await this.send({
@@ -211,6 +245,7 @@ export class EmailService {
       eventTypeName,
       startTime,
       endTime,
+      submittedFields,
     } = params;
 
     const dateStr = formatDate(startTime, "UTC");
@@ -224,7 +259,8 @@ export class EmailService {
         { label: "Guest", value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})` },
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
-      ])
+      ]) +
+      bookingSubmittedFieldsSection(submittedFields)
     );
 
     await this.send({
@@ -239,7 +275,7 @@ export class EmailService {
   async sendBookingRequestReceived(
     params: BookingRequestReceivedParams,
   ): Promise<void> {
-    const { to, guestName, eventTypeName, startTime, endTime, timezone } =
+    const { to, guestName, eventTypeName, startTime, endTime, timezone, submittedFields } =
       params;
 
     const dateStr = formatDate(startTime, timezone);
@@ -253,6 +289,7 @@ export class EmailService {
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
       ]) +
+      bookingSubmittedFieldsSection(submittedFields) +
       emailNote("You'll receive another email once your booking is confirmed.")
     );
 
@@ -277,6 +314,7 @@ export class EmailService {
       startTime,
       endTime,
       dashboardUrl,
+      submittedFields,
     } = params;
 
     const dateStr = formatDate(startTime, "UTC");
@@ -291,6 +329,7 @@ export class EmailService {
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
       ]) +
+      bookingSubmittedFieldsSection(submittedFields) +
       emailButton("Review in Dashboard", dashboardUrl)
     );
 

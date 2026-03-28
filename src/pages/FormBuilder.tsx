@@ -388,6 +388,19 @@ function updateFieldInSteps(
   }));
 }
 
+function replaceFieldInSteps(
+  steps: FormStep[],
+  currentFieldId: string,
+  nextField: FormField,
+): FormStep[] {
+  return steps.map((step) => ({
+    ...step,
+    fields: step.fields.map((field) =>
+      field.id === currentFieldId ? nextField : field,
+    ),
+  }));
+}
+
 function generateSlug(name: string): string {
   return name
     .toLowerCase()
@@ -962,6 +975,28 @@ export default function FormBuilder() {
         steps: updateFieldInSteps(old.steps, fieldId, data),
       }));
       return { snapshot };
+    },
+    onSuccess: (data, variables) => {
+      const field = data?.field as FormField | undefined;
+      if (!field) return;
+
+      optimisticSetForm((old) => ({
+        ...old,
+        steps: replaceFieldInSteps(old.steps, variables.fieldId, field),
+      }));
+
+      if (field.id !== variables.fieldId) {
+        setFieldOptionsState((prev) => {
+          if (!prev[variables.fieldId]) return prev;
+
+          const next = {
+            ...prev,
+            [field.id]: prev[variables.fieldId],
+          };
+          delete next[variables.fieldId];
+          return next;
+        });
+      }
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);

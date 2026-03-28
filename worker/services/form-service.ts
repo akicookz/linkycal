@@ -1,6 +1,7 @@
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
+import { getUniqueFieldId } from "../lib/field-ids";
 import { plainTextToRichTextHtml } from "../lib/rich-text";
 
 // ─── Field Helpers ───────────────────────────────────────────────────────────
@@ -20,18 +21,6 @@ const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
   rating: null,
   file: "Choose a file",
 };
-
-function normalizeToFieldId(label: string): string {
-  return (
-    label
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, "")
-      .replace(/\s+/g, "_")
-      .replace(/_+/g, "_")
-      .replace(/^_|_$/g, "")
-      .slice(0, 50) || "field"
-  );
-}
 
 function parseJsonValue(value: unknown): unknown {
   if (typeof value !== "string") return value;
@@ -166,6 +155,35 @@ function formatResponseDisplayValue(
 
 export class FormService {
   constructor(private db: DrizzleD1Database<Record<string, unknown>>) {}
+
+  async getUniqueFieldIdForForm(
+    formId: string,
+    label: string,
+    currentId?: string,
+  ) {
+    const existingFields = await this.listFields(formId);
+    return getUniqueFieldId(
+      label,
+      existingFields.map((field) => field.id),
+      currentId,
+    );
+  }
+
+  async renameFieldId(currentId: string, nextId: string) {
+    if (currentId === nextId) return;
+
+    const db = this.db as typeof this.db & { $client: D1Database };
+
+    await db.$client.batch([
+      db.$client.prepare("PRAGMA defer_foreign_keys = ON"),
+      db.$client
+        .prepare("UPDATE form_fields SET id = ? WHERE id = ?")
+        .bind(nextId, currentId),
+      db.$client
+        .prepare("UPDATE form_field_values SET field_id = ? WHERE field_id = ?")
+        .bind(nextId, currentId),
+    ]);
+  }
 
   // ─── Forms CRUD ──────────────────────────────────────────────────────────
 
@@ -446,9 +464,6 @@ export class FormService {
     validation?: Record<string, unknown>;
     options?: Array<{ label: string; value: string }>;
   }) {
-    // Generate ID from normalized label
-    const baseId = normalizeToFieldId(data.label);
-
     // Get the form ID from the step to check for duplicate IDs across the whole form
     const [step] = await this.db
       .select()
@@ -456,15 +471,9 @@ export class FormService {
       .where(eq(dbSchema.formSteps.id, data.stepId))
       .limit(1);
 
-    let id = baseId;
+    let id = "field";
     if (step) {
-      const existingFields = await this.listFields(step.formId);
-      const existingIds = new Set(existingFields.map((f) => f.id));
-      let counter = 2;
-      while (existingIds.has(id)) {
-        id = `${baseId}_${counter}`;
-        counter++;
-      }
+      id = await this.getUniqueFieldIdForForm(step.formId, data.label);
     }
 
     let sortOrder = data.sortOrder ?? 0;
@@ -505,8 +514,11 @@ export class FormService {
       options?: Array<{ label: string; value: string }> | null;
     },
   ) {
-    const currentField = await this.getFieldById(id);
+    let currentField = await this.getFieldById(id);
     if (!currentField) return null;
+
+    const currentStep = await this.getStepById(currentField.stepId);
+    if (!currentStep) return null;
 
     const values: Record<string, unknown> = {};
     if (data.type !== undefined) {
@@ -526,6 +538,21 @@ export class FormService {
     if (data.options !== undefined)
       values.options = data.options ? JSON.stringify(data.options) : null;
 
+    let nextId = id;
+    if (data.label !== undefined) {
+      nextId = await this.getUniqueFieldIdForForm(
+        currentStep.formId,
+        data.label,
+        id,
+      );
+    }
+
+    if (nextId !== id) {
+      await this.renameFieldId(id, nextId);
+      currentField = await this.getFieldById(nextId);
+      if (!currentField) return null;
+    }
+
     const targetStepId = data.stepId ?? currentField.stepId;
     const isMovingSteps = targetStepId !== currentField.stepId;
     const hasPositionChange = isMovingSteps || data.sortOrder !== undefined;
@@ -543,18 +570,18 @@ export class FormService {
 
       const sourceFieldIds = (await this.listFieldsByStep(currentField.stepId))
         .map((field) => field.id)
-        .filter((fieldId) => fieldId !== id);
+        .filter((fieldId) => fieldId !== nextId);
 
       if (targetStepId === currentField.stepId) {
         const insertionIndex = Math.max(
           0,
           Math.min(data.sortOrder ?? sourceFieldIds.length, sourceFieldIds.length),
         );
-        sourceFieldIds.splice(insertionIndex, 0, id);
+        sourceFieldIds.splice(insertionIndex, 0, nextId);
 
         for (let index = 0; index < sourceFieldIds.length; index++) {
           const nextValues =
-            sourceFieldIds[index] === id
+            sourceFieldIds[index] === nextId
               ? {
                   ...values,
                   sortOrder: index,
@@ -567,7 +594,7 @@ export class FormService {
             .where(eq(dbSchema.formFields.id, sourceFieldIds[index]));
         }
 
-        return this.getFieldById(id);
+        return this.getFieldById(nextId);
       }
 
       const targetFieldIds = (await this.listFieldsByStep(targetStepId)).map(
@@ -577,7 +604,7 @@ export class FormService {
         0,
         Math.min(data.sortOrder ?? targetFieldIds.length, targetFieldIds.length),
       );
-      targetFieldIds.splice(insertionIndex, 0, id);
+      targetFieldIds.splice(insertionIndex, 0, nextId);
 
       for (let index = 0; index < sourceFieldIds.length; index++) {
         await this.db
@@ -588,7 +615,7 @@ export class FormService {
 
       for (let index = 0; index < targetFieldIds.length; index++) {
         const nextValues =
-          targetFieldIds[index] === id
+          targetFieldIds[index] === nextId
             ? {
                 ...values,
                 stepId: targetStepId,
@@ -602,7 +629,7 @@ export class FormService {
           .where(eq(dbSchema.formFields.id, targetFieldIds[index]));
       }
 
-      return this.getFieldById(id);
+      return this.getFieldById(nextId);
     }
 
     if (Object.keys(values).length === 0) return currentField;
@@ -610,9 +637,9 @@ export class FormService {
     await this.db
       .update(dbSchema.formFields)
       .set(values)
-      .where(eq(dbSchema.formFields.id, id));
+      .where(eq(dbSchema.formFields.id, nextId));
 
-    return this.getFieldById(id);
+    return this.getFieldById(nextId);
   }
 
   async deleteField(id: string) {

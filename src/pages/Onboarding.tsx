@@ -13,10 +13,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { WeeklyAvailabilityEditor } from "@/components/WeeklyAvailabilityEditor";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import { getTimezones, getDetectedTimezone, FONT_OPTIONS, plans } from "@/lib/constants";
+import {
+  dayConfigsToRules,
+  defaultDayConfigs,
+  rulesToDayConfigs,
+  type DayAvailabilityConfig,
+} from "@/lib/availability";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -140,15 +146,9 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
   // ─── Step 2: Availability ──────────────────────────────────────────────────
   const [scheduleId, setScheduleId] = useState<string | null>(null);
-  const [days, setDays] = useState<Record<string, { enabled: boolean; label: string; dayOfWeek: number; startTime: string; endTime: string }>>({
-    monday: { enabled: true, label: "Monday", dayOfWeek: 1, startTime: "09:00", endTime: "17:00" },
-    tuesday: { enabled: true, label: "Tuesday", dayOfWeek: 2, startTime: "09:00", endTime: "17:00" },
-    wednesday: { enabled: true, label: "Wednesday", dayOfWeek: 3, startTime: "09:00", endTime: "17:00" },
-    thursday: { enabled: true, label: "Thursday", dayOfWeek: 4, startTime: "09:00", endTime: "17:00" },
-    friday: { enabled: true, label: "Friday", dayOfWeek: 5, startTime: "09:00", endTime: "17:00" },
-    saturday: { enabled: false, label: "Saturday", dayOfWeek: 6, startTime: "09:00", endTime: "17:00" },
-    sunday: { enabled: false, label: "Sunday", dayOfWeek: 0, startTime: "09:00", endTime: "17:00" },
-  });
+  const [dayConfigs, setDayConfigs] = useState<DayAvailabilityConfig[]>(
+    defaultDayConfigs(),
+  );
 
   // ─── Step 3: Branding ────────────────────────────────────────────────────
   const [primaryBg, setPrimaryBg] = useState("#1B4332");
@@ -248,15 +248,33 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     }
   }, [schedulesData, scheduleId]);
 
+  const { data: onboardingRules } = useQuery<
+    Array<{
+      dayOfWeek: number;
+      startTime: string;
+      endTime: string;
+    }>
+  >({
+    queryKey: ["onboarding-schedule-rules", scheduleId],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/schedules/${scheduleId}/rules`);
+      if (!res.ok) throw new Error("Failed to fetch schedule rules");
+      const data = await res.json();
+      return data.rules ?? [];
+    },
+    enabled: currentStep === 2 && !!projectId && !!scheduleId,
+  });
+
+  useEffect(() => {
+    if (!onboardingRules) return;
+    setDayConfigs(
+      onboardingRules.length > 0 ? rulesToDayConfigs(onboardingRules) : defaultDayConfigs(),
+    );
+  }, [onboardingRules]);
+
   const saveAvailabilityMutation = useMutation({
     mutationFn: async () => {
-      const rules = Object.values(days)
-        .filter((d) => d.enabled)
-        .map((d) => ({
-          dayOfWeek: d.dayOfWeek,
-          startTime: d.startTime,
-          endTime: d.endTime,
-        }));
+      const rules = dayConfigsToRules(dayConfigs);
       const res = await fetch(`/api/projects/${projectId}/schedules/${scheduleId}/rules`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -578,62 +596,11 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
               </p>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="space-y-3">
-                {Object.entries(days).map(([key, day]) => (
-                  <div
-                    key={key}
-                    className={cn(
-                      "flex items-center justify-between rounded-[12px] border px-4 py-3 transition-colors",
-                      day.enabled ? "bg-white border-border" : "bg-muted/30 border-transparent",
-                    )}
-                  >
-                    <div className="flex items-center gap-3">
-                      <Switch
-                        checked={day.enabled}
-                        onCheckedChange={() =>
-                          setDays((prev) => ({
-                            ...prev,
-                            [key]: { ...prev[key], enabled: !prev[key].enabled },
-                          }))
-                        }
-                      />
-                      <span className={cn(
-                        "text-sm font-medium",
-                        day.enabled ? "text-foreground" : "text-muted-foreground",
-                      )}>
-                        {day.label}
-                      </span>
-                    </div>
-                    {day.enabled && (
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="time"
-                          value={day.startTime}
-                          onChange={(e) =>
-                            setDays((prev) => ({
-                              ...prev,
-                              [key]: { ...prev[key], startTime: e.target.value },
-                            }))
-                          }
-                          className="h-8 rounded-[8px] border border-border bg-muted/50 px-2 text-xs"
-                        />
-                        <span className="text-xs text-muted-foreground">-</span>
-                        <input
-                          type="time"
-                          value={day.endTime}
-                          onChange={(e) =>
-                            setDays((prev) => ({
-                              ...prev,
-                              [key]: { ...prev[key], endTime: e.target.value },
-                            }))
-                          }
-                          className="h-8 rounded-[8px] border border-border bg-muted/50 px-2 text-xs"
-                        />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              <WeeklyAvailabilityEditor
+                dayConfigs={dayConfigs}
+                onChange={setDayConfigs}
+                disabled={saveAvailabilityMutation.isPending}
+              />
 
               {error && <p className="text-sm text-destructive">{error}</p>}
 
@@ -644,7 +611,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                 </Button>
                 <Button
                   onClick={() => {
-                    const hasAtLeastOneDay = Object.values(days).some((d) => d.enabled);
+                    const hasAtLeastOneDay = dayConfigs.some((day) => day.enabled && day.blocks.length > 0);
                     if (!hasAtLeastOneDay) {
                       setError("Please enable at least one day");
                       return;

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
+import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { eq, and, desc } from "drizzle-orm";
 
 import { createAuth } from "./auth";
@@ -44,6 +45,10 @@ import { ScheduleService } from "./services/schedule-service";
 import { BookingService } from "./services/booking-service";
 import { AvailabilityService } from "./services/availability-service";
 import { CalendarService } from "./services/calendar-service";
+import {
+  formatDateInTimezone,
+  getUtcRangeForLocalDate,
+} from "./lib/timezone";
 import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
@@ -392,7 +397,7 @@ function parseNativeFormFieldValue(
 // ─── Form Response Email Notification (Paid Users) ──────────────────────────
 
 async function notifyFormResponseCompleted(
-  db: ReturnType<typeof drizzle>,
+  db: DrizzleD1Database<Record<string, unknown>>,
   env: { RESEND_API_KEY: string },
   responseId: string,
   formId: string,
@@ -457,6 +462,31 @@ async function notifyFormResponseCompleted(
   } catch (err) {
     console.error("Form response notification email failed:", err);
   }
+}
+
+async function getBookingSubmittedFields(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  formResponseId: string | null | undefined,
+): Promise<Array<{ label: string; value: string }>> {
+  if (!formResponseId) return [];
+
+  const fieldValues = await db
+    .select({
+      label: dbSchema.formFields.label,
+      value: dbSchema.formFieldValues.value,
+      fileUrl: dbSchema.formFieldValues.fileUrl,
+    })
+    .from(dbSchema.formFieldValues)
+    .innerJoin(
+      dbSchema.formFields,
+      eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+    )
+    .where(eq(dbSchema.formFieldValues.responseId, formResponseId));
+
+  return fieldValues.map((fieldValue) => ({
+    label: fieldValue.label,
+    value: fieldValue.value ?? fieldValue.fileUrl ?? "",
+  }));
 }
 
 // ─── Timestamp Normalization ─────────────────────────────────────────────────
@@ -610,6 +640,15 @@ app.get("/api/v1/availability/:slug", async (c) => {
             .where(eq(dbSchema.eventTypeBusyCalendars.eventTypeId, eventType.id));
 
           if (busyCalendars.length > 0) {
+            const viewerDayRange = getUtcRangeForLocalDate(date!, timezone);
+            const busyRangeStart = new Date(
+              viewerDayRange.start.getTime() -
+                eventType.bufferBefore * 60 * 1000,
+            );
+            const busyRangeEnd = new Date(
+              viewerDayRange.end.getTime() +
+                (eventType.duration + eventType.bufferAfter) * 60 * 1000,
+            );
             const calendarService = new CalendarService(db, {
               GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
               GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
@@ -623,8 +662,8 @@ app.get("/api/v1/availability/:slug", async (c) => {
               byConnection.set(bc.connectionId, existing);
             }
 
-            const dayStart = `${date}T00:00:00Z`;
-            const dayEnd = `${date}T23:59:59Z`;
+            const dayStart = busyRangeStart.toISOString();
+            const dayEnd = busyRangeEnd.toISOString();
 
             for (const [connectionId, calendarIds] of byConnection) {
               try {
@@ -735,7 +774,7 @@ app.post("/api/v1/bookings", async (c) => {
 
     // 4. Check availability — verify the slot is still open
     const availabilityService = new AvailabilityService(db);
-    const dateStr = data.startTime.slice(0, 10); // YYYY-MM-DD
+    const dateStr = formatDateInTimezone(startTime, data.timezone);
     const slots = await availabilityService.getAvailableSlots({
       projectSlug: data.projectSlug,
       eventTypeSlug: data.eventTypeSlug,
@@ -821,6 +860,7 @@ app.post("/api/v1/bookings", async (c) => {
       .where(eq(dbSchema.schema.users.id, project.userId))
       .limit(1);
     const owner = ownerRows[0];
+    const submittedFields = await getBookingSubmittedFields(db, formResponseId);
 
     if (isPending) {
       // 8. Pending booking: send request emails, skip calendar event
@@ -837,6 +877,7 @@ app.post("/api/v1/bookings", async (c) => {
               startTime,
               endTime,
               timezone: data.timezone,
+              submittedFields,
             });
 
             // Send "action needed" email to owner
@@ -851,6 +892,7 @@ app.post("/api/v1/bookings", async (c) => {
                 startTime,
                 endTime,
                 dashboardUrl,
+                submittedFields,
               });
             }
           } catch (err) {
@@ -935,6 +977,7 @@ app.post("/api/v1/bookings", async (c) => {
               timezone: data.timezone,
               location: eventType.location ?? undefined,
               notes: data.notes,
+              submittedFields,
             });
 
             if (owner) {
@@ -946,6 +989,7 @@ app.post("/api/v1/bookings", async (c) => {
                 eventTypeName: eventType.name,
                 startTime,
                 endTime,
+                submittedFields,
               });
             }
           } catch (err) {
@@ -2530,6 +2574,10 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
       (async () => {
         try {
           const emailService = new EmailService(c.env.RESEND_API_KEY);
+          const submittedFields = await getBookingSubmittedFields(
+            db,
+            booking.formResponseId,
+          );
 
           await emailService.sendBookingConfirmation({
             to: booking.email,
@@ -2540,6 +2588,7 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
             timezone: booking.timezone,
             location: eventType.location ?? undefined,
             notes: booking.notes ?? undefined,
+            submittedFields,
           });
         } catch (err) {
           console.error("Confirmation email failed:", err);

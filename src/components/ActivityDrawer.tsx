@@ -39,6 +39,19 @@ function statusVariant(status: string) {
   }
 }
 
+function formResponseStatusLabel(status: FormResponseDetail["status"]): string {
+  switch (status) {
+    case "completed":
+      return "Completed";
+    case "in_progress":
+      return "In Progress";
+    case "abandoned":
+      return "Abandoned";
+    default:
+      return status;
+  }
+}
+
 function formatDrawerDate(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleDateString("en-US", {
@@ -52,6 +65,18 @@ function formatDrawerDate(dateStr: string): string {
 function formatDrawerTime(dateStr: string): string {
   const date = new Date(dateStr);
   return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatDrawerDateTime(dateStr: string): string {
+  const date = new Date(dateStr);
+  return date.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
   });
@@ -79,8 +104,27 @@ interface BookingDetail {
   formFields: Array<{ label: string; type: string; value: string }>;
 }
 
+interface FormResponseValueDetail {
+  id: string;
+  responseId: string;
+  fieldId: string;
+  value: string | null;
+  fileUrl: string | null;
+  fieldLabel: string;
+  fieldType: string;
+  displayValue: string;
+}
+
 interface FormResponseDetail {
-  fields: Array<{ label: string; type: string; value: string }>;
+  id: string;
+  formId: string;
+  currentStepIndex: number;
+  status: "in_progress" | "completed" | "abandoned";
+  respondentEmail: string | null;
+  metadata: unknown;
+  createdAt: string;
+  updatedAt: string;
+  values: FormResponseValueDetail[];
 }
 
 interface ActivityDrawerProps {
@@ -153,10 +197,15 @@ export function ActivityDrawer({
         })
         .finally(() => setLoading(false));
     } else {
-      fetch(`/api/projects/${projectId}/bookings/${item.id}/form-response`)
+      if (!item.formId) {
+        setLoading(false);
+        return;
+      }
+
+      fetch(`/api/projects/${projectId}/forms/${item.formId}/responses/${item.id}`)
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
-          if (data) setFormDetail(data as FormResponseDetail);
+          if (data?.response) setFormDetail(data.response as FormResponseDetail);
         })
         .catch(() => { })
         .finally(() => setLoading(false));
@@ -182,9 +231,9 @@ export function ActivityDrawer({
 
   // Copy all form fields
   function handleCopyAllFields() {
-    const fields = formDetail?.fields ?? [];
+    const fields = formDetail?.values ?? [];
     if (fields.length === 0) return;
-    const text = fields.map((f) => `${f.label}: ${f.value}`).join("\n");
+    const text = fields.map((field) => `${field.fieldLabel}: ${field.displayValue}`).join("\n");
     copyToClipboard(text);
     setCopiedAll(true);
     setTimeout(() => setCopiedAll(false), 2000);
@@ -200,7 +249,9 @@ export function ActivityDrawer({
             </div>
             <div className="flex-1 min-w-0">
               <SheetTitle className="truncate">{item.name}</SheetTitle>
-              <SheetDescription className="truncate">{item.email}</SheetDescription>
+              <SheetDescription className="truncate">
+                {isBooking ? item.email : `Submitted ${formatDrawerDateTime(formDetail?.createdAt ?? item.date)}`}
+              </SheetDescription>
             </div>
           </div>
         </SheetHeader>
@@ -266,11 +317,16 @@ export function ActivityDrawer({
               ) : (
                 <>
                   <CopyableField label="Form" value={item.title} />
-                  <CopyableField label="Submitted" value={formatDrawerDate(item.date)} />
+                  <CopyableField
+                    label="Submitted"
+                    value={formatDrawerDateTime(formDetail?.createdAt ?? item.date)}
+                  />
                   <div className="flex items-start justify-between gap-3 py-2.5">
                     <div>
                       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Status</p>
-                      <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+                      <Badge variant={statusVariant(formDetail?.status ?? item.status)}>
+                        {formDetail ? formResponseStatusLabel(formDetail.status) : item.status}
+                      </Badge>
                     </div>
                   </div>
                 </>
@@ -288,14 +344,36 @@ export function ActivityDrawer({
             )}
 
             {/* Form response fields */}
-            {!isBooking && formDetail?.fields && formDetail.fields.length > 0 && (
+            {!isBooking && formDetail?.values && formDetail.values.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Responses</p>
-                {formDetail.fields.map((field, i) => (
-                  <CopyableField key={i} label={field.label} value={field.value} />
+                {formDetail.values.map((value) => (
+                  <CopyableField
+                    key={value.id}
+                    label={value.fieldLabel}
+                    value={value.displayValue}
+                  />
                 ))}
               </div>
             )}
+
+            {!isBooking && formDetail && formDetail.values.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                No submitted field values for this response.
+              </p>
+            )}
+
+            {!isBooking &&
+              formDetail?.metadata != null &&
+              typeof formDetail.metadata === "object" &&
+              Object.keys(formDetail.metadata as Record<string, unknown>).length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Metadata</p>
+                  <pre className="text-xs text-muted-foreground bg-muted rounded-[12px] p-3 overflow-x-auto">
+                    {JSON.stringify(formDetail.metadata, null, 2)}
+                  </pre>
+                </div>
+              )}
           </div>
         )}
 
@@ -377,7 +455,7 @@ export function ActivityDrawer({
             {/* Form response actions: Copy all + Delete */}
             {!isBooking && (
               <div className="flex items-center gap-2">
-                {formDetail?.fields && formDetail.fields.length > 0 && (
+                {formDetail?.values && formDetail.values.length > 0 && (
                   <Button
                     variant="outline"
                     className="flex-1"

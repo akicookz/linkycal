@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "bun run cf-typegen && tsc -b && vite build",
+		"test": "bun test",
 		"lint": "eslint .",
 		"preview": "bun run build && vite preview",
 		"deploy": "bun run build && wrangler deploy",
@@ -42,6 +43,8 @@
 		"better-auth-cloudflare": "^0.2.9",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
+		"date-fns": "^4.1.0",
+		"date-fns-tz": "^3.2.0",
 		"drizzle-orm": "^0.45.1",
 		"googleapis": "^144.0.0",
 		"hono": "^4.11.7",

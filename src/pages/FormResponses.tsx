@@ -10,22 +10,13 @@ import {
   Clock,
   XCircle,
   BarChart3,
-  FileText,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetDescription,
-} from "@/components/ui/sheet";
 import { ActivityCard } from "@/components/ActivityCard";
-import { CopyableField } from "@/components/CopyableField";
+import { ActivityDrawer } from "@/components/ActivityDrawer";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -86,44 +77,6 @@ interface FormResponse {
   createdAt: string;
   updatedAt: string;
   values: ResponseValue[];
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function formatDate(dateStr: string): string {
-  return new Date(dateStr).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function statusVariant(status: FormResponse["status"]) {
-  switch (status) {
-    case "completed":
-      return "success" as const;
-    case "in_progress":
-      return "secondary" as const;
-    case "abandoned":
-      return "warning" as const;
-    default:
-      return "secondary" as const;
-  }
-}
-
-function statusLabel(status: FormResponse["status"]) {
-  switch (status) {
-    case "completed":
-      return "Completed";
-    case "in_progress":
-      return "In Progress";
-    case "abandoned":
-      return "Abandoned";
-    default:
-      return status;
-  }
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -191,6 +144,19 @@ export default function FormResponses() {
   const abandonedCount = responses.filter(
     (r) => r.status === "abandoned"
   ).length;
+
+  function toDrawerItem(response: FormResponse) {
+    return {
+      id: response.id,
+      type: "form_response" as const,
+      name: response.respondentEmail ?? "Anonymous",
+      email: response.respondentEmail ?? "",
+      title: form?.name ?? "Form",
+      status: response.status,
+      date: response.createdAt ?? new Date().toISOString(),
+      formId: response.formId,
+    };
+  }
 
   // ─── Render: Loading ─────────────────────────────────────────────────────
 
@@ -373,102 +339,15 @@ export default function FormResponses() {
         </div>
       )}
 
-      {/* Response Detail Drawer */}
-      <Sheet
+      <ActivityDrawer
         open={drawerOpen}
-        onOpenChange={(v) => {
-          if (!v) {
-            setDrawerOpen(false);
-            setDrawerItem(null);
-          }
+        onClose={() => {
+          setDrawerOpen(false);
+          setDrawerItem(null);
         }}
-      >
-        <SheetContent>
-          <SheetHeader>
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <FileText className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <SheetTitle>
-                  {drawerItem?.respondentEmail ?? "Anonymous"}
-                </SheetTitle>
-                <SheetDescription>
-                  {drawerItem
-                    ? `Submitted ${formatDate(drawerItem.createdAt)}`
-                    : ""}
-                </SheetDescription>
-              </div>
-            </div>
-          </SheetHeader>
-
-          {drawerItem && (
-            <div className="space-y-6">
-              {/* Details */}
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                  Details
-                </p>
-                <CopyableField
-                  label="Form"
-                  value={form?.name ?? "Form"}
-                />
-                <CopyableField
-                  label="Submitted"
-                  value={formatDate(drawerItem.createdAt)}
-                />
-                <div className="flex items-start justify-between gap-3 py-2.5">
-                  <div>
-                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">
-                      Status
-                    </p>
-                    <Badge variant={statusVariant(drawerItem.status)}>
-                      {statusLabel(drawerItem.status)}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-
-              {/* Field values */}
-              {drawerItem.values.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                    Responses
-                  </p>
-                  {drawerItem.values.map((value) => (
-                    <CopyableField
-                      key={value.id}
-                      label={value.fieldLabel}
-                      value={value.displayValue}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {drawerItem.values.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No submitted field values for this response.
-                </p>
-              )}
-
-              {/* Raw metadata */}
-              {drawerItem.metadata != null &&
-                typeof drawerItem.metadata === "object" &&
-                Object.keys(drawerItem.metadata as Record<string, unknown>)
-                  .length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      Metadata
-                    </p>
-                    <pre className="text-xs text-muted-foreground bg-muted rounded-[12px] p-3 overflow-x-auto">
-                      {JSON.stringify(drawerItem.metadata, null, 2)}
-                    </pre>
-                  </div>
-                )}
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
+        projectId={projectId ?? ""}
+        item={drawerItem ? toDrawerItem(drawerItem) : null}
+      />
     </div>
   );
 }

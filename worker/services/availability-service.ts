@@ -1,6 +1,12 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, gte, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, lt } from "drizzle-orm";
 import * as dbSchema from "../db/schema";
+import {
+  getDayOfWeekForDate,
+  getScheduleDatesForViewerDay,
+  getUtcRangeForLocalDate,
+  localTimeToUtc,
+} from "../lib/timezone";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -15,6 +21,11 @@ interface GetAvailableSlotsParams {
 interface TimeSlot {
   start: string; // ISO 8601
   end: string; // ISO 8601
+}
+
+interface SlotWindow {
+  startTime: string;
+  endTime: string;
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -99,21 +110,33 @@ export class AvailabilityService {
 
     if (rules.length === 0) return [];
 
-    // 5. Get schedule overrides for the requested date
+    const viewerDayRange = getUtcRangeForLocalDate(date, timezone);
+    const conflictRange = {
+      start: new Date(
+        viewerDayRange.start.getTime() - eventType.bufferBefore * 60 * 1000,
+      ),
+      end: new Date(
+        viewerDayRange.end.getTime() +
+          (eventType.duration + eventType.bufferAfter) * 60 * 1000,
+      ),
+    };
+    const scheduleDates = getScheduleDatesForViewerDay(
+      viewerDayRange,
+      schedule.timezone,
+    );
+
+    // 5. Get schedule overrides for every schedule-local day that overlaps the viewer day
     const overrides = await this.db
       .select()
       .from(dbSchema.scheduleOverrides)
       .where(
         and(
           eq(dbSchema.scheduleOverrides.scheduleId, schedule.id),
-          eq(dbSchema.scheduleOverrides.date, date),
+          inArray(dbSchema.scheduleOverrides.date, scheduleDates),
         ),
       );
 
-    // 6. Get existing confirmed bookings for the event type on that date
-    const dayStart = new Date(date + "T00:00:00Z");
-    const dayEnd = new Date(date + "T23:59:59Z");
-
+    // 6. Get existing confirmed bookings that could overlap slots on the viewer-selected day
     const existingBookings = await this.db
       .select()
       .from(dbSchema.bookings)
@@ -121,15 +144,16 @@ export class AvailabilityService {
         and(
           eq(dbSchema.bookings.eventTypeId, eventType.id),
           eq(dbSchema.bookings.status, "confirmed"),
-          gte(dbSchema.bookings.startTime, dayStart),
-          lte(dbSchema.bookings.startTime, dayEnd),
+          lt(dbSchema.bookings.startTime, conflictRange.end),
+          gt(dbSchema.bookings.endTime, conflictRange.start),
         ),
       );
 
     // 7. Generate time slots
     return this.generateSlots({
-      date,
-      timezone,
+      viewerDayStart: viewerDayRange.start,
+      viewerDayEnd: viewerDayRange.end,
+      scheduleDates,
       scheduleTz: schedule.timezone,
       rules,
       overrides,
@@ -157,8 +181,9 @@ export class AvailabilityService {
   // ─── Private: Generate Slots ──────────────────────────────────────────────
 
   private generateSlots(params: {
-    date: string;
-    timezone: string;
+    viewerDayStart: Date;
+    viewerDayEnd: Date;
+    scheduleDates: string[];
     scheduleTz: string;
     rules: dbSchema.AvailabilityRuleRow[];
     overrides: dbSchema.ScheduleOverrideRow[];
@@ -170,7 +195,9 @@ export class AvailabilityService {
     externalBusySlots?: Array<{ start: string; end: string }>;
   }): TimeSlot[] {
     const {
-      date,
+      viewerDayStart,
+      viewerDayEnd,
+      scheduleDates,
       scheduleTz,
       rules,
       overrides,
@@ -182,89 +209,83 @@ export class AvailabilityService {
       externalBusySlots,
     } = params;
 
-    // a. Parse the requested date and get dayOfWeek
-    const dayOfWeek = getDayOfWeekForDate(date, scheduleTz);
-
-    // b. Check for overrides on this date
-    const override = overrides[0];
-
-    // c. If blocked, return empty
-    if (override?.isBlocked) return [];
-
-    // d. Determine availability windows
-    let windows: Array<{ startTime: string; endTime: string }>;
-
-    if (override?.startTime && override?.endTime) {
-      // Use override custom times instead of rules
-      windows = [{ startTime: override.startTime, endTime: override.endTime }];
-    } else {
-      // Filter rules for this day of week
-      const dayRules = rules.filter((r) => r.dayOfWeek === dayOfWeek);
-      if (dayRules.length === 0) return [];
-      windows = dayRules.map((r) => ({
-        startTime: r.startTime,
-        endTime: r.endTime,
-      }));
-    }
-
-    // e. Generate slots at `duration` minute intervals for each window
     const slots: TimeSlot[] = [];
     const now = new Date();
+    const allBusySlots = existingBookings.map((booking) => ({
+      startTime: new Date(booking.startTime),
+      endTime: new Date(booking.endTime),
+    }));
 
-    for (const window of windows) {
-      const windowStartMinutes = timeToMinutes(window.startTime);
-      const windowEndMinutes = timeToMinutes(window.endTime);
+    if (externalBusySlots) {
+      for (const slot of externalBusySlots) {
+        allBusySlots.push({
+          startTime: new Date(slot.start),
+          endTime: new Date(slot.end),
+        });
+      }
+    }
 
-      let cursor = windowStartMinutes;
+    const overridesByDate = new Map(
+      overrides.map((override) => [override.date, override]),
+    );
 
-      while (cursor + duration <= windowEndMinutes) {
-        const slotStartMinutes = cursor;
-        const slotEndMinutes = cursor + duration;
+    for (const scheduleDate of scheduleDates) {
+      const dayOfWeek = getDayOfWeekForDate(scheduleDate, scheduleTz);
+      const override = overridesByDate.get(scheduleDate);
 
-        // Build UTC timestamps from schedule timezone local times
-        const slotStart = localTimeToUtc(date, minutesToTime(slotStartMinutes), scheduleTz);
-        const slotEnd = localTimeToUtc(date, minutesToTime(slotEndMinutes), scheduleTz);
+      if (override?.isBlocked) continue;
 
-        // f. Apply buffer for conflict checking
-        const bufferedStart = new Date(slotStart.getTime() - bufferBefore * 60 * 1000);
-        const bufferedEnd = new Date(slotEnd.getTime() + bufferAfter * 60 * 1000);
+      let windows: Array<{ startTime: string; endTime: string }>;
 
-        // g. Check for conflicts with existing bookings + external busy slots
-        const allBusySlots = existingBookings.map((b) => ({
-          startTime: new Date(b.startTime),
-          endTime: new Date(b.endTime),
+      if (override?.startTime && override?.endTime) {
+        windows = [{ startTime: override.startTime, endTime: override.endTime }];
+      } else {
+        const dayRules = rules.filter((rule) => rule.dayOfWeek === dayOfWeek);
+        if (dayRules.length === 0) continue;
+        windows = dayRules.map((rule) => ({
+          startTime: rule.startTime,
+          endTime: rule.endTime,
         }));
+      }
 
-        if (externalBusySlots) {
-          for (const slot of externalBusySlots) {
-            allBusySlots.push({
-              startTime: new Date(slot.start),
-              endTime: new Date(slot.end),
-            });
-          }
-        }
+      for (const window of windows) {
+        const windowSlots = buildSlotsForWindow({
+          scheduleDate,
+          window,
+          scheduleTimezone: scheduleTz,
+          duration,
+        });
 
-        const hasConflict = this.checkConflict(
-          bufferedStart,
-          bufferedEnd,
-          allBusySlots,
-        );
+        for (const { start: slotStart, end: slotEnd } of windowSlots) {
+          const bufferedStart = new Date(
+            slotStart.getTime() - bufferBefore * 60 * 1000,
+          );
+          const bufferedEnd = new Date(
+            slotEnd.getTime() + bufferAfter * 60 * 1000,
+          );
+          const hasConflict = this.checkConflict(
+            bufferedStart,
+            bufferedEnd,
+            allBusySlots,
+          );
 
-        if (!hasConflict) {
-          // h. Filter out slots in the past
-          if (slotStart > now) {
+          if (
+            !hasConflict &&
+            slotStart > now &&
+            slotStart >= viewerDayStart &&
+            slotStart < viewerDayEnd
+          ) {
             slots.push({
               start: slotStart.toISOString(),
               end: slotEnd.toISOString(),
             });
           }
         }
-
-        cursor += duration;
       }
     }
 
-    // i. If maxPerDay is set, limit the number of slots
+    slots.sort((left, right) => left.start.localeCompare(right.start));
+
     if (maxPerDay !== null && slots.length > maxPerDay) {
       return slots.slice(0, maxPerDay);
     }
@@ -273,95 +294,34 @@ export class AvailabilityService {
   }
 }
 
-// ─── Helper Functions ─────────────────────────────────────────────────────────
+export function buildSlotsForWindow(params: {
+  scheduleDate: string;
+  window: SlotWindow;
+  scheduleTimezone: string;
+  duration: number;
+}): Array<{ start: Date; end: Date }> {
+  const windowStart = localTimeToUtc(
+    params.scheduleDate,
+    params.window.startTime,
+    params.scheduleTimezone,
+  );
+  const windowEnd = localTimeToUtc(
+    params.scheduleDate,
+    params.window.endTime,
+    params.scheduleTimezone,
+  );
+  const slots: Array<{ start: Date; end: Date }> = [];
+  let slotStart = windowStart;
 
-/**
- * Convert "HH:mm" to minutes since midnight.
- */
-function timeToMinutes(time: string): number {
-  const [hours, minutes] = time.split(":").map(Number);
-  return hours * 60 + minutes;
-}
+  while (
+    slotStart.getTime() + params.duration * 60 * 1000 <= windowEnd.getTime()
+  ) {
+    slots.push({
+      start: slotStart,
+      end: new Date(slotStart.getTime() + params.duration * 60 * 1000),
+    });
+    slotStart = new Date(slotStart.getTime() + params.duration * 60 * 1000);
+  }
 
-/**
- * Convert minutes since midnight back to "HH:mm".
- */
-function minutesToTime(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-}
-
-/**
- * Get the day of week (0=Sunday, 6=Saturday) for a YYYY-MM-DD date
- * interpreted in the given timezone.
- */
-function getDayOfWeekForDate(dateStr: string, timezone: string): number {
-  const d = new Date(`${dateStr}T12:00:00`);
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    timeZone: timezone,
-  });
-  const weekday = formatter.format(d);
-  const dayMap: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  return dayMap[weekday] ?? 0;
-}
-
-/**
- * Convert a local time in a timezone to a UTC Date.
- *
- * Strategy: construct a UTC guess, then use Intl.DateTimeFormat to determine
- * the offset between UTC and the target timezone, and adjust accordingly.
- *
- * NOTE: Timezone support uses Intl.DateTimeFormat which works in Cloudflare Workers.
- * For full IANA timezone support with DST transitions, this approach is sufficient.
- */
-function localToUtc(
-  dateStr: string,
-  hours: number,
-  minutes: number,
-  timezone: string,
-): number {
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  const isoStr = `${dateStr}T${pad(hours)}:${pad(minutes)}:00`;
-
-  const utcGuess = new Date(isoStr + "Z").getTime();
-
-  const formatter = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-
-  const parts = formatter.formatToParts(new Date(utcGuess));
-  const get = (type: string) =>
-    parts.find((p) => p.type === type)?.value ?? "0";
-
-  const localAtUtcGuess = new Date(
-    `${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`,
-  ).getTime();
-
-  const offsetMs = localAtUtcGuess - utcGuess;
-  return utcGuess - offsetMs;
-}
-
-/**
- * Convert a local time string ("HH:mm") on a given date in a timezone to a UTC Date.
- */
-function localTimeToUtc(dateStr: string, timeStr: string, timezone: string): Date {
-  const [hours, minutes] = timeStr.split(":").map(Number);
-  return new Date(localToUtc(dateStr, hours, minutes, timezone));
+  return slots;
 }

@@ -34,6 +34,15 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { WeeklyAvailabilityEditor } from "@/components/WeeklyAvailabilityEditor";
+import {
+  dayConfigsToRules,
+  defaultDayConfigs,
+  getTimeOptions,
+  parseTimeToMinutes,
+  rulesToDayConfigs,
+  type DayAvailabilityConfig,
+} from "@/lib/availability";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
@@ -79,12 +88,6 @@ interface ScheduleOverride {
   isBlocked: boolean;
 }
 
-interface DayConfig {
-  enabled: boolean;
-  startTime: string;
-  endTime: string;
-}
-
 interface EventTypeFormData {
   name: string;
   slug: string;
@@ -101,16 +104,6 @@ interface EventTypeFormData {
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
-
-const DAYS = [
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-];
 
 const COMMON_TIMEZONES = [
   "America/New_York",
@@ -137,14 +130,6 @@ function generateSlug(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-}
-
-function defaultDayConfigs(): DayConfig[] {
-  return DAYS.map((_, i) => ({
-    enabled: i < 5,
-    startTime: "09:00",
-    endTime: "17:00",
-  }));
 }
 
 const defaultFormData: EventTypeFormData = {
@@ -175,7 +160,9 @@ export default function EventTypeForm() {
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
 
   // Availability state
-  const [dayConfigs, setDayConfigs] = useState<DayConfig[]>(defaultDayConfigs());
+  const [dayConfigs, setDayConfigs] = useState<DayAvailabilityConfig[]>(
+    defaultDayConfigs(),
+  );
   const [timezone, setTimezone] = useState("America/New_York");
 
   // Copy from state (for new event types)
@@ -300,18 +287,7 @@ export default function EventTypeForm() {
       setTimezone(eventTypeData.schedule.timezone);
     }
     if (eventTypeData.rules) {
-      const configs = defaultDayConfigs().map((c) => ({ ...c, enabled: false }));
-      for (const rule of eventTypeData.rules) {
-        const idx = rule.dayOfWeek;
-        if (idx >= 0 && idx < 7) {
-          configs[idx] = {
-            enabled: true,
-            startTime: rule.startTime,
-            endTime: rule.endTime,
-          };
-        }
-      }
-      setDayConfigs(configs);
+      setDayConfigs(rulesToDayConfigs(eventTypeData.rules));
     }
   }, [eventTypeData]);
 
@@ -346,18 +322,7 @@ export default function EventTypeForm() {
       setTimezone(copySourceData.schedule.timezone);
     }
     if (copySourceData.rules) {
-      const configs = defaultDayConfigs().map((c) => ({ ...c, enabled: false }));
-      for (const rule of copySourceData.rules) {
-        const idx = rule.dayOfWeek;
-        if (idx >= 0 && idx < 7) {
-          configs[idx] = {
-            enabled: true,
-            startTime: rule.startTime,
-            endTime: rule.endTime,
-          };
-        }
-      }
-      setDayConfigs(configs);
+      setDayConfigs(rulesToDayConfigs(copySourceData.rules));
     }
   }, [copySourceData]);
 
@@ -472,14 +437,7 @@ export default function EventTypeForm() {
   }
 
   async function saveAvailability(scheduleId: string) {
-    const newRules = dayConfigs
-      .map((config, idx) => ({
-        dayOfWeek: idx,
-        startTime: config.startTime,
-        endTime: config.endTime,
-        enabled: config.enabled,
-      }))
-      .filter((r) => r.enabled);
+    const newRules = dayConfigsToRules(dayConfigs);
 
     const res = await fetch(
       `/api/projects/${projectId}/schedules/${scheduleId}/rules`,
@@ -540,14 +498,6 @@ export default function EventTypeForm() {
     },
   });
 
-  function updateDay(index: number, changes: Partial<DayConfig>) {
-    setDayConfigs((prev) =>
-      prev.map((config, i) =>
-        i === index ? { ...config, ...changes } : config,
-      ),
-    );
-  }
-
   function resetOverrideForm() {
     setOverrideDate("");
     setOverrideBlocked(true);
@@ -590,6 +540,16 @@ export default function EventTypeForm() {
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
   const overrides = eventTypeData?.overrides ?? [];
+  const overrideStartOptions = getTimeOptions({
+    minMinutes: 0,
+    maxMinutes: parseTimeToMinutes(overrideEndTime) - 15,
+    includeMidnight: false,
+  });
+  const overrideEndOptions = getTimeOptions({
+    minMinutes: parseTimeToMinutes(overrideStartTime) + 15,
+    maxMinutes: 24 * 60,
+    includeMidnight: true,
+  });
 
   // Other event types for copy-from (exclude current)
   const copyableEventTypes = useMemo(
@@ -1103,55 +1063,11 @@ export default function EventTypeForm() {
               </div>
 
               <div className="space-y-3">
-                {DAYS.map((day, idx) => (
-                  <div
-                    key={day}
-                    className="flex items-center gap-4 py-2"
-                  >
-                    <Switch
-                      checked={dayConfigs[idx].enabled}
-                      onCheckedChange={(checked) =>
-                        updateDay(idx, { enabled: checked })
-                      }
-                    />
-                    <span
-                      className={`text-sm font-medium w-28 ${!dayConfigs[idx].enabled
-                          ? "text-muted-foreground"
-                          : "text-foreground"
-                        }`}
-                    >
-                      {day}
-                    </span>
-
-                    {dayConfigs[idx].enabled ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="time"
-                          value={dayConfigs[idx].startTime}
-                          onChange={(e) =>
-                            updateDay(idx, { startTime: e.target.value })
-                          }
-                          className="w-[120px]"
-                        />
-                        <span className="text-sm text-muted-foreground">
-                          to
-                        </span>
-                        <Input
-                          type="time"
-                          value={dayConfigs[idx].endTime}
-                          onChange={(e) =>
-                            updateDay(idx, { endTime: e.target.value })
-                          }
-                          className="w-[120px]"
-                        />
-                      </div>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">
-                        Unavailable
-                      </span>
-                    )}
-                  </div>
-                ))}
+                <WeeklyAvailabilityEditor
+                  dayConfigs={dayConfigs}
+                  onChange={setDayConfigs}
+                  disabled={isSaving}
+                />
               </div>
             </CardContent>
           </Card>
@@ -1266,19 +1182,37 @@ export default function EventTypeForm() {
               <div className="space-y-2">
                 <Label>Custom Hours</Label>
                 <div className="flex items-center gap-2">
-                  <Input
-                    type="time"
+                  <Select
                     value={overrideStartTime}
-                    onChange={(e) => setOverrideStartTime(e.target.value)}
-                    className="w-[120px]"
-                  />
+                    onValueChange={setOverrideStartTime}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {overrideStartOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <span className="text-sm text-muted-foreground">to</span>
-                  <Input
-                    type="time"
+                  <Select
                     value={overrideEndTime}
-                    onChange={(e) => setOverrideEndTime(e.target.value)}
-                    className="w-[120px]"
-                  />
+                    onValueChange={setOverrideEndTime}
+                  >
+                    <SelectTrigger className="w-[140px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-80">
+                      {overrideEndOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             )}
@@ -1303,8 +1237,10 @@ export default function EventTypeForm() {
                 Cancel
               </Button>
               <Button type="submit" disabled={addOverrideMutation.isPending}>
-                {addOverrideMutation.isPending && (
+                {addOverrideMutation.isPending ? (
                   <Loader className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4" />
                 )}
                 Add Override
               </Button>
