@@ -166,7 +166,6 @@ interface NotificationDestinationOption {
   label: string;
 }
 
-const DEFAULT_NATIVE_SUCCESS_MESSAGE = "Your response has been submitted successfully.";
 const DEFAULT_RESPONSE_NOTIFICATION_DESTINATION = "__owner__";
 const STEP_CANVAS_DROPPABLE_ID_PREFIX = "step-canvas:";
 const STEP_DROP_TARGET_ID_PREFIX = "step-drop-target:";
@@ -467,10 +466,7 @@ export default function FormBuilder() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [promptCopiedId, setPromptCopiedId] = useState<string | null>(null);
   const [actionUrlCopied, setActionUrlCopied] = useState(false);
-  const [nativeSuccessMessage, setNativeSuccessMessage] = useState(
-    DEFAULT_NATIVE_SUCCESS_MESSAGE,
-  );
-  const [nativeRedirectUrl, setNativeRedirectUrl] = useState("");
+
 
   // Inline-editing state for form name/slug
   const [editingName, setEditingName] = useState<string>("");
@@ -581,21 +577,6 @@ export default function FormBuilder() {
     isValidEmailAddress(formSettings.responseNotificationEmail.trim())
       ? formSettings.responseNotificationEmail.trim()
       : "";
-  const nativeActionSettings = {
-    successMode:
-      formSettings.nativeAction?.successMode === "redirect"
-        ? "redirect"
-        : "message",
-    successMessage:
-      typeof formSettings.nativeAction?.successMessage === "string" &&
-        formSettings.nativeAction.successMessage.trim()
-        ? formSettings.nativeAction.successMessage
-        : DEFAULT_NATIVE_SUCCESS_MESSAGE,
-    redirectUrl:
-      typeof formSettings.nativeAction?.redirectUrl === "string"
-        ? formSettings.nativeAction.redirectUrl
-        : "",
-  } as const;
   const responseNotificationDestinationValue =
     responseNotificationEmail && responseNotificationEmail !== ownerEmail
       ? responseNotificationEmail
@@ -672,14 +653,6 @@ export default function FormBuilder() {
       setEditingSlug(form.slug);
     }
   }, [form]);
-
-  useEffect(() => {
-    setNativeSuccessMessage(nativeActionSettings.successMessage);
-    setNativeRedirectUrl(nativeActionSettings.redirectUrl);
-  }, [
-    nativeActionSettings.redirectUrl,
-    nativeActionSettings.successMessage,
-  ]);
 
   useEffect(() => {
     if (!form) {
@@ -1207,51 +1180,6 @@ export default function FormBuilder() {
     },
     [updateFormMutation, formSettings],
   );
-
-  const handleNativeActionModeChange = useCallback(
-    (value: "message" | "redirect") => {
-      updateFormMutation.mutate({
-        settings: buildUpdatedFormSettings({
-          nativeAction: { successMode: value },
-        }),
-      });
-    },
-    [formSettings, updateFormMutation],
-  );
-
-  const handleNativeSuccessMessageBlur = useCallback(() => {
-    const nextMessage =
-      nativeSuccessMessage.trim() || DEFAULT_NATIVE_SUCCESS_MESSAGE;
-    if (nextMessage !== nativeActionSettings.successMessage) {
-      setNativeSuccessMessage(nextMessage);
-      updateFormMutation.mutate({
-        settings: buildUpdatedFormSettings({
-          nativeAction: { successMessage: nextMessage },
-        }),
-      });
-    }
-  }, [
-    nativeActionSettings.successMessage,
-    nativeSuccessMessage,
-    formSettings,
-    updateFormMutation,
-  ]);
-
-  const handleNativeRedirectUrlBlur = useCallback(() => {
-    const nextRedirectUrl = nativeRedirectUrl.trim();
-    if (nextRedirectUrl !== nativeActionSettings.redirectUrl) {
-      updateFormMutation.mutate({
-        settings: buildUpdatedFormSettings({
-          nativeAction: { redirectUrl: nextRedirectUrl },
-        }),
-      });
-    }
-  }, [
-    nativeActionSettings.redirectUrl,
-    nativeRedirectUrl,
-    formSettings,
-    updateFormMutation,
-  ]);
 
   // ─── Drag and Drop ─────────────────────────────────────────────────────
 
@@ -1862,10 +1790,6 @@ export default function FormBuilder() {
                 </button>
               ))}
 
-              <div className="border-t my-2" />
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
-                Pages
-              </p>
               <button
                 type="button"
                 onClick={handleAddCompletionPage}
@@ -2367,21 +2291,23 @@ export default function FormBuilder() {
             </div>
 
             {/* Status */}
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Status</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm">
-                  {form.status === "active" ? "Active" : "Draft"}
-                </span>
-                <Switch
-                  checked={form.status === "active"}
-                  onCheckedChange={(checked) =>
-                    updateFormMutation.mutate({
-                      status: checked ? "active" : "draft",
-                    })
-                  }
-                />
+            <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Status</p>
+                <p className="text-xs text-muted-foreground">
+                  {form.status === "active"
+                    ? "Form is live and accepting responses"
+                    : "Form is hidden from respondents"}
+                </p>
               </div>
+              <Switch
+                checked={form.status === "active"}
+                onCheckedChange={(checked) =>
+                  updateFormMutation.mutate({
+                    status: checked ? "active" : "draft",
+                  })
+                }
+              />
             </div>
 
             {/* Notifications */}
@@ -2410,13 +2336,9 @@ export default function FormBuilder() {
             </div>
 
             {/* HTML Action */}
-            <div className="space-y-3 border-t pt-4">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                HTML Action
-              </p>
-
+            <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Action URL</Label>
+                <Label className="text-xs text-muted-foreground">HTML Action URL</Label>
                 <div className="flex gap-2">
                   <Input
                     readOnly
@@ -2442,54 +2364,10 @@ export default function FormBuilder() {
                     {actionUrlCopied ? "Copied" : "Copy"}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Use form field IDs as your HTML input names when posting directly to LinkyCal.
+                </p>
               </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Success Behavior</Label>
-                <Select
-                  value={nativeActionSettings.successMode}
-                  onValueChange={(value: "message" | "redirect") =>
-                    handleNativeActionModeChange(value)
-                  }
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="message">Hosted thank-you page</SelectItem>
-                    <SelectItem value="redirect">Redirect to URL</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {nativeActionSettings.successMode === "redirect" ? (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Redirect URL</Label>
-                  <Input
-                    type="url"
-                    value={nativeRedirectUrl}
-                    onChange={(e) => setNativeRedirectUrl(e.target.value)}
-                    onBlur={handleNativeRedirectUrlBlur}
-                    placeholder="https://your-site.com/thanks"
-                    className="h-9"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Success Message</Label>
-                  <Input
-                    value={nativeSuccessMessage}
-                    onChange={(e) => setNativeSuccessMessage(e.target.value)}
-                    onBlur={handleNativeSuccessMessageBlur}
-                    placeholder={DEFAULT_NATIVE_SUCCESS_MESSAGE}
-                    className="h-9"
-                  />
-                </div>
-              )}
-
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Use form field IDs as your HTML input names when posting directly to LinkyCal.
-              </p>
               {hasFileFields && (
                 <p className="text-xs text-amber-700 leading-relaxed">
                   File fields are not supported on the native HTML action endpoint yet.

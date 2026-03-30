@@ -133,10 +133,17 @@ app/
 
 ### Separators
 
-- **Never use borders as visual separators between list rows** — no `<Separator />`, no `divide-y`, no `border-b`, no `border-t` between items in a list
-- Use `space-y-*` or `gap-*` for spacing between rows/items instead
+- **Never use borders as visual separators** — no `<Separator />`, no `divide-y`, no `border-b`, no `border-t`, no `<hr>` between items in a list, between sections in dialogs/panels/settings, or anywhere as a content divider
+- Use `space-y-*` or `gap-*` for spacing between rows/items/sections instead
 - **Structural borders are fine** — page headers, sidebars, layout boundaries, card borders
 - **Decorative borders are fine** — mock browser UIs on the landing page
+
+### Toggles / Switches
+
+- **Always render toggles in a card-style row**: title on the left, optional description below the title, switch on the right end
+- Use `rounded-[16px] bg-muted/50 px-4 py-3` for the card container with `flex items-center justify-between`
+- Title is `text-sm font-medium`, description is `text-xs text-muted-foreground`
+- Never render a bare toggle with just a label next to it
 
 ### Lists & Tables
 
