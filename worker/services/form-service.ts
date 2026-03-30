@@ -7,11 +7,14 @@ import { plainTextToRichTextHtml } from "../lib/rich-text";
 // ─── Field Helpers ───────────────────────────────────────────────────────────
 
 const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
+  name: "Full name",
   text: "Start typing...",
   textarea: "Start typing...",
   email: "name@example.com",
   phone: "+1 (555) 000-0000",
+  url: "https://example.com",
   number: "0",
+  completion: null,
   date: "Select a date",
   time: "Select a time",
   select: "Select an option",
@@ -459,6 +462,7 @@ export class FormService {
     sortOrder?: number;
     type: string;
     label: string;
+    description?: string | null;
     placeholder?: string;
     required?: boolean;
     validation?: Record<string, unknown>;
@@ -492,6 +496,7 @@ export class FormService {
       sortOrder,
       type: data.type as any,
       label: data.label,
+      description: data.description ?? null,
       placeholder,
       required: data.required ?? false,
       validation: data.validation ? JSON.stringify(data.validation) : null,
@@ -508,6 +513,7 @@ export class FormService {
       sortOrder?: number;
       type?: string;
       label?: string;
+      description?: string | null;
       placeholder?: string | null;
       required?: boolean;
       validation?: Record<string, unknown> | null;
@@ -529,6 +535,7 @@ export class FormService {
       }
     }
     if (data.label !== undefined) values.label = data.label;
+    if (data.description !== undefined) values.description = data.description;
     if (data.placeholder !== undefined) values.placeholder = data.placeholder;
     if (data.required !== undefined) values.required = data.required;
     if (data.validation !== undefined)
@@ -714,7 +721,13 @@ export class FormService {
     if (!response) return null;
 
     if (!response.formId) return null;
-    const steps = await this.listSteps(response.formId);
+    const allSteps = await this.listSteps(response.formId);
+    const allFields = await this.listFields(response.formId);
+    // Exclude steps where every field is a completion field
+    const steps = allSteps.filter((step) => {
+      const stepFields = allFields.filter((f) => f.stepId === step.id);
+      return !(stepFields.length > 0 && stepFields.every((f) => f.type === "completion"));
+    });
     const nextStepIndex = stepIndex + 1;
     const isComplete = nextStepIndex >= steps.length;
 

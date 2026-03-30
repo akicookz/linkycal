@@ -26,6 +26,10 @@ import {
   Check,
   Globe,
   Trash2,
+  Settings,
+  User,
+  Link2,
+  PartyPopper,
 } from "lucide-react";
 import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
@@ -94,6 +98,7 @@ interface FormField {
   sortOrder: number;
   type: string;
   label: string;
+  description: string | null;
   placeholder: string | null;
   required: boolean;
   validation: unknown;
@@ -174,10 +179,12 @@ function isValidEmailAddress(value: string): boolean {
 // ─── Field Type Definitions ──────────────────────────────────────────────────
 
 const FIELD_TYPES = [
+  { type: "name", label: "Name", icon: User },
   { type: "text", label: "Text Input", icon: Type },
   { type: "textarea", label: "Textarea", icon: AlignLeft },
   { type: "email", label: "Email", icon: Mail },
   { type: "phone", label: "Phone", icon: Phone },
+  { type: "url", label: "URL", icon: Link2 },
   { type: "number", label: "Number", icon: Hash },
   { type: "select", label: "Select", icon: ChevronDown },
   { type: "multi_select", label: "Multi Select", icon: ListChecks },
@@ -269,6 +276,7 @@ function toPersistedFieldOptions(options: DraftFieldOption[]): FieldOption[] {
 }
 
 function getFieldIcon(type: string) {
+  if (type === "completion") return PartyPopper;
   const found = FIELD_TYPES.find((ft) => ft.type === type);
   return found?.icon ?? Type;
 }
@@ -467,6 +475,7 @@ export default function FormBuilder() {
   // Inline-editing state for form name/slug
   const [editingName, setEditingName] = useState<string>("");
   const [editingSlug, setEditingSlug] = useState<string>("");
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // ─── Create mode (no formId) ─────────────────────────────────────────────
 
@@ -632,6 +641,10 @@ export default function FormBuilder() {
   const hasFileFields = steps.some((step) =>
     step.fields.some((field) => field.type === "file")
   );
+  const hasCompletionPage = steps.some((step) =>
+    step.fields.some((field) => field.type === "completion")
+  );
+
   const nativeActionUrl = form
     ? `${window.location.origin}/api/public/forms/${form.slug}/submit`
     : "";
@@ -645,7 +658,6 @@ export default function FormBuilder() {
   const fieldDropTargetSteps = draggingField
     ? sortedSteps.filter((step) => step.id !== draggingField.stepId)
     : [];
-
   // Sync active step when form loads
   useEffect(() => {
     if (form && sortedSteps.length > 0 && !activeStepId) {
@@ -765,14 +777,14 @@ export default function FormBuilder() {
   // ─── Step mutations ──────────────────────────────────────────────────────
 
   const addStepMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (vars?: { title?: string }) => {
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/steps`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: `Step ${steps.length + 1}`,
+            title: vars?.title ?? `Step ${steps.length + 1}`,
           }),
         }
       );
@@ -780,7 +792,7 @@ export default function FormBuilder() {
       const json = await res.json();
       return json;
     },
-    onMutate: async () => {
+    onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       const tempId = `temp-${crypto.randomUUID()}`;
@@ -792,7 +804,7 @@ export default function FormBuilder() {
             id: tempId,
             formId: old.id,
             sortOrder: old.steps.length,
-            title: `Step ${old.steps.length + 1}`,
+            title: vars?.title ?? `Step ${old.steps.length + 1}`,
             description: null,
             richDescription: null,
             settings: null,
@@ -909,17 +921,19 @@ export default function FormBuilder() {
       stepId,
       type,
       label,
+      description,
     }: {
       stepId: string;
       type: string;
       label: string;
+      description?: string;
     }) => {
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/fields`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stepId, type, label }),
+          body: JSON.stringify({ stepId, type, label, ...(description ? { description } : {}) }),
         }
       );
       if (!res.ok) throw new Error("Failed to add field");
@@ -944,6 +958,7 @@ export default function FormBuilder() {
                   sortOrder: step.fields.length,
                   type,
                   label,
+                  description: null,
                   placeholder: null,
                   required: false,
                   validation: null,
@@ -1031,10 +1046,12 @@ export default function FormBuilder() {
       fieldId: string;
       data: Partial<{
         label: string;
+        description: string | null;
         placeholder: string | null;
         required: boolean;
         type: string;
         options: FieldOption[] | null;
+        validation: Record<string, unknown> | null;
         stepId: string;
         sortOrder: number;
       }>;
@@ -1324,7 +1341,7 @@ export default function FormBuilder() {
     if (!sourceStepId) return;
 
     try {
-      const response = await addStepMutation.mutateAsync();
+      const response = await addStepMutation.mutateAsync({});
       const nextStep = response?.step as FormStep | undefined;
       if (!nextStep) {
         throw new Error("Failed to create destination step");
@@ -1460,6 +1477,22 @@ export default function FormBuilder() {
     const targetStepId = activeStepId ?? sortedSteps[0]?.id;
     if (!targetStepId) return;
     addFieldMutation.mutate({ stepId: targetStepId, type, label });
+  }
+
+  async function handleAddCompletionPage() {
+    try {
+      const response = await addStepMutation.mutateAsync({ title: "Completion" });
+      const newStep = response?.step as FormStep | undefined;
+      if (!newStep) return;
+      addFieldMutation.mutate({
+        stepId: newStep.id,
+        type: "completion",
+        label: "Thank you!",
+        description: "<p>Your response has been submitted successfully.</p>",
+      });
+    } catch {
+      // Step creation failed — handled by mutation error handler
+    }
   }
 
   // ─── Field options helpers (auto-save) ──────────────────────────────────
@@ -1731,20 +1764,16 @@ export default function FormBuilder() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
-          <div className="min-w-0">
-            <Input
-              value={editingName}
-              onChange={(e) => setEditingName(e.target.value)}
-              onBlur={handleNameBlur}
-              className="h-8 text-lg font-semibold border-transparent bg-transparent px-1 hover:border-border focus-visible:border-border"
-            />
-          </div>
-          <Badge
-            variant={form.status === "active" ? "success" : "secondary"}
-            className="shrink-0"
+          <span className="text-lg font-semibold truncate">{form.name}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 shrink-0"
+            onClick={() => setSettingsOpen(true)}
           >
-            {form.status}
-          </Badge>
+            <Settings className="h-4 w-4" />
+            Settings
+          </Button>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <CopyPromptButton
@@ -1832,169 +1861,20 @@ export default function FormBuilder() {
                   {ft.label}
                 </button>
               ))}
-            </CardContent>
-          </Card>
 
-          {/* Form slug */}
-          <Card>
-            <CardContent className="space-y-2">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Form Slug
+              <div className="border-t my-2" />
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                Pages
               </p>
-              <Input
-                value={editingSlug}
-                onChange={(e) => setEditingSlug(e.target.value)}
-                onBlur={handleSlugBlur}
-                className="h-8 text-xs"
-              />
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-2">
-                Status
-              </p>
-              <div className="flex items-center justify-between">
-                <span className="text-sm">
-                  {form.status === "active" ? "Active" : "Draft"}
-                </span>
-                <Switch
-                  checked={form.status === "active"}
-                  onCheckedChange={(checked) =>
-                    updateFormMutation.mutate({
-                      status: checked ? "active" : "draft",
-                    })
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Notifications
-              </p>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  Send new response emails to
-                </Label>
-                <Select
-                  value={responseNotificationDestinationValue}
-                  onValueChange={handleResponseNotificationDestinationChange}
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {responseNotificationOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                New inquiry emails for this form will be sent to the selected
-                address.
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="space-y-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                HTML Action
-              </p>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  Action URL
-                </Label>
-                <Input
-                  readOnly
-                  value={nativeActionUrl}
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              <Button
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  navigator.clipboard.writeText(nativeActionUrl);
-                  setActionUrlCopied(true);
-                  setTimeout(() => setActionUrlCopied(false), 2000);
-                }}
+                onClick={handleAddCompletionPage}
+                disabled={hasCompletionPage || addStepMutation.isPending}
+                className="flex w-full items-center gap-3 rounded-[16px] border px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {actionUrlCopied ? (
-                  <Check className="h-3.5 w-3.5" />
-                ) : (
-                  <Copy className="h-3.5 w-3.5" />
-                )}
-                {actionUrlCopied ? "Copied Action URL" : "Copy Action URL"}
-              </Button>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  Success Behavior
-                </Label>
-                <Select
-                  value={nativeActionSettings.successMode}
-                  onValueChange={(value: "message" | "redirect") =>
-                    handleNativeActionModeChange(value)
-                  }
-                >
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="message">Hosted thank-you page</SelectItem>
-                    <SelectItem value="redirect">Redirect to URL</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {nativeActionSettings.successMode === "redirect" ? (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Redirect URL
-                  </Label>
-                  <Input
-                    type="url"
-                    value={nativeRedirectUrl}
-                    onChange={(e) => setNativeRedirectUrl(e.target.value)}
-                    onBlur={handleNativeRedirectUrlBlur}
-                    placeholder="https://your-site.com/thanks"
-                    className="h-8 text-xs"
-                  />
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">
-                    Success Message
-                  </Label>
-                  <Input
-                    value={nativeSuccessMessage}
-                    onChange={(e) => setNativeSuccessMessage(e.target.value)}
-                    onBlur={handleNativeSuccessMessageBlur}
-                    placeholder={DEFAULT_NATIVE_SUCCESS_MESSAGE}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              )}
-
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Use form field IDs as your HTML input names when posting directly
-                to LinkyCal.
-              </p>
-              {hasFileFields && (
-                <p className="text-xs text-amber-700 leading-relaxed">
-                  File fields are not supported on the native HTML action
-                  endpoint yet. Use the widget or JSON API for file uploads.
-                </p>
-              )}
+                <PartyPopper className="h-4 w-4 text-muted-foreground shrink-0" />
+                Completion Page
+              </button>
             </CardContent>
           </Card>
         </div>
@@ -2040,7 +1920,7 @@ export default function FormBuilder() {
               variant="outline"
               size="sm"
               className="h-8 px-2.5 shrink-0"
-              onClick={() => addStepMutation.mutate()}
+              onClick={() => addStepMutation.mutate({})}
               disabled={addStepMutation.isPending}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -2171,6 +2051,89 @@ export default function FormBuilder() {
                                 onAutoFocused={() => setAutoFocusLastField(false)}
                               >
                                 {(dragHandleProps) => (<>
+                                  {field.type === "completion" ? (
+                                    <>
+                                      {/* Completion field editor */}
+                                      <div className="flex items-center gap-3">
+                                        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
+                                        <PartyPopper className="h-4 w-4 text-primary shrink-0" />
+                                        <span className="text-sm font-medium text-primary">Completion Page</span>
+                                        <div className="ml-auto shrink-0">
+                                          <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                            onClick={() => deleteFieldMutation.mutate(field.id)}
+                                            disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
+                                          >
+                                            {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
+                                              <Loader className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                              <Trash2 className="h-3.5 w-3.5" />
+                                            )}
+                                            Remove
+                                          </Button>
+                                        </div>
+                                      </div>
+                                      <div className="pl-7 mt-3 space-y-3">
+                                        <div className="space-y-1.5">
+                                          <Label className="text-xs text-muted-foreground">Title</Label>
+                                          <InlineEditableLabel
+                                            value={field.label}
+                                            onSave={(label) =>
+                                              updateFieldMutation.mutate({
+                                                fieldId: field.id,
+                                                data: { label },
+                                              })
+                                            }
+                                          />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                          <Label className="text-xs text-muted-foreground">Description</Label>
+                                          <RichTextEditor
+                                            key={`completion-desc-${field.id}`}
+                                            value={field.description ?? ""}
+                                            placeholder="Write a thank-you message for your respondents."
+                                            onSave={(html) =>
+                                              updateFieldMutation.mutate({
+                                                fieldId: field.id,
+                                                data: { description: html },
+                                              })
+                                            }
+                                          />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                          <Label className="text-xs text-muted-foreground">Redirect URL (optional)</Label>
+                                          <Input
+                                            type="url"
+                                            defaultValue={
+                                              field.validation &&
+                                              typeof field.validation === "object" &&
+                                              (field.validation as Record<string, unknown>).redirectUrl
+                                                ? String((field.validation as Record<string, unknown>).redirectUrl)
+                                                : ""
+                                            }
+                                            key={`completion-redirect-${field.id}`}
+                                            placeholder="https://your-site.com/thanks"
+                                            className="h-8 text-xs"
+                                            onBlur={(e) => {
+                                              const url = e.target.value.trim();
+                                              updateFieldMutation.mutate({
+                                                fieldId: field.id,
+                                                data: {
+                                                  validation: url ? { redirectUrl: url } : null,
+                                                },
+                                              });
+                                            }}
+                                          />
+                                          <p className="text-xs text-muted-foreground leading-relaxed">
+                                            Shows for 5 seconds before redirecting if a URL is set.
+                                          </p>
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <>
                                   {/* Row 1: Handle + Label + Required + Remove */}
                                   <div className="flex items-center gap-3">
                                     <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
@@ -2273,6 +2236,22 @@ export default function FormBuilder() {
                                     </div>
                                   </div>
 
+                                  {/* Field description (rich text) */}
+                                  <div className="pl-7 mt-2">
+                                    <RichTextEditor
+                                      key={`field-desc-${field.id}`}
+                                      value={field.description ?? ""}
+                                      placeholder="Add a description or helper text (optional)"
+                                      className="text-xs"
+                                      onSave={(html) =>
+                                        updateFieldMutation.mutate({
+                                          fieldId: field.id,
+                                          data: { description: html },
+                                        })
+                                      }
+                                    />
+                                  </div>
+
                                   {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
                                     const minOptions = field.type === "multi_select" ? 2 : 1;
                                     return (
@@ -2320,6 +2299,8 @@ export default function FormBuilder() {
                                       </div>
                                     );
                                   })()}
+                                    </>
+                                  )}
                                 </>)}
                               </SortableFieldCard>
                             );
@@ -2342,7 +2323,7 @@ export default function FormBuilder() {
               </p>
               <Button
                 size="sm"
-                onClick={() => addStepMutation.mutate()}
+                onClick={() => addStepMutation.mutate({})}
                 disabled={addStepMutation.isPending}
               >
                 <Plus className="h-4 w-4" />
@@ -2353,6 +2334,172 @@ export default function FormBuilder() {
         </div>
       </div>
 
+      {/* ─── Settings Dialog ────────────────────────────────────────── */}
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Form Settings</DialogTitle>
+            <DialogDescription>
+              Configure your form name, slug, status, notifications, and HTML action settings.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5 py-2">
+            {/* Form Name */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Form Name</Label>
+              <Input
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onBlur={handleNameBlur}
+                className="h-9"
+              />
+            </div>
+
+            {/* Form Slug */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Form Slug</Label>
+              <Input
+                value={editingSlug}
+                onChange={(e) => setEditingSlug(e.target.value)}
+                onBlur={handleSlugBlur}
+                className="h-9"
+              />
+            </div>
+
+            {/* Status */}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Status</Label>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">
+                  {form.status === "active" ? "Active" : "Draft"}
+                </span>
+                <Switch
+                  checked={form.status === "active"}
+                  onCheckedChange={(checked) =>
+                    updateFormMutation.mutate({
+                      status: checked ? "active" : "draft",
+                    })
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Notifications */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Send new response emails to
+              </Label>
+              <Select
+                value={responseNotificationDestinationValue}
+                onValueChange={handleResponseNotificationDestinationChange}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {responseNotificationOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                New inquiry emails for this form will be sent to the selected address.
+              </p>
+            </div>
+
+            {/* HTML Action */}
+            <div className="space-y-3 border-t pt-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                HTML Action
+              </p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Action URL</Label>
+                <div className="flex gap-2">
+                  <Input
+                    readOnly
+                    value={nativeActionUrl}
+                    className="h-9 text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(nativeActionUrl);
+                      setActionUrlCopied(true);
+                      setTimeout(() => setActionUrlCopied(false), 2000);
+                    }}
+                  >
+                    {actionUrlCopied ? (
+                      <Check className="h-3.5 w-3.5" />
+                    ) : (
+                      <Copy className="h-3.5 w-3.5" />
+                    )}
+                    {actionUrlCopied ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Success Behavior</Label>
+                <Select
+                  value={nativeActionSettings.successMode}
+                  onValueChange={(value: "message" | "redirect") =>
+                    handleNativeActionModeChange(value)
+                  }
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="message">Hosted thank-you page</SelectItem>
+                    <SelectItem value="redirect">Redirect to URL</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {nativeActionSettings.successMode === "redirect" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Redirect URL</Label>
+                  <Input
+                    type="url"
+                    value={nativeRedirectUrl}
+                    onChange={(e) => setNativeRedirectUrl(e.target.value)}
+                    onBlur={handleNativeRedirectUrlBlur}
+                    placeholder="https://your-site.com/thanks"
+                    className="h-9"
+                  />
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Success Message</Label>
+                  <Input
+                    value={nativeSuccessMessage}
+                    onChange={(e) => setNativeSuccessMessage(e.target.value)}
+                    onBlur={handleNativeSuccessMessageBlur}
+                    placeholder={DEFAULT_NATIVE_SUCCESS_MESSAGE}
+                    className="h-9"
+                  />
+                </div>
+              )}
+
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Use form field IDs as your HTML input names when posting directly to LinkyCal.
+              </p>
+              {hasFileFields && (
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  File fields are not supported on the native HTML action endpoint yet.
+                  Use the widget or JSON API for file uploads.
+                </p>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

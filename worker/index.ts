@@ -1627,7 +1627,9 @@ app.post("/api/public/forms/:slug/submit", async (c) => {
       return createNativeFormSuccessResponse(form.settings);
     }
 
-    const steps = [...form.steps].sort((a, b) => a.sortOrder - b.sortOrder);
+    const steps = [...form.steps]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .filter((step) => !(step.fields.length > 0 && step.fields.every((f) => f.type === "completion")));
     const fieldConfigs: NativePublicFormField[] = steps.flatMap((step) =>
       step.fields.map((field) => ({
         id: field.id,

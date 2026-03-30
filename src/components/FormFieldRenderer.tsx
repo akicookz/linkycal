@@ -10,6 +10,7 @@ export interface FormFieldData {
   id: string;
   type: string;
   label: string;
+  description: string | null;
   placeholder: string | null;
   required: boolean;
   options: Array<{ label: string; value: string }> | null;
@@ -40,6 +41,9 @@ export function FormFieldRenderer({
   const labelTargetId =
     field.type === "rating" || isChoiceField(field.type) ? undefined : id;
 
+  // Completion fields are not rendered as form inputs
+  if (field.type === "completion") return null;
+
   return (
     <div className="space-y-1.5">
       {showsFieldLabel && (
@@ -47,6 +51,13 @@ export function FormFieldRenderer({
           {field.label}
           {field.required && <span className="text-destructive ml-0.5">*</span>}
         </Label>
+      )}
+
+      {field.description && (
+        <div
+          className="text-xs leading-5 text-muted-foreground prose prose-sm max-w-none"
+          dangerouslySetInnerHTML={{ __html: field.description }}
+        />
       )}
 
       {showsChoiceHint && (
@@ -130,13 +141,15 @@ export function FormFieldRenderer({
               ? "email"
               : field.type === "phone"
                 ? "tel"
-                : field.type === "number"
-                  ? "number"
-                  : field.type === "date"
-                    ? "date"
-                    : field.type === "time"
-                      ? "time"
-                      : "text"
+                : field.type === "url"
+                  ? "url"
+                  : field.type === "number"
+                    ? "number"
+                    : field.type === "date"
+                      ? "date"
+                      : field.type === "time"
+                        ? "time"
+                        : "text"
           }
           value={value}
           onChange={(e) => onChange(e.target.value)}

@@ -22,8 +22,10 @@ interface FormField {
   sortOrder: number;
   type: string;
   label: string;
+  description: string | null;
   placeholder: string | null;
   required: boolean;
+  validation: Record<string, unknown> | null;
   options: Array<{ label: string; value: string }> | null;
 }
 
@@ -122,9 +124,17 @@ export default function PublicForm() {
     return () => { document.body.style.backgroundColor = ""; };
   }, [theme]);
 
-  const steps = form?.steps
+  const allSortedSteps = form?.steps
     ? [...form.steps].sort((a, b) => a.sortOrder - b.sortOrder)
     : [];
+  // Filter out steps that contain a completion field
+  const steps = allSortedSteps.filter(
+    (s) => !(s.fields.length > 0 && s.fields.every((f) => f.type === "completion")),
+  );
+  // Find the completion field (if any)
+  const completionField = allSortedSteps
+    .flatMap((s) => s.fields)
+    .find((f) => f.type === "completion") ?? null;
   const currentStep = steps[currentStepIndex];
   const currentFields = currentStep
     ? [...currentStep.fields].sort((a, b) => a.sortOrder - b.sortOrder)
@@ -238,6 +248,27 @@ export default function PublicForm() {
 
   // ─── Success State ─────────────────────────────────────────────────────
 
+  const completionTitle = completionField?.label || "Thank you!";
+  const completionDescription = completionField?.description || null;
+  const completionFallbackText = completionField
+    ? null
+    : "Your response has been submitted successfully.";
+  const completionRedirectUrl =
+    completionField?.validation &&
+    typeof completionField.validation.redirectUrl === "string" &&
+    completionField.validation.redirectUrl.trim()
+      ? completionField.validation.redirectUrl.trim()
+      : null;
+
+  // Redirect after 5 seconds if configured
+  useEffect(() => {
+    if (!submitted || !completionRedirectUrl) return;
+    const timer = setTimeout(() => {
+      window.location.href = completionRedirectUrl;
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [submitted, completionRedirectUrl]);
+
   if (submitted) {
     return (
       <PageShell theme={theme}>
@@ -245,10 +276,20 @@ export default function PublicForm() {
           <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-5">
             <CheckCircle2 className="h-7 w-7 text-primary" />
           </div>
-          <h2 className="text-xl font-semibold mb-2">Thank you!</h2>
-          <p className="text-sm text-muted-foreground max-w-sm">
-            Your response has been submitted successfully.
-          </p>
+          <h2 className="text-xl font-semibold mb-2">{completionTitle}</h2>
+          {completionDescription ? (
+            <div
+              className="text-sm text-muted-foreground max-w-sm prose prose-sm"
+              dangerouslySetInnerHTML={{ __html: completionDescription }}
+            />
+          ) : completionFallbackText ? (
+            <p className="text-sm text-muted-foreground max-w-sm">
+              {completionFallbackText}
+            </p>
+          ) : null}
+          {completionRedirectUrl && (
+            <p className="text-xs text-muted-foreground mt-4">Redirecting...</p>
+          )}
         </div>
       </PageShell>
     );
