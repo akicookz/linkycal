@@ -1,4 +1,4 @@
-import { CalendarCheck, FileText, CheckCircle2, XCircle, Loader, Video, Calendar, Info, Trash2 } from "lucide-react";
+import { CalendarCheck, CalendarClock, FileText, CheckCircle2, XCircle, Loader, Video, Calendar, Info, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -151,13 +151,27 @@ export function ActivityCard({
   onDelete,
   deleteLoading,
 }: ActivityCardProps) {
-  const Icon = type === "booking" ? CalendarCheck : FileText;
   const isBooking = type === "booking";
+  const isPendingBooking = isBooking && (isPending ?? status === "pending");
   const isConfirmed = status === "confirmed";
   const hasTimeInfo = !!(startTime && endTime);
   const relTime = hasTimeInfo ? getRelativeTime(startTime!, endTime!) : null;
   const showJoinCall = isConfirmed && hasTimeInfo && (relTime?.isHappening || (relTime?.isUpcoming && isWithinOneHour(startTime!)));
   const showSeeOnCalendar = isConfirmed && hasTimeInfo && !showJoinCall;
+  const Icon =
+    type === "booking"
+      ? isPendingBooking
+        ? CalendarClock
+        : CalendarCheck
+      : FileText;
+  const iconWrapperClass =
+    type === "booking" && isPendingBooking
+      ? "bg-amber-100"
+      : "bg-primary/10";
+  const iconClass =
+    type === "booking" && isPendingBooking
+      ? "text-amber-600"
+      : "text-primary";
 
   return (
     <Card
@@ -165,8 +179,8 @@ export function ActivityCard({
       onClick={onClick}
     >
       <div className="flex items-start gap-3 flex-1 min-h-0">
-        <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-          <Icon className="h-4 w-4 text-primary" />
+        <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${iconWrapperClass}`}>
+          <Icon className={`h-4 w-4 ${iconClass}`} />
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold text-foreground truncate">{name}</p>
@@ -178,7 +192,7 @@ export function ActivityCard({
         </div>
 
         {/* Status indicator */}
-        {isConfirmed && relTime ? (
+        {(isConfirmed || isPendingBooking) && relTime ? (
           <span
             className={`shrink-0 text-[11px] font-medium ${relTime.isHappening
                 ? "text-amber-600 animate-pulse"
@@ -189,17 +203,17 @@ export function ActivityCard({
           >
             {relTime.label}
           </span>
-        ) : (
+        ) : !isPendingBooking ? (
           <Badge variant={statusVariant(status)} className="shrink-0 text-[10px]">
             {status}
           </Badge>
-        )}
+        ) : null}
       </div>
 
       {/* Action buttons */}
       <div className="flex items-center gap-1.5 pt-3 mt-auto ml-12" onClick={(e) => e.stopPropagation()}>
         {/* Pending booking: Confirm + Decline */}
-        {isBooking && isPending && onConfirm && onDecline ? (
+        {isBooking && isPendingBooking && onConfirm && onDecline ? (
           <>
             <Button
               variant="default"

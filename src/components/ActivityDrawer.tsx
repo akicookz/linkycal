@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CalendarCheck, FileText, Loader, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check } from "lucide-react";
+import { CalendarCheck, CalendarClock, FileText, Loader, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -215,7 +215,6 @@ export function ActivityDrawer({
   if (!item) return null;
 
   const isBooking = item.type === "booking";
-  const Icon = isBooking ? CalendarCheck : FileText;
   const country = detail?.booking?.country ?? item.country;
   const city = detail?.booking?.city ?? item.city;
 
@@ -223,9 +222,21 @@ export function ActivityDrawer({
   const bookingStartTime = detail?.booking?.startTime ?? item.startTime;
   const bookingEndTime = detail?.booking?.endTime ?? item.endTime;
   const bookingMeetingUrl = detail?.booking?.meetingUrl ?? item.meetingUrl;
+  const bookingStatus = detail?.booking?.status ?? item.status;
+  const isPendingBooking = isBooking && bookingStatus === "pending";
+  const Icon =
+    isBooking
+      ? isPendingBooking
+        ? CalendarClock
+        : CalendarCheck
+      : FileText;
+  const iconWrapperClass =
+    isBooking && isPendingBooking ? "bg-amber-100" : "bg-primary/10";
+  const iconClass =
+    isBooking && isPendingBooking ? "text-amber-600" : "text-primary";
   const hasTimeInfo = !!(bookingStartTime && bookingEndTime);
   const relTime = hasTimeInfo ? getRelativeTime(bookingStartTime!, bookingEndTime!) : null;
-  const isConfirmed = (detail?.booking?.status ?? item.status) === "confirmed";
+  const isConfirmed = bookingStatus === "confirmed";
   const showJoinCall = isConfirmed && hasTimeInfo && (relTime?.isHappening || (relTime?.isUpcoming && isWithinOneHour(bookingStartTime!)));
   const showSeeOnCalendar = isConfirmed && hasTimeInfo && !showJoinCall;
 
@@ -244,8 +255,8 @@ export function ActivityDrawer({
       <SheetContent className="flex flex-col">
         <SheetHeader>
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-              <Icon className="h-5 w-5 text-primary" />
+            <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${iconWrapperClass}`}>
+              <Icon className={`h-5 w-5 ${iconClass}`} />
             </div>
             <div className="flex-1 min-w-0">
               <SheetTitle className="truncate">{item.name}</SheetTitle>
@@ -270,8 +281,8 @@ export function ActivityDrawer({
               </p>
             )}
 
-            {/* Relative time badge for confirmed bookings */}
-            {isBooking && isConfirmed && relTime && (
+            {/* Relative time badge for active bookings */}
+            {isBooking && (isConfirmed || isPendingBooking) && relTime && (
               <div
                 className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${relTime.isHappening
                     ? "bg-amber-50 text-amber-700"
@@ -298,7 +309,7 @@ export function ActivityDrawer({
                   <div className="flex items-start justify-between gap-3 py-2.5">
                     <div>
                       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Status</p>
-                      <Badge variant={statusVariant(detail.booking.status)}>{detail.booking.status}</Badge>
+                      <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
                     </div>
                   </div>
                   {detail.booking.notes && <CopyableField label="Notes" value={detail.booking.notes} />}
@@ -310,7 +321,7 @@ export function ActivityDrawer({
                   <div className="flex items-start justify-between gap-3 py-2.5">
                     <div>
                       <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Status</p>
-                      <Badge variant={statusVariant(item.status)}>{item.status}</Badge>
+                      <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
                     </div>
                   </div>
                 </>
@@ -380,7 +391,7 @@ export function ActivityDrawer({
         {/* Sticky action bar at bottom */}
         {!loading && (
           <div className="pt-4 mt-auto space-y-2">
-            {isBooking && item.status === "pending" && onConfirm && onDecline && (
+            {isBooking && isPendingBooking && onConfirm && onDecline && (
               <div className="flex items-center gap-2">
                 <Button
                   onClick={() => onConfirm(item.id)}
