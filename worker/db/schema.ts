@@ -598,6 +598,7 @@ export const workflowRuns = sqliteTable(
       .notNull()
       .references(() => workflows.id, { onDelete: "cascade" }),
     triggerId: text("trigger_id"),
+    context: text("context"),
     status: text("status", {
       enum: ["running", "completed", "failed"],
     })

@@ -30,7 +30,7 @@ export class WorkflowService {
     projectId: string,
     data: {
       name: string;
-      trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "tag_added" | "manual";
+      trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added" | "manual";
     },
   ) {
     const id = crypto.randomUUID();
@@ -48,7 +48,7 @@ export class WorkflowService {
     id: string,
     data: {
       name?: string;
-      trigger?: "form_submitted" | "booking_created" | "booking_cancelled" | "tag_added" | "manual";
+      trigger?: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added" | "manual";
       status?: "active" | "draft";
     },
   ) {
@@ -187,12 +187,13 @@ export class WorkflowService {
     return query;
   }
 
-  async createRun(workflowId: string, triggerId?: string) {
+  async createRun(workflowId: string, triggerId?: string, context?: string) {
     const id = crypto.randomUUID();
     await this.db.insert(dbSchema.workflowRuns).values({
       id,
       workflowId,
       triggerId: triggerId ?? null,
+      context: context ?? null,
       status: "running",
       currentStepIndex: 0,
     });

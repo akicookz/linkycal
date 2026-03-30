@@ -31,6 +31,7 @@ import {
   createWorkflowSchema,
   updateWorkflowSchema,
   createWorkflowStepSchema,
+  updateWorkflowStepSchema,
   createApiKeySchema,
   checkAvailabilitySchema,
   updateEventTypeCalendarsSchema,
@@ -53,6 +54,8 @@ import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
 import { WorkflowService } from "./services/workflow-service";
+import { WorkflowExecutionService } from "./services/workflow-execution-service";
+import type { TriggerContext } from "./services/workflow-execution-service";
 import { ApiKeyService } from "./services/api-key-service";
 
 // ─── Plan Limits ─────────────────────────────────────────────────────────────
@@ -392,6 +395,68 @@ function parseNativeFormFieldValue(
     field: { fieldId: field.id, value },
     respondentEmail: field.type === "email" && value ? value : null,
   };
+}
+
+// ─── Workflow Trigger Dispatch ───────────────────────────────────────────────
+// Called from HTTP request handlers via waitUntil(). The queue consumer NEVER
+// calls this function — this is the loop prevention contract.
+
+async function dispatchWorkflowTrigger(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  env: AppEnv,
+  projectId: string,
+  trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added",
+  context: TriggerContext,
+) {
+  const executionService = new WorkflowExecutionService(db);
+  await executionService.dispatchTrigger(projectId, trigger, context, env);
+}
+
+/**
+ * Dispatch form_submitted workflow trigger. Resolves projectId from formId.
+ */
+async function dispatchFormSubmittedTrigger(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  env: AppEnv,
+  responseId: string,
+  formId: string,
+) {
+  try {
+    const [form] = await db
+      .select({ projectId: dbSchema.forms.projectId })
+      .from(dbSchema.forms)
+      .where(eq(dbSchema.forms.id, formId))
+      .limit(1);
+    if (!form) return;
+
+    const [formResponse] = await db
+      .select({ respondentEmail: dbSchema.formResponses.respondentEmail })
+      .from(dbSchema.formResponses)
+      .where(eq(dbSchema.formResponses.id, responseId))
+      .limit(1);
+
+    const email = formResponse?.respondentEmail ?? undefined;
+
+    // Resolve or create a contact so steps like add_tag/update_contact work
+    let contactId: string | undefined;
+    if (email) {
+      const contactService = new ContactService(db);
+      const contact = await contactService.findOrCreate(form.projectId, {
+        name: email.split("@")[0],
+        email,
+      });
+      contactId = contact.id;
+    }
+
+    await dispatchWorkflowTrigger(db, env, form.projectId, "form_submitted", {
+      projectId: form.projectId,
+      formResponseId: responseId,
+      contactId,
+      contactEmail: email,
+    });
+  } catch (err) {
+    console.error("Form workflow dispatch failed:", err);
+  }
 }
 
 // ─── Form Response Email Notification (Paid Users) ──────────────────────────
@@ -999,6 +1064,32 @@ app.post("/api/v1/bookings", async (c) => {
       );
     }
 
+    // Dispatch workflow triggers for booking creation
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const contactService = new ContactService(db);
+          const contact = await contactService.findOrCreate(project.id, {
+            name: data.name,
+            email: data.email,
+          });
+          const bookingContext: TriggerContext = {
+            projectId: project.id,
+            bookingId: booking.id,
+            contactId: contact.id,
+            contactEmail: data.email,
+            contactName: data.name,
+          };
+          await dispatchWorkflowTrigger(db, c.env as AppEnv, project.id, "booking_created", bookingContext);
+          if (isPending) {
+            await dispatchWorkflowTrigger(db, c.env as AppEnv, project.id, "booking_pending", bookingContext);
+          }
+        } catch (err) {
+          console.error("Booking workflow dispatch failed:", err);
+        }
+      })(),
+    );
+
     return c.json({ booking }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -1094,10 +1185,13 @@ app.patch(
         return c.json({ error: "Response not found" }, 404);
       }
 
-      // Notify owner on completion (paid users only)
+      // Notify owner on completion (paid users only) + dispatch workflows
       if (response.status === "completed" && response.formId) {
         c.executionCtx.waitUntil(
           notifyFormResponseCompleted(db, c.env, response.id, response.formId),
+        );
+        c.executionCtx.waitUntil(
+          dispatchFormSubmittedTrigger(db, c.env as AppEnv, response.id, response.formId),
         );
       }
 
@@ -1355,10 +1449,13 @@ app.patch(
         return c.json({ error: "Response not found" }, 404);
       }
 
-      // Notify owner on completion (paid users only)
+      // Notify owner on completion (paid users only) + dispatch workflows
       if (response.status === "completed" && response.formId) {
         c.executionCtx.waitUntil(
           notifyFormResponseCompleted(db, c.env, response.id, response.formId),
+        );
+        c.executionCtx.waitUntil(
+          dispatchFormSubmittedTrigger(db, c.env as AppEnv, response.id, response.formId),
         );
       }
 
@@ -1490,6 +1587,9 @@ app.post("/api/public/forms/:slug/submit", async (c) => {
     if (latestResponse?.status === "completed" && latestResponse.formId) {
       c.executionCtx.waitUntil(
         notifyFormResponseCompleted(db, c.env, latestResponse.id, latestResponse.formId),
+      );
+      c.executionCtx.waitUntil(
+        dispatchFormSubmittedTrigger(db, c.env as AppEnv, latestResponse.id, latestResponse.formId),
       );
     }
 
@@ -2402,6 +2502,29 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
       })(),
     );
 
+    // Dispatch booking_cancelled workflow trigger
+    const projectId = c.req.param("projectId");
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const contactService = new ContactService(db);
+          const contact = await contactService.findOrCreate(projectId, {
+            name: booking.name,
+            email: booking.email,
+          });
+          await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_cancelled", {
+            projectId,
+            bookingId: id,
+            contactId: contact.id,
+            contactEmail: booking.email,
+            contactName: booking.name,
+          });
+        } catch (err) {
+          console.error("Booking cancel workflow dispatch failed:", err);
+        }
+      })(),
+    );
+
     return c.json({ booking });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -2592,6 +2715,29 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
           });
         } catch (err) {
           console.error("Confirmation email failed:", err);
+        }
+      })(),
+    );
+
+    // Dispatch booking_confirmed workflow trigger
+    const projectId = c.req.param("projectId");
+    c.executionCtx.waitUntil(
+      (async () => {
+        try {
+          const contactService = new ContactService(db);
+          const contact = await contactService.findOrCreate(projectId, {
+            name: booking.name,
+            email: booking.email,
+          });
+          await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_confirmed", {
+            projectId,
+            bookingId: id,
+            contactId: contact.id,
+            contactEmail: booking.email,
+            contactName: booking.name,
+          });
+        } catch (err) {
+          console.error("Booking confirm workflow dispatch failed:", err);
         }
       })(),
     );
@@ -3161,6 +3307,16 @@ app.post("/api/projects/:projectId/contacts/:contactId/tags", async (c) => {
     const service = new ContactService(db);
     await service.addTag(contactId, tagId);
 
+    // Dispatch tag_added workflow trigger
+    const projectId = c.req.param("projectId");
+    c.executionCtx.waitUntil(
+      dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
+        projectId,
+        contactId,
+        tagId,
+      }),
+    );
+
     return c.json({ success: true }, 201);
   } catch (err) {
     console.error("Tag assignment error:", err);
@@ -3360,10 +3516,11 @@ app.put(
     try {
       const id = c.req.param("id");
       const body = await c.req.json();
+      const data = validate(updateWorkflowStepSchema, body);
 
       const db = c.get("db");
       const service = new WorkflowService(db);
-      const step = await service.updateStep(id, body);
+      const step = await service.updateStep(id, data);
 
       if (!step) {
         return c.json({ error: "Step not found" }, 404);
@@ -3410,6 +3567,51 @@ app.get("/api/projects/:projectId/workflows/:workflowId/runs", async (c) => {
     return c.json({ error: "Failed to fetch workflow runs" }, 500);
   }
 });
+
+// Manually trigger a workflow
+app.post(
+  "/api/projects/:projectId/workflows/:workflowId/trigger",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const workflowId = c.req.param("workflowId");
+
+      const db = c.get("db");
+      const service = new WorkflowService(db);
+      const workflow = await service.getById(workflowId);
+
+      if (!workflow) {
+        return c.json({ error: "Workflow not found" }, 404);
+      }
+
+      if (workflow.trigger !== "manual") {
+        return c.json({ error: "Only manual-trigger workflows can be triggered via this endpoint" }, 400);
+      }
+
+      if (workflow.status !== "active") {
+        return c.json({ error: "Workflow must be active to trigger" }, 400);
+      }
+
+      // Optional body with contactId
+      let contactId: string | undefined;
+      try {
+        const body = await c.req.json();
+        contactId = body?.contactId;
+      } catch {
+        // No body is fine
+      }
+
+      const context: TriggerContext = { projectId, contactId };
+      const executionService = new WorkflowExecutionService(db);
+      await executionService.dispatchTrigger(projectId, "manual", context, c.env as AppEnv);
+
+      return c.json({ success: true }, 201);
+    } catch (err) {
+      console.error("Manual workflow trigger error:", err);
+      return c.json({ error: "Failed to trigger workflow" }, 500);
+    }
+  },
+);
 
 // ─── API Keys ────────────────────────────────────────────────────────────────
 
@@ -4098,20 +4300,22 @@ export default {
   },
 
   async queue(
-    batch: MessageBatch<{ workflowRunId: string; stepIndex: number }>,
+    batch: MessageBatch<{ workflowRunId: string; stepIndex: number; remainingDelay?: number }>,
+    env: import("./types").AppEnv,
   ) {
+    const db = drizzle(env.DB, { schema });
+    const executionService = new WorkflowExecutionService(db);
+
     for (const message of batch.messages) {
       try {
-        const { workflowRunId, stepIndex } = message.body;
-        // TODO: Execute workflow step
-        // 1. Load workflow run + step config
-        // 2. Execute step action (send_email, add_tag, etc.)
-        // 3. Update workflow run progress
-        // 4. If more steps, enqueue next step
-        // 5. If done, mark run as completed
-        console.log(
-          `Processing workflow run ${workflowRunId} step ${stepIndex}`,
-        );
+        const { workflowRunId, stepIndex, remainingDelay } = message.body;
+
+        // If this is a chained wait (delay > 12h), re-enqueue without executing
+        if (remainingDelay !== undefined && remainingDelay > 0) {
+          await executionService.continueWait(workflowRunId, stepIndex, remainingDelay, env);
+        } else {
+          await executionService.executeStep(workflowRunId, stepIndex, env);
+        }
         message.ack();
       } catch (err) {
         console.error("Workflow step failed:", err);

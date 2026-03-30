@@ -321,6 +321,8 @@ export const createWorkflowSchema = z.object({
     "form_submitted",
     "booking_created",
     "booking_cancelled",
+    "booking_pending",
+    "booking_confirmed",
     "tag_added",
     "manual",
   ]),
@@ -333,6 +335,8 @@ export const updateWorkflowSchema = z.object({
       "form_submitted",
       "booking_created",
       "booking_cancelled",
+      "booking_pending",
+      "booking_confirmed",
       "tag_added",
       "manual",
     ])
@@ -340,18 +344,26 @@ export const updateWorkflowSchema = z.object({
   status: z.enum(["active", "draft"]).optional(),
 });
 
+const workflowStepTypeEnum = z.enum([
+  "send_email",
+  "add_tag",
+  "remove_tag",
+  "wait",
+  "condition",
+  "webhook",
+  "update_contact",
+]);
+
 export const createWorkflowStepSchema = z.object({
   sortOrder: z.number().int().min(0).default(0),
-  type: z.enum([
-    "send_email",
-    "add_tag",
-    "remove_tag",
-    "wait",
-    "condition",
-    "webhook",
-    "update_contact",
-  ]),
+  type: workflowStepTypeEnum,
   config: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const updateWorkflowStepSchema = z.object({
+  sortOrder: z.number().int().min(0).optional(),
+  type: workflowStepTypeEnum.optional(),
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 // ─── API Keys ────────────────────────────────────────────────────────────────
