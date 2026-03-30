@@ -65,6 +65,35 @@ export function defaultDayConfigs(): DayAvailabilityConfig[] {
   }));
 }
 
+export function normalizeTimeValue(time: string): string {
+  const trimmedTime = time.trim();
+
+  if (trimmedTime === "24:00" || trimmedTime === "24:00:00") {
+    return "24:00";
+  }
+
+  const match = trimmedTime.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return trimmedTime;
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+    return trimmedTime;
+  }
+
+  if (hours === 24 && minutes === 0) {
+    return "24:00";
+  }
+
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return trimmedTime;
+  }
+
+  return `${hours.toString().padStart(2, "0")}:${minutes
+    .toString()
+    .padStart(2, "0")}`;
+}
+
 export function parseTimeToMinutes(time: string): number {
   if (time === "24:00") return MINUTES_PER_DAY;
 
@@ -97,6 +126,15 @@ export function getTimeOptions(params: {
   });
 }
 
+export function getTimeOptionLabel(time: string): string {
+  const normalizedTime = normalizeTimeValue(time);
+
+  return (
+    END_TIME_OPTIONS.find((option) => option.value === normalizedTime)?.label ??
+    normalizedTime
+  );
+}
+
 export function rulesToDayConfigs(
   rules: AvailabilityRuleValue[],
 ): DayAvailabilityConfig[] {
@@ -110,8 +148,8 @@ export function rulesToDayConfigs(
     if (dayIndex === null) continue;
 
     configs[dayIndex].blocks.push({
-      startTime: rule.startTime,
-      endTime: rule.endTime,
+      startTime: normalizeTimeValue(rule.startTime),
+      endTime: normalizeTimeValue(rule.endTime),
     });
   }
 
@@ -141,8 +179,8 @@ export function dayConfigsToRules(
       )
       .map((block) => ({
         dayOfWeek,
-        startTime: block.startTime,
-        endTime: block.endTime,
+        startTime: normalizeTimeValue(block.startTime),
+        endTime: normalizeTimeValue(block.endTime),
       }));
   });
 }

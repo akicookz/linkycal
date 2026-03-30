@@ -12,8 +12,10 @@ import { Switch } from "@/components/ui/switch";
 import {
   createDefaultAvailabilityBlock,
   type DayAvailabilityConfig,
+  getTimeOptionLabel,
   getTimeOptions,
   minutesToTime,
+  normalizeTimeValue,
   parseTimeToMinutes,
   WEEKDAY_LABELS,
 } from "@/lib/availability";
@@ -139,6 +141,8 @@ export function WeeklyAvailabilityEditor({
             {dayConfig.enabled ? (
               <div className="flex-1 space-y-2">
                 {dayConfig.blocks.map((block, blockIndex) => {
+                  const normalizedStartValue = normalizeTimeValue(block.startTime);
+                  const normalizedEndValue = normalizeTimeValue(block.endTime);
                   const startOptions = getTimeOptions({
                     minMinutes: getMinStartMinutes(dayConfig.blocks, blockIndex),
                     maxMinutes: getMaxStartMinutes(
@@ -154,6 +158,14 @@ export function WeeklyAvailabilityEditor({
                     maxMinutes: getMaxEndMinutes(dayConfig.blocks, blockIndex),
                     includeMidnight: true,
                   });
+                  const resolvedStartOptions = ensureCurrentTimeOption(
+                    startOptions,
+                    normalizedStartValue,
+                  );
+                  const resolvedEndOptions = ensureCurrentTimeOption(
+                    endOptions,
+                    normalizedEndValue,
+                  );
                   const isLastBlock =
                     blockIndex === dayConfig.blocks.length - 1;
                   const canAddAnotherBlock =
@@ -166,8 +178,8 @@ export function WeeklyAvailabilityEditor({
                       className="flex items-center gap-2"
                     >
                       <TimeSelect
-                        value={block.startTime}
-                        options={startOptions}
+                        value={normalizedStartValue}
+                        options={resolvedStartOptions}
                         onValueChange={(value) =>
                           handleUpdateBlock(dayIndex, blockIndex, "startTime", value)
                         }
@@ -175,8 +187,8 @@ export function WeeklyAvailabilityEditor({
                       />
                       <span className="text-sm text-muted-foreground">to</span>
                       <TimeSelect
-                        value={block.endTime}
-                        options={endOptions}
+                        value={normalizedEndValue}
+                        options={resolvedEndOptions}
                         onValueChange={(value) =>
                           handleUpdateBlock(dayIndex, blockIndex, "endTime", value)
                         }
@@ -247,6 +259,26 @@ function TimeSelect(props: {
         ))}
       </SelectContent>
     </Select>
+  );
+}
+
+function ensureCurrentTimeOption(
+  options: Array<{ value: string; label: string }>,
+  currentValue: string,
+): Array<{ value: string; label: string }> {
+  if (options.some((option) => option.value === currentValue)) {
+    return options;
+  }
+
+  return [
+    ...options,
+    {
+      value: currentValue,
+      label: getTimeOptionLabel(currentValue),
+    },
+  ].sort(
+    (left, right) =>
+      parseTimeToMinutes(left.value) - parseTimeToMinutes(right.value),
   );
 }
 

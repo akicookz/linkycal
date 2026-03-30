@@ -134,6 +134,14 @@ function generateSlug(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
+function normalizeDurationValue(duration: number): number {
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return defaultFormData.duration;
+  }
+
+  return Math.round(duration);
+}
+
 const defaultFormData: EventTypeFormData = {
   name: "",
   slug: "",
@@ -160,6 +168,7 @@ export default function EventTypeForm() {
   // Form state
   const [formData, setFormData] = useState<EventTypeFormData>(defaultFormData);
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false);
+  const [selectRenderVersion, setSelectRenderVersion] = useState(0);
 
   // Availability state
   const [dayConfigs, setDayConfigs] = useState<DayAvailabilityConfig[]>(
@@ -270,6 +279,13 @@ export default function EventTypeForm() {
     setBusyCalendars(calendarConfig.busyCalendars);
   }, [calendarConfig]);
 
+  const durationOptions = useMemo(() => {
+    const nextOptions = new Set(DURATION_OPTIONS);
+    nextOptions.add(normalizeDurationValue(formData.duration));
+
+    return Array.from(nextOptions).sort((left, right) => left - right);
+  }, [formData.duration]);
+
   // Populate form from fetched data (useLayoutEffect to set state before paint,
   // preventing Radix Select from briefly rendering with stale default values)
   useLayoutEffect(() => {
@@ -278,7 +294,7 @@ export default function EventTypeForm() {
     setFormData({
       name: et.name,
       slug: et.slug,
-      duration: et.duration,
+      duration: normalizeDurationValue(et.duration),
       description: et.description ?? "",
       location: et.location ?? "",
       color: et.color,
@@ -296,6 +312,7 @@ export default function EventTypeForm() {
     if (eventTypeData.rules) {
       setDayConfigs(rulesToDayConfigs(eventTypeData.rules));
     }
+    setSelectRenderVersion((current) => current + 1);
   }, [eventTypeData]);
 
   // Auto-generate slug from name (only for new event types)
@@ -331,6 +348,7 @@ export default function EventTypeForm() {
     if (copySourceData.rules) {
       setDayConfigs(rulesToDayConfigs(copySourceData.rules));
     }
+    setSelectRenderVersion((current) => current + 1);
   }, [copySourceData]);
 
   // Fetch source event type for copy-availability dialog (edit mode)
@@ -359,6 +377,7 @@ export default function EventTypeForm() {
     if (copyAvailabilityData.rules) {
       setDayConfigs(rulesToDayConfigs(copyAvailabilityData.rules));
     }
+    setSelectRenderVersion((current) => current + 1);
     setCopyAvailabilityOpen(false);
     setCopyAvailabilitySourceId("");
   }
@@ -769,6 +788,7 @@ export default function EventTypeForm() {
                 <div className="space-y-2">
                   <Label htmlFor="duration">Duration</Label>
                   <Select
+                    key={`duration-${selectRenderVersion}`}
                     value={String(formData.duration)}
                     onValueChange={(val) =>
                       setFormData((prev) => ({
@@ -781,7 +801,7 @@ export default function EventTypeForm() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {DURATION_OPTIONS.map((d) => (
+                      {durationOptions.map((d) => (
                         <SelectItem key={d} value={String(d)}>
                           {d} minutes
                         </SelectItem>
@@ -1112,6 +1132,7 @@ export default function EventTypeForm() {
 
               <div className="space-y-3">
                 <WeeklyAvailabilityEditor
+                  key={`availability-${selectRenderVersion}`}
                   dayConfigs={dayConfigs}
                   onChange={setDayConfigs}
                   disabled={isSaving}
