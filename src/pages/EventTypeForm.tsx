@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -10,6 +10,8 @@ import {
   Trash2,
   Clock,
   CalendarOff,
+  Copy,
+  Check,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -168,6 +170,10 @@ export default function EventTypeForm() {
   // Copy from state (for new event types)
   const [copyFromId, setCopyFromId] = useState<string>("");
 
+  // Copy availability state (for editing)
+  const [copyAvailabilityOpen, setCopyAvailabilityOpen] = useState(false);
+  const [copyAvailabilitySourceId, setCopyAvailabilitySourceId] = useState("");
+
   // Override dialog state
   const [overrideDialogOpen, setOverrideDialogOpen] = useState(false);
   const [overrideDate, setOverrideDate] = useState("");
@@ -264,8 +270,9 @@ export default function EventTypeForm() {
     setBusyCalendars(calendarConfig.busyCalendars);
   }, [calendarConfig]);
 
-  // Populate form from fetched data
-  useEffect(() => {
+  // Populate form from fetched data (useLayoutEffect to set state before paint,
+  // preventing Radix Select from briefly rendering with stale default values)
+  useLayoutEffect(() => {
     if (!eventTypeData) return;
     const et = eventTypeData.eventType;
     setFormData({
@@ -325,6 +332,36 @@ export default function EventTypeForm() {
       setDayConfigs(rulesToDayConfigs(copySourceData.rules));
     }
   }, [copySourceData]);
+
+  // Fetch source event type for copy-availability dialog (edit mode)
+  const { data: copyAvailabilityData, isFetching: isFetchingCopyAvailability } = useQuery<{
+    eventType: EventType;
+    schedule: Schedule | null;
+    rules: AvailabilityRule[];
+    overrides: ScheduleOverride[];
+  }>({
+    queryKey: ["projects", projectId, "event-types", copyAvailabilitySourceId, "full"],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/event-types/${copyAvailabilitySourceId}`,
+      );
+      if (!res.ok) throw new Error("Failed to fetch source event type");
+      return res.json();
+    },
+    enabled: !!copyAvailabilitySourceId && isEditing,
+  });
+
+  function applyCopiedAvailability() {
+    if (!copyAvailabilityData) return;
+    if (copyAvailabilityData.schedule) {
+      setTimezone(copyAvailabilityData.schedule.timezone);
+    }
+    if (copyAvailabilityData.rules) {
+      setDayConfigs(rulesToDayConfigs(copyAvailabilityData.rules));
+    }
+    setCopyAvailabilityOpen(false);
+    setCopyAvailabilitySourceId("");
+  }
 
   // Create mutation
   const createMutation = useMutation({
@@ -1039,11 +1076,22 @@ export default function EventTypeForm() {
         <div className="space-y-6">
           {/* Available Times */}
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base">
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 Available Times
               </CardTitle>
+              {isEditing && copyableEventTypes.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCopyAvailabilityOpen(true)}
+                >
+                  <Copy className="h-4 w-4" />
+                  Copy from
+                </Button>
+              )}
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
@@ -1246,6 +1294,76 @@ export default function EventTypeForm() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Copy Availability Dialog */}
+      <Dialog
+        open={copyAvailabilityOpen}
+        onOpenChange={(open) => {
+          setCopyAvailabilityOpen(open);
+          if (!open) setCopyAvailabilitySourceId("");
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy Availability</DialogTitle>
+            <DialogDescription>
+              Replace current availability rules with rules from another event
+              type. This creates an independent copy.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Copy from</Label>
+              <Select
+                value={copyAvailabilitySourceId || "__none__"}
+                onValueChange={(val) =>
+                  setCopyAvailabilitySourceId(val === "__none__" ? "" : val)
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select an event type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__" disabled>
+                    Select an event type
+                  </SelectItem>
+                  {copyableEventTypes.map((et) => (
+                    <SelectItem key={et.id} value={et.id}>
+                      {et.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setCopyAvailabilityOpen(false);
+                setCopyAvailabilitySourceId("");
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={!copyAvailabilitySourceId || !copyAvailabilityData || isFetchingCopyAvailability}
+              onClick={applyCopiedAvailability}
+            >
+              {isFetchingCopyAvailability ? (
+                <Loader className="h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="h-4 w-4" />
+              )}
+              Apply
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
