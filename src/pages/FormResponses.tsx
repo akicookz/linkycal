@@ -145,11 +145,18 @@ export default function FormResponses() {
     (r) => r.status === "abandoned"
   ).length;
 
+  function extractName(response: FormResponse): string {
+    const nameField = response.values?.find((v) =>
+      v.fieldLabel.toLowerCase().includes("name") && v.fieldType === "text" && v.value
+    );
+    return nameField?.value ?? response.respondentEmail ?? "Anonymous";
+  }
+
   function toDrawerItem(response: FormResponse) {
     return {
       id: response.id,
       type: "form_response" as const,
-      name: response.respondentEmail ?? "Anonymous",
+      name: extractName(response),
       email: response.respondentEmail ?? "",
       title: form?.name ?? "Form",
       status: response.status,
@@ -328,7 +335,7 @@ export default function FormResponses() {
             <ActivityCard
               key={response.id}
               type="form_response"
-              name={response.respondentEmail ?? "Anonymous"}
+              name={extractName(response)}
               email={response.respondentEmail ?? ""}
               title={form?.name ?? "Form"}
               status={response.status}

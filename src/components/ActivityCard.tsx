@@ -47,6 +47,16 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
   const start = new Date(startTime).getTime();
   const end = new Date(endTime).getTime();
 
+  const timeStr = new Date(startTime).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  const dateStr = new Date(startTime).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
+
   if (now >= start && now <= end) {
     return { label: "happening now", isHappening: true, isUpcoming: false, isPast: false };
   }
@@ -59,10 +69,10 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
 
     let label: string;
     if (diffMin < 1) label = "in less than a minute";
-    else if (diffMin < 60) label = `in ${diffMin} min`;
-    else if (diffHours < 24) label = `in ${diffHours}h`;
-    else if (diffDays === 1) label = "tomorrow";
-    else label = `in ${diffDays} days`;
+    else if (diffMin < 60) label = `${timeStr} (in ${diffMin} min)`;
+    else if (diffHours < 24) label = `${timeStr} (in ${diffHours}h)`;
+    else if (diffDays === 1) label = `tomorrow, ${timeStr}`;
+    else label = `${dateStr}, ${timeStr}`;
 
     return { label, isHappening: false, isUpcoming: true, isPast: false };
   }
@@ -70,13 +80,10 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
   const diffMs = now - end;
   const diffMin = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
 
   let label: string;
-  if (diffMin < 60) label = `${diffMin}m ago`;
-  else if (diffHours < 24) label = `${diffHours}h ago`;
-  else if (diffDays === 1) label = "yesterday";
-  else label = `${diffDays}d ago`;
+  if (diffMin < 60) label = `${timeStr} (${diffMin}m ago)`;
+  else label = `${timeStr} (${diffHours}h ago)`;
 
   return { label, isHappening: false, isUpcoming: false, isPast: true };
 }

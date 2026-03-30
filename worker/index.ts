@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, like, sql, gte, inArray } from "drizzle-orm";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
@@ -3983,7 +3983,12 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       })
       .from(dbSchema.bookings)
       .innerJoin(dbSchema.eventTypes, eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id))
-      .where(eq(dbSchema.eventTypes.projectId, projectId))
+      .where(
+        and(
+          eq(dbSchema.eventTypes.projectId, projectId),
+          gte(dbSchema.bookings.endTime, sql`(unixepoch() - 86400)`)
+        )
+      )
       .orderBy(desc(dbSchema.bookings.createdAt))
       .limit(10);
 
@@ -4000,9 +4005,41 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       })
       .from(dbSchema.formResponses)
       .innerJoin(dbSchema.forms, eq(dbSchema.formResponses.formId, dbSchema.forms.id))
-      .where(eq(dbSchema.forms.projectId, projectId))
+      .where(
+        and(
+          eq(dbSchema.forms.projectId, projectId),
+          gte(dbSchema.formResponses.createdAt, sql`(unixepoch() - 86400)`)
+        )
+      )
       .orderBy(desc(dbSchema.formResponses.createdAt))
       .limit(10);
+
+    // Extract names from form field values for form responses
+    const responseIds = responses.map((r) => r.id);
+    const nameValues = responseIds.length
+      ? await db
+          .select({
+            responseId: dbSchema.formFieldValues.responseId,
+            value: dbSchema.formFieldValues.value,
+            sortOrder: dbSchema.formFields.sortOrder,
+          })
+          .from(dbSchema.formFieldValues)
+          .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+          .where(
+            and(
+              inArray(dbSchema.formFieldValues.responseId, responseIds),
+              like(dbSchema.formFields.label, "%name%"),
+              eq(dbSchema.formFields.type, "text")
+            )
+          )
+      : [];
+    // Group by responseId and concatenate name parts (e.g. "First Name" + "Last Name")
+    const nameByResponseId = new Map<string, string>();
+    for (const row of nameValues.sort((a, b) => a.sortOrder - b.sortOrder)) {
+      if (!row.value) continue;
+      const existing = nameByResponseId.get(row.responseId);
+      nameByResponseId.set(row.responseId, existing ? `${existing} ${row.value}` : row.value);
+    }
 
     const items = [
       ...bookings.map((b) => ({
@@ -4011,7 +4048,7 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       })),
       ...responses.map((r) => ({
         type: "form_response" as const, ...r,
-        name: r.respondentEmail ?? "Anonymous",
+        name: nameByResponseId.get(r.id) ?? r.respondentEmail ?? "Anonymous",
         email: r.respondentEmail ?? "",
         title: r.formName,
       })),
