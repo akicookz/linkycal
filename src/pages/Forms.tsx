@@ -12,7 +12,6 @@ import {
   Check,
   BarChart3,
   MoreHorizontal,
-  Code,
 } from "lucide-react";
 import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
@@ -428,6 +427,13 @@ export default function Forms() {
                         onClick: () => handleCopyEmbedPrompt(form),
                         copied: copiedId === `embedprompt-${form.id}`,
                       },
+                      {
+                        id: `embed-${form.id}`,
+                        label: "Embed Script",
+                        description: "Copy the embed script tag to clipboard",
+                        onClick: () => handleCopyEmbed(form),
+                        copied: copiedId === `embed-${form.id}`,
+                      },
                     ]}
                   />
 
@@ -435,14 +441,10 @@ export default function Forms() {
                     variant="ghost"
                     size="sm"
                     className="h-8 px-2.5 text-xs"
-                    onClick={() => handleCopyEmbed(form)}
+                    onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}/responses`)}
                   >
-                    {copiedId === `embed-${form.id}` ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <Code className="h-3.5 w-3.5" />
-                    )}
-                    {copiedId === `embed-${form.id}` ? "Copied" : "Embed"}
+                    <BarChart3 className="h-3.5 w-3.5" />
+                    Responses
                   </Button>
 
                   <div className="flex-1" />
@@ -454,13 +456,6 @@ export default function Forms() {
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent align="end" className="w-40 p-1.5">
-                      <button
-                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
-                        onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}/responses`)}
-                      >
-                        <BarChart3 className="h-3.5 w-3.5" />
-                        Responses
-                      </button>
                       <button
                         className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
                         onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}`)}
