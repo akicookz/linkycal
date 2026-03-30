@@ -103,6 +103,25 @@ interface EventTypeFormData {
   bookingFormId: string | null;
 }
 
+interface CalendarConnectionCalendar {
+  id: string;
+  summary: string;
+  primary: boolean;
+  accessRole: string;
+}
+
+interface CalendarConnectionAccount {
+  connectionId: string;
+  email: string;
+  calendars: CalendarConnectionCalendar[];
+}
+
+interface CalendarDestinationOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
@@ -140,6 +159,14 @@ function normalizeDurationValue(duration: number): number {
   }
 
   return Math.round(duration);
+}
+
+function formatCalendarOptionLabel(
+  calendar: CalendarConnectionCalendar,
+  accountEmail: string,
+  totalAccounts: number,
+): string {
+  return `${calendar.summary}${totalAccounts > 1 ? ` (${accountEmail})` : ""}`;
 }
 
 const defaultFormData: EventTypeFormData = {
@@ -244,11 +271,7 @@ export default function EventTypeForm() {
 
   // Fetch connected calendar accounts
   const { data: calendarAccounts } = useQuery<{
-    accounts: Array<{
-      connectionId: string;
-      email: string;
-      calendars: Array<{ id: string; summary: string; primary: boolean; accessRole: string }>;
-    }>;
+    accounts: CalendarConnectionAccount[];
   }>({
     queryKey: ["calendar-accounts"],
     queryFn: async () => {
@@ -278,6 +301,79 @@ export default function EventTypeForm() {
     setDestinationCalendar(calendarConfig.destination);
     setBusyCalendars(calendarConfig.busyCalendars);
   }, [calendarConfig]);
+
+  const calendarAccountList = calendarAccounts?.accounts ?? [];
+  const selectedDestinationValue = destinationCalendar
+    ? `${destinationCalendar.connectionId}::${destinationCalendar.calendarId}`
+    : "";
+  const writableDestinationOptions = useMemo<CalendarDestinationOption[]>(
+    () =>
+      calendarAccountList.flatMap((account) =>
+        account.calendars
+          .filter((calendar) => calendar.accessRole === "writer" || calendar.accessRole === "owner")
+          .map((calendar) => ({
+            value: `${account.connectionId}::${calendar.id}`,
+            label: formatCalendarOptionLabel(
+              calendar,
+              account.email,
+              calendarAccountList.length,
+            ),
+          })),
+      ),
+    [calendarAccountList],
+  );
+  const allDestinationOptions = useMemo<CalendarDestinationOption[]>(
+    () =>
+      calendarAccountList.flatMap((account) =>
+        account.calendars.map((calendar) => ({
+          value: `${account.connectionId}::${calendar.id}`,
+          label: formatCalendarOptionLabel(
+            calendar,
+            account.email,
+            calendarAccountList.length,
+          ),
+        })),
+      ),
+    [calendarAccountList],
+  );
+  const resolvedDestinationOptions = useMemo<CalendarDestinationOption[]>(() => {
+    if (!selectedDestinationValue) {
+      return writableDestinationOptions;
+    }
+
+    if (
+      writableDestinationOptions.some(
+        (option) => option.value === selectedDestinationValue,
+      )
+    ) {
+      return writableDestinationOptions;
+    }
+
+    const savedOption = allDestinationOptions.find(
+      (option) => option.value === selectedDestinationValue,
+    );
+
+    return [
+      {
+        value: selectedDestinationValue,
+        label: savedOption
+          ? `${savedOption.label} (currently unavailable for writing)`
+          : `${destinationCalendar?.calendarId ?? "Saved calendar"} (currently unavailable)`,
+        disabled: true,
+      },
+      ...writableDestinationOptions,
+    ];
+  }, [
+    allDestinationOptions,
+    destinationCalendar?.calendarId,
+    selectedDestinationValue,
+    writableDestinationOptions,
+  ]);
+  const selectedDestinationLabel =
+    resolvedDestinationOptions.find(
+      (option) => option.value === selectedDestinationValue,
+    )?.label ?? null;
+  const destinationSelectKey = `destination-${selectedDestinationValue || "none"}-${calendarAccountList.length}-${allDestinationOptions.length}`;
 
   const durationOptions = useMemo(() => {
     const nextOptions = new Set(DURATION_OPTIONS);
@@ -482,7 +578,7 @@ export default function EventTypeForm() {
   });
 
   async function saveCalendarConfig(etId: string) {
-    await fetch(`/api/projects/${projectId}/event-types/${etId}/calendars`, {
+    const res = await fetch(`/api/projects/${projectId}/event-types/${etId}/calendars`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -490,6 +586,13 @@ export default function EventTypeForm() {
         busyCalendars,
       }),
     });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(
+        err.error || "Failed to save calendar destination settings",
+      );
+    }
   }
 
   async function saveAvailability(scheduleId: string) {
@@ -955,7 +1058,8 @@ export default function EventTypeForm() {
                   <div className="space-y-2">
                     <Label>Write new events to</Label>
                     <Select
-                      value={destinationCalendar ? `${destinationCalendar.connectionId}::${destinationCalendar.calendarId}` : ""}
+                      key={destinationSelectKey}
+                      value={selectedDestinationValue}
                       onValueChange={(val) => {
                         if (!val) {
                           setDestinationCalendar(null);
@@ -966,21 +1070,20 @@ export default function EventTypeForm() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a calendar" />
+                        <SelectValue placeholder="Select a calendar">
+                          {selectedDestinationLabel}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
-                        {calendarAccounts.accounts.flatMap((account) =>
-                          account.calendars
-                            .filter((cal) => cal.accessRole === "writer" || cal.accessRole === "owner")
-                            .map((cal) => (
-                              <SelectItem
-                                key={`${account.connectionId}::${cal.id}`}
-                                value={`${account.connectionId}::${cal.id}`}
-                              >
-                                {cal.summary}{calendarAccounts.accounts.length > 1 ? ` (${account.email})` : ""}
-                              </SelectItem>
-                            )),
-                        )}
+                        {resolvedDestinationOptions.map((option) => (
+                          <SelectItem
+                            key={option.value}
+                            value={option.value}
+                            disabled={option.disabled}
+                          >
+                            {option.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -53,6 +53,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useSession } from "@/lib/auth-client";
 import { queryClient } from "@/lib/query-client";
 import {
   generateFormApiPrompt,
@@ -141,12 +142,34 @@ interface NativeActionSettings {
 
 interface FormSettings {
   nativeAction?: NativeActionSettings;
+  responseNotificationEmail?: string;
+}
+
+interface CalendarConnectionAccount {
+  connectionId: string;
+  email: string;
+  calendars: Array<{
+    id: string;
+    summary: string;
+    primary: boolean;
+    accessRole: string;
+  }>;
+}
+
+interface NotificationDestinationOption {
+  value: string;
+  label: string;
 }
 
 const DEFAULT_NATIVE_SUCCESS_MESSAGE = "Your response has been submitted successfully.";
+const DEFAULT_RESPONSE_NOTIFICATION_DESTINATION = "__owner__";
 const STEP_CANVAS_DROPPABLE_ID_PREFIX = "step-canvas:";
 const STEP_DROP_TARGET_ID_PREFIX = "step-drop-target:";
 const NEW_STEP_DROP_TARGET_ID = "step-drop-target:new";
+
+function isValidEmailAddress(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
 
 // ─── Field Type Definitions ──────────────────────────────────────────────────
 
@@ -416,6 +439,7 @@ export default function FormBuilder() {
     formId: string;
   }>();
   const navigate = useNavigate();
+  const { data: session } = useSession();
 
   const [activeStepId, setActiveStepId] = useState<string | null>(null);
   // Local options state for auto-save (keyed by field ID)
@@ -503,6 +527,17 @@ export default function FormBuilder() {
     },
     enabled: !!projectId,
   });
+  const { data: calendarAccounts } = useQuery<{
+    accounts: CalendarConnectionAccount[];
+  }>({
+    queryKey: ["calendar-accounts"],
+    queryFn: async () => {
+      const res = await fetch("/api/calendar/calendars");
+      if (!res.ok) throw new Error("Failed to fetch calendars");
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
 
   const {
     data: formData,
@@ -531,6 +566,12 @@ export default function FormBuilder() {
     form?.settings && typeof form.settings === "object"
       ? (form.settings as FormSettings)
       : {};
+  const ownerEmail = session?.user?.email?.trim() ?? "";
+  const responseNotificationEmail =
+    typeof formSettings.responseNotificationEmail === "string" &&
+    isValidEmailAddress(formSettings.responseNotificationEmail.trim())
+      ? formSettings.responseNotificationEmail.trim()
+      : "";
   const nativeActionSettings = {
     successMode:
       formSettings.nativeAction?.successMode === "redirect"
@@ -546,6 +587,48 @@ export default function FormBuilder() {
         ? formSettings.nativeAction.redirectUrl
         : "",
   } as const;
+  const responseNotificationDestinationValue =
+    responseNotificationEmail && responseNotificationEmail !== ownerEmail
+      ? responseNotificationEmail
+      : DEFAULT_RESPONSE_NOTIFICATION_DESTINATION;
+  const responseNotificationOptions = useMemo<NotificationDestinationOption[]>(
+    () => {
+      const seenEmails = new Set<string>();
+      const options: NotificationDestinationOption[] = [
+        {
+          value: DEFAULT_RESPONSE_NOTIFICATION_DESTINATION,
+          label: ownerEmail
+            ? `${ownerEmail} (default)`
+            : "Project owner email (default)",
+        },
+      ];
+
+      if (ownerEmail) {
+        seenEmails.add(ownerEmail);
+      }
+
+      for (const account of calendarAccounts?.accounts ?? []) {
+        const email = account.email.trim();
+        if (!email || seenEmails.has(email)) continue;
+        seenEmails.add(email);
+        options.push({ value: email, label: email });
+      }
+
+      if (
+        responseNotificationEmail &&
+        responseNotificationEmail !== ownerEmail &&
+        !seenEmails.has(responseNotificationEmail)
+      ) {
+        options.push({
+          value: responseNotificationEmail,
+          label: `${responseNotificationEmail} (saved)`,
+        });
+      }
+
+      return options;
+    },
+    [calendarAccounts?.accounts, ownerEmail, responseNotificationEmail],
+  );
   const hasFileFields = steps.some((step) =>
     step.fields.some((field) => field.type === "file")
   );
@@ -1069,21 +1152,51 @@ export default function FormBuilder() {
   }
 
   function buildUpdatedFormSettings(
-    patch: Partial<NativeActionSettings>,
+    patch: Partial<FormSettings>,
   ): FormSettings {
-    return {
+    const nextSettings: FormSettings = {
       ...formSettings,
-      nativeAction: {
-        ...formSettings.nativeAction,
-        ...patch,
-      },
+      ...patch,
+      nativeAction:
+        formSettings.nativeAction || patch.nativeAction
+          ? {
+              ...formSettings.nativeAction,
+              ...patch.nativeAction,
+            }
+          : undefined,
     };
+
+    if (!nextSettings.nativeAction) {
+      delete nextSettings.nativeAction;
+    }
+
+    if (!nextSettings.responseNotificationEmail) {
+      delete nextSettings.responseNotificationEmail;
+    }
+
+    return nextSettings;
   }
+
+  const handleResponseNotificationDestinationChange = useCallback(
+    (value: string) => {
+      updateFormMutation.mutate({
+        settings: buildUpdatedFormSettings({
+          responseNotificationEmail:
+            value === DEFAULT_RESPONSE_NOTIFICATION_DESTINATION
+              ? undefined
+              : value,
+        }),
+      });
+    },
+    [updateFormMutation, formSettings],
+  );
 
   const handleNativeActionModeChange = useCallback(
     (value: "message" | "redirect") => {
       updateFormMutation.mutate({
-        settings: buildUpdatedFormSettings({ successMode: value }),
+        settings: buildUpdatedFormSettings({
+          nativeAction: { successMode: value },
+        }),
       });
     },
     [formSettings, updateFormMutation],
@@ -1095,7 +1208,9 @@ export default function FormBuilder() {
     if (nextMessage !== nativeActionSettings.successMessage) {
       setNativeSuccessMessage(nextMessage);
       updateFormMutation.mutate({
-        settings: buildUpdatedFormSettings({ successMessage: nextMessage }),
+        settings: buildUpdatedFormSettings({
+          nativeAction: { successMessage: nextMessage },
+        }),
       });
     }
   }, [
@@ -1109,7 +1224,9 @@ export default function FormBuilder() {
     const nextRedirectUrl = nativeRedirectUrl.trim();
     if (nextRedirectUrl !== nativeActionSettings.redirectUrl) {
       updateFormMutation.mutate({
-        settings: buildUpdatedFormSettings({ redirectUrl: nextRedirectUrl }),
+        settings: buildUpdatedFormSettings({
+          nativeAction: { redirectUrl: nextRedirectUrl },
+        }),
       });
     }
   }, [
@@ -1746,6 +1863,40 @@ export default function FormBuilder() {
                   }
                 />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Notifications
+              </p>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">
+                  Send new response emails to
+                </Label>
+                <Select
+                  value={responseNotificationDestinationValue}
+                  onValueChange={handleResponseNotificationDestinationChange}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {responseNotificationOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                New inquiry emails for this form will be sent to the selected
+                address.
+              </p>
             </CardContent>
           </Card>
 

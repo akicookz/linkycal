@@ -267,11 +267,31 @@ interface NativePublicFormField {
   options: Array<{ label: string; value: string }> | null;
 }
 
+function getFormSettingsRecord(settings: unknown): Record<string, unknown> {
+  if (settings && typeof settings === "object") {
+    return settings as Record<string, unknown>;
+  }
+
+  if (typeof settings === "string") {
+    try {
+      const parsed = JSON.parse(settings);
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  return {};
+}
+
+function isValidEmailAddress(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
 function getNativeFormSettings(settings: unknown): NativeFormSettings {
-  const settingsRecord =
-    settings && typeof settings === "object"
-      ? (settings as Record<string, unknown>)
-      : {};
+  const settingsRecord = getFormSettingsRecord(settings);
   const nativeAction =
     settingsRecord.nativeAction &&
     typeof settingsRecord.nativeAction === "object"
@@ -292,6 +312,15 @@ function getNativeFormSettings(settings: unknown): NativeFormSettings {
       : null;
 
   return { successMode, successMessage, redirectUrl };
+}
+
+function getFormResponseNotificationEmail(settings: unknown): string | null {
+  const settingsRecord = getFormSettingsRecord(settings);
+  const rawEmail = settingsRecord.responseNotificationEmail;
+  if (typeof rawEmail !== "string") return null;
+
+  const email = rawEmail.trim();
+  return email && isValidEmailAddress(email) ? email : null;
 }
 
 function getNativeFieldOptions(
@@ -555,7 +584,12 @@ async function notifyFormResponseCompleted(
   try {
     // Look up form → project → owner + subscription
     const [form] = await db
-      .select({ id: dbSchema.forms.id, name: dbSchema.forms.name, projectId: dbSchema.forms.projectId })
+      .select({
+        id: dbSchema.forms.id,
+        name: dbSchema.forms.name,
+        projectId: dbSchema.forms.projectId,
+        settings: dbSchema.forms.settings,
+      })
       .from(dbSchema.forms)
       .where(eq(dbSchema.forms.id, formId))
       .limit(1);
@@ -601,9 +635,11 @@ async function notifyFormResponseCompleted(
       .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
       .where(eq(dbSchema.formFieldValues.responseId, responseId));
 
+    const notificationEmail =
+      getFormResponseNotificationEmail(form.settings) ?? owner.email;
     const emailService = new EmailService(env.RESEND_API_KEY);
     await emailService.sendFormResponseNotification({
-      to: owner.email,
+      to: notificationEmail,
       ownerName: owner.name ?? "there",
       formName: form.name,
       respondentEmail: formResponse?.respondentEmail ?? null,
@@ -3990,7 +4026,8 @@ app.get("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
       .where(eq(dbSchema.eventTypeBusyCalendars.eventTypeId, eventTypeId));
 
     return c.json({
-      destination: eventType.destinationConnectionId
+      destination:
+        eventType.destinationConnectionId && eventType.destinationCalendarId
         ? {
             connectionId: eventType.destinationConnectionId,
             calendarId: eventType.destinationCalendarId,
