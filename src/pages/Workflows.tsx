@@ -459,7 +459,7 @@ export default function Workflows() {
 
       {/* Workflow Templates Dialog */}
       <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Workflow Templates</DialogTitle>
             <DialogDescription>
