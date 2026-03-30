@@ -4,12 +4,15 @@ import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { eq, and, desc, like, sql, gte, inArray } from "drizzle-orm";
+import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
-import type { HonoAppContext, Plan, PlanLimits } from "./types";
+import type { AppEnv, HonoAppContext, Plan, PlanLimits } from "./types";
 
 const { schema } = dbSchema;
+type AppDatabase = DrizzleD1Database<typeof schema>;
+
 import {
   createProjectSchema,
   createEventTypeSchema,
@@ -40,7 +43,12 @@ import {
   validate,
 } from "./validation";
 
-import { getStripe, getPriceId, getPlanFromPriceId } from "./lib/stripe";
+import {
+  findExistingCustomerForUser,
+  getStripe,
+  getPriceId,
+  getPlanFromPriceId,
+} from "./lib/stripe";
 import { EventTypeService } from "./services/event-type-service";
 import { ScheduleService } from "./services/schedule-service";
 import { BookingService } from "./services/booking-service";
@@ -95,6 +103,83 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     customWidgets: true,
   },
 };
+
+// ─── Subscription Helpers ────────────────────────────────────────────────────
+
+async function getSubscriptionRecordByUserId(
+  db: AppDatabase,
+  userId: string,
+): Promise<dbSchema.SubscriptionRow | null> {
+  const [subscription] = await db
+    .select()
+    .from(dbSchema.subscriptions)
+    .where(eq(dbSchema.subscriptions.userId, userId))
+    .orderBy(
+      desc(dbSchema.subscriptions.updatedAt),
+      desc(dbSchema.subscriptions.createdAt),
+    )
+    .limit(1);
+
+  return subscription ?? null;
+}
+
+async function getSubscriptionRecordByCustomerId(
+  db: AppDatabase,
+  customerId: string,
+): Promise<dbSchema.SubscriptionRow | null> {
+  const [subscription] = await db
+    .select()
+    .from(dbSchema.subscriptions)
+    .where(eq(dbSchema.subscriptions.stripeCustomerId, customerId))
+    .orderBy(
+      desc(dbSchema.subscriptions.updatedAt),
+      desc(dbSchema.subscriptions.createdAt),
+    )
+    .limit(1);
+
+  return subscription ?? null;
+}
+
+async function ensureSubscriptionRecord(
+  db: AppDatabase,
+  userId: string,
+): Promise<dbSchema.SubscriptionRow> {
+  const existing = await getSubscriptionRecordByUserId(db, userId);
+  if (existing) {
+    return existing;
+  }
+
+  try {
+    await db.insert(dbSchema.subscriptions).values({
+      id: crypto.randomUUID(),
+      userId,
+      plan: "free",
+      interval: "monthly",
+      status: "active",
+    });
+  } catch (error) {
+    if (!isSubscriptionUserUniqueConstraintError(error)) {
+      throw error;
+    }
+  }
+
+  const created = await getSubscriptionRecordByUserId(db, userId);
+  if (!created) {
+    throw new Error(`Failed to ensure subscription record for user ${userId}`);
+  }
+
+  return created;
+}
+
+function isSubscriptionUserUniqueConstraintError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return message.includes("unique constraint failed")
+    && message.includes("subscriptions.user_id");
+}
 
 // ─── Rate Limiter ────────────────────────────────────────────────────────────
 
@@ -1606,22 +1691,34 @@ app.post("/api/public/forms/:slug/submit", async (c) => {
 
 // ─── Stripe Helpers ──────────────────────────────────────────────────────────
 
-import type Stripe from "stripe";
-import type { AppEnv } from "./types";
-
 async function syncSubscription(
   stripe: Stripe,
-  db: ReturnType<typeof drizzle>,
+  db: AppDatabase,
   env: AppEnv,
   subscriptionId: string,
   customerId: string,
 ) {
   // Find user by stripeCustomerId
-  const [existingSub] = await db
-    .select()
-    .from(dbSchema.subscriptions)
-    .where(eq(dbSchema.subscriptions.stripeCustomerId, customerId))
-    .limit(1);
+  let existingSub = await getSubscriptionRecordByCustomerId(db, customerId);
+
+  if (!existingSub) {
+    const customer = await stripe.customers.retrieve(customerId);
+    if (!customer.deleted && customer.metadata?.userId) {
+      existingSub = await ensureSubscriptionRecord(db, customer.metadata.userId);
+
+      if (existingSub.stripeCustomerId !== customerId) {
+        await db
+          .update(dbSchema.subscriptions)
+          .set({ stripeCustomerId: customerId })
+          .where(eq(dbSchema.subscriptions.id, existingSub.id));
+
+        existingSub = {
+          ...existingSub,
+          stripeCustomerId: customerId,
+        };
+      }
+    }
+  }
 
   if (!existingSub) {
     console.error(`No subscription record found for customer ${customerId}`);
@@ -1774,11 +1871,7 @@ app.use("/api/*", async (c, next) => {
   const db = drizzle(c.env.DB, { schema });
 
   // Load subscription
-  const [sub] = await db
-    .select()
-    .from(dbSchema.subscriptions)
-    .where(eq(dbSchema.subscriptions.userId, session.user.id))
-    .limit(1);
+  const sub = await ensureSubscriptionRecord(db, session.user.id);
 
   let plan: Plan = (sub?.plan as Plan) ?? "free";
   const status = sub?.status ?? "active";
@@ -4076,43 +4169,46 @@ app.post("/api/billing/checkout", async (c) => {
     const { plan, interval, successUrl, cancelUrl } = validate(checkoutSchema, body);
 
     const user = c.get("user");
-    const db = c.get("db");
+    const db = c.get("db") as AppDatabase;
     const stripe = getStripe(c.env);
     const priceId = getPriceId(c.env, plan, interval);
 
     // Get or create Stripe customer
-    const [sub] = await db
-      .select()
-      .from(dbSchema.subscriptions)
-      .where(eq(dbSchema.subscriptions.userId, user.id))
-      .limit(1);
+    const sub = await ensureSubscriptionRecord(db, user.id);
 
     let customerId = sub?.stripeCustomerId;
 
     if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: user.email,
-        name: user.name,
-        metadata: { userId: user.id },
-      });
-      customerId = customer.id;
+      const recoveredCustomer = await findExistingCustomerForUser(
+        stripe,
+        user.id,
+        user.email,
+      );
 
-      // Upsert subscription record with customer ID
-      if (sub) {
-        await db
-          .update(dbSchema.subscriptions)
-          .set({ stripeCustomerId: customerId })
-          .where(eq(dbSchema.subscriptions.id, sub.id));
+      if (recoveredCustomer) {
+        customerId = recoveredCustomer.id;
+
+        if (recoveredCustomer.metadata?.userId !== user.id) {
+          await stripe.customers.update(customerId, {
+            metadata: {
+              ...recoveredCustomer.metadata,
+              userId: user.id,
+            },
+          });
+        }
       } else {
-        await db.insert(dbSchema.subscriptions).values({
-          id: crypto.randomUUID(),
-          userId: user.id,
-          stripeCustomerId: customerId,
-          plan: "free",
-          interval: "monthly",
-          status: "active",
+        const customer = await stripe.customers.create({
+          email: user.email,
+          name: user.name,
+          metadata: { userId: user.id },
         });
+        customerId = customer.id;
       }
+
+      await db
+        .update(dbSchema.subscriptions)
+        .set({ stripeCustomerId: customerId })
+        .where(eq(dbSchema.subscriptions.id, sub.id));
     }
 
     // Only offer 7-day trial to users who have never had a Stripe subscription

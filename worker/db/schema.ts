@@ -457,6 +457,7 @@ export const contactActivity = sqliteTable(
         "cancelled",
         "tag_added",
         "tag_removed",
+        "workflow_researched",
       ],
     }).notNull(),
     referenceId: text("reference_id"),
@@ -569,6 +570,7 @@ export const workflowSteps = sqliteTable(
     type: text("type", {
       enum: [
         "send_email",
+        "ai_research",
         "add_tag",
         "remove_tag",
         "wait",
@@ -661,6 +663,7 @@ export const subscriptions = sqliteTable(
   },
   (t) => [
     index("subscriptions_user_id_idx").on(t.userId),
+    uniqueIndex("subscriptions_user_id_unique").on(t.userId),
     uniqueIndex("subscriptions_stripe_sub_id_idx").on(t.stripeSubscriptionId),
   ],
 );

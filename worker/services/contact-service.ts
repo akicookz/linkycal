@@ -259,7 +259,7 @@ export class ContactService {
 
   async logActivity(
     contactId: string,
-    type: "form_submitted" | "booked" | "cancelled" | "tag_added" | "tag_removed",
+    type: "form_submitted" | "booked" | "cancelled" | "tag_added" | "tag_removed" | "workflow_researched",
     referenceId?: string,
     metadata?: Record<string, unknown>,
   ) {

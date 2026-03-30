@@ -55,6 +55,7 @@ export interface AppEnv {
 
   // AI
   OPENAI_API_KEY: string;
+  GOOGLE_GENERATIVE_AI_API_KEY: string;
 
   // Notifications
   TELEGRAM_BOT_TOKEN: string;

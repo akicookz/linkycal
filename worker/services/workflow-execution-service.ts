@@ -1,22 +1,21 @@
 import { eq, and } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
+import {
+  interpolateWorkflowTemplate,
+  mergeWorkflowResearchMetadata,
+  normalizeRecipientList,
+  resolveWorkflowValue,
+  type WorkflowTriggerContext,
+} from "../lib/workflow-runtime";
 import type { AppEnv } from "../types";
 import { WorkflowService } from "./workflow-service";
+import { WorkflowAiResearchService } from "./workflow-ai-research-service";
 import { ContactService } from "./contact-service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface TriggerContext {
-  projectId: string;
-  contactId?: string;
-  contactEmail?: string;
-  contactName?: string;
-  formResponseId?: string;
-  bookingId?: string;
-  tagId?: string;
-  metadata?: Record<string, unknown>;
-}
+export interface TriggerContext extends WorkflowTriggerContext {}
 
 type WorkflowTrigger =
   | "form_submitted"
@@ -47,10 +46,12 @@ const WEBHOOK_TIMEOUT_MS = 10_000;
 export class WorkflowExecutionService {
   private workflowService: WorkflowService;
   private contactService: ContactService;
+  private workflowAiResearchService: WorkflowAiResearchService;
 
   constructor(private db: DrizzleD1Database<Record<string, unknown>>) {
     this.workflowService = new WorkflowService(db);
     this.contactService = new ContactService(db);
+    this.workflowAiResearchService = new WorkflowAiResearchService();
   }
 
   // ─── Trigger Dispatch ──────────────────────────────────────────────────
@@ -159,6 +160,9 @@ export class WorkflowExecutionService {
       await this.workflowService.updateRunProgress(
         workflowRunId,
         stepIndex,
+        undefined,
+        undefined,
+        JSON.stringify(context),
       );
 
       if (!shouldContinue) {
@@ -184,7 +188,13 @@ export class WorkflowExecutionService {
       // re-enqueue the SAME step with the remaining time.
       if (err instanceof WaitSignal) {
         const MAX_DELAY = 43200; // 12 hours
-        await this.workflowService.updateRunProgress(workflowRunId, stepIndex);
+        await this.workflowService.updateRunProgress(
+          workflowRunId,
+          stepIndex,
+          undefined,
+          undefined,
+          JSON.stringify(context),
+        );
 
         if (err.delaySeconds > MAX_DELAY) {
           // Re-enqueue the same step with remaining delay
@@ -279,6 +289,10 @@ export class WorkflowExecutionService {
         await this.executeSendEmail(config, context, env);
         return true;
 
+      case "ai_research":
+        await this.executeAiResearch(config, context, env);
+        return true;
+
       case "add_tag":
         await this.executeAddTag(config, context);
         return true;
@@ -317,11 +331,16 @@ export class WorkflowExecutionService {
     context: TriggerContext,
     env: AppEnv,
   ): Promise<void> {
-    const to = this.interpolate(config.to as string, context);
+    const recipients = normalizeRecipientList(
+      config.toList ?? config.to,
+      context,
+    );
     const subject = this.interpolate(config.subject as string, context);
     const body = this.interpolate(config.body as string, context);
 
-    if (!to) throw new Error("send_email: missing 'to' address");
+    if (recipients.length === 0) {
+      throw new Error("send_email: missing 'to' address");
+    }
     if (!subject) throw new Error("send_email: missing 'subject'");
 
     const response = await fetch(RESEND_API_URL, {
@@ -332,7 +351,7 @@ export class WorkflowExecutionService {
       },
       body: JSON.stringify({
         from: FROM_ADDRESS,
-        to: [to],
+        to: recipients,
         subject,
         html: body || "",
       }),
@@ -342,6 +361,50 @@ export class WorkflowExecutionService {
       const error = await response.text();
       throw new Error(`send_email failed: ${error}`);
     }
+  }
+
+  // ─── ai_research ────────────────────────────────────────────────────────
+
+  private async executeAiResearch(
+    config: Record<string, unknown>,
+    context: TriggerContext,
+    env: AppEnv,
+  ): Promise<void> {
+    const contactId = context.contactId;
+    if (!contactId) {
+      console.warn("ai_research: no contactId in context, skipping");
+      return;
+    }
+
+    const provider = config.provider;
+    if (provider !== "chatgpt" && provider !== "gemini") {
+      throw new Error("ai_research: invalid 'provider'. Allowed: chatgpt, gemini");
+    }
+
+    const record = await this.workflowAiResearchService.execute(
+      {
+        provider,
+        prompt: String(config.prompt ?? ""),
+        resultKey: typeof config.resultKey === "string" ? config.resultKey : undefined,
+      },
+      context,
+      env,
+    );
+
+    const contact = await this.contactService.getById(contactId);
+    const contactMetadata = parseRecord(contact?.metadata);
+    const nextMetadata = mergeWorkflowResearchMetadata(contactMetadata, record);
+
+    await this.contactService.update(contactId, { metadata: nextMetadata });
+    await this.contactService.logActivity(contactId, "workflow_researched", undefined, {
+      provider: record.provider,
+      model: record.model,
+      resultKey: record.resultKey,
+      summary: record.result.summary,
+      sourceCount: record.result.sources.length,
+    });
+
+    context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
   }
 
   // ─── add_tag ───────────────────────────────────────────────────────────
@@ -512,7 +575,7 @@ export class WorkflowExecutionService {
     }
 
     const field = config.field as string;
-    const value = config.value as string;
+    const value = this.interpolate(config.value as string, context);
 
     if (!field) throw new Error("update_contact: missing 'field' in config");
 
@@ -527,20 +590,11 @@ export class WorkflowExecutionService {
   // ─── Helpers ───────────────────────────────────────────────────────────
 
   /**
-   * Replace template variables like {{contact_name}}, {{contact_email}} etc.
-   * with values from the trigger context.
+   * Dot-path syntax is the primary format, but legacy underscore tokens still
+   * resolve through the shared runtime helpers for backward compatibility.
    */
   private interpolate(template: string | undefined, context: TriggerContext): string {
-    if (!template) return "";
-
-    return template
-      .replace(/\{\{contact_name\}\}/g, context.contactName ?? "")
-      .replace(/\{\{contact_email\}\}/g, context.contactEmail ?? "")
-      .replace(/\{\{contact_id\}\}/g, context.contactId ?? "")
-      .replace(/\{\{booking_id\}\}/g, context.bookingId ?? "")
-      .replace(/\{\{form_response_id\}\}/g, context.formResponseId ?? "")
-      .replace(/\{\{project_id\}\}/g, context.projectId ?? "")
-      .replace(/\{\{tag_id\}\}/g, context.tagId ?? "");
+    return interpolateWorkflowTemplate(template, context);
   }
 
   /**
@@ -549,17 +603,8 @@ export class WorkflowExecutionService {
   private resolveField(
     field: string,
     context: TriggerContext,
-  ): string | undefined {
-    const map: Record<string, string | undefined> = {
-      contact_name: context.contactName,
-      contact_email: context.contactEmail,
-      contact_id: context.contactId,
-      booking_id: context.bookingId,
-      form_response_id: context.formResponseId,
-      tag_id: context.tagId,
-      project_id: context.projectId,
-    };
-    return map[field];
+  ): unknown {
+    return resolveWorkflowValue(context, field);
   }
 }
 
@@ -572,4 +617,21 @@ export class WaitSignal extends Error {
     super(`wait:${delaySeconds}`);
     this.name = "WaitSignal";
   }
+}
+
+function parseRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return isRecord(parsed) ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return isRecord(value) ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

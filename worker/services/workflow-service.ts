@@ -94,7 +94,7 @@ export class WorkflowService {
     workflowId: string,
     data: {
       sortOrder?: number;
-      type: "send_email" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
+      type: "send_email" | "ai_research" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
       config?: Record<string, unknown>;
     },
   ) {
@@ -121,7 +121,7 @@ export class WorkflowService {
     id: string,
     data: {
       sortOrder?: number;
-      type?: "send_email" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
+      type?: "send_email" | "ai_research" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
       config?: Record<string, unknown> | null;
     },
   ) {
@@ -211,12 +211,14 @@ export class WorkflowService {
     stepIndex: number,
     status?: string,
     error?: string,
+    context?: string,
   ) {
     const values: Record<string, unknown> = {
       currentStepIndex: stepIndex,
     };
     if (status !== undefined) values.status = status;
     if (error !== undefined) values.error = error;
+    if (context !== undefined) values.context = context;
 
     await this.db
       .update(dbSchema.workflowRuns)

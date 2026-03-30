@@ -10,6 +10,8 @@ import {
   FileText,
   CalendarPlus,
   CalendarX,
+  CalendarClock,
+  CalendarCheck,
   Tag,
   Play,
 } from "lucide-react";
@@ -37,6 +39,11 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
+import {
+  workflowTemplates,
+  type WorkflowTemplateDefinition,
+  type WorkflowTriggerType,
+} from "@/lib/workflow-templates";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -44,7 +51,7 @@ interface Workflow {
   id: string;
   projectId: string;
   name: string;
-  trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "tag_added" | "manual";
+  trigger: WorkflowTriggerType;
   status: "active" | "draft";
   createdAt: string;
   updatedAt: string;
@@ -60,13 +67,15 @@ interface CreateWorkflowData {
 const TRIGGER_OPTIONS = [
   { value: "form_submitted", label: "Form Submitted", icon: FileText },
   { value: "booking_created", label: "Booking Created", icon: CalendarPlus },
+  { value: "booking_pending", label: "Booking Pending", icon: CalendarClock },
+  { value: "booking_confirmed", label: "Booking Confirmed", icon: CalendarCheck },
   { value: "booking_cancelled", label: "Booking Cancelled", icon: CalendarX },
   { value: "tag_added", label: "Tag Added", icon: Tag },
   { value: "manual", label: "Manual", icon: Play },
 ] as const;
 
 function getTriggerMeta(trigger: Workflow["trigger"]) {
-  return TRIGGER_OPTIONS.find((t) => t.value === trigger) ?? TRIGGER_OPTIONS[4];
+  return TRIGGER_OPTIONS.find((t) => t.value === trigger) ?? TRIGGER_OPTIONS[0];
 }
 
 function formatDate(dateStr: string): string {
@@ -89,6 +98,7 @@ export default function Workflows() {
   const navigate = useNavigate();
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CreateWorkflowData>(defaultFormData);
@@ -166,6 +176,57 @@ export default function Workflows() {
     },
   });
 
+  const createFromTemplateMutation = useMutation({
+    mutationFn: async (template: WorkflowTemplateDefinition) => {
+      const createRes = await fetch(`/api/projects/${projectId}/workflows`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: template.name,
+          trigger: template.trigger,
+        }),
+      });
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create workflow from template");
+      }
+
+      const createJson = await createRes.json();
+      const workflow = createJson.workflow as Workflow | undefined;
+      if (!workflow?.id) {
+        throw new Error("Workflow template creation did not return an ID");
+      }
+
+      for (let index = 0; index < template.steps.length; index++) {
+        const step = template.steps[index];
+        const stepRes = await fetch(
+          `/api/projects/${projectId}/workflows/${workflow.id}/steps`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              type: step.type,
+              sortOrder: index,
+              config: step.config,
+            }),
+          },
+        );
+
+        if (!stepRes.ok) {
+          const err = await stepRes.json().catch(() => ({}));
+          throw new Error(err.error || `Failed to create step ${index + 1}`);
+        }
+      }
+
+      return workflow;
+    },
+    onSuccess: (workflow) => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "workflows"] });
+      setTemplateDialogOpen(false);
+      navigate(`/app/projects/${projectId}/workflows/${workflow.id}`);
+    },
+  });
+
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   function openCreateDialog() {
@@ -188,6 +249,10 @@ export default function Workflows() {
   return (
     <div>
       <PageHeader title="Workflows" description="Automate actions based on triggers">
+        <Button onClick={() => setTemplateDialogOpen(true)} variant="outline" size="sm">
+          <Zap className="h-4 w-4" />
+          Use Template
+        </Button>
         <Button onClick={openCreateDialog} size="sm">
           <Plus className="h-4 w-4" />
           New Workflow
@@ -241,10 +306,16 @@ export default function Workflows() {
           <p className="text-sm text-muted-foreground mb-4">
             Create a workflow to automate emails, webhooks, and more.
           </p>
-          <Button onClick={openCreateDialog} size="sm">
-            <Plus className="h-4 w-4" />
-            New Workflow
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setTemplateDialogOpen(true)} variant="outline" size="sm">
+              <Zap className="h-4 w-4" />
+              Use Template
+            </Button>
+            <Button onClick={openCreateDialog} size="sm">
+              <Plus className="h-4 w-4" />
+              New Workflow
+            </Button>
+          </div>
         </div>
       )}
 
@@ -383,6 +454,80 @@ export default function Workflows() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Workflow Templates Dialog */}
+      <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Workflow Templates</DialogTitle>
+            <DialogDescription>
+              Start from a common workflow and customize the steps afterward.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {workflowTemplates.map((template) => {
+              const triggerMeta = getTriggerMeta(template.trigger);
+              const TriggerIcon = triggerMeta.icon;
+
+              return (
+                <Card key={template.id}>
+                  <CardContent className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold text-foreground">
+                          {template.name}
+                        </h3>
+                        <Badge variant="outline" className="gap-1">
+                          <TriggerIcon className="h-3 w-3" />
+                          {triggerMeta.label}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {template.description}
+                      </p>
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground">
+                      {template.steps.length} step{template.steps.length === 1 ? "" : "s"}
+                    </p>
+
+                    <Button
+                      size="sm"
+                      onClick={() => createFromTemplateMutation.mutate(template)}
+                      disabled={createFromTemplateMutation.isPending}
+                    >
+                      {createFromTemplateMutation.isPending ? (
+                        <Loader className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Zap className="h-4 w-4" />
+                      )}
+                      Use Template
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+
+          {createFromTemplateMutation.isError && (
+            <p className="text-sm text-destructive">
+              {createFromTemplateMutation.error?.message ?? "Failed to create template workflow."}
+            </p>
+          )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTemplateDialogOpen(false)}
+              disabled={createFromTemplateMutation.isPending}
+            >
+              Cancel
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

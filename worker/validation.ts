@@ -346,6 +346,7 @@ export const updateWorkflowSchema = z.object({
 
 const workflowStepTypeEnum = z.enum([
   "send_email",
+  "ai_research",
   "add_tag",
   "remove_tag",
   "wait",

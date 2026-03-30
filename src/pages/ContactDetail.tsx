@@ -49,7 +49,7 @@ interface ContactTag {
 interface ContactActivity {
   id: string;
   contactId: string;
-  type: "form_submitted" | "booked" | "cancelled" | "tag_added" | "tag_removed";
+  type: "form_submitted" | "booked" | "cancelled" | "tag_added" | "tag_removed" | "workflow_researched";
   referenceId: string | null;
   metadata: unknown;
   createdAt: string;
@@ -159,9 +159,25 @@ function activityDescription(activity: ContactActivity): string {
       return `Tag '${meta?.tagName ?? "unknown"}' added`;
     case "tag_removed":
       return `Tag '${meta?.tagName ?? "unknown"}' removed`;
+    case "workflow_researched":
+      return `Stored ${meta?.provider ?? "AI"} research in '${meta?.resultKey ?? "research"}'`;
     default:
       return "Activity recorded";
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getLatestResearch(contact: ContactDetail): Record<string, unknown> | null {
+  if (!isRecord(contact.metadata)) return null;
+  const workflow = contact.metadata.workflow;
+  if (!isRecord(workflow)) return null;
+  const research = workflow.research;
+  if (!isRecord(research)) return null;
+  const latest = research.latest;
+  return isRecord(latest) ? latest : null;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -412,6 +428,7 @@ export default function ContactDetailPage() {
   const sortedActivity = [...contact.activity].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
+  const latestResearch = getLatestResearch(contact);
 
   // ─── Render ───
 
@@ -655,6 +672,27 @@ export default function ContactDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {latestResearch && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Latest Research</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-foreground whitespace-pre-wrap">
+                  {String(
+                    isRecord(latestResearch.result) &&
+                      typeof latestResearch.result.summary === "string"
+                      ? latestResearch.result.summary
+                      : "No research summary available.",
+                  )}
+                </p>
+                <pre className="rounded-[12px] bg-muted p-3 text-[11px] text-muted-foreground overflow-x-auto">
+                  {JSON.stringify(latestResearch, null, 2)}
+                </pre>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Metadata */}
           <Card>

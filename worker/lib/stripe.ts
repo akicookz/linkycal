@@ -54,3 +54,60 @@ export function getPlanFromPriceId(
   }
   return null;
 }
+
+// ─── Customer Recovery ───────────────────────────────────────────────────────
+
+export function selectRecoveredCustomer(
+  customers: Stripe.Customer[],
+  userId: string,
+  email?: string | null,
+): Stripe.Customer | null {
+  const normalizedEmail = email?.trim().toLowerCase() ?? null;
+  const metadataMatch = customers.find((customer) => customer.metadata?.userId === userId);
+  if (metadataMatch) {
+    return metadataMatch;
+  }
+
+  if (!normalizedEmail) {
+    return null;
+  }
+
+  const emailMatches = customers.filter((customer) => {
+    return customer.email?.trim().toLowerCase() === normalizedEmail;
+  });
+
+  return emailMatches.length === 1 ? emailMatches[0] : null;
+}
+
+export async function findExistingCustomerForUser(
+  stripe: Stripe,
+  userId: string,
+  email?: string | null,
+): Promise<Stripe.Customer | null> {
+  try {
+    const search = await stripe.customers.search({
+      query: `metadata['userId']:'${escapeStripeSearchValue(userId)}'`,
+      limit: 10,
+    });
+    const metadataMatch = selectRecoveredCustomer(search.data, userId, email);
+    if (metadataMatch) {
+      return metadataMatch;
+    }
+  } catch (error) {
+    console.warn("Stripe customer metadata search failed, falling back to email lookup", error);
+  }
+
+  if (!email) {
+    return null;
+  }
+
+  const emailMatches = await stripe.customers.list({
+    email,
+    limit: 10,
+  });
+  return selectRecoveredCustomer(emailMatches.data, userId, email);
+}
+
+function escapeStripeSearchValue(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}

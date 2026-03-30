@@ -9,6 +9,7 @@ import {
   Loader,
   AlertCircle,
   Mail,
+  Brain,
   Tag,
   Clock,
   GitBranch,
@@ -17,6 +18,8 @@ import {
   Zap,
   FileText,
   CalendarPlus,
+  CalendarClock,
+  CalendarCheck,
   CalendarX,
   Play,
   Settings2,
@@ -53,8 +56,23 @@ import { queryClient } from "@/lib/query-client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type TriggerType = "form_submitted" | "booking_created" | "booking_cancelled" | "tag_added" | "manual";
-type StepType = "send_email" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
+type TriggerType =
+  | "form_submitted"
+  | "booking_created"
+  | "booking_pending"
+  | "booking_confirmed"
+  | "booking_cancelled"
+  | "tag_added"
+  | "manual";
+type StepType =
+  | "send_email"
+  | "ai_research"
+  | "add_tag"
+  | "remove_tag"
+  | "wait"
+  | "condition"
+  | "webhook"
+  | "update_contact";
 type RunStatus = "running" | "completed" | "failed";
 
 interface WorkflowStep {
@@ -94,10 +112,17 @@ interface TagItem {
   color: string;
 }
 
+interface ContactItem {
+  id: string;
+  name: string;
+  email: string | null;
+}
+
 // ─── Step Type Definitions ───────────────────────────────────────────────────
 
 const STEP_TYPES = [
   { type: "send_email" as const, label: "Send Email", icon: Mail },
+  { type: "ai_research" as const, label: "AI Research", icon: Brain },
   { type: "add_tag" as const, label: "Add Tag", icon: Tag },
   { type: "remove_tag" as const, label: "Remove Tag", icon: Tag },
   { type: "wait" as const, label: "Wait", icon: Clock },
@@ -109,6 +134,8 @@ const STEP_TYPES = [
 const TRIGGER_META: Record<TriggerType, { label: string; icon: typeof Zap }> = {
   form_submitted: { label: "Form Submitted", icon: FileText },
   booking_created: { label: "Booking Created", icon: CalendarPlus },
+  booking_pending: { label: "Booking Pending", icon: CalendarClock },
+  booking_confirmed: { label: "Booking Confirmed", icon: CalendarCheck },
   booking_cancelled: { label: "Booking Cancelled", icon: CalendarX },
   tag_added: { label: "Tag Added", icon: Tag },
   manual: { label: "Manual", icon: Play },
@@ -122,8 +149,19 @@ function getConfigSummary(type: StepType, config: Record<string, unknown> | null
   if (!config) return "Not configured";
   switch (type) {
     case "send_email": {
-      const subject = config.subject as string | undefined;
-      return subject ? `Subject: ${subject}` : "Email not configured";
+      const recipients = Array.isArray(config.toList)
+        ? config.toList
+        : typeof config.to === "string"
+          ? config.to.split(/[\n,;]+/g).filter(Boolean)
+          : [];
+      if (recipients.length === 0) return "Email not configured";
+      return `${recipients.length} recipient${recipients.length === 1 ? "" : "s"}`;
+    }
+    case "ai_research": {
+      const provider = config.provider as string | undefined;
+      const resultKey = config.resultKey as string | undefined;
+      if (!provider) return "Research not configured";
+      return `${provider === "gemini" ? "Gemini" : "ChatGPT"} -> ${resultKey ?? "research"}`;
     }
     case "add_tag":
     case "remove_tag": {
@@ -179,6 +217,8 @@ export default function WorkflowBuilder() {
   const [stepConfig, setStepConfig] = useState<Record<string, unknown>>({});
   const [deleteStepId, setDeleteStepId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
+  const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [manualContactId, setManualContactId] = useState<string>("");
 
   // ─── Fetch workflow ─────────────────────────────────────────────────────
 
@@ -216,6 +256,17 @@ export default function WorkflowBuilder() {
   });
 
   // tags is directly available from the query above
+
+  const { data: contacts = [] } = useQuery<ContactItem[]>({
+    queryKey: ["projects", projectId, "contacts", "workflow-runner"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/contacts`);
+      if (!res.ok) throw new Error("Failed to fetch contacts");
+      const data = await res.json();
+      return (data.contacts ?? []) as ContactItem[];
+    },
+    enabled: !!projectId,
+  });
 
   // ─── Fetch runs ─────────────────────────────────────────────────────────
 
@@ -314,6 +365,31 @@ export default function WorkflowBuilder() {
     },
   });
 
+  const runWorkflowMutation = useMutation({
+    mutationFn: async (contactId?: string) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/workflows/${workflowId}/trigger`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(contactId ? { contactId } : {}),
+        },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to trigger workflow");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "workflows", workflowId, "runs"],
+      });
+      setRunDialogOpen(false);
+      setManualContactId("");
+    },
+  });
+
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   const handleNameBlur = useCallback(() => {
@@ -363,6 +439,10 @@ export default function WorkflowBuilder() {
         { onSuccess: () => closeStepDialog() },
       );
     }
+  }
+
+  function handleRunWorkflow() {
+    runWorkflowMutation.mutate(manualContactId || undefined);
   }
 
   // ─── Render: Loading ────────────────────────────────────────────────────
@@ -452,6 +532,16 @@ export default function WorkflowBuilder() {
           </Badge>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {workflow.trigger === "manual" && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRunDialogOpen(true)}
+            >
+              <Play className="h-4 w-4" />
+              Run Workflow
+            </Button>
+          )}
           <div className="flex items-center gap-2 mr-2">
             <span className="text-xs text-muted-foreground">
               {workflow.status === "active" ? "Active" : "Draft"}
@@ -656,6 +746,74 @@ export default function WorkflowBuilder() {
         </TabsContent>
       </Tabs>
 
+      <Dialog open={runDialogOpen} onOpenChange={setRunDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Run Workflow</DialogTitle>
+            <DialogDescription>
+              Trigger this manual workflow for a specific contact.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="manual-contact">Contact</Label>
+              <Select
+                value={manualContactId}
+                onValueChange={setManualContactId}
+              >
+                <SelectTrigger id="manual-contact">
+                  <SelectValue placeholder="Select a contact" />
+                </SelectTrigger>
+                <SelectContent>
+                  {contacts.length === 0 && (
+                    <SelectItem value="_none" disabled>
+                      No contacts available
+                    </SelectItem>
+                  )}
+                  {contacts.map((contact) => (
+                    <SelectItem key={contact.id} value={contact.id}>
+                      {contact.name}
+                      {contact.email ? ` (${contact.email})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                AI research steps need a contact so they have someone to enrich.
+              </p>
+            </div>
+
+            {runWorkflowMutation.isError && (
+              <p className="text-sm text-destructive">
+                {runWorkflowMutation.error?.message ?? "Failed to run workflow."}
+              </p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setRunDialogOpen(false)}
+              disabled={runWorkflowMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRunWorkflow}
+              disabled={runWorkflowMutation.isPending || !manualContactId}
+            >
+              {runWorkflowMutation.isPending ? (
+                <Loader className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4" />
+              )}
+              Run Workflow
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Add/Edit Step Dialog */}
       <Dialog open={addStepDialogOpen} onOpenChange={(open) => !open && closeStepDialog()}>
         <DialogContent className="max-w-md">
@@ -826,15 +984,25 @@ function StepConfigForm({
       return (
         <div className="space-y-3">
           <div className="space-y-2">
-            <Label htmlFor="email-to">To</Label>
-            <Input
+            <Label htmlFor="email-to">Recipients</Label>
+            <textarea
               id="email-to"
-              value={(config.to as string) ?? "{{contact.email}}"}
-              onChange={(e) => set("to", e.target.value)}
-              placeholder="{{contact.email}}"
+              value={Array.isArray(config.toList) ? config.toList.join("\n") : ((config.to as string) ?? "{{contact.email}}")}
+              onChange={(e) =>
+                set(
+                  "toList",
+                  e.target.value
+                    .split(/[\n,;]+/g)
+                    .map((entry) => entry.trim())
+                    .filter(Boolean),
+                )
+              }
+              placeholder={"{{contact.email}}\nteam@example.com"}
+              rows={3}
+              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
             <p className="text-[11px] text-muted-foreground">
-              Use {"{{contact.email}}"} for the trigger contact.
+              Use one recipient per line. Variables like {"{{contact.email}}"} are supported.
             </p>
           </div>
           <div className="space-y-2">
@@ -856,6 +1024,58 @@ function StepConfigForm({
               rows={5}
               className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Common variables: {"{{contact.name}}"}, {"{{contact.email}}"}, {"{{research.summary}}"}.
+            </p>
+          </div>
+        </div>
+      );
+
+    case "ai_research":
+      return (
+        <div className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="research-provider">AI Provider</Label>
+            <Select
+              value={(config.provider as string) ?? "chatgpt"}
+              onValueChange={(val) => set("provider", val)}
+            >
+              <SelectTrigger id="research-provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="chatgpt">ChatGPT Research</SelectItem>
+                <SelectItem value="gemini">Gemini Research</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="research-result-key">Result Key</Label>
+            <Input
+              id="research-result-key"
+              value={(config.resultKey as string) ?? "research"}
+              onChange={(e) => set("resultKey", e.target.value)}
+              placeholder="research"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Stored under contact metadata and available to later steps as {"{{research.*}}"}.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="research-prompt">Research Prompt</Label>
+            <textarea
+              id="research-prompt"
+              value={(config.prompt as string) ?? ""}
+              onChange={(e) => set("prompt", e.target.value)}
+              placeholder="Research this contact and company using public web sources. Summarize who they are, what the company does, and any signals that matter for follow-up."
+              rows={6}
+              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              The workflow automatically adds contact name and email to the research context.
+            </p>
           </div>
         </div>
       );
@@ -938,7 +1158,7 @@ function StepConfigForm({
       return (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            Conditions allow branching logic. This is a placeholder configuration.
+            Conditions stop the workflow when they evaluate to false.
           </p>
           <div className="space-y-2">
             <Label htmlFor="condition-field">Field</Label>
@@ -946,7 +1166,7 @@ function StepConfigForm({
               id="condition-field"
               value={(config.field as string) ?? ""}
               onChange={(e) => set("field", e.target.value)}
-              placeholder="e.g. contact.email"
+              placeholder="e.g. contact.email or research.company"
             />
           </div>
           <div className="space-y-2">
@@ -1027,10 +1247,13 @@ function StepConfigForm({
               id="webhook-body"
               value={(config.body as string) ?? ""}
               onChange={(e) => set("body", e.target.value)}
-              placeholder='{"event": "{{trigger.type}}"}'
+              placeholder='{"contactEmail":"{{contact.email}}","summary":"{{research.summary}}"}'
               rows={3}
               className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y font-mono text-xs"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Variables use dot-path syntax, for example {"{{contact.email}}"} or {"{{research.summary}}"}.
+            </p>
           </div>
         </div>
       );
@@ -1061,8 +1284,11 @@ function StepConfigForm({
               id="update-value"
               value={(config.value as string) ?? ""}
               onChange={(e) => set("value", e.target.value)}
-              placeholder="New value or {{template}}"
+              placeholder="New value or {{research.summary}}"
             />
+            <p className="text-[11px] text-muted-foreground">
+              Use research fields to copy enrichment output into notes or other contact fields.
+            </p>
           </div>
         </div>
       );
