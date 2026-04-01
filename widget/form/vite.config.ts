@@ -2,6 +2,9 @@ import { defineConfig } from "vite";
 import path from "path";
 
 export default defineConfig({
+  define: {
+    __LINKYCAL_API_BASE__: JSON.stringify("https://linkycal.com"),
+  },
   build: {
     lib: {
       entry: path.resolve(__dirname, "index.ts"),
