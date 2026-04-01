@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -163,6 +163,25 @@ export default function PublicBooking() {
   const [spamField, setSpamField] = useState("");
   const [formToken] = useState(() => btoa(String(Date.now())));
 
+  // Mobile step splitting: date → time as separate views
+  const [mobileSubStep, setMobileSubStep] = useState<"date" | "time">("date");
+  const [mobileSlideDir, setMobileSlideDir] = useState<"left" | "right">("left");
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(max-width: 767px)").matches : false
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  const goMobileSubStep = useCallback((target: "date" | "time") => {
+    setMobileSlideDir(target === "time" ? "left" : "right");
+    setMobileSubStep(target);
+  }, []);
+
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
   const gmtOffset = useMemo(() => getGmtOffset(timezone), [timezone]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -294,6 +313,7 @@ export default function PublicBooking() {
   function handleDateSelect(dateStr: string) {
     setSelectedDate(dateStr);
     setSelectedSlot(null);
+    if (isMobile) goMobileSubStep("time");
   }
 
   function validateFormStep(stepIndex: number): boolean {
@@ -360,6 +380,7 @@ export default function PublicBooking() {
 
   function handleBookAnother() {
     setStep(1);
+    setMobileSubStep("date");
     setSelectedDate(null);
     setSelectedSlot(null);
     setGuestName(""); setGuestEmail(""); setGuestNotes("");
@@ -508,143 +529,165 @@ export default function PublicBooking() {
           {/* ─── Step 1: Date + Time ─── */}
           {step === 1 && (
             <div>
-              <div className="grid grid-cols-1 md:grid-cols-[280px_1fr] gap-6">
-                {/* Calendar */}
-                <div>
-                  <h2 className="text-base font-semibold">Select Date and Time</h2>
-                  <p className="text-[13px] text-muted-foreground flex items-center gap-1.5 mt-1 mb-4">
-                    <Globe className="w-3.5 h-3.5" />
-                    {timezone} ({gmtOffset})
-                  </p>
-                  {/* Month nav */}
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      onClick={() =>
-                        setCurrentMonth((prev) => ({
-                          year: prev.month === 0 ? prev.year - 1 : prev.year,
-                          month: prev.month === 0 ? 11 : prev.month - 1,
-                        }))
-                      }
-                      disabled={!canGoPrev}
-                      className="p-1 rounded-md hover:bg-accent transition-colors disabled:opacity-30 text-muted-foreground"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </button>
-                    <span className="text-sm font-medium">
-                      {MONTHS[currentMonth.month]} {currentMonth.year}
-                    </span>
-                    <button
-                      onClick={() =>
-                        setCurrentMonth((prev) => ({
-                          year: prev.month === 11 ? prev.year + 1 : prev.year,
-                          month: prev.month === 11 ? 0 : prev.month + 1,
-                        }))
-                      }
-                      className="p-1 rounded-md hover:bg-accent transition-colors text-muted-foreground"
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
+              {/* Desktop: side-by-side layout (unchanged) */}
+              <div className={cn("grid gap-6", isMobile ? "" : "grid-cols-[280px_1fr]")}>
+                {/* Calendar — hidden on mobile when viewing time slots */}
+                {(!isMobile || mobileSubStep === "date") && (
+                  <div
+                    className={cn(isMobile && "animate-mobile-slide-in")}
+                    style={isMobile ? { "--slide-from": mobileSlideDir === "right" ? "-100%" : "100%" } as React.CSSProperties : undefined}
+                  >
+                    <h2 className="text-base font-semibold">Select Date and Time</h2>
+                    <p className="text-[13px] text-muted-foreground flex items-center gap-1.5 mt-1 mb-4">
+                      <Globe className="w-3.5 h-3.5" />
+                      {timezone} ({gmtOffset})
+                    </p>
+                    {/* Month nav */}
+                    <div className="flex items-center justify-between mb-2">
+                      <button
+                        onClick={() =>
+                          setCurrentMonth((prev) => ({
+                            year: prev.month === 0 ? prev.year - 1 : prev.year,
+                            month: prev.month === 0 ? 11 : prev.month - 1,
+                          }))
+                        }
+                        disabled={!canGoPrev}
+                        className="p-1 rounded-md hover:bg-accent transition-colors disabled:opacity-30 text-muted-foreground"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <span className="text-sm font-medium">
+                        {MONTHS[currentMonth.month]} {currentMonth.year}
+                      </span>
+                      <button
+                        onClick={() =>
+                          setCurrentMonth((prev) => ({
+                            year: prev.month === 11 ? prev.year + 1 : prev.year,
+                            month: prev.month === 11 ? 0 : prev.month + 1,
+                          }))
+                        }
+                        className="p-1 rounded-md hover:bg-accent transition-colors text-muted-foreground"
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
 
-                  {/* Day headers */}
-                  <div className="grid grid-cols-7">
-                    {DAYS.map((d) => (
-                      <div key={d} className="text-center text-[12px] font-medium text-muted-foreground py-1.5">
-                        {d}
+                    {/* Day headers */}
+                    <div className="grid grid-cols-7">
+                      {DAYS.map((d) => (
+                        <div key={d} className="text-center text-[12px] font-medium text-muted-foreground py-1.5">
+                          {d}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Day grid */}
+                    <div className="grid grid-cols-7">
+                      {calendarDays.map((day, i) =>
+                        day.day === 0 ? (
+                          <div key={`e-${i}`} />
+                        ) : (
+                          <button
+                            key={day.dateStr}
+                            disabled={day.disabled}
+                            onClick={() => handleDateSelect(day.dateStr)}
+                            className={cn(
+                              "aspect-square flex items-center justify-center text-sm transition-all rounded-full",
+                              day.disabled && "text-muted-foreground/30 cursor-not-allowed",
+                              !day.disabled && "hover:bg-accent cursor-pointer",
+                              day.isToday && !day.disabled && "font-bold",
+                              selectedDate === day.dateStr && !primaryStyle &&
+                              "bg-primary text-primary-foreground",
+                            )}
+                            style={selectedDate === day.dateStr && primaryStyle ? primaryStyle : undefined}
+                          >
+                            {day.day}
+                          </button>
+                        ),
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Time Slots — on mobile, shown as its own view */}
+                {(!isMobile || mobileSubStep === "time") && (
+                  <div
+                    className={cn("min-h-[280px]", isMobile && "animate-mobile-slide-in")}
+                    style={isMobile ? { "--slide-from": mobileSlideDir === "left" ? "100%" : "-100%" } as React.CSSProperties : undefined}
+                  >
+                    {isMobile && (
+                      <button
+                        onClick={() => goMobileSubStep("date")}
+                        className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-4"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Back
+                      </button>
+                    )}
+                    {!selectedDate ? (
+                      <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                        Select a date to see available times
                       </div>
-                    ))}
-                  </div>
-
-                  {/* Day grid */}
-                  <div className="grid grid-cols-7">
-                    {calendarDays.map((day, i) =>
-                      day.day === 0 ? (
-                        <div key={`e-${i}`} />
-                      ) : (
-                        <button
-                          key={day.dateStr}
-                          disabled={day.disabled}
-                          onClick={() => handleDateSelect(day.dateStr)}
-                          className={cn(
-                            "aspect-square flex items-center justify-center text-sm transition-all rounded-full",
-                            day.disabled && "text-muted-foreground/30 cursor-not-allowed",
-                            !day.disabled && "hover:bg-accent cursor-pointer",
-                            day.isToday && !day.disabled && "font-bold",
-                            selectedDate === day.dateStr && !primaryStyle &&
-                            "bg-primary text-primary-foreground",
-                          )}
-                          style={selectedDate === day.dateStr && primaryStyle ? primaryStyle : undefined}
-                        >
-                          {day.day}
-                        </button>
-                      ),
+                    ) : loadingSlots ? (
+                      <div>
+                        <div className="h-4 w-28 bg-muted rounded mb-3 animate-pulse" />
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {Array.from({ length: 8 }).map((_, i) => (
+                            <div
+                              key={i}
+                              className="h-10 rounded-lg border border-border bg-muted/50 animate-pulse"
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ) : slots.length === 0 ? (
+                      <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+                        No available times on this date
+                      </div>
+                    ) : (
+                      <div>
+                        <p className="text-sm font-medium mb-3">
+                          {formatDateShort(new Date(selectedDate + "T00:00:00"))}
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-1">
+                          {slots.map((slot) => {
+                            const isSelected = selectedSlot?.start === slot.start;
+                            return (
+                              <button
+                                key={slot.start}
+                                onClick={() => setSelectedSlot(slot)}
+                                className={cn(
+                                  "py-2.5 px-3 rounded-lg border text-[13px] font-medium text-center transition-all",
+                                  isSelected && !primaryStyle && "bg-primary text-primary-foreground border-primary",
+                                  !isSelected && "border-border hover:border-foreground/20 hover:bg-accent",
+                                )}
+                                style={isSelected && primaryStyle ? primaryStyle : undefined}
+                              >
+                                {formatTime(slot.start, timezone)} - {formatTime(slot.end, timezone)}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                   </div>
-                </div>
-
-                {/* Time Slots */}
-                <div className="min-h-[280px]">
-                  {!selectedDate ? (
-                    <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                      Select a date to see available times
-                    </div>
-                  ) : loadingSlots ? (
-                    <div>
-                      <div className="h-4 w-28 bg-muted rounded mb-3 animate-pulse" />
-                      <div className="grid grid-cols-2 gap-1.5">
-                        {Array.from({ length: 8 }).map((_, i) => (
-                          <div
-                            key={i}
-                            className="h-10 rounded-lg border border-border bg-muted/50 animate-pulse"
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  ) : slots.length === 0 ? (
-                    <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                      No available times on this date
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-sm font-medium mb-3">
-                        {formatDateShort(new Date(selectedDate + "T00:00:00"))}
-                      </p>
-                      <div className="grid grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-1">
-                        {slots.map((slot) => {
-                          const isSelected = selectedSlot?.start === slot.start;
-                          return (
-                            <button
-                              key={slot.start}
-                              onClick={() => setSelectedSlot(slot)}
-                              className={cn(
-                                "py-2.5 px-3 rounded-lg border text-[13px] font-medium text-center transition-all",
-                                isSelected && !primaryStyle && "bg-primary text-primary-foreground border-primary",
-                                !isSelected && "border-border hover:border-foreground/20 hover:bg-accent",
-                              )}
-                              style={isSelected && primaryStyle ? primaryStyle : undefined}
-                            >
-                              {formatTime(slot.start, timezone)} - {formatTime(slot.end, timezone)}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                )}
               </div>
 
-              {/* Bottom nav */}
-              <div className="flex items-center justify-end mt-6">
-                <Button
-                  disabled={!selectedSlot}
-                  onClick={() => setStep(2)}
-                  className="px-10"
-                  style={primaryStyle}
-                >
-                  Next
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              </div>
+              {/* Bottom nav — hide on mobile date step, show on time step & desktop */}
+              {(!isMobile || mobileSubStep === "time") && (
+                <div className="flex items-center justify-end mt-6">
+                  <Button
+                    disabled={!selectedSlot}
+                    onClick={() => setStep(2)}
+                    className="px-10"
+                    style={primaryStyle}
+                  >
+                    Next
+                    <ArrowRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           )}
 
@@ -703,7 +746,10 @@ export default function PublicBooking() {
               {/* Bottom nav */}
               <div className="flex items-center justify-between mt-6">
                 <button
-                  onClick={() => setStep(1)}
+                  onClick={() => {
+                    setStep(1);
+                    if (isMobile) goMobileSubStep("time");
+                  }}
                   className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
                   Back

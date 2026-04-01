@@ -400,7 +400,7 @@ function updateFieldInSteps(
   },
 ): FormStep[] {
   const currentStep = steps.find((step) =>
-    step.fields.some((field) => field.id === fieldId),
+    (step.fields ?? []).some((field) => field.id === fieldId),
   );
   if (!currentStep) return steps;
 
@@ -620,10 +620,10 @@ export default function FormBuilder() {
     [calendarAccounts?.accounts, ownerEmail, responseNotificationEmail],
   );
   const hasFileFields = steps.some((step) =>
-    step.fields.some((field) => field.type === "file")
+    (step.fields ?? []).some((field) => field.type === "file")
   );
   const hasCompletionPage = steps.some((step) =>
-    step.fields.some((field) => field.type === "completion")
+    (step.fields ?? []).some((field) => field.type === "completion")
   );
 
   const nativeActionUrl = form
@@ -632,7 +632,7 @@ export default function FormBuilder() {
   const activeStep = activeStepId
     ? sortedSteps.find((step) => step.id === activeStepId) ?? null
     : sortedSteps[0] ?? null;
-  const activeFields = activeStep ? sortFields(activeStep.fields) : [];
+  const activeFields = activeStep ? sortFields(activeStep.fields ?? []) : [];
   const activeStepCanvasDroppableId = activeStep
     ? getStepCanvasDroppableId(activeStep.id)
     : null;
@@ -1094,7 +1094,7 @@ export default function FormBuilder() {
         ...old,
         steps: old.steps.map((s) => ({
           ...s,
-          fields: s.fields.filter((f) => f.id !== fieldId),
+           fields: (s.fields ?? []).filter((f) => f.id !== fieldId),
         })),
       }));
       return { snapshot };
@@ -1408,18 +1408,81 @@ export default function FormBuilder() {
   }
 
   async function handleAddCompletionPage() {
+    const tempStepId = `temp-${crypto.randomUUID()}`;
+    const tempFieldId = `temp-${crypto.randomUUID()}`;
+    const snapshot = snapshotForm();
+
+    // Optimistic: add step with completion field already present
+    optimisticSetForm((old) => ({
+      ...old,
+      steps: [
+        ...old.steps,
+        {
+          id: tempStepId,
+          formId: old.id,
+          sortOrder: old.steps.length,
+          title: "Completion",
+          description: null,
+          richDescription: null,
+          settings: null,
+          fields: [
+            {
+              id: tempFieldId,
+              stepId: tempStepId,
+              sortOrder: 0,
+              type: "completion",
+              label: "Thank you!",
+              description: "<p>Your response has been submitted successfully.</p>",
+              placeholder: null,
+              required: false,
+              validation: null,
+              options: null,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        },
+      ],
+    }));
+    setActiveStepId(tempStepId);
+
     try {
-      const response = await addStepMutation.mutateAsync({ title: "Completion" });
-      const newStep = response?.step as FormStep | undefined;
-      if (!newStep) return;
-      addFieldMutation.mutate({
-        stepId: newStep.id,
-        type: "completion",
-        label: "Thank you!",
-        description: "<p>Your response has been submitted successfully.</p>",
-      });
+      // Create the step on the server
+      const stepRes = await fetch(
+        `/api/projects/${projectId}/forms/${formId}/steps`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: "Completion" }),
+        },
+      );
+      if (!stepRes.ok) throw new Error("Failed to create step");
+      const stepJson = await stepRes.json();
+      const newStep = stepJson?.step as FormStep | undefined;
+      if (!newStep) throw new Error("No step returned");
+
+      // Create the completion field on the server
+      const fieldRes = await fetch(
+        `/api/projects/${projectId}/forms/${formId}/fields`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            stepId: newStep.id,
+            type: "completion",
+            label: "Thank you!",
+            description: "<p>Your response has been submitted successfully.</p>",
+          }),
+        },
+      );
+      if (!fieldRes.ok) throw new Error("Failed to create field");
+
+      // Refresh from server
+      setActiveStepId(newStep.id);
+      queryClient.invalidateQueries({ queryKey: formQueryKey });
     } catch {
-      // Step creation failed — handled by mutation error handler
+      // Rollback on any failure
+      if (snapshot) rollback(snapshot);
+      setActiveStepId(sortedSteps[0]?.id ?? null);
     }
   }
 
@@ -1893,7 +1956,8 @@ export default function FormBuilder() {
               >
                 <Card>
                   <CardContent className="space-y-4">
-                    {/* Step title & description */}
+                    {/* Step title & description — hidden for completion steps */}
+                    {!activeFields.some((f) => f.type === "completion") && (
                     <div className="space-y-2">
                       <Label className="text-xs text-muted-foreground">
                         Step Title
@@ -1947,6 +2011,7 @@ export default function FormBuilder() {
                         Supports paragraphs, line breaks, bold, italic, and links.
                       </p>
                     </div>
+                    )}
 
                     {/* Fields list */}
                     {activeFields.length === 0 ? (
