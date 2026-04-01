@@ -1410,6 +1410,16 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       }
     }
 
+    // Fetch available days-of-week from schedule rules
+    let availableDays: number[] = [];
+    if (eventType.scheduleId) {
+      const rules = await db
+        .select({ dayOfWeek: dbSchema.availabilityRules.dayOfWeek })
+        .from(dbSchema.availabilityRules)
+        .where(eq(dbSchema.availabilityRules.scheduleId, eventType.scheduleId));
+      availableDays = [...new Set(rules.map((r) => r.dayOfWeek))];
+    }
+
     return c.json({
       project: {
         id: project.id,
@@ -1420,6 +1430,7 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       owner: owner ? { name: owner.name, image: owner.image } : null,
       eventType,
       bookingForm,
+      availableDays,
     });
   } catch (err) {
     console.error("Event type detail error:", err);

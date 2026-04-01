@@ -10,6 +10,7 @@ import {
   Loader,
   AlertCircle,
   Globe,
+  ArrowLeft,
   ArrowRight,
   CalendarCheck as CalendarCheckIcon,
   CalendarPlus,
@@ -59,17 +60,18 @@ interface TimeSlot {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const DAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
 
-function formatTime(iso: string, tz: string): string {
+function formatTime(iso: string, tz: string, format: "12h" | "24h" = "12h"): string {
   return new Date(iso).toLocaleTimeString("en-US", {
-    hour: "numeric",
+    hour: format === "24h" ? "2-digit" : "numeric",
     minute: "2-digit",
+    hour12: format === "12h",
     timeZone: tz,
   });
 }
@@ -163,6 +165,8 @@ export default function PublicBooking() {
   const [spamField, setSpamField] = useState("");
   const [formToken] = useState(() => btoa(String(Date.now())));
 
+  const [timeFormat, setTimeFormat] = useState<"12h" | "24h">("12h");
+
   // Mobile step splitting: date → time as separate views
   const [mobileSubStep, setMobileSubStep] = useState<"date" | "time">("date");
   const [mobileSlideDir, setMobileSlideDir] = useState<"left" | "right">("left");
@@ -205,6 +209,7 @@ export default function PublicBooking() {
         fields: FormFieldData[];
       }>;
     } | null;
+    availableDays: number[];
   }>({
     queryKey: ["public-event-type", projectSlug, eventSlug],
     queryFn: async () => {
@@ -220,6 +225,7 @@ export default function PublicBooking() {
   const owner = data?.owner;
   const theme = project?.settings?.theme;
   const bookingForm = data?.bookingForm;
+  const availableDays = data?.availableDays ?? [];
 
   // Dynamic step calculation:
   // Step 1: date/time, Step 2: name/email/notes
@@ -294,13 +300,13 @@ export default function PublicBooking() {
       days.push({
         day: d,
         dateStr,
-        disabled: date < today,
+        disabled: date < today || (availableDays.length > 0 && !availableDays.includes(date.getDay())),
         isToday: date.getTime() === today.getTime(),
       });
     }
 
     return days;
-  }, [currentMonth]);
+  }, [currentMonth, availableDays]);
 
   const canGoPrev = (() => {
     const now = new Date();
@@ -543,69 +549,95 @@ export default function PublicBooking() {
                       {timezone} ({gmtOffset})
                     </p>
                     {/* Month nav */}
-                    <div className="flex items-center justify-between mb-2">
-                      <button
-                        onClick={() =>
-                          setCurrentMonth((prev) => ({
-                            year: prev.month === 0 ? prev.year - 1 : prev.year,
-                            month: prev.month === 0 ? 11 : prev.month - 1,
-                          }))
-                        }
-                        disabled={!canGoPrev}
-                        className="p-1 rounded-md hover:bg-accent transition-colors disabled:opacity-30 text-muted-foreground"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <span className="text-sm font-medium">
-                        {MONTHS[currentMonth.month]} {currentMonth.year}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm">
+                        <span className="font-semibold">{MONTHS[currentMonth.month]}</span>{" "}
+                        <span className="text-muted-foreground">{currentMonth.year}</span>
                       </span>
-                      <button
-                        onClick={() =>
-                          setCurrentMonth((prev) => ({
-                            year: prev.month === 11 ? prev.year + 1 : prev.year,
-                            month: prev.month === 11 ? 0 : prev.month + 1,
-                          }))
-                        }
-                        className="p-1 rounded-md hover:bg-accent transition-colors text-muted-foreground"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() =>
+                            setCurrentMonth((prev) => ({
+                              year: prev.month === 0 ? prev.year - 1 : prev.year,
+                              month: prev.month === 0 ? 11 : prev.month - 1,
+                            }))
+                          }
+                          disabled={!canGoPrev}
+                          className="p-1 rounded-md hover:bg-accent transition-colors disabled:opacity-30 text-muted-foreground"
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() =>
+                            setCurrentMonth((prev) => ({
+                              year: prev.month === 11 ? prev.year + 1 : prev.year,
+                              month: prev.month === 11 ? 0 : prev.month + 1,
+                            }))
+                          }
+                          className="p-1 rounded-md hover:bg-accent transition-colors text-muted-foreground"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </button>
+                      </div>
                     </div>
 
                     {/* Day headers */}
-                    <div className="grid grid-cols-7">
+                    <div className="grid grid-cols-7 gap-1.5 mb-1.5">
                       {DAYS.map((d) => (
-                        <div key={d} className="text-center text-[12px] font-medium text-muted-foreground py-1.5">
+                        <div key={d} className="text-center text-[11px] font-semibold tracking-wide text-muted-foreground py-1">
                           {d}
                         </div>
                       ))}
                     </div>
 
                     {/* Day grid */}
-                    <div className="grid grid-cols-7">
-                      {calendarDays.map((day, i) =>
-                        day.day === 0 ? (
-                          <div key={`e-${i}`} />
-                        ) : (
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {calendarDays.map((day, i) => {
+                        if (day.day === 0) return <div key={`e-${i}`} />;
+
+                        const isSelected = selectedDate === day.dateStr;
+                        const cellRadius = theme?.borderRadius
+                          ? `${Math.round(theme.borderRadius * 0.6)}px`
+                          : "12px";
+
+                        return (
                           <button
                             key={day.dateStr}
                             disabled={day.disabled}
                             onClick={() => handleDateSelect(day.dateStr)}
                             className={cn(
-                              "aspect-square flex items-center justify-center text-sm transition-all rounded-full",
+                              "aspect-square flex flex-col items-center justify-center text-[14px] font-medium transition-all relative",
                               day.disabled && "text-muted-foreground/30 cursor-not-allowed",
-                              !day.disabled && "hover:bg-accent cursor-pointer",
-                              day.isToday && !day.disabled && "font-bold",
-                              selectedDate === day.dateStr && !primaryStyle &&
-                              "bg-primary text-primary-foreground",
+                              !day.disabled && !isSelected && "bg-muted/50 hover:bg-muted cursor-pointer",
+                              isSelected && !primaryStyle && "bg-primary text-primary-foreground shadow-sm",
+                              isSelected && primaryStyle && "shadow-sm",
                             )}
-                            style={selectedDate === day.dateStr && primaryStyle ? primaryStyle : undefined}
+                            style={{
+                              borderRadius: !day.disabled || isSelected ? cellRadius : undefined,
+                              ...(isSelected && primaryStyle ? primaryStyle : {}),
+                            }}
                           >
                             {day.day}
+                            {day.isToday && !isSelected && !day.disabled && (
+                              <span className="absolute bottom-1.5 h-1 w-1 rounded-full bg-current opacity-60" />
+                            )}
                           </button>
-                        ),
-                      )}
+                        );
+                      })}
                     </div>
+
+                    {/* Mobile: "Select Time" button below calendar when a date is already selected */}
+                    {isMobile && selectedDate && (
+                      <Button
+                        className="w-full mt-6 h-12 text-[15px]"
+                        style={primaryStyle}
+                        onClick={() => goMobileSubStep("time")}
+                      >
+                        <Clock className="h-4 w-4" />
+                        Select Time
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    )}
                   </div>
                 )}
 
@@ -615,15 +647,7 @@ export default function PublicBooking() {
                     className={cn("min-h-[280px]", isMobile && "animate-mobile-slide-in")}
                     style={isMobile ? { "--slide-from": mobileSlideDir === "left" ? "100%" : "-100%" } as React.CSSProperties : undefined}
                   >
-                    {isMobile && (
-                      <button
-                        onClick={() => goMobileSubStep("date")}
-                        className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors mb-4"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                        Back
-                      </button>
-                    )}
+                    
                     {!selectedDate ? (
                       <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
                         Select a date to see available times
@@ -631,7 +655,7 @@ export default function PublicBooking() {
                     ) : loadingSlots ? (
                       <div>
                         <div className="h-4 w-28 bg-muted rounded mb-3 animate-pulse" />
-                        <div className="grid grid-cols-2 gap-1.5">
+                        <div className={cn("grid gap-1.5", isMobile ? "grid-cols-1" : "grid-cols-2")}>
                           {Array.from({ length: 8 }).map((_, i) => (
                             <div
                               key={i}
@@ -646,10 +670,38 @@ export default function PublicBooking() {
                       </div>
                     ) : (
                       <div>
-                        <p className="text-sm font-medium mb-3">
-                          {formatDateShort(new Date(selectedDate + "T00:00:00"))}
-                        </p>
-                        <div className="grid grid-cols-2 gap-1.5 max-h-[340px] overflow-y-auto pr-1">
+                        <div className="flex items-center justify-between mb-3">
+                          <p className="text-sm font-medium">
+                            {formatDateShort(new Date(selectedDate + "T00:00:00"))}
+                          </p>
+                          <div className="flex items-center bg-muted/50 rounded-[10px] p-1 text-xs font-medium">
+                            <button
+                              onClick={() => setTimeFormat("12h")}
+                              className={cn(
+                                "px-3 py-1 rounded-[8px] transition-all",
+                                timeFormat === "12h"
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground",
+                              )}
+                              style={timeFormat === "12h" && primaryStyle ? primaryStyle : undefined}
+                            >
+                              12h
+                            </button>
+                            <button
+                              onClick={() => setTimeFormat("24h")}
+                              className={cn(
+                                "px-3 py-1 rounded-[8px] transition-all",
+                                timeFormat === "24h"
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground",
+                              )}
+                              style={timeFormat === "24h" && primaryStyle ? primaryStyle : undefined}
+                            >
+                              24h
+                            </button>
+                          </div>
+                        </div>
+                        <div className={cn("grid gap-1.5 max-h-[340px] overflow-y-auto pr-1", isMobile ? "grid-cols-1" : "grid-cols-2")}>
                           {slots.map((slot) => {
                             const isSelected = selectedSlot?.start === slot.start;
                             return (
@@ -657,13 +709,13 @@ export default function PublicBooking() {
                                 key={slot.start}
                                 onClick={() => setSelectedSlot(slot)}
                                 className={cn(
-                                  "py-2.5 px-3 rounded-lg border text-[13px] font-medium text-center transition-all",
-                                  isSelected && !primaryStyle && "bg-primary text-primary-foreground border-primary",
-                                  !isSelected && "border-border hover:border-foreground/20 hover:bg-accent",
+                                  "py-2.5 px-3 rounded-[12px] border-2 border-transparent text-[13px] font-medium text-center transition-all",
+                                  isSelected && !primaryStyle && "bg-primary text-primary-foreground shadow-sm border-primary",
+                                  !isSelected && "bg-muted/50 hover:bg-muted hover:border-primary",
                                 )}
                                 style={isSelected && primaryStyle ? primaryStyle : undefined}
                               >
-                                {formatTime(slot.start, timezone)} - {formatTime(slot.end, timezone)}
+                                {formatTime(slot.start, timezone, timeFormat)} - {formatTime(slot.end, timezone, timeFormat)}
                               </button>
                             );
                           })}
@@ -676,14 +728,25 @@ export default function PublicBooking() {
 
               {/* Bottom nav — hide on mobile date step, show on time step & desktop */}
               {(!isMobile || mobileSubStep === "time") && (
-                <div className="flex items-center justify-end mt-6">
+                <div className="flex items-center justify-between mt-6">
+                  {isMobile ? (
+                    <button
+                      onClick={() => goMobileSubStep("date")}
+                      className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Back
+                    </button>
+                  ) : (
+                    <div />
+                  )}
                   <Button
                     disabled={!selectedSlot}
                     onClick={() => setStep(2)}
                     className="px-10"
                     style={primaryStyle}
                   >
-                    Next
+                    Your details
                     <ArrowRight className="h-4 w-4" />
                   </Button>
                 </div>
@@ -700,7 +763,7 @@ export default function PublicBooking() {
               {selectedSlot && selectedDate && (
                 <p className="text-[13px] text-muted-foreground mb-5">
                   {formatDateShort(new Date(selectedDate + "T00:00:00"))} &middot;{" "}
-                  {formatTime(selectedSlot.start, timezone)} - {formatTime(selectedSlot.end, timezone)} &middot;{" "}
+                  {formatTime(selectedSlot.start, timezone, timeFormat)} - {formatTime(selectedSlot.end, timezone, timeFormat)} &middot;{" "}
                   {eventType.duration} mins
                 </p>
               )}
@@ -750,8 +813,9 @@ export default function PublicBooking() {
                     setStep(1);
                     if (isMobile) goMobileSubStep("time");
                   }}
-                  className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                 >
+                  <ArrowLeft className="h-4 w-4" />
                   Back
                 </button>
                 {formSteps.length > 0 ? (
@@ -828,8 +892,9 @@ export default function PublicBooking() {
                 <div className="flex items-center justify-between mt-6">
                   <button
                     onClick={() => setStep(step - 1)}
-                    className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                    className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
                   >
+                    <ArrowLeft className="h-4 w-4" />
                     Back
                   </button>
                   {isLastFormStep ? (
@@ -900,7 +965,7 @@ export default function PublicBooking() {
                     {formatDateFull(new Date(selectedDate + "T00:00:00"))}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {formatTime(selectedSlot.start, timezone)} - {formatTime(selectedSlot.end, timezone)}
+                    {formatTime(selectedSlot.start, timezone, timeFormat)} - {formatTime(selectedSlot.end, timezone, timeFormat)}
                   </p>
                   {eventType.location && (
                     <p className="text-sm text-muted-foreground flex items-center gap-1.5 mt-1">
