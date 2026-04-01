@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -467,6 +467,40 @@ export default function FormBuilder() {
   const [promptCopiedId, setPromptCopiedId] = useState<string | null>(null);
   const [actionUrlCopied, setActionUrlCopied] = useState(false);
 
+  // Save status tracking (per field/step)
+  const [saveStatus, setSaveStatus] = useState<
+    Record<string, "saving" | "saved" | "error">
+  >({});
+  const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const setSaveStatusFor = useCallback(
+    (id: string, status: "saving" | "saved" | "error") => {
+      setSaveStatus((prev) => ({ ...prev, [id]: status }));
+      if (saveTimers.current[id]) clearTimeout(saveTimers.current[id]);
+      if (status === "saved") {
+        saveTimers.current[id] = setTimeout(() => {
+          setSaveStatus((prev) => {
+            const next = { ...prev };
+            delete next[id];
+            return next;
+          });
+        }, 2000);
+      }
+    },
+    [],
+  );
+
+  // Toggle state for optional title/description sections
+  const [expandedStepTitle, setExpandedStepTitle] = useState<Set<string>>(
+    new Set(),
+  );
+  const [expandedStepDesc, setExpandedStepDesc] = useState<Set<string>>(
+    new Set(),
+  );
+  const [expandedFieldDesc, setExpandedFieldDesc] = useState<Set<string>>(
+    new Set(),
+  );
+
 
   // Inline-editing state for form name/slug
   const [editingName, setEditingName] = useState<string>("");
@@ -840,6 +874,7 @@ export default function FormBuilder() {
       return res.json();
     },
     onMutate: async ({ stepId, data }) => {
+      setSaveStatusFor(stepId, "saving");
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       optimisticSetForm((old) => ({
@@ -850,7 +885,11 @@ export default function FormBuilder() {
       }));
       return { snapshot };
     },
-    onError: (_err, _vars, ctx) => {
+    onSuccess: (_data, variables) => {
+      setSaveStatusFor(variables.stepId, "saved");
+    },
+    onError: (_err, vars, ctx) => {
+      setSaveStatusFor(vars.stepId, "error");
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
     onSettled: () => {
@@ -1041,6 +1080,7 @@ export default function FormBuilder() {
       return res.json();
     },
     onMutate: async ({ fieldId, data }) => {
+      setSaveStatusFor(fieldId, "saving");
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       optimisticSetForm((old) => ({
@@ -1051,12 +1091,19 @@ export default function FormBuilder() {
     },
     onSuccess: (data, variables) => {
       const field = data?.field as FormField | undefined;
-      if (!field) return;
+      if (!field) {
+        setSaveStatusFor(variables.fieldId, "saved");
+        return;
+      }
 
       optimisticSetForm((old) => ({
         ...old,
         steps: replaceFieldInSteps(old.steps, variables.fieldId, field),
       }));
+
+      // Track status under the new ID if it changed
+      const trackId = field.id !== variables.fieldId ? field.id : variables.fieldId;
+      setSaveStatusFor(trackId, "saved");
 
       if (field.id !== variables.fieldId) {
         setFieldOptionsState((prev) => {
@@ -1071,7 +1118,8 @@ export default function FormBuilder() {
         });
       }
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (_err, vars, ctx) => {
+      setSaveStatusFor(vars.fieldId, "error");
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
     onSettled: () => {
@@ -1845,13 +1893,18 @@ export default function FormBuilder() {
                   key={ft.type}
                   type="button"
                   onClick={() => handleAddField(ft.type, ft.label)}
-                  disabled={sortedSteps.length === 0}
+                  disabled={sortedSteps.length === 0 || activeFields.some((f) => f.type === "completion")}
                   className="flex w-full items-center gap-3 rounded-[16px] border px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ft.icon className="h-4 w-4 text-muted-foreground shrink-0" />
                   {ft.label}
                 </button>
               ))}
+              {activeFields.some((f) => f.type === "completion") && (
+                <p className="text-[11px] text-muted-foreground px-1">
+                  Not available on completion page
+                </p>
+              )}
 
               <button
                 type="button"
@@ -1959,57 +2012,94 @@ export default function FormBuilder() {
                     {/* Step title & description — hidden for completion steps */}
                     {!activeFields.some((f) => f.type === "completion") && (
                     <div className="space-y-2">
-                      <Label className="text-xs text-muted-foreground">
-                        Step Title
-                      </Label>
-                      <Input
-                        defaultValue={activeStep.title ?? ""}
-                        key={`step-title-${activeStep.id}`}
-                        placeholder="Step title"
-                        className="h-9"
-                        onBlur={(e) => {
-                          if (e.target.value !== (activeStep.title ?? "")) {
+                      {/* Toggle buttons for adding title/description */}
+                      {!expandedStepTitle.has(activeStep.id) && !activeStep.title ? (
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                            onClick={() =>
+                              setExpandedStepTitle((prev) => new Set(prev).add(activeStep.id))
+                            }
+                          >
+                            <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+                            Add title
+                          </button>
+                          {!expandedStepDesc.has(activeStep.id) && !activeStep.description && !activeStep.richDescription && (
+                            <button
+                              type="button"
+                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                              onClick={() =>
+                                setExpandedStepDesc((prev) => new Set(prev).add(activeStep.id))
+                              }
+                            >
+                              <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+                              Add description
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <InlineEditableLabel
+                          key={`step-title-${activeStep.id}`}
+                          value={activeStep.title ?? ""}
+                          placeholder="Step title..."
+                          saveStatus={saveStatus[activeStep.id] ?? null}
+                          onSave={(title) =>
                             updateStepMutation.mutate({
                               stepId: activeStep.id,
-                              data: { title: e.target.value },
-                            });
+                              data: { title },
+                            })
                           }
-                        }}
-                      />
-                      <Label className="text-xs text-muted-foreground">
-                        Step Description
-                      </Label>
-                      <RichTextEditor
-                        key={`step-rich-desc-${activeStep.id}`}
-                        value={getRenderableRichTextHtml(
-                          activeStep.richDescription,
-                          activeStep.description,
-                        )}
-                        placeholder="Add a short intro, context, or instructions for this step."
-                        onSave={(richDescription) => {
-                          const currentValue = getRenderableRichTextHtml(
+                        />
+                      )}
+
+                      {/* Description: show button if title is visible but desc is not */}
+                      {(expandedStepTitle.has(activeStep.id) || !!activeStep.title) &&
+                       !expandedStepDesc.has(activeStep.id) &&
+                       !activeStep.description &&
+                       !activeStep.richDescription && (
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() =>
+                            setExpandedStepDesc((prev) => new Set(prev).add(activeStep.id))
+                          }
+                        >
+                          <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+                          Add description
+                        </button>
+                      )}
+
+                      {(expandedStepDesc.has(activeStep.id) || !!activeStep.description || !!activeStep.richDescription) && (
+                        <RichTextEditor
+                          key={`step-rich-desc-${activeStep.id}`}
+                          value={getRenderableRichTextHtml(
                             activeStep.richDescription,
                             activeStep.description,
-                          );
-                          const plainDescription =
-                            richTextToPlainText(richDescription) || null;
-                          if (
-                            richDescription !== currentValue ||
-                            plainDescription !== (activeStep.description ?? null)
-                          ) {
-                            updateStepMutation.mutate({
-                              stepId: activeStep.id,
-                              data: {
-                                description: plainDescription,
-                                richDescription,
-                              },
-                            });
-                          }
-                        }}
-                      />
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Supports paragraphs, line breaks, bold, italic, and links.
-                      </p>
+                          )}
+                          placeholder="Add a short intro, context, or instructions for this step."
+                          onSave={(richDescription) => {
+                            const currentValue = getRenderableRichTextHtml(
+                              activeStep.richDescription,
+                              activeStep.description,
+                            );
+                            const plainDescription =
+                              richTextToPlainText(richDescription) || null;
+                            if (
+                              richDescription !== currentValue ||
+                              plainDescription !== (activeStep.description ?? null)
+                            ) {
+                              updateStepMutation.mutate({
+                                stepId: activeStep.id,
+                                data: {
+                                  description: plainDescription,
+                                  richDescription,
+                                },
+                              });
+                            }
+                          }}
+                        />
+                      )}
                     </div>
                     )}
 
@@ -2041,255 +2131,286 @@ export default function FormBuilder() {
                               >
                                 {(dragHandleProps) => (<>
                                   {field.type === "completion" ? (
-                                    <>
-                                      {/* Completion field editor */}
-                                      <div className="flex items-center gap-3">
-                                        <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                                        <PartyPopper className="h-4 w-4 text-primary shrink-0" />
-                                        <span className="text-sm font-medium text-primary">Completion Page</span>
-                                        <div className="ml-auto shrink-0">
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                            onClick={() => deleteFieldMutation.mutate(field.id)}
-                                            disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
-                                          >
-                                            {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
-                                              <Loader className="h-3.5 w-3.5 animate-spin" />
-                                            ) : (
-                                              <Trash2 className="h-3.5 w-3.5" />
-                                            )}
-                                            Remove
-                                          </Button>
-                                        </div>
-                                      </div>
-                                      <div className="pl-7 mt-3 space-y-3">
-                                        <div className="space-y-1.5">
-                                          <Label className="text-xs text-muted-foreground">Title</Label>
-                                          <InlineEditableLabel
-                                            value={field.label}
-                                            onSave={(label) =>
-                                              updateFieldMutation.mutate({
-                                                fieldId: field.id,
-                                                data: { label },
-                                              })
-                                            }
-                                          />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                          <Label className="text-xs text-muted-foreground">Description</Label>
-                                          <RichTextEditor
-                                            key={`completion-desc-${field.id}`}
-                                            value={field.description ?? ""}
-                                            placeholder="Write a thank-you message for your respondents."
-                                            onSave={(html) =>
-                                              updateFieldMutation.mutate({
-                                                fieldId: field.id,
-                                                data: { description: html },
-                                              })
-                                            }
-                                          />
-                                        </div>
-                                        <div className="space-y-1.5">
-                                          <Label className="text-xs text-muted-foreground">Redirect URL (optional)</Label>
-                                          <Input
-                                            type="url"
-                                            defaultValue={
-                                              field.validation &&
-                                              typeof field.validation === "object" &&
-                                              (field.validation as Record<string, unknown>).redirectUrl
-                                                ? String((field.validation as Record<string, unknown>).redirectUrl)
-                                                : ""
-                                            }
-                                            key={`completion-redirect-${field.id}`}
-                                            placeholder="https://your-site.com/thanks"
-                                            className="h-8 text-xs"
-                                            onBlur={(e) => {
-                                              const url = e.target.value.trim();
-                                              updateFieldMutation.mutate({
-                                                fieldId: field.id,
-                                                data: {
-                                                  validation: url ? { redirectUrl: url } : null,
-                                                },
-                                              });
-                                            }}
-                                          />
-                                          <p className="text-xs text-muted-foreground leading-relaxed">
-                                            Shows for 5 seconds before redirecting if a URL is set.
-                                          </p>
-                                        </div>
-                                      </div>
-                                    </>
-                                  ) : (
-                                    <>
-                                  {/* Row 1: Handle + Label + Required + Remove */}
-                                  <div className="flex items-center gap-3">
-                                    <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                                    <InlineEditableLabel
-                                      value={field.label}
-                                      autoFocus={shouldAutoFocus}
-                                      onSave={(label) =>
-                                        updateFieldMutation.mutate({
-                                          fieldId: field.id,
-                                          data: { label },
-                                        })
-                                      }
-                                    />
-                                    <div className="flex items-center gap-3 ml-auto shrink-0">
-                                      <Select
-                                        value={field.type}
-                                        onValueChange={(val) => {
-                                          const wasOptionType = isOptionFieldType(field.type);
-                                          const isOptionType = isOptionFieldType(val);
-                                          const updateData: Record<string, unknown> = { type: val };
-                                          if (wasOptionType && !isOptionType) {
-                                            updateData.options = null;
-                                            setFieldOptionsState((prev) => {
-                                              const next = { ...prev };
-                                              delete next[field.id];
-                                              return next;
-                                            });
-                                          }
-                                          if (!wasOptionType && isOptionType) {
-                                            const seedOptions = val === "multi_select"
-                                              ? toDraftFieldOptions([
-                                                { label: "Option 1", value: "option_1" },
-                                                { label: "Option 2", value: "option_2" },
-                                              ])
-                                              : toDraftFieldOptions([
-                                                { label: "Option 1", value: "option_1" },
-                                              ]);
-                                            updateData.options = toPersistedFieldOptions(seedOptions);
-                                            setFieldOptions(field.id, seedOptions);
-                                          }
-                                          if (wasOptionType && isOptionType && val === "multi_select") {
-                                            const currentOpts = getFieldOptions(field);
-                                            if (currentOpts.length < 2) {
-                                              const seedOptions = [
-                                                ...currentOpts,
-                                                createDraftFieldOption({
-                                                  label: "Option 2",
-                                                  value: "option_2",
-                                                }),
-                                              ];
-                                              updateData.options = toPersistedFieldOptions(seedOptions);
-                                              setFieldOptions(field.id, seedOptions);
-                                            }
-                                          }
-                                          updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
-                                        }}
-                                      >
-                                        <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
-                                          <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {FIELD_TYPES.map((ft) => (
-                                            <SelectItem key={ft.type} value={ft.type}>
-                                              {ft.label}
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                      <div className="flex items-center gap-1">
-                                        <span className="text-[11px] text-muted-foreground">
-                                          Required
-                                        </span>
-                                        <Switch
-                                          checked={field.required}
-                                          onCheckedChange={(checked) =>
-                                            updateFieldMutation.mutate({
-                                              fieldId: field.id,
-                                              data: { required: checked },
-                                            })
-                                          }
-                                          className="scale-75"
-                                        />
-                                      </div>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                        onClick={() =>
-                                          deleteFieldMutation.mutate(field.id)
-                                        }
-                                        disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
-                                      >
-                                        {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
-                                          <Loader className="h-3.5 w-3.5 animate-spin" />
-                                        ) : (
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        )}
-                                        Remove
-                                      </Button>
-                                    </div>
-                                  </div>
+                                    <div className={cn(
+                                      "transition-opacity",
+                                      saveStatus[field.id] === "saving" && "opacity-50 pointer-events-none",
+                                    )}>
+                                       {/* Completion field editor */}
+                                       <div className="flex items-start gap-3">
+                                         <GripVertical className="h-4 w-4 mt-1 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
+                                         <PartyPopper className="h-4 w-4 mt-1 text-primary shrink-0" />
+                                         <InlineEditableLabel
+                                           value={field.label}
+                                           placeholder="Completion title..."
+                                           saveStatus={saveStatus[field.id] ?? null}
+                                           onSave={(label) =>
+                                             updateFieldMutation.mutate({
+                                               fieldId: field.id,
+                                               data: { label },
+                                             })
+                                           }
+                                         />
+                                         <div className="ml-auto shrink-0">
+                                           <Button
+                                             variant="ghost"
+                                             size="sm"
+                                             className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                             onClick={() => deleteFieldMutation.mutate(field.id)}
+                                             disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
+                                           >
+                                             {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
+                                               <Loader className="h-3.5 w-3.5 animate-spin" />
+                                             ) : (
+                                               <Trash2 className="h-3.5 w-3.5" />
+                                             )}
+                                             Remove
+                                           </Button>
+                                         </div>
+                                       </div>
+                                       <div className="pl-7 mt-2 space-y-3">
+                                         {/* Description — collapsible */}
+                                         {expandedFieldDesc.has(field.id) || field.description ? (
+                                           <RichTextEditor
+                                             key={`completion-desc-${field.id}`}
+                                             value={field.description ?? ""}
+                                             placeholder="Write a thank-you message for your respondents."
+                                             onSave={(html) =>
+                                               updateFieldMutation.mutate({
+                                                 fieldId: field.id,
+                                                 data: { description: html },
+                                               })
+                                             }
+                                           />
+                                         ) : (
+                                           <button
+                                             type="button"
+                                             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                             onClick={() =>
+                                               setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
+                                             }
+                                           >
+                                             <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+                                             Add description
+                                           </button>
+                                         )}
+                                         {/* Redirect URL */}
+                                         <div className="space-y-1.5">
+                                           <span className="text-xs text-muted-foreground">Redirect URL (optional)</span>
+                                           <Input
+                                             type="url"
+                                             defaultValue={
+                                               field.validation &&
+                                               typeof field.validation === "object" &&
+                                               (field.validation as Record<string, unknown>).redirectUrl
+                                                 ? String((field.validation as Record<string, unknown>).redirectUrl)
+                                                 : ""
+                                             }
+                                             key={`completion-redirect-${field.id}`}
+                                             placeholder="https://your-site.com/thanks"
+                                             className="h-8 text-xs"
+                                             onBlur={(e) => {
+                                               const url = e.target.value.trim();
+                                               updateFieldMutation.mutate({
+                                                 fieldId: field.id,
+                                                 data: {
+                                                   validation: url ? { redirectUrl: url } : null,
+                                                 },
+                                               });
+                                             }}
+                                           />
+                                           <p className="text-xs text-muted-foreground leading-relaxed">
+                                             Shows for 5 seconds before redirecting if a URL is set.
+                                           </p>
+                                         </div>
+                                       </div>
+                                     </div>
+                                   ) : (
+                                    <div className={cn(
+                                      "transition-opacity",
+                                      saveStatus[field.id] === "saving" && "opacity-50 pointer-events-none",
+                                    )}>
+                                   {/* Row 1: Handle + Label + Type + Required + Remove */}
+                                   <div className="flex items-start gap-3">
+                                     <GripVertical className="h-4 w-4 mt-1 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
+                                     <InlineEditableLabel
+                                       value={field.label}
+                                       autoFocus={shouldAutoFocus}
+                                       placeholder="Field label..."
+                                       saveStatus={saveStatus[field.id] ?? null}
+                                       onSave={(label) =>
+                                         updateFieldMutation.mutate({
+                                           fieldId: field.id,
+                                           data: { label },
+                                         })
+                                       }
+                                     />
+                                     <div className="flex items-center gap-3 ml-auto shrink-0">
+                                       <Select
+                                         value={field.type}
+                                         onValueChange={(val) => {
+                                           const wasOptionType = isOptionFieldType(field.type);
+                                           const isOptionType = isOptionFieldType(val);
+                                           const updateData: Record<string, unknown> = { type: val };
+                                           if (wasOptionType && !isOptionType) {
+                                             updateData.options = null;
+                                             setFieldOptionsState((prev) => {
+                                               const next = { ...prev };
+                                               delete next[field.id];
+                                               return next;
+                                             });
+                                           }
+                                           if (!wasOptionType && isOptionType) {
+                                             const seedOptions = val === "multi_select"
+                                               ? toDraftFieldOptions([
+                                                 { label: "Option 1", value: "option_1" },
+                                                 { label: "Option 2", value: "option_2" },
+                                               ])
+                                               : toDraftFieldOptions([
+                                                 { label: "Option 1", value: "option_1" },
+                                               ]);
+                                             updateData.options = toPersistedFieldOptions(seedOptions);
+                                             setFieldOptions(field.id, seedOptions);
+                                           }
+                                           if (wasOptionType && isOptionType && val === "multi_select") {
+                                             const currentOpts = getFieldOptions(field);
+                                             if (currentOpts.length < 2) {
+                                               const seedOptions = [
+                                                 ...currentOpts,
+                                                 createDraftFieldOption({
+                                                   label: "Option 2",
+                                                   value: "option_2",
+                                                 }),
+                                               ];
+                                               updateData.options = toPersistedFieldOptions(seedOptions);
+                                               setFieldOptions(field.id, seedOptions);
+                                             }
+                                           }
+                                           updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
+                                         }}
+                                       >
+                                         <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
+                                           <SelectValue />
+                                         </SelectTrigger>
+                                         <SelectContent>
+                                           {FIELD_TYPES.map((ft) => (
+                                             <SelectItem key={ft.type} value={ft.type}>
+                                               {ft.label}
+                                             </SelectItem>
+                                           ))}
+                                         </SelectContent>
+                                       </Select>
+                                       <div className="flex items-center gap-1">
+                                         <span className="text-[11px] text-muted-foreground">
+                                           Required
+                                         </span>
+                                         <Switch
+                                           checked={field.required}
+                                           onCheckedChange={(checked) =>
+                                             updateFieldMutation.mutate({
+                                               fieldId: field.id,
+                                               data: { required: checked },
+                                             })
+                                           }
+                                           className="scale-75"
+                                         />
+                                       </div>
+                                       <Button
+                                         variant="ghost"
+                                         size="sm"
+                                         className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                                         onClick={() =>
+                                           deleteFieldMutation.mutate(field.id)
+                                         }
+                                         disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
+                                       >
+                                         {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
+                                           <Loader className="h-3.5 w-3.5 animate-spin" />
+                                         ) : (
+                                           <Trash2 className="h-3.5 w-3.5" />
+                                         )}
+                                         Remove
+                                       </Button>
+                                     </div>
+                                   </div>
 
-                                  {/* Field description (rich text) */}
-                                  <div className="pl-7 mt-2">
-                                    <RichTextEditor
-                                      key={`field-desc-${field.id}`}
-                                      value={field.description ?? ""}
-                                      placeholder="Add a description or helper text (optional)"
-                                      className="text-xs"
-                                      onSave={(html) =>
-                                        updateFieldMutation.mutate({
-                                          fieldId: field.id,
-                                          data: { description: html },
-                                        })
-                                      }
-                                    />
-                                  </div>
+                                   {/* Field description — collapsible */}
+                                   <div className="pl-7 mt-2">
+                                     {expandedFieldDesc.has(field.id) || field.description ? (
+                                       <RichTextEditor
+                                         key={`field-desc-${field.id}`}
+                                         value={field.description ?? ""}
+                                         placeholder="Add a description or helper text"
+                                         className="text-xs"
+                                         onSave={(html) =>
+                                           updateFieldMutation.mutate({
+                                             fieldId: field.id,
+                                             data: { description: html },
+                                           })
+                                         }
+                                       />
+                                     ) : (
+                                       <button
+                                         type="button"
+                                         className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                         onClick={() =>
+                                           setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
+                                         }
+                                       >
+                                         <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+                                         Add description
+                                       </button>
+                                     )}
+                                   </div>
 
-                                  {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
-                                    const minOptions = field.type === "multi_select" ? 2 : 1;
-                                    return (
-                                      <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
-                                        {options.map((opt, idx) => {
-                                          const isLast = idx === options.length - 1;
-                                          const canRemove = options.length > minOptions;
-                                          return (
-                                            <div key={opt.id} className="flex items-center gap-1.5">
-                                              <Input
-                                                placeholder={`Option ${idx + 1}`}
-                                                value={opt.label}
-                                                onChange={(e) =>
-                                                  updateFieldOption(field.id, idx, e.target.value, field)
-                                                }
-                                                onBlur={() => saveFieldOptions(field.id)}
-                                                className="h-7 text-xs"
-                                              />
-                                              {isLast && (
-                                                <Button
-                                                  type="button"
-                                                  variant="outline"
-                                                  size="sm"
-                                                  className="h-7 px-2 shrink-0 text-xs"
-                                                  onClick={() => addFieldOption(field.id, field)}
-                                                >
-                                                  <Plus className="h-3 w-3" />
-                                                  Add
-                                                </Button>
-                                              )}
-                                              {canRemove && (
-                                                <Button
-                                                  type="button"
-                                                  variant="ghost"
-                                                  size="sm"
-                                                  className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
-                                                  onClick={() => removeFieldOption(field.id, idx, field)}
-                                                >
-                                                  <X className="h-3 w-3" />
-                                                </Button>
-                                              )}
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    );
-                                  })()}
-                                    </>
-                                  )}
+                                   {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
+                                     const minOptions = field.type === "multi_select" ? 2 : 1;
+                                     return (
+                                       <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
+                                         {options.map((opt, idx) => {
+                                           const isLast = idx === options.length - 1;
+                                           const canRemove = options.length > minOptions;
+                                           return (
+                                             <div key={opt.id} className="flex items-center gap-1.5">
+                                               <Input
+                                                 placeholder={`Option ${idx + 1}`}
+                                                 value={opt.label}
+                                                 onChange={(e) =>
+                                                   updateFieldOption(field.id, idx, e.target.value, field)
+                                                 }
+                                                 onBlur={() => saveFieldOptions(field.id)}
+                                                 className="h-7 text-xs"
+                                               />
+                                               {isLast && (
+                                                 <Button
+                                                   type="button"
+                                                   variant="outline"
+                                                   size="sm"
+                                                   className="h-7 px-2 shrink-0 text-xs"
+                                                   onClick={() => addFieldOption(field.id, field)}
+                                                 >
+                                                   <Plus className="h-3 w-3" />
+                                                   Add
+                                                 </Button>
+                                               )}
+                                               {canRemove && (
+                                                 <Button
+                                                   type="button"
+                                                   variant="ghost"
+                                                   size="sm"
+                                                   className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
+                                                   onClick={() => removeFieldOption(field.id, idx, field)}
+                                                 >
+                                                   <X className="h-3 w-3" />
+                                                 </Button>
+                                               )}
+                                             </div>
+                                           );
+                                         })}
+                                       </div>
+                                     );
+                                   })()}
+                                     </div>
+                                   )}
                                 </>)}
                               </SortableFieldCard>
                             );
@@ -2691,40 +2812,84 @@ function InlineEditableLabel({
   value,
   onSave,
   autoFocus = false,
+  placeholder = "Untitled",
+  saveStatus,
 }: {
   value: string;
   onSave: (value: string) => void;
   autoFocus?: boolean;
+  placeholder?: string;
+  saveStatus?: "saving" | "saved" | "error" | null;
 }) {
   const [localValue, setLocalValue] = useState(value);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     setLocalValue(value);
   }, [value]);
 
+  // Auto-resize textarea to fit content
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [localValue]);
+
   return (
-    <input
-      type="text"
-      autoFocus={autoFocus}
-      value={localValue}
-      onChange={(e) => setLocalValue(e.target.value)}
-      onBlur={() => {
-        if (localValue.trim() && localValue !== value) {
-          onSave(localValue.trim());
-        } else {
-          setLocalValue(value);
-        }
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") {
-          e.currentTarget.blur();
-        }
-        if (e.key === "Escape") {
-          setLocalValue(value);
-          e.currentTarget.blur();
-        }
-      }}
-      className="text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary outline-none min-w-0 pb-0.5 w-full max-w-[200px] transition-colors"
-    />
+    <div className="flex-1 min-w-0">
+      <textarea
+        ref={textareaRef}
+        rows={1}
+        autoFocus={autoFocus}
+        value={localValue}
+        placeholder={placeholder}
+        onChange={(e) => setLocalValue(e.target.value)}
+        onBlur={() => {
+          if (localValue.trim() && localValue !== value) {
+            onSave(localValue.trim());
+          } else {
+            setLocalValue(value);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setLocalValue(value);
+            e.currentTarget.blur();
+          }
+        }}
+        className="text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary outline-none min-w-0 pb-0.5 w-full transition-colors resize-none overflow-hidden block"
+      />
+      {saveStatus && (
+        <div
+          className={cn(
+            "flex items-center gap-1 mt-1 text-[11px]",
+            saveStatus === "saving" && "text-muted-foreground",
+            saveStatus === "saved" && "text-emerald-600",
+            saveStatus === "error" && "text-destructive",
+          )}
+        >
+          {saveStatus === "saving" && (
+            <>
+              <Loader className="h-3 w-3 animate-spin" />
+              <span>Saving...</span>
+            </>
+          )}
+          {saveStatus === "saved" && (
+            <>
+              <Check className="h-3 w-3" />
+              <span>Saved</span>
+            </>
+          )}
+          {saveStatus === "error" && (
+            <>
+              <AlertCircle className="h-3 w-3" />
+              <span>Failed to save</span>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

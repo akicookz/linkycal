@@ -4296,8 +4296,8 @@ app.post("/api/billing/checkout", async (c) => {
       ...(isNewSubscriber
         ? { subscription_data: { trial_period_days: 7, metadata: { plan, interval, userId: user.id } } }
         : {}),
-      success_url: successUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/billing?success=true`,
-      cancel_url: cancelUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/billing?canceled=true`,
+      success_url: successUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?success=true`,
+      cancel_url: cancelUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?canceled=true`,
       metadata: { plan, interval, userId: user.id },
     });
 
@@ -4326,7 +4326,7 @@ app.post("/api/billing/portal", async (c) => {
     const stripe = getStripe(c.env);
     const session = await stripe.billingPortal.sessions.create({
       customer: sub.stripeCustomerId,
-      return_url: `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/billing`,
+      return_url: `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing`,
     });
 
     return c.json({ url: session.url });
