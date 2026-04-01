@@ -4197,23 +4197,28 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       })),
     ]
       .sort((a, b) => {
-        // Priority: 0 = pending bookings, 1 = other bookings, 2 = form responses
-        function priority(item: typeof a) {
-          if (item.type === "booking" && item.status === "pending") return 0;
-          if (item.type === "booking") return 1;
-          return 2;
-        }
-        const pa = priority(a);
-        const pb = priority(b);
-        if (pa !== pb) return pa - pb;
+        const now = Date.now();
 
         function parseTs(val: any) {
           if (typeof val === "string") return new Date(String(val).replace(" ", "T") + (String(val).includes("T") ? "" : "Z")).getTime();
           return new Date(val).getTime();
         }
 
-        // Bookings sort by startTime ascending (soonest first); form responses by createdAt descending
-        if (pa <= 1) {
+        // Priority: 0 = pending confirmation (future), 1 = upcoming (non-pending, future), 2 = past bookings, 3 = form responses
+        function priority(item: typeof a) {
+          if (item.type !== "booking") return 3;
+          const start = parseTs((item as any).startTime);
+          if (item.status === "pending" && start >= now) return 0;
+          if (start >= now) return 1;
+          return 2;
+        }
+
+        const pa = priority(a);
+        const pb = priority(b);
+        if (pa !== pb) return pa - pb;
+
+        // Bookings sort by startTime ascending; form responses by createdAt descending
+        if (pa <= 2) {
           return parseTs((a as any).startTime) - parseTs((b as any).startTime);
         }
         return parseTs(b.createdAt) - parseTs(a.createdAt);
