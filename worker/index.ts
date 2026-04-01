@@ -4197,10 +4197,26 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       })),
     ]
       .sort((a, b) => {
-        // Handle SQLite text timestamps ("YYYY-MM-DD HH:MM:SS") for sorting
-        const aDate = typeof a.createdAt === "string" ? new Date(String(a.createdAt).replace(" ", "T") + (String(a.createdAt).includes("T") ? "" : "Z")) : new Date(a.createdAt as any);
-        const bDate = typeof b.createdAt === "string" ? new Date(String(b.createdAt).replace(" ", "T") + (String(b.createdAt).includes("T") ? "" : "Z")) : new Date(b.createdAt as any);
-        return bDate.getTime() - aDate.getTime();
+        // Priority: 0 = pending bookings, 1 = other bookings, 2 = form responses
+        function priority(item: typeof a) {
+          if (item.type === "booking" && item.status === "pending") return 0;
+          if (item.type === "booking") return 1;
+          return 2;
+        }
+        const pa = priority(a);
+        const pb = priority(b);
+        if (pa !== pb) return pa - pb;
+
+        function parseTs(val: any) {
+          if (typeof val === "string") return new Date(String(val).replace(" ", "T") + (String(val).includes("T") ? "" : "Z")).getTime();
+          return new Date(val).getTime();
+        }
+
+        // Bookings sort by startTime ascending (soonest first); form responses by createdAt descending
+        if (pa <= 1) {
+          return parseTs((a as any).startTime) - parseTs((b as any).startTime);
+        }
+        return parseTs(b.createdAt) - parseTs(a.createdAt);
       })
       .slice(0, 10);
 
