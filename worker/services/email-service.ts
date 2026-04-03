@@ -62,6 +62,7 @@ interface BookingDeclinedParams {
   startTime: Date;
   endTime: Date;
   timezone: string;
+  reason?: string;
 }
 
 interface FormResponseNotificationParams {
@@ -343,7 +344,7 @@ export class EmailService {
   // ─── Send Booking Declined (to Guest) ─────────────────────────────────────
 
   async sendBookingDeclined(params: BookingDeclinedParams): Promise<void> {
-    const { to, guestName, hostName, eventTypeName, startTime, endTime, timezone } =
+    const { to, guestName, hostName, eventTypeName, startTime, endTime, timezone, reason } =
       params;
 
     const dateStr = formatDate(startTime, timezone);
@@ -357,6 +358,7 @@ export class EmailService {
         { label: "Date", value: dateStr },
         { label: "Time", value: timeStr },
       ]) +
+      (reason ? emailNote(`<strong>Message from host:</strong> ${escapeHtml(reason)}`) : "") +
       emailNote("You're welcome to book another time that works for you.")
     );
 

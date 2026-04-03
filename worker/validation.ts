@@ -174,6 +174,7 @@ export const cancelBookingSchema = z.object({
 
 export const declineBookingSchema = z.object({
   reason: z.string().max(500).optional(),
+  notify: z.boolean().default(true),
 });
 
 export const reorderFieldsSchema = z.object({

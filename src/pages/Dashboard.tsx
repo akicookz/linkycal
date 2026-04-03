@@ -9,11 +9,20 @@ import {
   Plus,
   ArrowRight,
   AlertCircle,
+  Loader,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { ActivityCard } from "@/components/ActivityCard";
 import { ActivityDrawer } from "@/components/ActivityDrawer";
 import { queryClient } from "@/lib/query-client";
@@ -185,10 +194,16 @@ export default function Dashboard() {
     },
   });
 
+  const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
+  const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [declineMessage, setDeclineMessage] = useState("");
+
   const declineMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, notify, reason }: { id: string; notify: boolean; reason?: string }) => {
       const res = await fetch(`/api/projects/${projectId}/bookings/${id}/decline`, {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notify, reason: reason || undefined }),
       });
       if (!res.ok) throw new Error("Failed to decline booking");
       return res.json();
@@ -196,6 +211,9 @@ export default function Dashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "bookings"] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "activity"] });
+      setDeclineDialogOpen(false);
+      setDecliningId(null);
+      setDeclineMessage("");
     },
   });
 
@@ -382,11 +400,11 @@ export default function Dashboard() {
                   }
                   onDecline={
                     item.type === "booking" && item.status === "pending"
-                      ? () => declineMutation.mutate(item.id)
+                      ? () => { setDecliningId(item.id); setDeclineDialogOpen(true); }
                       : undefined
                   }
                   confirmLoading={confirmMutation.isPending && confirmMutation.variables === item.id}
-                  declineLoading={declineMutation.isPending && declineMutation.variables === item.id}
+                  declineLoading={declineMutation.isPending && declineMutation.variables?.id === item.id}
                   onDelete={
                     item.type === "form_response"
                       ? () => deleteFormResponseMutation.mutate(item.id)
@@ -410,12 +428,57 @@ export default function Dashboard() {
         projectId={projectId ?? ""}
         item={drawerItem ? toDrawerItem(drawerItem) : null}
         onConfirm={(id) => confirmMutation.mutate(id)}
-        onDecline={(id) => declineMutation.mutate(id)}
+        onDecline={(id) => { setDrawerOpen(false); setDecliningId(id); setDeclineDialogOpen(true); }}
         onDeleteFormResponse={(id) => deleteFormResponseMutation.mutate(id)}
         confirmLoading={confirmMutation.isPending}
         declineLoading={declineMutation.isPending}
         deleteLoading={deleteFormResponseMutation.isPending}
       />
+
+      {/* Decline Booking Dialog */}
+      <Dialog open={declineDialogOpen} onOpenChange={(open) => {
+        setDeclineDialogOpen(open);
+        if (!open) { setDecliningId(null); setDeclineMessage(""); }
+      }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Decline Booking Request</DialogTitle>
+            <DialogDescription>
+              Optionally include a message to the guest explaining why.
+            </DialogDescription>
+          </DialogHeader>
+          <textarea
+            className="w-full rounded-[12px] bg-muted/50 px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+            rows={3}
+            placeholder="Optional message to the guest..."
+            value={declineMessage}
+            onChange={(e) => setDeclineMessage(e.target.value)}
+            disabled={declineMutation.isPending}
+          />
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => decliningId && declineMutation.mutate({ id: decliningId, notify: false })}
+              disabled={declineMutation.isPending}
+            >
+              {declineMutation.isPending && !declineMutation.variables?.notify && (
+                <Loader className="h-4 w-4 animate-spin" />
+              )}
+              Decline Silently
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => decliningId && declineMutation.mutate({ id: decliningId, notify: true, reason: declineMessage || undefined })}
+              disabled={declineMutation.isPending}
+            >
+              {declineMutation.isPending && declineMutation.variables?.notify && (
+                <Loader className="h-4 w-4 animate-spin" />
+              )}
+              Decline & Notify
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

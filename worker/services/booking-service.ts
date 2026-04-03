@@ -154,6 +154,21 @@ export class BookingService {
     return (await this.getById(id))!;
   }
 
+  // ─── Expire Past Pending Bookings ─────────────────────────────────────────
+
+  async expirePastPendingBookings(): Promise<void> {
+    const now = new Date();
+    await this.db
+      .update(dbSchema.bookings)
+      .set({ status: "declined", expiresAt: null })
+      .where(
+        and(
+          eq(dbSchema.bookings.status, "pending"),
+          lte(dbSchema.bookings.startTime, now),
+        ),
+      );
+  }
+
   // ─── Expire Pending Bookings ──────────────────────────────────────────────
 
   async expirePendingBookings(): Promise<dbSchema.BookingRow[]> {

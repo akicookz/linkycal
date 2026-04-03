@@ -21,6 +21,7 @@ import {
   updateAvailabilityRulesSchema,
   createBookingSchema,
   cancelBookingSchema,
+  declineBookingSchema,
   createFormSchema,
   updateFormSchema,
   createFormStepSchema,
@@ -2506,6 +2507,7 @@ app.get("/api/projects/:projectId/bookings", async (c) => {
     const projectId = c.req.param("projectId");
     const db = c.get("db");
     const service = new BookingService(db);
+    await service.expirePastPendingBookings();
     const bookings = await service.listByProject(projectId);
     return c.json({ bookings });
   } catch (err) {
@@ -2898,6 +2900,9 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
     const id = c.req.param("id");
     const db = c.get("db");
 
+    const body = await c.req.json().catch(() => ({}));
+    const { reason, notify } = validate(declineBookingSchema, body);
+
     const bookingService = new BookingService(db);
     const booking = await bookingService.decline(id);
 
@@ -2905,49 +2910,52 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
       return c.json({ error: "Booking not found or not pending" }, 404);
     }
 
-    // Look up event type and owner for email
-    const [eventType] = await db
-      .select()
-      .from(dbSchema.eventTypes)
-      .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-      .limit(1);
-
-    let ownerName = "the host";
-    if (eventType) {
-      const [project] = await db
+    // Send decline email to guest (unless silent)
+    if (notify) {
+      // Look up event type and owner for email
+      const [eventType] = await db
         .select()
-        .from(dbSchema.projects)
-        .where(eq(dbSchema.projects.id, eventType.projectId))
+        .from(dbSchema.eventTypes)
+        .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
         .limit(1);
-      if (project) {
-        const [owner] = await db
-          .select()
-          .from(dbSchema.schema.users)
-          .where(eq(dbSchema.schema.users.id, project.userId))
-          .limit(1);
-        if (owner?.name) ownerName = owner.name;
-      }
-    }
 
-    // Send decline email to guest
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const emailService = new EmailService(c.env.RESEND_API_KEY);
-          await emailService.sendBookingDeclined({
-            to: booking.email,
-            guestName: booking.name,
-            hostName: ownerName,
-            eventTypeName: eventType?.name ?? "Meeting",
-            startTime: new Date(booking.startTime),
-            endTime: new Date(booking.endTime),
-            timezone: booking.timezone,
-          });
-        } catch (err) {
-          console.error("Decline email failed:", err);
+      let ownerName = "the host";
+      if (eventType) {
+        const [project] = await db
+          .select()
+          .from(dbSchema.projects)
+          .where(eq(dbSchema.projects.id, eventType.projectId))
+          .limit(1);
+        if (project) {
+          const [owner] = await db
+            .select()
+            .from(dbSchema.schema.users)
+            .where(eq(dbSchema.schema.users.id, project.userId))
+            .limit(1);
+          if (owner?.name) ownerName = owner.name;
         }
-      })(),
-    );
+      }
+
+      c.executionCtx.waitUntil(
+        (async () => {
+          try {
+            const emailService = new EmailService(c.env.RESEND_API_KEY);
+            await emailService.sendBookingDeclined({
+              to: booking.email,
+              guestName: booking.name,
+              hostName: ownerName,
+              eventTypeName: eventType?.name ?? "Meeting",
+              startTime: new Date(booking.startTime),
+              endTime: new Date(booking.endTime),
+              timezone: booking.timezone,
+              reason,
+            });
+          } catch (err) {
+            console.error("Decline email failed:", err);
+          }
+        })(),
+      );
+    }
 
     return c.json({ booking });
   } catch (err) {
@@ -4105,6 +4113,9 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const db = c.get("db");
+
+    const bookingService = new BookingService(db);
+    await bookingService.expirePastPendingBookings();
 
     const bookings = await db
       .select({

@@ -66,6 +66,7 @@ export default function Bookings() {
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [declineDialogOpen, setDeclineDialogOpen] = useState(false);
   const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [declineMessage, setDeclineMessage] = useState("");
   const [activeTab, setActiveTab] = useState(initialTab);
   const [drawerItem, setDrawerItem] = useState<Booking | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -133,9 +134,11 @@ export default function Bookings() {
 
   // Decline mutation
   const declineMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async ({ id, notify, reason }: { id: string; notify: boolean; reason?: string }) => {
       const res = await fetch(`/api/projects/${projectId}/bookings/${id}/decline`, {
         method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notify, reason: reason || undefined }),
       });
       if (!res.ok) throw new Error("Failed to decline booking");
       return res.json();
@@ -144,6 +147,7 @@ export default function Bookings() {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "bookings"] });
       setDeclineDialogOpen(false);
       setDecliningId(null);
+      setDeclineMessage("");
     },
   });
 
@@ -357,36 +361,46 @@ export default function Bookings() {
         </DialogContent>
       </Dialog>
 
-      {/* Decline Confirmation Dialog */}
-      <Dialog open={declineDialogOpen} onOpenChange={setDeclineDialogOpen}>
+      {/* Decline Booking Dialog */}
+      <Dialog open={declineDialogOpen} onOpenChange={(open) => {
+        setDeclineDialogOpen(open);
+        if (!open) { setDecliningId(null); setDeclineMessage(""); }
+      }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Decline Booking Request</DialogTitle>
             <DialogDescription>
-              Are you sure you want to decline this booking request? The guest
-              will be notified.
+              Optionally include a message to the guest explaining why.
             </DialogDescription>
           </DialogHeader>
+          <textarea
+            className="w-full rounded-[12px] bg-muted/50 px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+            rows={3}
+            placeholder="Optional message to the guest..."
+            value={declineMessage}
+            onChange={(e) => setDeclineMessage(e.target.value)}
+            disabled={declineMutation.isPending}
+          />
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setDeclineDialogOpen(false);
-                setDecliningId(null);
-              }}
+              onClick={() => decliningId && declineMutation.mutate({ id: decliningId, notify: false })}
               disabled={declineMutation.isPending}
             >
-              Keep Request
+              {declineMutation.isPending && !declineMutation.variables?.notify && (
+                <Loader className="h-4 w-4 animate-spin" />
+              )}
+              Decline Silently
             </Button>
             <Button
               variant="destructive"
-              onClick={() => decliningId && declineMutation.mutate(decliningId)}
+              onClick={() => decliningId && declineMutation.mutate({ id: decliningId, notify: true, reason: declineMessage || undefined })}
               disabled={declineMutation.isPending}
             >
-              {declineMutation.isPending && (
+              {declineMutation.isPending && declineMutation.variables?.notify && (
                 <Loader className="h-4 w-4 animate-spin" />
               )}
-              Decline
+              Decline & Notify
             </Button>
           </DialogFooter>
         </DialogContent>
