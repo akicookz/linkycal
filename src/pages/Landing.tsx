@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/dialog";
 import { signIn, emailOtp, useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
+import { usePostHog } from "@posthog/react";
 
 /* ─── Hero: Website Card (Calendar → Form → Confirmation) ────────────────── */
 
@@ -1964,6 +1965,7 @@ export default function Landing() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: session, isPending: isSessionPending } = useSession();
+  const posthog = usePostHog();
   const showAuth = searchParams.get("show_auth") === "true";
   const [authOpen, setAuthOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
@@ -2121,6 +2123,7 @@ export default function Landing() {
         setLoading(null);
         return;
       }
+      posthog?.capture("user_signed_in", { method: "email_otp" });
       window.location.href = "/app";
     } catch {
       setOtpError("Verification failed. Please try again.");

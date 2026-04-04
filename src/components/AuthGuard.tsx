@@ -1,8 +1,21 @@
+import { useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { useSession } from "@/lib/auth-client";
+import { usePostHog } from "@posthog/react";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { data: session, isPending } = useSession();
+  const posthog = usePostHog();
+
+  useEffect(() => {
+    if (session?.user) {
+      posthog?.identify(session.user.id, {
+        email: session.user.email,
+        name: session.user.name,
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user?.id]);
 
   if (isPending) {
     return (

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import {
   Loader,
   AlertCircle,
@@ -69,6 +70,7 @@ interface ProjectInfo {
 
 export default function PublicForm() {
   const { formSlug } = useParams<{ formSlug: string }>();
+  const posthog = usePostHog();
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -209,6 +211,11 @@ export default function PublicForm() {
       if (!res.ok) throw new Error("Failed to submit");
 
       if (isLastStep) {
+        posthog?.capture("form_submitted", {
+          form_slug: formSlug,
+          form_name: form?.name,
+          total_steps: steps.length,
+        });
         setSubmitted(true);
       } else {
         setCurrentStepIndex((prev) => prev + 1);

@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import { Loader, Check, ArrowRight, ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +56,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
+  const posthog = usePostHog();
 
   // ─── Step state ───────────────────────────────────────────────────────────
   const [currentStep, setCurrentStep] = useState(0);
@@ -185,6 +187,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       const id = data.project.id;
       setProjectId(id);
+      posthog?.capture("onboarding_project_created", { mode });
 
       if (mode === "new-project") {
         // For new-project mode, mark as onboarded immediately and go to dashboard
@@ -362,6 +365,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       return res.json();
     },
     onSuccess: () => {
+      posthog?.capture("onboarding_completed");
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       navigate("/app");
     },

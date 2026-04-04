@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import { Check, CreditCard, ExternalLink, Loader } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,7 @@ import { plans } from "@/lib/constants";
 
 export default function Billing() {
   const [selectedInterval, setSelectedInterval] = useState<"month" | "year">("month");
+  const posthog = usePostHog();
 
   const { data, isLoading } = useQuery<BillingData>({
     queryKey: ["billing-subscription"],
@@ -84,6 +86,7 @@ export default function Billing() {
   const isAnnual = selectedInterval === "year";
 
   function handleUpgrade(planId: string) {
+    posthog?.capture("checkout_initiated", { plan: planId, interval: selectedInterval, current_plan: currentPlan });
     checkoutMutation.mutate({ plan: planId, interval: selectedInterval });
   }
 

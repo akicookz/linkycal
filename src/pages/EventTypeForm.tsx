@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import {
   ArrowLeft,
   Save,
@@ -190,6 +191,7 @@ export default function EventTypeForm() {
     eventTypeId: string;
   }>();
   const navigate = useNavigate();
+  const posthog = usePostHog();
   const isEditing = !!eventTypeId;
 
   // Form state
@@ -505,7 +507,13 @@ export default function EventTypeForm() {
 
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      posthog?.capture("event_type_saved", {
+        action: "created",
+        project_id: projectId,
+        event_type_name: data?.eventType?.name,
+        duration: data?.eventType?.duration,
+      });
       queryClient.invalidateQueries({
         queryKey: ["projects", projectId, "event-types"],
       });
@@ -542,7 +550,14 @@ export default function EventTypeForm() {
 
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      posthog?.capture("event_type_saved", {
+        action: "updated",
+        project_id: projectId,
+        event_type_id: eventTypeId,
+        event_type_name: data?.eventType?.name,
+        duration: data?.eventType?.duration,
+      });
       queryClient.invalidateQueries({
         queryKey: ["projects", projectId, "event-types"],
       });

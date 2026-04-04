@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Outlet, Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import {
   LayoutDashboard,
   Calendar,
@@ -41,6 +42,7 @@ function Layout() {
   const navigate = useNavigate();
   const params = useParams<{ projectId?: string }>();
   const { data: session } = useSession();
+  const posthog = usePostHog();
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -106,6 +108,8 @@ function Layout() {
   }
 
   async function handleSignOut() {
+    posthog?.capture("user_signed_out");
+    posthog?.reset();
     await signOut();
     navigate("/");
   }

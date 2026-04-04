@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import {
   Plus,
   CalendarRange,
@@ -68,6 +69,7 @@ interface Project {
 export default function EventTypes() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const posthog = usePostHog();
 
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -111,6 +113,7 @@ export default function EventTypes() {
       if (!res.ok) throw new Error("Failed to delete event type");
     },
     onSuccess: () => {
+      posthog?.capture("event_type_deleted", { project_id: projectId });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "event-types"] });
       setDeleteDialogOpen(false);
       setDeletingId(null);

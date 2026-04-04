@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { usePostHog } from "@posthog/react";
 import {
   ChevronLeft,
   ChevronRight,
@@ -130,6 +131,7 @@ export default function PublicBooking() {
     eventSlug: string;
   }>();
   const [searchParams] = useSearchParams();
+  const posthog = usePostHog();
 
   // Preselect date from ?date= query param or default to today
   const initialDate = useMemo(() => {
@@ -375,7 +377,15 @@ export default function PublicBooking() {
         throw new Error((err as { error?: string }).error || "Failed to book");
       }
       const result = await res.json().catch(() => ({})) as { booking?: { status?: string } };
-      setBookingStatus(result.booking?.status === "pending" ? "pending" : "confirmed");
+      const status = result.booking?.status === "pending" ? "pending" : "confirmed";
+      setBookingStatus(status);
+      posthog?.capture(status === "pending" ? "booking_requested" : "booking_confirmed", {
+        project_slug: projectSlug,
+        event_slug: eventSlug,
+        event_name: eventType?.name,
+        duration: eventType?.duration,
+        start_time: selectedSlot?.start,
+      });
       setStep(confirmationStep);
     } catch (err) {
       setBookingError(err instanceof Error ? err.message : "Something went wrong");
