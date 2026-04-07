@@ -616,6 +616,7 @@ export const workflowRuns = sqliteTable(
       .default(sql`(unixepoch())`),
     completedAt: integer("completed_at", { mode: "timestamp" }),
     error: text("error"),
+    stepLogs: text("step_logs", { mode: "json" }),
   },
   (t) => [index("workflow_runs_workflow_id_idx").on(t.workflowId)],
 );

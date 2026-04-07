@@ -4,7 +4,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Plus,
   Zap,
-  Trash2,
   Loader,
   AlertCircle,
   FileText,
@@ -15,6 +14,7 @@ import {
   Tag,
   Play,
 } from "lucide-react";
+import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -99,8 +99,11 @@ export default function Workflows() {
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [runningWorkflow, setRunningWorkflow] = useState<{
+    id: string;
+    trigger: Workflow["trigger"];
+    name: string;
+  } | null>(null);
   const [formData, setFormData] = useState<CreateWorkflowData>(defaultFormData);
 
   // ─── Queries ─────────────────────────────────────────────────────────────
@@ -144,20 +147,6 @@ export default function Workflows() {
       if (data?.workflow?.id) {
         navigate(`/app/projects/${projectId}/workflows/${data.workflow.id}`);
       }
-    },
-  });
-
-  const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const res = await fetch(`/api/projects/${projectId}/workflows/${id}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to delete workflow");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "workflows"] });
-      setDeleteDialogOpen(false);
-      setDeletingId(null);
     },
   });
 
@@ -364,10 +353,28 @@ export default function Workflows() {
                     </Badge>
                   </div>
 
-                  {/* Created date */}
-                  <p className="text-xs text-muted-foreground">
-                    Created {formatDate(workflow.createdAt)}
-                  </p>
+                  {/* Footer: date + run */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      Created {formatDate(workflow.createdAt)}
+                    </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground hover:text-primary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setRunningWorkflow({
+                          id: workflow.id,
+                          trigger: workflow.trigger,
+                          name: workflow.name,
+                        });
+                      }}
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      Run
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             );
@@ -531,42 +538,20 @@ export default function Workflows() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete Workflow</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this workflow? This action cannot be
-              undone and will remove all associated steps and run history.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setDeletingId(null);
-              }}
-              disabled={deleteMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => deletingId && deleteMutation.mutate(deletingId)}
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? (
-                <Loader className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Test Run Dialog */}
+      {runningWorkflow && projectId && (
+        <WorkflowRunDialog
+          open={!!runningWorkflow}
+          onOpenChange={(open) => !open && setRunningWorkflow(null)}
+          projectId={projectId}
+          workflowId={runningWorkflow.id}
+          trigger={runningWorkflow.trigger}
+          workflowName={runningWorkflow.name}
+          onSuccess={() => {
+            navigate(`/app/projects/${projectId}/workflows/${runningWorkflow.id}?tab=runs`);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -3763,6 +3763,63 @@ app.post(
   },
 );
 
+// Test-run any workflow (no trigger-type or status restrictions)
+app.post(
+  "/api/projects/:projectId/workflows/:workflowId/test",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const workflowId = c.req.param("workflowId");
+
+      const db = c.get("db");
+      const service = new WorkflowService(db);
+      const workflow = await service.getById(workflowId);
+
+      if (!workflow) {
+        return c.json({ error: "Workflow not found" }, 404);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const { contactId, tagId } = body as { contactId?: string; tagId?: string };
+
+      if (!contactId) {
+        return c.json({ error: "contactId is required" }, 400);
+      }
+
+      if (workflow.trigger === "tag_added" && !tagId) {
+        return c.json({ error: "tagId is required for tag_added workflows" }, 400);
+      }
+
+      // Look up contact details for context
+      const contactService = new ContactService(db);
+      const contact = await contactService.getById(contactId);
+      if (!contact) {
+        return c.json({ error: "Contact not found" }, 404);
+      }
+
+      const context: TriggerContext = {
+        projectId,
+        contactId: contact.id,
+        contactEmail: contact.email ?? undefined,
+        contactName: contact.name ?? undefined,
+        tagId,
+      };
+
+      const executionService = new WorkflowExecutionService(db);
+      const runId = await executionService.dispatchTestRun(workflowId, context, c.env as AppEnv);
+
+      if (!runId) {
+        return c.json({ error: "Workflow has no steps" }, 400);
+      }
+
+      return c.json({ success: true, runId }, 201);
+    } catch (err) {
+      console.error("Workflow test-run error:", err);
+      return c.json({ error: "Failed to test-run workflow" }, 500);
+    }
+  },
+);
+
 // ─── API Keys ────────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/api-keys", async (c) => {

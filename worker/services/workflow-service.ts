@@ -2,6 +2,20 @@ import { eq, and, asc, desc } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 
+// ─── Step Log Type ───────────────────────────────────────────────────────────
+
+export interface StepLog {
+  stepIndex: number;
+  stepType: string;
+  stepLabel: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  input: Record<string, unknown> | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 // ─── Workflow Service ────────────────────────────────────────────────────────
 
 export class WorkflowService {
@@ -111,7 +125,7 @@ export class WorkflowService {
       workflowId,
       sortOrder,
       type: data.type,
-      config: data.config ? JSON.stringify(data.config) : null,
+      config: data.config ?? null,
     });
 
     return this.getStepById(id);
@@ -129,7 +143,7 @@ export class WorkflowService {
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
     if (data.type !== undefined) values.type = data.type;
     if (data.config !== undefined)
-      values.config = data.config ? JSON.stringify(data.config) : null;
+      values.config = data.config ?? null;
 
     if (Object.keys(values).length === 0) return this.getStepById(id);
 
@@ -266,5 +280,28 @@ export class WorkflowService {
       .where(eq(dbSchema.workflowRuns.id, runId))
       .limit(1);
     return rows[0] ?? null;
+  }
+
+  // ─── Step Logs ─────────────────────────────────────────────────────────
+
+  async getStepLogs(runId: string): Promise<StepLog[]> {
+    const rows = await this.db
+      .select({ stepLogs: dbSchema.workflowRuns.stepLogs })
+      .from(dbSchema.workflowRuns)
+      .where(eq(dbSchema.workflowRuns.id, runId))
+      .limit(1);
+    const raw = rows[0]?.stepLogs;
+    if (!raw) return [];
+    if (typeof raw === "string") {
+      try { return JSON.parse(raw); } catch { return []; }
+    }
+    return raw as StepLog[];
+  }
+
+  async updateStepLogs(runId: string, stepLogs: StepLog[]) {
+    await this.db
+      .update(dbSchema.workflowRuns)
+      .set({ stepLogs: stepLogs as unknown as null })
+      .where(eq(dbSchema.workflowRuns.id, runId));
   }
 }

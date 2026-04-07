@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -27,6 +27,10 @@ import {
   XCircle,
   RotateCw,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  MinusCircle,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -52,7 +56,17 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import { queryClient } from "@/lib/query-client";
+import { VariableInput, VariableTextarea } from "@/components/ui/variable-input";
+import { WORKFLOW_VARIABLES } from "@/lib/workflow-variables";
+import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -84,6 +98,18 @@ interface WorkflowStep {
   createdAt: string;
 }
 
+interface StepLogEntry {
+  stepIndex: number;
+  stepType: string;
+  stepLabel: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  input: Record<string, unknown> | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 interface WorkflowRun {
   id: string;
   workflowId: string;
@@ -93,6 +119,7 @@ interface WorkflowRun {
   startedAt: string;
   completedAt: string | null;
   error: string | null;
+  stepLogs: StepLogEntry[] | null;
 }
 
 interface FullWorkflow {
@@ -110,12 +137,6 @@ interface TagItem {
   id: string;
   name: string;
   color: string;
-}
-
-interface ContactItem {
-  id: string;
-  name: string;
-  email: string | null;
 }
 
 // ─── Step Type Definitions ───────────────────────────────────────────────────
@@ -145,7 +166,43 @@ function getStepMeta(type: StepType) {
   return STEP_TYPES.find((s) => s.type === type) ?? STEP_TYPES[0];
 }
 
-function getConfigSummary(type: StepType, config: Record<string, unknown> | null): string {
+function getDefaultConfig(type: StepType): Record<string, unknown> {
+  switch (type) {
+    case "send_email":
+      return { toList: ["{{contact.email}}"], subject: "", body: "" };
+    case "ai_research":
+      return { provider: "chatgpt", resultKey: "research", prompt: "" };
+    case "wait":
+      return { duration: 5, unit: "minutes" };
+    case "condition":
+      return { field: "", operator: "equals", value: "" };
+    case "webhook":
+      return { url: "", method: "POST", headers: "", body: "" };
+    case "update_contact":
+      return { field: "", value: "" };
+    case "add_tag":
+    case "remove_tag":
+      return { tagId: "" };
+    default:
+      return {};
+  }
+}
+
+function parseConfig(raw: unknown): Record<string, unknown> | null {
+  if (!raw) return null;
+  if (typeof raw === "string") {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof raw === "object") return raw as Record<string, unknown>;
+  return null;
+}
+
+function getConfigSummary(type: StepType, rawConfig: unknown): string {
+  const config = parseConfig(rawConfig);
   if (!config) return "Not configured";
   switch (type) {
     case "send_email": {
@@ -209,7 +266,9 @@ export default function WorkflowBuilder() {
     workflowId: string;
   }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") ?? "builder");
   const [editingName, setEditingName] = useState("");
   const [addStepDialogOpen, setAddStepDialogOpen] = useState(false);
   const [selectedStepType, setSelectedStepType] = useState<StepType | null>(null);
@@ -218,7 +277,9 @@ export default function WorkflowBuilder() {
   const [deleteStepId, setDeleteStepId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
-  const [manualContactId, setManualContactId] = useState<string>("");
+  const [deleteWorkflowDialogOpen, setDeleteWorkflowDialogOpen] = useState(false);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [expandedStepIndices, setExpandedStepIndices] = useState<Set<string>>(new Set());
 
   // ─── Fetch workflow ─────────────────────────────────────────────────────
 
@@ -257,17 +318,6 @@ export default function WorkflowBuilder() {
 
   // tags is directly available from the query above
 
-  const { data: contacts = [] } = useQuery<ContactItem[]>({
-    queryKey: ["projects", projectId, "contacts", "workflow-runner"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/contacts`);
-      if (!res.ok) throw new Error("Failed to fetch contacts");
-      const data = await res.json();
-      return (data.contacts ?? []) as ContactItem[];
-    },
-    enabled: !!projectId,
-  });
-
   // ─── Fetch runs ─────────────────────────────────────────────────────────
 
   const { data: runs = [] } = useQuery<WorkflowRun[]>({
@@ -281,9 +331,11 @@ export default function WorkflowBuilder() {
       return data.runs ?? [];
     },
     enabled: !!projectId && !!workflowId,
+    refetchInterval: (query) => {
+      const data = query.state.data as WorkflowRun[] | undefined;
+      return data?.some((r) => r.status === "running") ? 3000 : false;
+    },
   });
-
-  // runs is directly available from the query above
 
   // Sync editing name
   useEffect(() => {
@@ -351,6 +403,22 @@ export default function WorkflowBuilder() {
     onSuccess: invalidateWorkflow,
   });
 
+  const deleteWorkflowMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/workflows/${workflowId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error("Failed to delete workflow");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "workflows"],
+      });
+      navigate(`/app/projects/${projectId}/workflows`);
+    },
+  });
+
   const deleteStepMutation = useMutation({
     mutationFn: async (stepId: string) => {
       const res = await fetch(
@@ -362,31 +430,6 @@ export default function WorkflowBuilder() {
     onSuccess: () => {
       invalidateWorkflow();
       setDeleteStepId(null);
-    },
-  });
-
-  const runWorkflowMutation = useMutation({
-    mutationFn: async (contactId?: string) => {
-      const res = await fetch(
-        `/api/projects/${projectId}/workflows/${workflowId}/trigger`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(contactId ? { contactId } : {}),
-        },
-      );
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to trigger workflow");
-      }
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["projects", projectId, "workflows", workflowId, "runs"],
-      });
-      setRunDialogOpen(false);
-      setManualContactId("");
     },
   });
 
@@ -408,7 +451,9 @@ export default function WorkflowBuilder() {
   function openEditStepDialog(step: WorkflowStep) {
     setEditingStepId(step.id);
     setSelectedStepType(step.type);
-    setStepConfig(step.config ? { ...step.config } : {});
+    const existing = parseConfig(step.config) ?? {};
+    // Merge defaults under existing config so missing fields get filled
+    setStepConfig({ ...getDefaultConfig(step.type), ...existing });
     setAddStepDialogOpen(true);
   }
 
@@ -434,15 +479,11 @@ export default function WorkflowBuilder() {
         {
           type: selectedStepType,
           sortOrder: insertIndex ?? undefined,
-          config: Object.keys(stepConfig).length > 0 ? stepConfig : undefined,
+          config: stepConfig,
         },
         { onSuccess: () => closeStepDialog() },
       );
     }
-  }
-
-  function handleRunWorkflow() {
-    runWorkflowMutation.mutate(manualContactId || undefined);
   }
 
   // ─── Render: Loading ────────────────────────────────────────────────────
@@ -520,29 +561,7 @@ export default function WorkflowBuilder() {
               className="h-8 text-lg font-semibold border-transparent bg-transparent px-1 hover:border-border focus-visible:border-border"
             />
           </div>
-          <Badge variant="outline" className="shrink-0 gap-1">
-            <TriggerIcon className="h-3 w-3" />
-            {triggerMeta.label}
-          </Badge>
-          <Badge
-            variant={workflow.status === "active" ? "success" : "secondary"}
-            className="shrink-0"
-          >
-            {workflow.status}
-          </Badge>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {workflow.trigger === "manual" && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setRunDialogOpen(true)}
-            >
-              <Play className="h-4 w-4" />
-              Run Workflow
-            </Button>
-          )}
-          <div className="flex items-center gap-2 mr-2">
+          <div className="flex items-center gap-2 shrink-0">
             <span className="text-xs text-muted-foreground">
               {workflow.status === "active" ? "Active" : "Draft"}
             </span>
@@ -556,32 +575,47 @@ export default function WorkflowBuilder() {
             />
           </div>
         </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setRunDialogOpen(true)}
+          >
+            <Play className="h-4 w-4" />
+            Test Run
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => setDeleteWorkflowDialogOpen(true)}
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </Button>
+        </div>
       </div>
 
-      <Tabs defaultValue="builder" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList>
           <TabsTrigger value="builder">Builder</TabsTrigger>
           <TabsTrigger value="runs">Runs</TabsTrigger>
         </TabsList>
 
         <TabsContent value="builder">
-          <div className="max-w-2xl mx-auto py-6">
+          <div
+            className="relative min-h-[60vh] rounded-[20px] bg-muted/20 overflow-hidden"
+            style={{
+              backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          >
+          <div className="max-w-2xl mx-auto py-8 px-4">
             {/* Trigger node */}
-            <Card className="border-2 border-primary/20 bg-primary/5">
-              <CardContent className="py-4 flex items-center gap-3">
-                <div className="h-10 w-10 rounded-[12px] bg-primary/10 flex items-center justify-center shrink-0">
-                  <TriggerIcon className="h-5 w-5 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    Trigger
-                  </p>
-                  <p className="text-sm font-semibold text-foreground">
-                    {triggerMeta.label}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
+            <div className="flex flex-col items-center py-4">
+              <TriggerIcon className="h-6 w-6 text-muted-foreground mb-1" />
+              <p className="text-xs text-muted-foreground">{triggerMeta.label}</p>
+            </div>
 
             {/* Connector + Add Step button */}
             <div className="flex flex-col items-center py-2">
@@ -605,7 +639,7 @@ export default function WorkflowBuilder() {
               .map((step, idx) => {
                 const stepMeta = getStepMeta(step.type);
                 const StepIcon = stepMeta.icon;
-                const summary = getConfigSummary(step.type, step.config as Record<string, unknown> | null);
+                const summary = getConfigSummary(step.type, step.config);
 
                 return (
                   <div key={step.id}>
@@ -664,13 +698,12 @@ export default function WorkflowBuilder() {
 
             {/* Final empty state if steps exist but user wants to add more at end */}
             {steps.length > 0 && (
-              <div className="flex flex-col items-center rounded-[20px] border border-dashed py-8">
-                <Zap className="h-6 w-6 text-muted-foreground mb-2" />
-                <p className="text-xs text-muted-foreground">
-                  End of workflow
-                </p>
+              <div className="flex flex-col items-center py-4">
+                <Zap className="h-6 w-6 text-muted-foreground mb-1" />
+                <p className="text-xs text-muted-foreground">End of workflow</p>
               </div>
             )}
+          </div>
           </div>
         </TabsContent>
 
@@ -687,146 +720,187 @@ export default function WorkflowBuilder() {
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
-                {runs.map((run) => (
-                  <Card key={run.id}>
-                    <CardContent className="py-3 flex items-center gap-4">
-                      <div className="shrink-0">
-                        {run.status === "completed" && (
-                          <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                        )}
-                        {run.status === "failed" && (
-                          <XCircle className="h-5 w-5 text-destructive" />
-                        )}
-                        {run.status === "running" && (
-                          <Loader className="h-5 w-5 text-blue-600 animate-spin" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <Badge
-                            variant={
-                              run.status === "completed"
-                                ? "success"
-                                : run.status === "failed"
-                                  ? "destructive"
-                                  : "secondary"
-                            }
-                            className="text-[11px] px-2 py-0"
-                          >
-                            {run.status}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            Step {run.currentStepIndex + 1}
-                            {steps.length > 0 && ` / ${steps.length}`}
-                          </span>
+              <div className="space-y-3">
+                {runs.map((run) => {
+                  const isExpanded = expandedRunId === run.id;
+                  const stepLogs: StepLogEntry[] = Array.isArray(run.stepLogs) ? run.stepLogs : [];
+                  const completedSteps = stepLogs.filter((s) => s.status === "completed").length;
+
+                  return (
+                    <div key={run.id}>
+                      {/* Run header — click to expand */}
+                      <button
+                        type="button"
+                        onClick={() => setExpandedRunId(isExpanded ? null : run.id)}
+                        className="w-full flex items-center gap-3 rounded-[16px] bg-muted/50 px-4 py-3 text-left hover:bg-muted/80 transition-colors"
+                      >
+                        <div className="shrink-0">
+                          {run.status === "completed" && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+                          {run.status === "failed" && <XCircle className="h-4 w-4 text-destructive" />}
+                          {run.status === "running" && <Loader className="h-4 w-4 text-blue-600 animate-spin" />}
                         </div>
-                        {run.error && (
-                          <p className="text-xs text-destructive truncate">
-                            {run.error}
-                          </p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                run.status === "completed" ? "success" : run.status === "failed" ? "destructive" : "secondary"
+                              }
+                              className="text-[11px] px-2 py-0"
+                            >
+                              {run.status}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {completedSteps}/{stepLogs.length || steps.length} steps
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {formatDate(run.startedAt)}
+                        </span>
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                         )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-muted-foreground">
-                          Started {formatDate(run.startedAt)}
-                        </p>
-                        {run.completedAt && (
-                          <p className="text-xs text-muted-foreground">
-                            Completed {formatDate(run.completedAt)}
-                          </p>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                      </button>
+
+                      {/* Expanded: step timeline */}
+                      {isExpanded && (
+                        <div className="ml-4 mt-2 mb-1">
+                          {stepLogs.length === 0 ? (
+                            <p className="text-xs text-muted-foreground py-2 pl-6">
+                              No step logs available for this run.
+                            </p>
+                          ) : (
+                            <div className="relative">
+                              {/* Vertical timeline line */}
+                              <div className="absolute left-[7px] top-3 bottom-3 w-px bg-border" />
+
+                              {stepLogs.map((sl, idx) => {
+                                const stepKey = `${run.id}-${idx}`;
+                                const isStepExpanded = expandedStepIndices.has(stepKey);
+
+                                return (
+                                  <div key={idx} className="relative pl-6 pb-4 last:pb-0">
+                                    {/* Timeline dot */}
+                                    <div className="absolute left-0 top-0.5">
+                                      {sl.status === "completed" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
+                                      {sl.status === "failed" && <XCircle className="h-3.5 w-3.5 text-destructive" />}
+                                      {sl.status === "running" && <Loader className="h-3.5 w-3.5 text-blue-600 animate-spin" />}
+                                      {sl.status === "pending" && <Circle className="h-3.5 w-3.5 text-muted-foreground/40" />}
+                                      {sl.status === "skipped" && <MinusCircle className="h-3.5 w-3.5 text-muted-foreground/40" />}
+                                    </div>
+
+                                    {/* Step content */}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setExpandedStepIndices((prev) => {
+                                          const next = new Set(prev);
+                                          if (next.has(stepKey)) next.delete(stepKey);
+                                          else next.add(stepKey);
+                                          return next;
+                                        });
+                                      }}
+                                      className="w-full flex items-center gap-2 text-left"
+                                    >
+                                      <span className={`text-sm font-medium ${sl.status === "skipped" ? "text-muted-foreground/50 line-through" : "text-foreground"}`}>
+                                        {sl.stepLabel}
+                                      </span>
+                                      {sl.startedAt && (
+                                        <span className="text-[11px] text-muted-foreground">
+                                          {new Date(sl.startedAt).toLocaleTimeString()}
+                                          {sl.completedAt && ` → ${new Date(sl.completedAt).toLocaleTimeString()}`}
+                                        </span>
+                                      )}
+                                      {sl.status === "failed" && sl.error && (
+                                        <span className="text-[11px] text-destructive truncate max-w-[200px]">
+                                          {sl.error}
+                                        </span>
+                                      )}
+                                      {(sl.input || sl.output) && (
+                                        isStepExpanded
+                                          ? <ChevronDown className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
+                                          : <ChevronRight className="h-3 w-3 text-muted-foreground ml-auto shrink-0" />
+                                      )}
+                                    </button>
+
+                                    {/* Expanded: input/output */}
+                                    {isStepExpanded && (sl.input || sl.output || sl.error) && (
+                                      <div className="mt-2 space-y-2">
+                                        {sl.input && (
+                                          <div className="rounded-[12px] bg-muted/50 p-3">
+                                            <p className="text-[11px] font-medium text-muted-foreground mb-1">Input</p>
+                                            <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                                              {JSON.stringify(sl.input, null, 2)}
+                                            </pre>
+                                          </div>
+                                        )}
+                                        {sl.output && (
+                                          <div className="rounded-[12px] bg-muted/50 p-3">
+                                            <p className="text-[11px] font-medium text-muted-foreground mb-1">Output</p>
+                                            <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all">
+                                              {JSON.stringify(sl.output, null, 2)}
+                                            </pre>
+                                          </div>
+                                        )}
+                                        {sl.error && (
+                                          <div className="rounded-[12px] bg-destructive/5 p-3">
+                                            <p className="text-[11px] font-medium text-destructive mb-1">Error</p>
+                                            <pre className="text-xs font-mono text-destructive whitespace-pre-wrap break-all">
+                                              {sl.error}
+                                            </pre>
+                                          </div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </TabsContent>
       </Tabs>
 
-      <Dialog open={runDialogOpen} onOpenChange={setRunDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Run Workflow</DialogTitle>
-            <DialogDescription>
-              Trigger this manual workflow for a specific contact.
-            </DialogDescription>
-          </DialogHeader>
+      {/* Test Run Dialog */}
+      {projectId && workflowId && workflow && (
+        <WorkflowRunDialog
+          open={runDialogOpen}
+          onOpenChange={setRunDialogOpen}
+          projectId={projectId}
+          workflowId={workflowId}
+          trigger={workflow.trigger}
+          workflowName={workflow.name}
+          onSuccess={() => {
+            queryClient.invalidateQueries({
+              queryKey: ["projects", projectId, "workflows", workflowId, "runs"],
+            });
+            setActiveTab("runs");
+          }}
+        />
+      )}
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="manual-contact">Contact</Label>
-              <Select
-                value={manualContactId}
-                onValueChange={setManualContactId}
-              >
-                <SelectTrigger id="manual-contact">
-                  <SelectValue placeholder="Select a contact" />
-                </SelectTrigger>
-                <SelectContent>
-                  {contacts.length === 0 && (
-                    <SelectItem value="_none" disabled>
-                      No contacts available
-                    </SelectItem>
-                  )}
-                  {contacts.map((contact) => (
-                    <SelectItem key={contact.id} value={contact.id}>
-                      {contact.name}
-                      {contact.email ? ` (${contact.email})` : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">
-                AI research steps need a contact so they have someone to enrich.
-              </p>
-            </div>
-
-            {runWorkflowMutation.isError && (
-              <p className="text-sm text-destructive">
-                {runWorkflowMutation.error?.message ?? "Failed to run workflow."}
-              </p>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setRunDialogOpen(false)}
-              disabled={runWorkflowMutation.isPending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRunWorkflow}
-              disabled={runWorkflowMutation.isPending || !manualContactId}
-            >
-              {runWorkflowMutation.isPending ? (
-                <Loader className="h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-              Run Workflow
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add/Edit Step Dialog */}
-      <Dialog open={addStepDialogOpen} onOpenChange={(open) => !open && closeStepDialog()}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>
+      {/* Add/Edit Step Sidebar */}
+      <Sheet open={addStepDialogOpen} onOpenChange={(open) => !open && closeStepDialog()}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>
               {editingStepId ? "Edit Step" : "Add Step"}
-            </DialogTitle>
-            <DialogDescription>
+            </SheetTitle>
+            <SheetDescription>
               {editingStepId
                 ? "Update this step's type and configuration."
                 : "Choose a step type and configure it."}
-            </DialogDescription>
-          </DialogHeader>
+            </SheetDescription>
+          </SheetHeader>
 
           <form onSubmit={handleSaveStep} className="space-y-4">
             {/* Step type selection */}
@@ -838,7 +912,7 @@ export default function WorkflowBuilder() {
                     type="button"
                     onClick={() => {
                       setSelectedStepType(st.type);
-                      setStepConfig({});
+                      setStepConfig(getDefaultConfig(st.type));
                     }}
                     className="flex items-center gap-3 rounded-[16px] border px-3 py-3 text-sm text-left hover:bg-accent transition-colors"
                   >
@@ -897,7 +971,7 @@ export default function WorkflowBuilder() {
               </p>
             )}
 
-            <DialogFooter>
+            <div className="flex justify-end gap-2 pt-4">
               <Button
                 type="button"
                 variant="outline"
@@ -921,10 +995,10 @@ export default function WorkflowBuilder() {
                   {editingStepId ? "Save Changes" : "Add Step"}
                 </Button>
               )}
-            </DialogFooter>
+            </div>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       {/* Delete Step Confirmation */}
       <Dialog open={!!deleteStepId} onOpenChange={(open) => !open && setDeleteStepId(null)}>
@@ -958,6 +1032,40 @@ export default function WorkflowBuilder() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Workflow Confirmation */}
+      <Dialog open={deleteWorkflowDialogOpen} onOpenChange={setDeleteWorkflowDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Workflow</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this workflow? All steps and run
+              history will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteWorkflowDialogOpen(false)}
+              disabled={deleteWorkflowMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => deleteWorkflowMutation.mutate()}
+              disabled={deleteWorkflowMutation.isPending}
+            >
+              {deleteWorkflowMutation.isPending ? (
+                <Loader className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+              Delete Workflow
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -985,13 +1093,14 @@ function StepConfigForm({
         <div className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="email-to">Recipients</Label>
-            <textarea
+            <VariableTextarea
               id="email-to"
+              variables={WORKFLOW_VARIABLES}
               value={Array.isArray(config.toList) ? config.toList.join("\n") : ((config.to as string) ?? "{{contact.email}}")}
-              onChange={(e) =>
+              onValueChange={(val) =>
                 set(
                   "toList",
-                  e.target.value
+                  val
                     .split(/[\n,;]+/g)
                     .map((entry) => entry.trim())
                     .filter(Boolean),
@@ -999,7 +1108,6 @@ function StepConfigForm({
               }
               placeholder={"{{contact.email}}\nteam@example.com"}
               rows={3}
-              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
             <p className="text-[11px] text-muted-foreground">
               Use one recipient per line. Variables like {"{{contact.email}}"} are supported.
@@ -1007,22 +1115,23 @@ function StepConfigForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="email-subject">Subject</Label>
-            <Input
+            <VariableInput
               id="email-subject"
+              variables={WORKFLOW_VARIABLES}
               value={(config.subject as string) ?? ""}
-              onChange={(e) => set("subject", e.target.value)}
+              onValueChange={(val) => set("subject", val)}
               placeholder="Welcome to our platform"
             />
           </div>
           <div className="space-y-2">
             <Label htmlFor="email-body">Body</Label>
-            <textarea
+            <VariableTextarea
               id="email-body"
+              variables={WORKFLOW_VARIABLES}
               value={(config.body as string) ?? ""}
-              onChange={(e) => set("body", e.target.value)}
+              onValueChange={(val) => set("body", val)}
               placeholder="Hello {{contact.name}},\n\nThank you for..."
               rows={5}
-              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
             <p className="text-[11px] text-muted-foreground">
               Common variables: {"{{contact.name}}"}, {"{{contact.email}}"}, {"{{research.summary}}"}.
@@ -1065,13 +1174,13 @@ function StepConfigForm({
 
           <div className="space-y-2">
             <Label htmlFor="research-prompt">Research Prompt</Label>
-            <textarea
+            <VariableTextarea
               id="research-prompt"
+              variables={WORKFLOW_VARIABLES}
               value={(config.prompt as string) ?? ""}
-              onChange={(e) => set("prompt", e.target.value)}
+              onValueChange={(val) => set("prompt", val)}
               placeholder="Research this contact and company using public web sources. Summarize who they are, what the company does, and any signals that matter for follow-up."
               rows={6}
-              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
             />
             <p className="text-[11px] text-muted-foreground">
               The workflow automatically adds contact name and email to the research context.
@@ -1162,10 +1271,11 @@ function StepConfigForm({
           </p>
           <div className="space-y-2">
             <Label htmlFor="condition-field">Field</Label>
-            <Input
+            <VariableInput
               id="condition-field"
+              variables={WORKFLOW_VARIABLES}
               value={(config.field as string) ?? ""}
-              onChange={(e) => set("field", e.target.value)}
+              onValueChange={(val) => set("field", val)}
               placeholder="e.g. contact.email or research.company"
             />
           </div>
@@ -1190,10 +1300,11 @@ function StepConfigForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="condition-value">Value</Label>
-            <Input
+            <VariableInput
               id="condition-value"
+              variables={WORKFLOW_VARIABLES}
               value={(config.value as string) ?? ""}
-              onChange={(e) => set("value", e.target.value)}
+              onValueChange={(val) => set("value", val)}
               placeholder="Expected value"
             />
           </div>
@@ -1205,10 +1316,11 @@ function StepConfigForm({
         <div className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="webhook-url">URL</Label>
-            <Input
+            <VariableInput
               id="webhook-url"
+              variables={WORKFLOW_VARIABLES}
               value={(config.url as string) ?? ""}
-              onChange={(e) => set("url", e.target.value)}
+              onValueChange={(val) => set("url", val)}
               placeholder="https://example.com/webhook"
             />
           </div>
@@ -1243,13 +1355,14 @@ function StepConfigForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="webhook-body">Body</Label>
-            <textarea
+            <VariableTextarea
               id="webhook-body"
+              variables={WORKFLOW_VARIABLES}
               value={(config.body as string) ?? ""}
-              onChange={(e) => set("body", e.target.value)}
+              onValueChange={(val) => set("body", val)}
               placeholder='{"contactEmail":"{{contact.email}}","summary":"{{research.summary}}"}'
               rows={3}
-              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y font-mono text-xs"
+              className="font-mono text-xs"
             />
             <p className="text-[11px] text-muted-foreground">
               Variables use dot-path syntax, for example {"{{contact.email}}"} or {"{{research.summary}}"}.
@@ -1280,10 +1393,11 @@ function StepConfigForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="update-value">Value</Label>
-            <Input
+            <VariableInput
               id="update-value"
+              variables={WORKFLOW_VARIABLES}
               value={(config.value as string) ?? ""}
-              onChange={(e) => set("value", e.target.value)}
+              onValueChange={(val) => set("value", val)}
               placeholder="New value or {{research.summary}}"
             />
             <p className="text-[11px] text-muted-foreground">
