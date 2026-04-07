@@ -9,8 +9,8 @@ import { queryClient } from "./lib/query-client";
 import posthog from "posthog-js";
 import { PostHogErrorBoundary, PostHogProvider } from "@posthog/react";
 
-posthog.init(import.meta.env.phc_pOgIt9tEObYYuDB8c8CuF6zaJFNOXZ2IlJkI8CoKuor, {
-  api_host: import.meta.env.https://us.i.posthog.com,
+posthog.init("phc_pOgIt9tEObYYuDB8c8CuF6zaJFNOXZ2IlJkI8CoKuor", {
+  api_host: "https://us.i.posthog.com",
   defaults: "2026-01-30",
 });
 
