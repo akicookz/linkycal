@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { FormFieldRenderer } from "@/components/FormFieldRenderer";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/track";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -104,6 +105,14 @@ export default function PublicForm() {
   const form = formData?.form;
   const project = formData?.project;
   const theme = project?.settings?.theme;
+
+  // ─── Track page view ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (formSlug && form && project) {
+      track("form_view", { projectSlug: project.slug, resourceSlug: formSlug });
+    }
+  }, [formSlug, form, project]);
 
   // ─── Apply theme ───────────────────────────────────────────────────────
 

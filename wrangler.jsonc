@@ -40,6 +40,12 @@
       "remote": true,
     },
   ],
+  "analytics_engine_datasets": [
+    {
+      "binding": "ANALYTICS",
+      "dataset": "linkycal_analytics",
+    },
+  ],
   "queues": {
     "consumers": [
       {
@@ -57,6 +63,7 @@
   },
   "vars": {
     "BETTER_AUTH_URL": "https://linkycal.com",
+    "CF_ACCOUNT_ID": "35bc7a4522237728214ba9d54c36002e",
     "SENDER_EMAIL": "noreply@updates.linkycal.com",
     "COMPANY_ADDRESS": "131 Continental Dr, Suite 305, Newark, DE 19713",
     "STRIPE_FREE_MONTHLY_PRICE_ID": "",

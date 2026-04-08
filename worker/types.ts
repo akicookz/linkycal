@@ -14,6 +14,7 @@ export interface PlanLimits {
   maxCalendarConnections: number; // -1 = unlimited
   apiAccess: boolean;
   customWidgets: boolean;
+  analytics: boolean;
 }
 
 // ─── Worker Env ──────────────────────────────────────────────────────────────
@@ -68,6 +69,11 @@ export interface AppEnv {
   UPLOADS: R2Bucket;
   CACHE: KVNamespace;
   WORKFLOW_QUEUE: Queue;
+  ANALYTICS: AnalyticsEngineDataset;
+
+  // Analytics queries
+  CF_ACCOUNT_ID: string;
+  WAE_API_TOKEN: string;
 }
 
 // ─── Hono App Context ───────────────────────────────────────────────────────

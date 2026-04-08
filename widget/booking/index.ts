@@ -1,4 +1,4 @@
-import { fetchApi } from "@widget/api";
+import { fetchApi, track } from "@widget/api";
 import { injectStyles, type WidgetTheme } from "@widget/styles";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -8,6 +8,7 @@ interface BookingWidgetOptions {
   eventTypeSlug: string;
   container: string | HTMLElement;
   theme?: WidgetTheme;
+  utms?: Record<string, string>;
 }
 
 interface EventType {
@@ -99,7 +100,7 @@ const SVG_ARROW_LEFT = `<svg width="14" height="14" viewBox="0 0 16 16" fill="no
 // ── Main Widget ──────────────────────────────────────────────────────────
 
 function initBookingWidget(options: BookingWidgetOptions): void {
-  const { projectSlug, eventTypeSlug, theme } = options;
+  const { projectSlug, eventTypeSlug, theme, utms } = options;
   const widgetLoadedAt = btoa(String(Date.now()));
 
   const root =
@@ -502,6 +503,7 @@ function initBookingWidget(options: BookingWidgetOptions): void {
       } else {
         state.eventType = found;
         state.step = "date";
+        track("page_view", { projectSlug, resourceSlug: eventTypeSlug }, utms);
       }
     } catch (err) {
       state.error = err instanceof Error ? err.message : "Failed to load booking configuration.";

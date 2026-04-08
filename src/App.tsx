@@ -22,6 +22,7 @@ import Workflows from "./pages/Workflows";
 import WorkflowBuilder from "./pages/WorkflowBuilder";
 import Settings from "./pages/Settings";
 import ApiKeys from "./pages/ApiKeys";
+import Analytics from "./pages/Analytics";
 import Profile from "./pages/Profile";
 import Billing from "./pages/Billing";
 import AuthCallback from "./pages/AuthCallback";
@@ -124,6 +125,7 @@ function App() {
         <Route path="projects/:projectId/contacts/:contactId" element={<ContactDetail />} />
         <Route path="projects/:projectId/workflows" element={<Workflows />} />
         <Route path="projects/:projectId/workflows/:workflowId" element={<WorkflowBuilder />} />
+        <Route path="projects/:projectId/analytics" element={<Analytics />} />
         <Route path="projects/:projectId/settings" element={<Settings />} />
         <Route path="projects/:projectId/api-keys" element={<ApiKeys />} />
       </Route>

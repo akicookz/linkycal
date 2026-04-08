@@ -1,4 +1,4 @@
-import { fetchApi } from "@widget/api";
+import { fetchApi, track } from "@widget/api";
 import { getRenderableRichTextHtml } from "@widget/rich-text";
 import { injectStyles, type WidgetTheme } from "@widget/styles";
 
@@ -9,6 +9,7 @@ interface FormWidgetOptions {
   formSlug: string;
   container: string | HTMLElement;
   theme?: WidgetTheme;
+  utms?: Record<string, string>;
 }
 
 interface FieldOption {
@@ -346,7 +347,7 @@ function renderField(
 // ── Main Widget ──────────────────────────────────────────────────────────
 
 function initFormWidget(options: FormWidgetOptions): void {
-  const { projectSlug, formSlug, theme } = options;
+  const { projectSlug, formSlug, theme, utms } = options;
 
   // Resolve container
   const root =
@@ -669,6 +670,7 @@ function initFormWidget(options: FormWidgetOptions): void {
       );
       state.config = config;
       state.phase = "form";
+      track("form_view", { projectSlug, resourceSlug: formSlug }, utms);
       await startResponse();
     } catch (err) {
       state.globalError =

@@ -23,6 +23,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/track";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -236,6 +237,14 @@ export default function PublicBooking() {
   const formSteps = bookingForm?.steps ?? [];
   const totalSteps = 2 + formSteps.length + 1; // date + details + form steps + confirmation
   const confirmationStep = totalSteps;
+
+  // ─── Track page view ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (projectSlug && eventSlug && eventType) {
+      track("page_view", { projectSlug, resourceSlug: eventSlug });
+    }
+  }, [projectSlug, eventSlug, eventType]);
 
   // ─── Apply theme ───────────────────────────────────────────────────────
 

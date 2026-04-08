@@ -392,6 +392,35 @@ export const checkAvailabilitySchema = z.object({
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+export const trackEventSchema = z.object({
+  event: z.enum(["page_view", "form_view", "booking_created", "form_started", "form_completed"]),
+  projectSlug: z.string().min(1),
+  resourceSlug: z.string().optional(),
+  utmSource: z.string().max(200).optional(),
+  utmMedium: z.string().max(200).optional(),
+  utmCampaign: z.string().max(200).optional(),
+  utmTerm: z.string().max(200).optional(),
+  utmContent: z.string().max(200).optional(),
+  referrer: z.string().max(2000).optional(),
+  source: z.enum(["direct", "widget"]).optional(),
+  params: z.record(z.string(), z.string()).optional(),
+});
+
+export const analyticsQuerySchema = z.object({
+  period: z.enum(["7d", "30d", "90d", "custom"]).default("30d"),
+  start: z.string().optional(),
+  end: z.string().optional(),
+  utmSource: z.string().optional(),
+  utmMedium: z.string().optional(),
+  utmCampaign: z.string().optional(),
+  resourceSlug: z.string().optional(),
+  groupBy: z.enum(["source", "country", "resource", "utm_source", "utm_medium", "utm_campaign"]).optional(),
+});
+
+// ─── Billing ─────────────────────────────────────────────────────────────────
+
 export const checkoutSchema = z.object({
   plan: z.enum(["pro", "business"]),
   interval: z.enum(["month", "year"]),

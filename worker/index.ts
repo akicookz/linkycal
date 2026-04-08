@@ -41,6 +41,8 @@ import {
   updateEventTypeCalendarsSchema,
   reorderFieldsSchema,
   checkoutSchema,
+  trackEventSchema,
+  analyticsQuerySchema,
   validate,
 } from "./validation";
 
@@ -66,6 +68,13 @@ import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
 import type { TriggerContext } from "./services/workflow-execution-service";
 import { ApiKeyService } from "./services/api-key-service";
+import {
+  writeAnalyticsEvent,
+  queryOverview,
+  queryBookings,
+  queryForms,
+  queryFilterOptions,
+} from "./services/analytics-service";
 
 // ─── Plan Limits ─────────────────────────────────────────────────────────────
 
@@ -80,6 +89,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     maxCalendarConnections: 1,
     apiAccess: false,
     customWidgets: false,
+    analytics: false,
   },
   pro: {
     maxProjects: 5,
@@ -91,6 +101,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     maxCalendarConnections: -1,
     apiAccess: true,
     customWidgets: false,
+    analytics: true,
   },
   business: {
     maxProjects: 20,
@@ -102,6 +113,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     maxCalendarConnections: -1,
     apiAccess: true,
     customWidgets: true,
+    analytics: true,
   },
 };
 
@@ -898,6 +910,49 @@ app.get("/api/v1/availability/:slug", async (c) => {
   }
 });
 
+// ─── Analytics Tracking (public) ─────────────────────────────────────────────
+
+app.post("/api/v1/t", async (c) => {
+  try {
+    const body = await c.req.json();
+    const data = validate(trackEventSchema, body);
+
+    const db = drizzle(c.env.DB, { schema });
+    const [project] = await db
+      .select({ id: dbSchema.projects.id })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.slug, data.projectSlug))
+      .limit(1);
+
+    if (!project) return c.body(null, 204);
+
+    const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+    const country = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? "";
+    const city = (cf?.city as string) ?? "";
+
+    writeAnalyticsEvent(c.env.ANALYTICS, {
+      projectId: project.id,
+      event: data.event,
+      resourceSlug: data.resourceSlug,
+      utmSource: data.utmSource,
+      utmMedium: data.utmMedium,
+      utmCampaign: data.utmCampaign,
+      utmTerm: data.utmTerm,
+      utmContent: data.utmContent,
+      referrer: data.referrer,
+      country,
+      city,
+      source: data.source,
+      params: data.params,
+    });
+
+    return c.body(null, 204);
+  } catch {
+    // Tracking should never fail the request
+    return c.body(null, 204);
+  }
+});
+
 // Create booking (public)
 app.post("/api/v1/bookings", async (c) => {
   const ip = c.req.header("cf-connecting-ip") ?? "unknown";
@@ -1212,6 +1267,17 @@ app.post("/api/v1/bookings", async (c) => {
       })(),
     );
 
+    // Track booking_created event
+    try {
+      writeAnalyticsEvent(c.env.ANALYTICS, {
+        projectId: project.id,
+        event: "booking_created",
+        resourceSlug: data.eventTypeSlug,
+        country: geoCountry ?? "",
+        city: geoCity ?? "",
+      });
+    } catch { /* tracking should never fail the request */ }
+
     return c.json({ booking }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -1271,6 +1337,17 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
 
     const fullForm = await service.getFullForm(form.id);
 
+    // Track form_started event
+    try {
+      writeAnalyticsEvent(c.env.ANALYTICS, {
+        projectId: project.id,
+        event: "form_started",
+        resourceSlug: slug,
+        country: geoCountry ?? "",
+        city: geoCity ?? "",
+      });
+    } catch { /* tracking should never fail the request */ }
+
     return c.json({ response, form: fullForm }, 201);
   } catch (err) {
     console.error("Form response creation error:", err);
@@ -1315,6 +1392,22 @@ app.patch(
         c.executionCtx.waitUntil(
           dispatchFormSubmittedTrigger(db, c.env as AppEnv, response.id, response.formId),
         );
+
+        // Track form_completed event
+        try {
+          const slug = c.req.param("slug");
+          const [form] = await db.select({ projectId: dbSchema.forms.projectId }).from(dbSchema.forms).where(eq(dbSchema.forms.id, response.formId)).limit(1);
+          if (form) {
+            const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+            writeAnalyticsEvent(c.env.ANALYTICS, {
+              projectId: form.projectId,
+              event: "form_completed",
+              resourceSlug: slug,
+              country: (cf?.country as string) ?? "",
+              city: (cf?.city as string) ?? "",
+            });
+          }
+        } catch { /* tracking should never fail */ }
       }
 
       return c.json({ response });
@@ -1547,6 +1640,17 @@ app.post("/api/public/forms/:slug/responses", async (c) => {
       await db.update(dbSchema.formResponses).set({ ipAddress: geoIp, country: geoCountry, city: geoCity }).where(eq(dbSchema.formResponses.id, response.id));
     }
 
+    // Track form_started event
+    try {
+      writeAnalyticsEvent(c.env.ANALYTICS, {
+        projectId: form.projectId,
+        event: "form_started",
+        resourceSlug: slug,
+        country: geoCountry ?? "",
+        city: geoCity ?? "",
+      });
+    } catch { /* tracking should never fail the request */ }
+
     return c.json({ response }, 201);
   } catch (err) {
     console.error("Public form response creation error:", err);
@@ -1590,6 +1694,22 @@ app.patch(
         c.executionCtx.waitUntil(
           dispatchFormSubmittedTrigger(db, c.env as AppEnv, response.id, response.formId),
         );
+
+        // Track form_completed event
+        try {
+          const slug = c.req.param("slug");
+          const [form] = await db.select({ projectId: dbSchema.forms.projectId }).from(dbSchema.forms).where(eq(dbSchema.forms.id, response.formId)).limit(1);
+          if (form) {
+            const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+            writeAnalyticsEvent(c.env.ANALYTICS, {
+              projectId: form.projectId,
+              event: "form_completed",
+              resourceSlug: slug,
+              country: (cf?.country as string) ?? "",
+              city: (cf?.city as string) ?? "",
+            });
+          }
+        } catch { /* tracking should never fail */ }
       }
 
       return c.json({ response });
@@ -4514,6 +4634,107 @@ app.post("/api/onboarding/complete", async (c) => {
   } catch (err) {
     console.error("Onboarding complete error:", err);
     return c.json({ error: "Failed to complete onboarding" }, 500);
+  }
+});
+
+// ─── Analytics ───────────────────────────────────────────────────────────────
+
+app.get("/api/projects/:projectId/analytics/filters", async (c) => {
+  const planLimits = c.get("planLimits");
+  if (!planLimits.analytics) {
+    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
+  }
+
+  try {
+    const projectId = c.req.param("projectId");
+    const userId = c.get("effectiveUserId");
+    const db = c.get("db");
+
+    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
+    if (!project || project.userId !== userId) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const filters = await queryFilterOptions(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, projectId);
+    return c.json(filters);
+  } catch (err) {
+    console.error("Analytics filters error:", err);
+    return c.json({ error: "Failed to fetch filter options" }, 500);
+  }
+});
+
+app.get("/api/projects/:projectId/analytics/overview", async (c) => {
+  const planLimits = c.get("planLimits");
+  if (!planLimits.analytics) {
+    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
+  }
+
+  try {
+    const projectId = c.req.param("projectId");
+    const userId = c.get("effectiveUserId");
+    const db = c.get("db");
+
+    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
+    if (!project || project.userId !== userId) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
+    const data = await queryOverview(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
+    return c.json(data);
+  } catch (err) {
+    console.error("Analytics overview error:", err);
+    return c.json({ error: "Failed to fetch analytics" }, 500);
+  }
+});
+
+app.get("/api/projects/:projectId/analytics/bookings", async (c) => {
+  const planLimits = c.get("planLimits");
+  if (!planLimits.analytics) {
+    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
+  }
+
+  try {
+    const projectId = c.req.param("projectId");
+    const userId = c.get("effectiveUserId");
+    const db = c.get("db");
+
+    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
+    if (!project || project.userId !== userId) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
+    const data = await queryBookings(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
+    return c.json(data);
+  } catch (err) {
+    console.error("Analytics bookings error:", err);
+    return c.json({ error: "Failed to fetch booking analytics" }, 500);
+  }
+});
+
+app.get("/api/projects/:projectId/analytics/forms", async (c) => {
+  const planLimits = c.get("planLimits");
+  if (!planLimits.analytics) {
+    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
+  }
+
+  try {
+    const projectId = c.req.param("projectId");
+    const userId = c.get("effectiveUserId");
+    const db = c.get("db");
+
+    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
+    if (!project || project.userId !== userId) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
+    const data = await queryForms(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
+    return c.json(data);
+  } catch (err) {
+    console.error("Analytics forms error:", err);
+    return c.json({ error: "Failed to fetch form analytics" }, 500);
   }
 });
 

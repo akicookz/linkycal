@@ -11,6 +11,7 @@ import {
   Workflow,
   Settings,
   Key,
+  BarChart3,
   LogOut,
   ChevronDown,
   Plus,
@@ -83,6 +84,7 @@ function Layout() {
         { label: "Bookings", href: `/app/projects/${currentProject.id}/bookings`, icon: Clock },
         { label: "Forms", href: `/app/projects/${currentProject.id}/forms`, icon: FileText },
         { label: "Contacts", href: `/app/projects/${currentProject.id}/contacts`, icon: Users },
+        { label: "Analytics", href: `/app/projects/${currentProject.id}/analytics`, icon: BarChart3 },
       ]
     : [];
 
