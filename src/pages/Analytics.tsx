@@ -536,7 +536,7 @@ export default function Analytics() {
   const [utmCampaign, setUtmCampaign] = useState<string | undefined>();
 
   // Check plan access
-  const { data: subscription, isLoading: subLoading } = useQuery<{ plan: string; status: string }>({
+  const { data: subData, isLoading: subLoading } = useQuery<{ subscription: { plan: string; status: string } }>({
     queryKey: ["subscription"],
     queryFn: async () => {
       const res = await fetch("/api/billing/subscription");
@@ -545,6 +545,7 @@ export default function Analytics() {
     },
   });
 
+  const subscription = subData?.subscription;
   const hasAccess = subscription?.plan === "pro" || subscription?.plan === "business";
 
   // Fetch filter options
