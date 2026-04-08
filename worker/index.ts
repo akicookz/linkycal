@@ -567,12 +567,34 @@ async function dispatchFormSubmittedTrigger(
     // Resolve or create a contact so steps like add_tag/update_contact work
     let contactId: string | undefined;
     if (email) {
+      // Try to extract name from a "name" field in the form response
+      let contactName = email.split("@")[0];
+      try {
+        const nameFieldValue = await db
+          .select({ value: dbSchema.formFieldValues.value })
+          .from(dbSchema.formFieldValues)
+          .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+          .where(
+            and(
+              eq(dbSchema.formFieldValues.responseId, responseId),
+              eq(dbSchema.formFields.type, "name"),
+            ),
+          )
+          .limit(1);
+        if (nameFieldValue[0]?.value) {
+          contactName = nameFieldValue[0].value;
+        }
+      } catch { /* fall back to email prefix */ }
+
       const contactService = new ContactService(db);
       const contact = await contactService.findOrCreate(form.projectId, {
-        name: email.split("@")[0],
+        name: contactName,
         email,
       });
       contactId = contact.id;
+
+      // Log form_submitted activity for the contact
+      await contactService.logActivity(contact.id, "form_submitted", responseId);
     }
 
     await dispatchWorkflowTrigger(db, env, form.projectId, "form_submitted", {
@@ -1250,6 +1272,16 @@ app.post("/api/v1/bookings", async (c) => {
             name: data.name,
             email: data.email,
           });
+
+          // Link contact to the booking row
+          await db
+            .update(dbSchema.bookings)
+            .set({ contactId: contact.id })
+            .where(eq(dbSchema.bookings.id, booking.id));
+
+          // Log booking activity for the contact
+          await contactService.logActivity(contact.id, "booked", booking.id);
+
           const bookingContext: TriggerContext = {
             projectId: project.id,
             bookingId: booking.id,
@@ -2776,6 +2808,10 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
             name: booking.name,
             email: booking.email,
           });
+
+          // Log cancellation activity for the contact
+          await contactService.logActivity(contact.id, "cancelled", id);
+
           await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_cancelled", {
             projectId,
             bookingId: id,
@@ -2993,6 +3029,10 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
             name: booking.name,
             email: booking.email,
           });
+
+          // Log booking confirmed activity for the contact
+          await contactService.logActivity(contact.id, "booked", id);
+
           await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_confirmed", {
             projectId,
             bookingId: id,
