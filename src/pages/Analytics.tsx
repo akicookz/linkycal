@@ -536,8 +536,8 @@ export default function Analytics() {
   const [utmCampaign, setUtmCampaign] = useState<string | undefined>();
 
   // Check plan access
-  const { data: subData, isLoading: subLoading } = useQuery<{ subscription: { plan: string; status: string } }>({
-    queryKey: ["subscription"],
+  const { data: subData, isLoading: subLoading } = useQuery<{ subscription: { plan: string; status: string }; planLimits: { analytics: boolean } }>({
+    queryKey: ["billing-subscription"],
     queryFn: async () => {
       const res = await fetch("/api/billing/subscription");
       if (!res.ok) throw new Error("Failed");
@@ -545,8 +545,7 @@ export default function Analytics() {
     },
   });
 
-  const subscription = subData?.subscription;
-  const hasAccess = subscription?.plan === "pro" || subscription?.plan === "business";
+  const hasAccess = subData?.planLimits?.analytics === true;
 
   // Fetch filter options
   const { data: filterOptions } = useQuery<FilterOptions>({

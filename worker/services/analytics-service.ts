@@ -17,7 +17,7 @@
 //   blob12: source (direct | widget)
 //   blob13: custom params (JSON stringified)
 //
-// double1: 1 (count helper for SUM)
+// double1: 1 (unused — queries use _sample_interval for sampling-correct counts)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type AnalyticsEvent =
@@ -159,7 +159,7 @@ export async function queryOverview(
     querySql(accountId, apiToken, `
       SELECT
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       GROUP BY blob2
@@ -167,9 +167,9 @@ export async function queryOverview(
     // Time series
     querySql(accountId, apiToken, `
       SELECT
-        toDate(timestamp) AS date,
+        formatDateTime(timestamp, '%Y-%m-%d') AS date,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('page_view', 'form_view', 'booking_created', 'form_completed')
@@ -181,7 +181,7 @@ export async function queryOverview(
       SELECT
         blob4 AS source,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob4 != ''
@@ -194,7 +194,7 @@ export async function queryOverview(
       SELECT
         blob10 AS country,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob10 != ''
@@ -283,7 +283,7 @@ export async function queryBookings(
     querySql(accountId, apiToken, `
       SELECT
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('page_view', 'booking_created')
@@ -293,7 +293,7 @@ export async function queryBookings(
       SELECT
         blob3 AS slug,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('page_view', 'booking_created')
@@ -302,9 +302,9 @@ export async function queryBookings(
     `),
     querySql(accountId, apiToken, `
       SELECT
-        toDate(timestamp) AS date,
+        formatDateTime(timestamp, '%Y-%m-%d') AS date,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('page_view', 'booking_created')
@@ -370,7 +370,7 @@ export async function queryForms(
     querySql(accountId, apiToken, `
       SELECT
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('form_view', 'form_started', 'form_completed')
@@ -380,7 +380,7 @@ export async function queryForms(
       SELECT
         blob3 AS slug,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('form_view', 'form_started', 'form_completed')
@@ -389,9 +389,9 @@ export async function queryForms(
     `),
     querySql(accountId, apiToken, `
       SELECT
-        toDate(timestamp) AS date,
+        formatDateTime(timestamp, '%Y-%m-%d') AS date,
         blob2 AS event,
-        SUM(double1) AS count
+        SUM(_sample_interval) AS count
       FROM linkycal_analytics
       ${filters}
       AND blob2 IN ('form_view', 'form_started', 'form_completed')
@@ -466,21 +466,24 @@ export async function queryFilterOptions(
 }> {
   const [srcRes, medRes, campRes] = await Promise.all([
     querySql(accountId, apiToken, `
-      SELECT DISTINCT blob4 AS val FROM linkycal_analytics
+      SELECT blob4 AS val FROM linkycal_analytics
       WHERE blob1 = '${escSql(projectId)}' AND blob4 != ''
       AND timestamp >= NOW() - INTERVAL '90' DAY
+      GROUP BY blob4
       LIMIT 100
     `),
     querySql(accountId, apiToken, `
-      SELECT DISTINCT blob5 AS val FROM linkycal_analytics
+      SELECT blob5 AS val FROM linkycal_analytics
       WHERE blob1 = '${escSql(projectId)}' AND blob5 != ''
       AND timestamp >= NOW() - INTERVAL '90' DAY
+      GROUP BY blob5
       LIMIT 100
     `),
     querySql(accountId, apiToken, `
-      SELECT DISTINCT blob6 AS val FROM linkycal_analytics
+      SELECT blob6 AS val FROM linkycal_analytics
       WHERE blob1 = '${escSql(projectId)}' AND blob6 != ''
       AND timestamp >= NOW() - INTERVAL '90' DAY
+      GROUP BY blob6
       LIMIT 100
     `),
   ]);
