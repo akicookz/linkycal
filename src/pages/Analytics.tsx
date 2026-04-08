@@ -295,7 +295,7 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
       </div>
 
       <Card className="rounded-[20px]">
-        <CardContent className="py-4 px-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">Views & Conversions</h3>
           <TimeSeriesChart
             data={data.timeSeries}
@@ -309,7 +309,7 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card className="rounded-[20px]">
-          <CardContent className="py-4 px-6">
+          <CardContent>
             <h3 className="text-sm font-semibold mb-4">Top Sources</h3>
             <BreakdownTable
               rows={data.topSources}
@@ -323,7 +323,7 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
         </Card>
 
         <Card className="rounded-[20px]">
-          <CardContent className="py-4 px-6">
+          <CardContent>
             <h3 className="text-sm font-semibold mb-4">Top Countries</h3>
             <BreakdownTable
               rows={data.topCountries}
@@ -365,7 +365,7 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
       </div>
 
       <Card className="rounded-[20px]">
-        <CardContent className="py-4 px-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">Booking Funnel</h3>
           <div className="space-y-3">
             <FunnelStep label="Page Views" value={data.funnel.pageViews} total={data.funnel.pageViews} color="#1B4332" />
@@ -375,7 +375,7 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
       </Card>
 
       <Card className="rounded-[20px]">
-        <CardContent className="py-4 px-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">Over Time</h3>
           <TimeSeriesChart
             data={data.timeSeries}
@@ -388,7 +388,7 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
       </Card>
 
       <Card className="rounded-[20px]">
-        <CardContent className="py-4 px-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">By Event Type</h3>
           <BreakdownTable
             rows={data.byEventType}
@@ -430,7 +430,7 @@ function FormsTab({ projectId, period, filters }: { projectId: string; period: P
       </div>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">Form Funnel</h3>
           <div className="space-y-3">
             <FunnelStep label="Form Views" value={data.funnel.views} total={data.funnel.views} color="#1B4332" />
@@ -442,7 +442,7 @@ function FormsTab({ projectId, period, filters }: { projectId: string; period: P
 
       <div className="grid md:grid-cols-2 gap-4">
         <Card className="rounded-[20px]">
-          <CardContent className="p-6">
+          <CardContent>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
                 <TrendingUp className="w-4 h-4 text-primary" />
@@ -455,7 +455,7 @@ function FormsTab({ projectId, period, filters }: { projectId: string; period: P
           </CardContent>
         </Card>
         <Card className="rounded-[20px]">
-          <CardContent className="p-6">
+          <CardContent>
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
                 <Percent className="w-4 h-4 text-primary" />
@@ -470,7 +470,7 @@ function FormsTab({ projectId, period, filters }: { projectId: string; period: P
       </div>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">Over Time</h3>
           <TimeSeriesChart
             data={data.timeSeries}
@@ -484,7 +484,7 @@ function FormsTab({ projectId, period, filters }: { projectId: string; period: P
       </Card>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent>
           <h3 className="text-sm font-semibold mb-4">By Form</h3>
           <BreakdownTable
             rows={data.byForm}
@@ -510,7 +510,7 @@ function AnalyticsSkeleton() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
           <Card key={i} className="rounded-[20px]">
-            <CardContent className="p-5">
+            <CardContent className="py-4">
               <Skeleton className="h-4 w-24 mb-3" />
               <Skeleton className="h-8 w-16" />
             </CardContent>
@@ -518,7 +518,7 @@ function AnalyticsSkeleton() {
         ))}
       </div>
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent className="py-4">
           <Skeleton className="h-[300px] w-full rounded-[12px]" />
         </CardContent>
       </Card>
