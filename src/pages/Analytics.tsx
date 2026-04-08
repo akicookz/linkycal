@@ -12,14 +12,13 @@ import {
   Sparkles,
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Legend,
 } from "recharts";
 
 import PageHeader from "@/components/PageHeader";
@@ -189,8 +188,16 @@ function TimeSeriesChart({
 
   return (
     <ResponsiveContainer width="100%" height={300}>
-      <LineChart data={data}>
-        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+      <AreaChart data={data}>
+        <defs>
+          {lines.map((line) => (
+            <linearGradient key={line.key} id={`grad-${line.key}`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={line.color} stopOpacity={0.2} />
+              <stop offset="100%" stopColor={line.color} stopOpacity={0} />
+            </linearGradient>
+          ))}
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
         <XAxis
           dataKey="date"
           tickFormatter={formatDate}
@@ -203,6 +210,7 @@ function TimeSeriesChart({
           axisLine={false}
           tickLine={false}
           allowDecimals={false}
+          width={40}
         />
         <Tooltip
           labelFormatter={(label) => formatDate(String(label))}
@@ -211,24 +219,25 @@ function TimeSeriesChart({
             border: "1px solid hsl(var(--border))",
             backgroundColor: "hsl(var(--card))",
             fontSize: "13px",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
           }}
-        />
-        <Legend
-          wrapperStyle={{ fontSize: "13px" }}
+          itemStyle={{ fontSize: "13px" }}
+          cursor={{ stroke: "hsl(var(--muted-foreground))", strokeWidth: 1, strokeDasharray: "4 4" }}
         />
         {lines.map((line) => (
-          <Line
+          <Area
             key={line.key}
             type="monotone"
             dataKey={line.key}
             stroke={line.color}
-            name={line.name}
             strokeWidth={2}
-            dot={false}
-            activeDot={{ r: 4 }}
+            fill={`url(#grad-${line.key})`}
+            fillOpacity={1}
+            name={line.name}
+            activeDot={{ r: 4, strokeWidth: 2, fill: "hsl(var(--card))" }}
           />
         ))}
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
 }
