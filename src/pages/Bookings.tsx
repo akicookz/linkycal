@@ -247,7 +247,7 @@ export default function Bookings() {
       {/* Loading */}
       {loadingBookings && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
+          {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-[160px] rounded-[20px]" />
           ))}
         </div>

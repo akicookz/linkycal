@@ -318,7 +318,7 @@ export default function Workflows() {
             return (
               <Card
                 key={workflow.id}
-                className="relative transition-all cursor-pointer hover:shadow-md"
+                className="relative transition-all cursor-pointer hover:border-primary/25"
                 onClick={() => navigate(`/app/projects/${projectId}/workflows/${workflow.id}`)}
               >
                 <CardContent>

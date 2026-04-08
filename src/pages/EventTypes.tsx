@@ -162,13 +162,13 @@ export default function EventTypes() {
       };
       let bookingFormFields:
         | Array<{
-            id: string;
-            label: string;
-            type: string;
-            required: boolean;
-            placeholder: string | null;
-            options: Array<{ label: string; value: string }> | null;
-          }>
+          id: string;
+          label: string;
+          type: string;
+          required: boolean;
+          placeholder: string | null;
+          options: Array<{ label: string; value: string }> | null;
+        }>
         | undefined;
 
       try {
@@ -292,7 +292,7 @@ export default function EventTypes() {
           {eventTypes.map((et) => (
             <Card
               key={et.id}
-              className={`relative transition-all cursor-pointer hover:shadow-md ${!et.enabled ? "opacity-60" : ""}`}
+              className={`relative transition-all cursor-pointer hover:border-primary/25 ${!et.enabled ? "opacity-60" : ""}`}
               onClick={() => navigate(`/app/projects/${projectId}/event-types/${et.id}`)}
             >
               <CardContent>

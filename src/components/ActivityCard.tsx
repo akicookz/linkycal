@@ -175,7 +175,7 @@ export function ActivityCard({
 
   return (
     <Card
-      className="flex flex-col p-4 cursor-pointer hover:shadow-md transition-shadow"
+      className="flex flex-col p-4 cursor-pointer hover:border-primary/25 transition-shadow"
       onClick={onClick}
     >
       <div className="flex items-start gap-3 flex-1 min-h-0">
@@ -195,10 +195,10 @@ export function ActivityCard({
         {(isConfirmed || isPendingBooking) && relTime ? (
           <span
             className={`shrink-0 text-[11px] font-medium ${relTime.isHappening
-                ? "text-amber-600 animate-pulse"
-                : relTime.isUpcoming
-                  ? "text-emerald-600"
-                  : "text-muted-foreground"
+              ? "text-amber-600 animate-pulse"
+              : relTime.isUpcoming
+                ? "text-emerald-600"
+                : "text-muted-foreground"
               }`}
           >
             {relTime.label}

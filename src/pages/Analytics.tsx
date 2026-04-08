@@ -99,7 +99,7 @@ function StatCard({
 }) {
   return (
     <Card className="rounded-[20px]">
-      <CardContent className="p-5">
+      <CardContent className="px-6">
         <div className="flex items-center justify-between">
           <p className="text-sm font-medium text-muted-foreground">{label}</p>
           <div className="w-9 h-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
@@ -151,7 +151,7 @@ function FunnelStep({
 
 function UpgradePrompt() {
   return (
-    <div className="flex flex-col items-center justify-center py-20">
+    <div className="flex flex-col items-center justify-center py-40">
       <div className="w-16 h-16 rounded-[20px] bg-primary/10 flex items-center justify-center mb-6">
         <BarChart3 className="w-8 h-8 text-primary" />
       </div>
@@ -295,7 +295,7 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
       </div>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent className="py-4 px-6">
           <h3 className="text-sm font-semibold mb-4">Views & Conversions</h3>
           <TimeSeriesChart
             data={data.timeSeries}
@@ -309,7 +309,7 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card className="rounded-[20px]">
-          <CardContent className="p-6">
+          <CardContent className="py-4 px-6">
             <h3 className="text-sm font-semibold mb-4">Top Sources</h3>
             <BreakdownTable
               rows={data.topSources}
@@ -323,7 +323,7 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
         </Card>
 
         <Card className="rounded-[20px]">
-          <CardContent className="p-6">
+          <CardContent className="py-4 px-6">
             <h3 className="text-sm font-semibold mb-4">Top Countries</h3>
             <BreakdownTable
               rows={data.topCountries}
@@ -365,7 +365,7 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
       </div>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent className="py-4 px-6">
           <h3 className="text-sm font-semibold mb-4">Booking Funnel</h3>
           <div className="space-y-3">
             <FunnelStep label="Page Views" value={data.funnel.pageViews} total={data.funnel.pageViews} color="#1B4332" />
@@ -375,7 +375,7 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
       </Card>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent className="py-4 px-6">
           <h3 className="text-sm font-semibold mb-4">Over Time</h3>
           <TimeSeriesChart
             data={data.timeSeries}
@@ -388,7 +388,7 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
       </Card>
 
       <Card className="rounded-[20px]">
-        <CardContent className="p-6">
+        <CardContent className="py-4 px-6">
           <h3 className="text-sm font-semibold mb-4">By Event Type</h3>
           <BreakdownTable
             rows={data.byEventType}
@@ -562,7 +562,7 @@ export default function Analytics() {
     return (
       <>
         <PageHeader title="Analytics" description="Track performance across your bookings and forms" />
-        <div className="flex items-center justify-center py-20">
+        <div className="flex items-center justify-center py-40">
           <Loader className="w-6 h-6 animate-spin text-muted-foreground" />
         </div>
       </>
@@ -584,77 +584,79 @@ export default function Analytics() {
     <>
       <PageHeader title="Analytics" description="Track performance across your bookings and forms" />
 
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3 mb-6">
-        {/* Period selector */}
-        <div className="flex items-center rounded-[12px] bg-muted p-1 gap-0.5">
-          {(["7d", "30d", "90d"] as const).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPeriod(p)}
-              className={cn(
-                "px-3 py-1.5 rounded-[10px] text-sm font-medium transition-colors",
-                period === p
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {p === "7d" ? "7 days" : p === "30d" ? "30 days" : "90 days"}
-            </button>
-          ))}
-        </div>
-
-        {/* UTM Filters */}
-        {filterOptions && filterOptions.utmSources.length > 0 && (
-          <Select value={utmSource ?? "all"} onValueChange={(v) => setUtmSource(v === "all" ? undefined : v)}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="Source" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All sources</SelectItem>
-              {filterOptions.utmSources.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {filterOptions && filterOptions.utmMediums.length > 0 && (
-          <Select value={utmMedium ?? "all"} onValueChange={(v) => setUtmMedium(v === "all" ? undefined : v)}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="Medium" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All mediums</SelectItem>
-              {filterOptions.utmMediums.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-
-        {filterOptions && filterOptions.utmCampaigns.length > 0 && (
-          <Select value={utmCampaign ?? "all"} onValueChange={(v) => setUtmCampaign(v === "all" ? undefined : v)}>
-            <SelectTrigger className="w-[160px] h-9">
-              <SelectValue placeholder="Campaign" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All campaigns</SelectItem>
-              {filterOptions.utmCampaigns.map((s) => (
-                <SelectItem key={s} value={s}>{s}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
-      </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="bookings">Bookings</TabsTrigger>
-          <TabsTrigger value="forms">Forms</TabsTrigger>
-        </TabsList>
+      <Tabs defaultValue="overview" >
+        <div className="flex items-center justify-between">
+
+          <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="bookings">Bookings</TabsTrigger>
+            <TabsTrigger value="forms">Forms</TabsTrigger>
+          </TabsList>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Period selector */}
+            <div className="flex items-center rounded-[12px] bg-muted p-1 gap-0.5">
+              {(["7d", "30d", "90d"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-[10px] text-sm font-medium transition-colors",
+                    period === p
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {p === "7d" ? "7 days" : p === "30d" ? "30 days" : "90 days"}
+                </button>
+              ))}
+            </div>
+
+            {/* UTM Filters */}
+            {filterOptions && filterOptions.utmSources.length > 0 && (
+              <Select value={utmSource ?? "all"} onValueChange={(v) => setUtmSource(v === "all" ? undefined : v)}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All sources</SelectItem>
+                  {filterOptions.utmSources.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {filterOptions && filterOptions.utmMediums.length > 0 && (
+              <Select value={utmMedium ?? "all"} onValueChange={(v) => setUtmMedium(v === "all" ? undefined : v)}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Medium" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All mediums</SelectItem>
+                  {filterOptions.utmMediums.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+
+            {filterOptions && filterOptions.utmCampaigns.length > 0 && (
+              <Select value={utmCampaign ?? "all"} onValueChange={(v) => setUtmCampaign(v === "all" ? undefined : v)}>
+                <SelectTrigger className="w-[160px] h-9">
+                  <SelectValue placeholder="Campaign" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All campaigns</SelectItem>
+                  {filterOptions.utmCampaigns.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div >
+        </div>
 
         <TabsContent value="overview" className="mt-6">
           <OverviewTab projectId={projectId!} period={period} filters={filters} />
@@ -667,7 +669,7 @@ export default function Analytics() {
         <TabsContent value="forms" className="mt-6">
           <FormsTab projectId={projectId!} period={period} filters={filters} />
         </TabsContent>
-      </Tabs>
+      </Tabs >
     </>
   );
 }
