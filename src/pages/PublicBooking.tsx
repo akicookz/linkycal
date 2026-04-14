@@ -724,7 +724,7 @@ export default function PublicBooking() {
                     className={cn("min-h-[280px]", isMobile && "animate-mobile-slide-in")}
                     style={isMobile ? { "--slide-from": mobileSlideDir === "left" ? "100%" : "-100%" } as React.CSSProperties : undefined}
                   >
-                    
+
                     {!selectedDate ? (
                       <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
                         Select a date to see available times
@@ -1022,7 +1022,7 @@ export default function PublicBooking() {
                   </div>
                   <h2 className="text-xl font-semibold mb-1">Request submitted</h2>
                   <p className="text-sm text-muted-foreground mb-5">
-                    Your booking request has been submitted. You&apos;ll receive an email once the host confirms.
+                    You&apos;ll receive an email once the host confirms.
                   </p>
                 </>
               ) : (

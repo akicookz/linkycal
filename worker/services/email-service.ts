@@ -103,12 +103,18 @@ function emailBody(text: string): string {
   return `<p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 28px 0;">${text}</p>`;
 }
 
-function emailInfoTable(rows: Array<{ label: string; value: string; bold?: boolean }>): string {
-  const rowsHtml = rows.map(r => `
+function emailInfoTable(
+  rows: Array<{ label: string; value: string; bold?: boolean }>,
+): string {
+  const rowsHtml = rows
+    .map(
+      (r) => `
     <tr>
       <td style="padding: 10px 16px; color: ${BRAND_COLOR}; font-size: 13px; font-weight: 500; width: 90px; vertical-align: top;">${r.label}</td>
       <td style="padding: 10px 16px; font-size: 14px; color: #1f2937;${r.bold ? " font-weight: 600;" : ""}">${r.value}</td>
-    </tr>`).join("");
+    </tr>`,
+    )
+    .join("");
 
   return `
     <div style="background: ${BRAND_LIGHT}; border-radius: 12px; overflow: hidden; margin-bottom: 28px;">
@@ -139,12 +145,10 @@ function bookingSubmittedFieldsSection(
   );
   if (visibleFields.length === 0) return "";
 
-  const rows = visibleFields
-    .slice(0, 8)
-    .map((field) => ({
-      label: escapeHtml(field.label),
-      value: escapeHtml(field.value),
-    }));
+  const rows = visibleFields.slice(0, 8).map((field) => ({
+    label: escapeHtml(field.label),
+    value: escapeHtml(field.value),
+  }));
 
   if (visibleFields.length > 8) {
     rows.push({
@@ -153,10 +157,7 @@ function bookingSubmittedFieldsSection(
     });
   }
 
-  return (
-    emailHeading("Submitted Details", "#374151") +
-    emailInfoTable(rows)
-  );
+  return emailHeading("Submitted Details", "#374151") + emailInfoTable(rows);
 }
 
 // ─── Service ────────────────────────────────────────────────────────────────
@@ -194,9 +195,11 @@ export class EmailService {
 
     const html = emailWrapper(
       emailHeading("Booking Confirmed") +
-      emailBody(`Hi ${escapeHtml(guestName)}, your booking has been confirmed.`) +
-      emailInfoTable(rows) +
-      bookingSubmittedFieldsSection(submittedFields)
+        emailBody(
+          `Hi ${escapeHtml(guestName)}, your booking has been confirmed.`,
+        ) +
+        emailInfoTable(rows) +
+        bookingSubmittedFieldsSection(submittedFields),
     );
 
     await this.send({
@@ -218,12 +221,16 @@ export class EmailService {
 
     const html = emailWrapper(
       emailHeading("Booking Cancelled", "#dc2626") +
-      emailBody(`Hi ${escapeHtml(guestName)}, your booking for <strong>${escapeHtml(eventTypeName)}</strong> has been cancelled.`) +
-      emailInfoTable([
-        { label: "Date", value: dateStr },
-        { label: "Time", value: timeStr },
-      ]) +
-      (reason ? emailNote(`<strong>Reason:</strong> ${escapeHtml(reason)}`) : "")
+        emailBody(
+          `Hi ${escapeHtml(guestName)}, your booking for <strong>${escapeHtml(eventTypeName)}</strong> has been cancelled.`,
+        ) +
+        emailInfoTable([
+          { label: "Date", value: dateStr },
+          { label: "Time", value: timeStr },
+        ]) +
+        (reason
+          ? emailNote(`<strong>Reason:</strong> ${escapeHtml(reason)}`)
+          : ""),
     );
 
     await this.send({
@@ -254,14 +261,17 @@ export class EmailService {
 
     const html = emailWrapper(
       emailHeading("New Booking") +
-      emailBody(`Hi ${escapeHtml(ownerName)}, you have a new booking.`) +
-      emailInfoTable([
-        { label: "Event", value: escapeHtml(eventTypeName), bold: true },
-        { label: "Guest", value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})` },
-        { label: "Date", value: dateStr },
-        { label: "Time", value: timeStr },
-      ]) +
-      bookingSubmittedFieldsSection(submittedFields)
+        emailBody(`Hi ${escapeHtml(ownerName)}, you have a new booking.`) +
+        emailInfoTable([
+          { label: "Event", value: escapeHtml(eventTypeName), bold: true },
+          {
+            label: "Guest",
+            value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})`,
+          },
+          { label: "Date", value: dateStr },
+          { label: "Time", value: timeStr },
+        ]) +
+        bookingSubmittedFieldsSection(submittedFields),
     );
 
     await this.send({
@@ -276,22 +286,33 @@ export class EmailService {
   async sendBookingRequestReceived(
     params: BookingRequestReceivedParams,
   ): Promise<void> {
-    const { to, guestName, eventTypeName, startTime, endTime, timezone, submittedFields } =
-      params;
+    const {
+      to,
+      guestName,
+      eventTypeName,
+      startTime,
+      endTime,
+      timezone,
+      submittedFields,
+    } = params;
 
     const dateStr = formatDate(startTime, timezone);
     const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)}`;
 
     const html = emailWrapper(
       emailHeading("Booking Request Submitted") +
-      emailBody(`Hi ${escapeHtml(guestName)}, your booking request has been submitted and is awaiting confirmation from the host.`) +
-      emailInfoTable([
-        { label: "Event", value: escapeHtml(eventTypeName), bold: true },
-        { label: "Date", value: dateStr },
-        { label: "Time", value: timeStr },
-      ]) +
-      bookingSubmittedFieldsSection(submittedFields) +
-      emailNote("You'll receive another email once your booking is confirmed.")
+        emailBody(
+          `Hi ${escapeHtml(guestName)}, your booking request is sent and awaiting confirmation from the host.`,
+        ) +
+        emailInfoTable([
+          { label: "Event", value: escapeHtml(eventTypeName), bold: true },
+          { label: "Date", value: dateStr },
+          { label: "Time", value: timeStr },
+        ]) +
+        bookingSubmittedFieldsSection(submittedFields) +
+        emailNote(
+          "You'll receive another email once your booking is confirmed.",
+        ),
     );
 
     await this.send({
@@ -323,15 +344,20 @@ export class EmailService {
 
     const html = emailWrapper(
       emailHeading("Action Needed: New Booking Request") +
-      emailBody(`Hi ${escapeHtml(ownerName)}, you have a new booking request that needs your approval.`) +
-      emailInfoTable([
-        { label: "Event", value: escapeHtml(eventTypeName), bold: true },
-        { label: "Guest", value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})` },
-        { label: "Date", value: dateStr },
-        { label: "Time", value: timeStr },
-      ]) +
-      bookingSubmittedFieldsSection(submittedFields) +
-      emailButton("Review in Dashboard", dashboardUrl)
+        emailBody(
+          `Hi ${escapeHtml(ownerName)}, you have a new booking request that needs your approval.`,
+        ) +
+        emailInfoTable([
+          { label: "Event", value: escapeHtml(eventTypeName), bold: true },
+          {
+            label: "Guest",
+            value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})`,
+          },
+          { label: "Date", value: dateStr },
+          { label: "Time", value: timeStr },
+        ]) +
+        bookingSubmittedFieldsSection(submittedFields) +
+        emailButton("Review in Dashboard", dashboardUrl),
     );
 
     await this.send({
@@ -344,22 +370,36 @@ export class EmailService {
   // ─── Send Booking Declined (to Guest) ─────────────────────────────────────
 
   async sendBookingDeclined(params: BookingDeclinedParams): Promise<void> {
-    const { to, guestName, hostName, eventTypeName, startTime, endTime, timezone, reason } =
-      params;
+    const {
+      to,
+      guestName,
+      hostName,
+      eventTypeName,
+      startTime,
+      endTime,
+      timezone,
+      reason,
+    } = params;
 
     const dateStr = formatDate(startTime, timezone);
     const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)}`;
 
     const html = emailWrapper(
       emailHeading("Booking Not Confirmed", "#6b7280") +
-      emailBody(`Hi ${escapeHtml(guestName)}, unfortunately, <strong>${escapeHtml(hostName)}</strong> cannot take this call at the time you requested.`) +
-      emailInfoTable([
-        { label: "Event", value: eventTypeName },
-        { label: "Date", value: dateStr },
-        { label: "Time", value: timeStr },
-      ]) +
-      (reason ? emailNote(`<strong>Message from host:</strong> ${escapeHtml(reason)}`) : "") +
-      emailNote("You're welcome to book another time that works for you.")
+        emailBody(
+          `Hi ${escapeHtml(guestName)}, unfortunately, <strong>${escapeHtml(hostName)}</strong> cannot take this call at the time you requested.`,
+        ) +
+        emailInfoTable([
+          { label: "Event", value: eventTypeName },
+          { label: "Date", value: dateStr },
+          { label: "Time", value: timeStr },
+        ]) +
+        (reason
+          ? emailNote(
+              `<strong>Message from host:</strong> ${escapeHtml(reason)}`,
+            )
+          : "") +
+        emailNote("You're welcome to book another time that works for you."),
     );
 
     await this.send({
@@ -371,15 +411,24 @@ export class EmailService {
 
   // ─── Send Form Response Notification (to Owner) ────────────────────────────
 
-  async sendFormResponseNotification(params: FormResponseNotificationParams): Promise<void> {
+  async sendFormResponseNotification(
+    params: FormResponseNotificationParams,
+  ): Promise<void> {
     const { to, ownerName, formName, respondentEmail, fields } = params;
 
-    const infoRows: Array<{ label: string; value: string; bold?: boolean }> = [];
+    const infoRows: Array<{ label: string; value: string; bold?: boolean }> =
+      [];
     if (respondentEmail) {
-      infoRows.push({ label: "Respondent", value: escapeHtml(respondentEmail) });
+      infoRows.push({
+        label: "Respondent",
+        value: escapeHtml(respondentEmail),
+      });
     }
     for (const field of fields.slice(0, 8)) {
-      infoRows.push({ label: escapeHtml(field.label), value: escapeHtml(field.value || "—") });
+      infoRows.push({
+        label: escapeHtml(field.label),
+        value: escapeHtml(field.value || "—"),
+      });
     }
     if (fields.length > 8) {
       infoRows.push({ label: "", value: `+ ${fields.length - 8} more fields` });
@@ -387,9 +436,11 @@ export class EmailService {
 
     const html = emailWrapper(
       emailHeading("New Form Response") +
-      emailBody(`Hi ${escapeHtml(ownerName)}, someone submitted a response to <strong>${escapeHtml(formName)}</strong>.`) +
-      (infoRows.length > 0 ? emailInfoTable(infoRows) : "") +
-      emailNote("View full details in your dashboard.")
+        emailBody(
+          `Hi ${escapeHtml(ownerName)}, someone submitted a response to <strong>${escapeHtml(formName)}</strong>.`,
+        ) +
+        (infoRows.length > 0 ? emailInfoTable(infoRows) : "") +
+        emailNote("View full details in your dashboard."),
     );
 
     await this.send({
