@@ -37,6 +37,12 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,6 +109,7 @@ interface FormField {
   required: boolean;
   validation: unknown;
   options: Array<{ label: string; value: string }> | null;
+  contactMapping: string | null;
   createdAt: string;
 }
 
@@ -975,6 +982,7 @@ export default function FormBuilder() {
                   required: false,
                   validation: null,
                   options: null,
+                  contactMapping: null,
                   createdAt: new Date().toISOString(),
                 },
               ],
@@ -1066,6 +1074,7 @@ export default function FormBuilder() {
         validation: Record<string, unknown> | null;
         stepId: string;
         sortOrder: number;
+        contactMapping: string | null;
       }>;
     }) => {
       const res = await fetch(
@@ -1485,6 +1494,7 @@ export default function FormBuilder() {
               required: false,
               validation: null,
               options: null,
+              contactMapping: null,
               createdAt: new Date().toISOString(),
             },
           ],
@@ -2163,7 +2173,6 @@ export default function FormBuilder() {
                                              ) : (
                                                <Trash2 className="h-3.5 w-3.5" />
                                              )}
-                                             Remove
                                            </Button>
                                          </div>
                                        </div>
@@ -2299,6 +2308,52 @@ export default function FormBuilder() {
                                            ))}
                                          </SelectContent>
                                        </Select>
+                                       {(field.type === "name" || field.type === "email") && (
+                                         <TooltipProvider delayDuration={200}>
+                                           <Tooltip>
+                                             <TooltipTrigger asChild>
+                                               <button
+                                                 type="button"
+                                                 className={cn(
+                                                   "h-6 w-6 rounded-md flex items-center justify-center transition-colors",
+                                                   field.contactMapping
+                                                     ? "bg-primary text-primary-foreground"
+                                                     : "text-muted-foreground hover:text-foreground hover:bg-muted",
+                                                 )}
+                                                 onClick={() => {
+                                                   const newMapping = field.contactMapping
+                                                     ? null
+                                                     : field.type === "name" ? "name" : "email";
+                                                   if (newMapping) {
+                                                     optimisticSetForm((old) => ({
+                                                       ...old,
+                                                       steps: old.steps.map((s) => ({
+                                                         ...s,
+                                                         fields: s.fields.map((f) =>
+                                                           f.id !== field.id && f.contactMapping === newMapping
+                                                             ? { ...f, contactMapping: null }
+                                                             : f,
+                                                         ),
+                                                       })),
+                                                     }));
+                                                   }
+                                                   updateFieldMutation.mutate({
+                                                     fieldId: field.id,
+                                                     data: { contactMapping: newMapping },
+                                                   });
+                                                 }}
+                                               >
+                                                 <User className="h-3 w-3" />
+                                               </button>
+                                             </TooltipTrigger>
+                                             <TooltipContent side="bottom" className="max-w-56 text-xs">
+                                               {field.contactMapping
+                                                 ? `Saved as contact's ${field.type}. Click to unlink.`
+                                                 : `Save as contact's ${field.type} for bookings & contacts`}
+                                             </TooltipContent>
+                                           </Tooltip>
+                                         </TooltipProvider>
+                                       )}
                                        <div className="flex items-center gap-1">
                                          <span className="text-[11px] text-muted-foreground">
                                            Required
@@ -2328,7 +2383,6 @@ export default function FormBuilder() {
                                          ) : (
                                            <Trash2 className="h-3.5 w-3.5" />
                                          )}
-                                         Remove
                                        </Button>
                                      </div>
                                    </div>

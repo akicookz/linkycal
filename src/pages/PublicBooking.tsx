@@ -235,8 +235,62 @@ export default function PublicBooking() {
   // Step 3..N: custom form steps (if any)
   // Step N+1: confirmed/pending
   const formSteps = bookingForm?.steps ?? [];
-  const totalSteps = 2 + formSteps.length + 1; // date + details + form steps + confirmation
+
+  const mappedFields = useMemo(() => {
+    const result: { nameFieldId?: string; emailFieldId?: string } = {};
+    for (const s of formSteps) {
+      for (const f of s.fields) {
+        if (f.contactMapping === "name" && !result.nameFieldId) result.nameFieldId = f.id;
+        if (f.contactMapping === "email" && !result.emailFieldId) result.emailFieldId = f.id;
+      }
+    }
+    return result;
+  }, [formSteps]);
+
+  const mappedFieldIds = useMemo(() => {
+    const ids = new Set<string>();
+    if (mappedFields.nameFieldId) ids.add(mappedFields.nameFieldId);
+    if (mappedFields.emailFieldId) ids.add(mappedFields.emailFieldId);
+    return ids;
+  }, [mappedFields]);
+
+  const visibleFormSteps = useMemo(
+    () =>
+      formSteps
+        .map((s) => ({
+          ...s,
+          fields: s.fields.filter((f) => !mappedFieldIds.has(f.id)),
+        }))
+        .filter((s) => s.fields.length > 0),
+    [formSteps, mappedFieldIds],
+  );
+
+  const totalSteps = 2 + visibleFormSteps.length + 1;
   const confirmationStep = totalSteps;
+
+  useEffect(() => {
+    if (mappedFields.nameFieldId && formValues[mappedFields.nameFieldId] && !guestName) {
+      setGuestName(formValues[mappedFields.nameFieldId]);
+    }
+    if (mappedFields.emailFieldId && formValues[mappedFields.emailFieldId] && !guestEmail) {
+      setGuestEmail(formValues[mappedFields.emailFieldId]);
+    }
+  }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (mappedFields.nameFieldId && guestName) {
+      setFormValues((prev) => {
+        if (prev[mappedFields.nameFieldId!] === guestName) return prev;
+        return { ...prev, [mappedFields.nameFieldId!]: guestName };
+      });
+    }
+    if (mappedFields.emailFieldId && guestEmail) {
+      setFormValues((prev) => {
+        if (prev[mappedFields.emailFieldId!] === guestEmail) return prev;
+        return { ...prev, [mappedFields.emailFieldId!]: guestEmail };
+      });
+    }
+  }, [guestName, guestEmail, mappedFields]);
 
   // ─── Track page view ────────────────────────────────────────────────────
 
@@ -335,7 +389,7 @@ export default function PublicBooking() {
 
   function validateFormStep(stepIndex: number): boolean {
     const formStepIndex = stepIndex - 3; // step 3 = form step 0
-    const formStep = formSteps[formStepIndex];
+    const formStep = visibleFormSteps[formStepIndex];
     if (!formStep) return true;
 
     const errors: Record<string, string> = {};
@@ -371,9 +425,13 @@ export default function PublicBooking() {
         _token: formToken,
       };
 
-      // Include form field values if a booking form is attached
-      if (bookingForm && Object.keys(formValues).length > 0) {
-        payload.formFields = formValues;
+      if (bookingForm) {
+        const merged = { ...formValues };
+        if (mappedFields.nameFieldId) merged[mappedFields.nameFieldId] = guestName;
+        if (mappedFields.emailFieldId) merged[mappedFields.emailFieldId] = guestEmail;
+        if (Object.keys(merged).length > 0) {
+          payload.formFields = merged;
+        }
       }
 
       const res = await fetch("/api/v1/bookings", {
@@ -820,7 +878,7 @@ export default function PublicBooking() {
                   />
                 </div>
 
-                {bookingError && !formSteps.length && (
+                {bookingError && !visibleFormSteps.length && (
                   <p className="text-sm text-destructive">{bookingError}</p>
                 )}
               </div>
@@ -837,7 +895,7 @@ export default function PublicBooking() {
                   <ArrowLeft className="h-4 w-4" />
                   Back
                 </button>
-                {formSteps.length > 0 ? (
+                {visibleFormSteps.length > 0 ? (
                   <Button
                     disabled={!guestName || !guestEmail}
                     onClick={() => setStep(3)}
@@ -866,11 +924,11 @@ export default function PublicBooking() {
           )}
 
           {/* ─── Step 3+: Custom Form Steps ─── */}
-          {step >= 3 && step < confirmationStep && formSteps.length > 0 && (() => {
+          {step >= 3 && step < confirmationStep && visibleFormSteps.length > 0 && (() => {
             const formStepIndex = step - 3;
-            const formStep = formSteps[formStepIndex];
+            const formStep = visibleFormSteps[formStepIndex];
             if (!formStep) return null;
-            const isLastFormStep = formStepIndex === formSteps.length - 1;
+            const isLastFormStep = formStepIndex === visibleFormSteps.length - 1;
 
             return (
               <div>
@@ -898,6 +956,8 @@ export default function PublicBooking() {
                             delete next[field.id];
                             return next;
                           });
+                          if (field.contactMapping === "name") setGuestName(val);
+                          if (field.contactMapping === "email") setGuestEmail(val);
                         }}
                         error={formFieldErrors[field.id]}
                       />

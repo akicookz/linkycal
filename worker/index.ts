@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, desc, like, sql, gte, inArray } from "drizzle-orm";
+import { eq, and, or, desc, like, sql, gte, inArray, isNotNull } from "drizzle-orm";
 import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
@@ -278,6 +278,7 @@ interface NativePublicFormField {
   label: string;
   required: boolean;
   options: Array<{ label: string; value: string }> | null;
+  contactMapping: string | null;
 }
 
 function getFormSettingsRecord(settings: unknown): Record<string, unknown> {
@@ -520,7 +521,7 @@ function parseNativeFormFieldValue(
 
   return {
     field: { fieldId: field.id, value },
-    respondentEmail: field.type === "email" && value ? value : null,
+    respondentEmail: (field.contactMapping === "email" || field.type === "email") && value ? value : null,
   };
 }
 
@@ -566,30 +567,48 @@ async function dispatchFormSubmittedTrigger(
 
     // Resolve or create a contact so steps like add_tag/update_contact work
     let contactId: string | undefined;
-    if (email) {
-      // Try to extract name from a "name" field in the form response
-      let contactName = email.split("@")[0];
-      try {
-        const nameFieldValue = await db
-          .select({ value: dbSchema.formFieldValues.value })
-          .from(dbSchema.formFieldValues)
-          .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
-          .where(
-            and(
-              eq(dbSchema.formFieldValues.responseId, responseId),
-              eq(dbSchema.formFields.type, "name"),
-            ),
-          )
-          .limit(1);
-        if (nameFieldValue[0]?.value) {
-          contactName = nameFieldValue[0].value;
-        }
-      } catch { /* fall back to email prefix */ }
 
+    // Look up contact-mapped fields (explicit mapping takes priority)
+    let resolvedEmail = email;
+    let contactName = email ? email.split("@")[0] : undefined;
+    try {
+      const mappedValues = await db
+        .select({
+          contactMapping: dbSchema.formFields.contactMapping,
+          type: dbSchema.formFields.type,
+          value: dbSchema.formFieldValues.value,
+        })
+        .from(dbSchema.formFieldValues)
+        .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+        .where(
+          and(
+            eq(dbSchema.formFieldValues.responseId, responseId),
+            or(
+              isNotNull(dbSchema.formFields.contactMapping),
+              eq(dbSchema.formFields.type, "name"),
+              eq(dbSchema.formFields.type, "email"),
+            ),
+          ),
+        );
+      for (const row of mappedValues) {
+        if (!row.value) continue;
+        if (row.contactMapping === "email") {
+          resolvedEmail = row.value;
+        } else if (row.contactMapping === "name") {
+          contactName = row.value;
+        } else if (!resolvedEmail && row.type === "email") {
+          resolvedEmail = row.value;
+        } else if ((!contactName || contactName === resolvedEmail?.split("@")[0]) && row.type === "name") {
+          contactName = row.value;
+        }
+      }
+    } catch { /* fall back to defaults */ }
+
+    if (resolvedEmail) {
       const contactService = new ContactService(db);
       const contact = await contactService.findOrCreate(form.projectId, {
-        name: contactName,
-        email,
+        name: contactName || resolvedEmail.split("@")[0],
+        email: resolvedEmail,
       });
       contactId = contact.id;
 
@@ -1802,6 +1821,7 @@ app.post("/api/public/forms/:slug/submit", async (c) => {
         label: field.label,
         required: field.required,
         options: getNativeFieldOptions(field.options),
+        contactMapping: field.contactMapping ?? null,
       })),
     );
 
@@ -4386,6 +4406,7 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       .limit(10);
 
     // Extract names from form field values for form responses
+    // Prefer fields explicitly mapped as contact name, fall back to label heuristic
     const responseIds = responses.map((r) => r.id);
     const nameValues = responseIds.length
       ? await db
@@ -4393,21 +4414,31 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
             responseId: dbSchema.formFieldValues.responseId,
             value: dbSchema.formFieldValues.value,
             sortOrder: dbSchema.formFields.sortOrder,
+            contactMapping: dbSchema.formFields.contactMapping,
           })
           .from(dbSchema.formFieldValues)
           .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
           .where(
             and(
               inArray(dbSchema.formFieldValues.responseId, responseIds),
-              like(dbSchema.formFields.label, "%name%"),
-              eq(dbSchema.formFields.type, "text")
+              or(
+                eq(dbSchema.formFields.contactMapping, "name"),
+                and(
+                  like(dbSchema.formFields.label, "%name%"),
+                  eq(dbSchema.formFields.type, "text"),
+                ),
+              ),
             )
           )
       : [];
-    // Group by responseId and concatenate name parts (e.g. "First Name" + "Last Name")
     const nameByResponseId = new Map<string, string>();
+    // contactMapping="name" rows take priority over label-heuristic rows
+    const mappedNameIds = new Set(
+      nameValues.filter((r) => r.contactMapping === "name").map((r) => r.responseId),
+    );
     for (const row of nameValues.sort((a, b) => a.sortOrder - b.sortOrder)) {
       if (!row.value) continue;
+      if (mappedNameIds.has(row.responseId) && row.contactMapping !== "name") continue;
       const existing = nameByResponseId.get(row.responseId);
       nameByResponseId.set(row.responseId, existing ? `${existing} ${row.value}` : row.value);
     }

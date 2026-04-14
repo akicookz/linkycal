@@ -339,6 +339,9 @@ export const formFields = sqliteTable(
     required: integer("required", { mode: "boolean" }).notNull().default(false),
     validation: text("validation", { mode: "json" }),
     options: text("options", { mode: "json" }),
+    contactMapping: text("contact_mapping", {
+      enum: ["name", "email"],
+    }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

@@ -14,6 +14,7 @@ export interface FormFieldData {
   placeholder: string | null;
   required: boolean;
   options: Array<{ label: string; value: string }> | null;
+  contactMapping?: string | null;
 }
 
 // ─── Field Renderer ──────────────────────────────────────────────────────────

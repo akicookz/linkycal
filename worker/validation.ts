@@ -285,6 +285,7 @@ export const updateFormFieldSchema = z.object({
     .array(z.object({ label: z.string(), value: z.string() }))
     .nullable()
     .optional(),
+  contactMapping: z.enum(["name", "email"]).nullable().optional(),
 });
 
 export const submitFormStepSchema = z.object({

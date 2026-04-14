@@ -518,6 +518,7 @@ export class FormService {
       required?: boolean;
       validation?: Record<string, unknown> | null;
       options?: Array<{ label: string; value: string }> | null;
+      contactMapping?: string | null;
     },
   ) {
     let currentField = await this.getFieldById(id);
@@ -544,6 +545,23 @@ export class FormService {
         : null;
     if (data.options !== undefined)
       values.options = data.options ? JSON.stringify(data.options) : null;
+    if (data.contactMapping !== undefined)
+      values.contactMapping = data.contactMapping;
+
+    if (data.contactMapping) {
+      const step = await this.getStepById(currentField.stepId);
+      if (step) {
+        const allFields = await this.listFields(step.formId);
+        for (const f of allFields) {
+          if (f.id !== id && f.contactMapping === data.contactMapping) {
+            await this.db
+              .update(dbSchema.formFields)
+              .set({ contactMapping: null })
+              .where(eq(dbSchema.formFields.id, f.id));
+          }
+        }
+      }
+    }
 
     let nextId = id;
     if (data.label !== undefined) {
