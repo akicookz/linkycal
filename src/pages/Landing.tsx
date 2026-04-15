@@ -2280,7 +2280,7 @@ export default function Landing() {
               Features
             </div>
             <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight max-w-2xl">
-              Headless and branded forms and Scheduling infrastructure
+              Headless and branded forms and scheduling infrastructure
             </h2>
           </div>
 
