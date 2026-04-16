@@ -1,26 +1,7 @@
-const API_BASE = "__LINKYCAL_API_BASE__"; // replaced at build time or auto-detected
+declare const __LINKYCAL_API_BASE__: string;
 
 export function getApiBase(): string {
-  // If replaced at build time, use that
-  if (API_BASE && !API_BASE.startsWith("__")) {
-    return API_BASE;
-  }
-
-  // Try to detect from script src
-  const scripts = document.querySelectorAll("script[src]");
-  for (const script of scripts) {
-    const src = (script as HTMLScriptElement).src;
-    if (src.includes("linkycal") || src.includes("widgets")) {
-      try {
-        const url = new URL(src);
-        return url.origin;
-      } catch {
-        // ignore malformed URLs
-      }
-    }
-  }
-
-  return window.location.origin;
+  return __LINKYCAL_API_BASE__;
 }
 
 // ─── Tracking ────────────────────────────────────────────────────────────────

@@ -17,7 +17,7 @@
 		"widget:build:booking": "vite build --config widget/booking/vite.config.ts",
 		"widget:build:form": "vite build --config widget/form/vite.config.ts",
 		"widget:build": "bun run widget:build:booking && bun run widget:build:form",
-		"widget:upload": "wrangler r2 object put linkycal-uploads/widgets/booking.js --file dist-widget/booking-widget.js --content-type application/javascript --remote && wrangler r2 object put linkycal-uploads/widgets/form.js --file dist-widget/form-widget.js --content-type application/javascript --remote",
+		"widget:upload": "wrangler r2 object put linkycal-uploads/widgets/booking.js --file dist-widget/booking-widget.js --content-type application/javascript --cache-control \"public, max-age=300, must-revalidate\" --remote && wrangler r2 object put linkycal-uploads/widgets/form.js --file dist-widget/form-widget.js --content-type application/javascript --cache-control \"public, max-age=300, must-revalidate\" --remote",
 		"widget:deploy": "bun run widget:build && bun run widget:upload",
 		"deploy:full": "bun run build && bun run widget:deploy && wrangler deploy && bun run db:migrate:prod"
 	},
