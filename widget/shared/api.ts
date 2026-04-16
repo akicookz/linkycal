@@ -4,6 +4,19 @@ export function getApiBase(): string {
   return __LINKYCAL_API_BASE__;
 }
 
+// ─── Public Theme Type ───────────────────────────────────────────────────────
+
+export interface WidgetTheme {
+  primaryBg?: string;
+  primaryText?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  borderRadius?: number;
+  fontFamily?: string;
+  backgroundImage?: string;
+  bannerImage?: string;
+}
+
 // ─── Tracking ────────────────────────────────────────────────────────────────
 
 function getUtmsFromUrl(): Record<string, string> {
@@ -57,20 +70,3 @@ export function track(
   }
 }
 
-// ─── API ─────────────────────────────────────────────────────────────────────
-
-export async function fetchApi<T>(
-  path: string,
-  options?: RequestInit,
-): Promise<T> {
-  const base = getApiBase();
-  const res = await fetch(`${base}${path}`, {
-    headers: { "Content-Type": "application/json", ...options?.headers },
-    ...options,
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`API error: ${res.status}${body ? ` - ${body}` : ""}`);
-  }
-  return res.json();
-}

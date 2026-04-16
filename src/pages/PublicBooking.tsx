@@ -226,7 +226,18 @@ export default function PublicBooking() {
   const eventType = data?.eventType;
   const project = data?.project;
   const owner = data?.owner;
-  const theme = project?.settings?.theme;
+  const themeFromProject = project?.settings?.theme;
+  const themeOverride = useMemo<BookingTheme | undefined>(() => {
+    const raw = searchParams.get("theme");
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(atob(raw)) as BookingTheme;
+    } catch {
+      return undefined;
+    }
+  }, [searchParams]);
+  const theme = themeOverride ?? themeFromProject;
+  const isEmbedded = searchParams.get("embed") === "1";
   const bookingForm = data?.bookingForm;
   const availableDays = data?.availableDays ?? [];
 
@@ -304,7 +315,9 @@ export default function PublicBooking() {
 
   useEffect(() => {
     if (!theme) return;
-    if (theme.backgroundColor) document.body.style.backgroundColor = theme.backgroundColor;
+    if (!isEmbedded && theme.backgroundColor) {
+      document.body.style.backgroundColor = theme.backgroundColor;
+    }
 
     // Load custom font
     if (theme.fontFamily && theme.fontFamily !== "Satoshi") {
@@ -320,7 +333,36 @@ export default function PublicBooking() {
     }
 
     return () => { document.body.style.backgroundColor = ""; };
-  }, [theme]);
+  }, [theme, isEmbedded]);
+
+  // ─── Embed: post height to parent + transparent background ─────────────
+  useEffect(() => {
+    if (!isEmbedded) return;
+    const prevBodyBg = document.body.style.backgroundColor;
+    const prevHtmlBg = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = "transparent";
+    document.documentElement.style.backgroundColor = "transparent";
+
+    let last = 0;
+    const sendHeight = () => {
+      const h = document.documentElement.scrollHeight;
+      if (h !== last) {
+        last = h;
+        window.parent.postMessage({ type: "lc-height", height: h }, "*");
+      }
+    };
+    sendHeight();
+    const ro = new ResizeObserver(sendHeight);
+    ro.observe(document.documentElement);
+    window.addEventListener("resize", sendHeight);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", sendHeight);
+      document.body.style.backgroundColor = prevBodyBg;
+      document.documentElement.style.backgroundColor = prevHtmlBg;
+    };
+  }, [isEmbedded]);
 
   // ─── Fetch slots ───────────────────────────────────────────────────────
 
@@ -511,8 +553,13 @@ export default function PublicBooking() {
   return (
     <div
       ref={containerRef}
-      className="min-h-screen flex flex-col items-center justify-center px-4 py-8 sm:py-12"
-      style={{
+      className={isEmbedded
+        ? "w-full flex justify-center"
+        : "min-h-screen flex flex-col items-center justify-center px-4 py-8 sm:py-12"}
+      style={isEmbedded ? {
+        color: theme?.textColor || undefined,
+        fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
+      } : {
         backgroundColor: theme?.backgroundColor || "var(--background)",
         color: theme?.textColor || "var(--foreground)",
         fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
@@ -526,7 +573,7 @@ export default function PublicBooking() {
     >
       <div
         className="w-full transition-[max-width] duration-500 ease-in-out"
-        style={{ maxWidth: step === 1 ? "880px" : "560px" }}
+        style={{ maxWidth: step === 1 ? "880px" : "680px" }}
       >
         {/* ─── Banner ─── */}
         {theme?.bannerImage && (
@@ -1069,18 +1116,20 @@ export default function PublicBooking() {
         </div>
       </div>
 
-      {/* Footer — bottom right */}
-      <div className="fixed bottom-4 right-4">
-        <a
-          href="https://linkycal.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors bg-background/80 backdrop-blur-sm border border-border rounded-full px-3 py-1.5"
-        >
-          <Logo size="sm" iconOnly />
-          Made with LinkyCal
-        </a>
-      </div>
+      {/* Footer — bottom right (hidden in embed mode; outer widget shows its own) */}
+      {!isEmbedded && (
+        <div className="fixed bottom-4 right-4">
+          <a
+            href="https://linkycal.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors bg-background/80 backdrop-blur-sm border border-border rounded-full px-3 py-1.5"
+          >
+            <Logo size="sm" iconOnly />
+            Made with LinkyCal
+          </a>
+        </div>
+      )}
     </div>
   );
 }

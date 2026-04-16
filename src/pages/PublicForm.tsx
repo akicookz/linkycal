@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useState, useEffect, useMemo } from "react";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import {
@@ -71,7 +71,18 @@ interface ProjectInfo {
 
 export default function PublicForm() {
   const { formSlug } = useParams<{ formSlug: string }>();
+  const [searchParams] = useSearchParams();
   const posthog = usePostHog();
+  const isEmbedded = searchParams.get("embed") === "1";
+  const themeOverride = useMemo<BookingTheme | undefined>(() => {
+    const raw = searchParams.get("theme");
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(atob(raw)) as BookingTheme;
+    } catch {
+      return undefined;
+    }
+  }, [searchParams]);
 
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -104,7 +115,7 @@ export default function PublicForm() {
 
   const form = formData?.form;
   const project = formData?.project;
-  const theme = project?.settings?.theme;
+  const theme = themeOverride ?? project?.settings?.theme;
 
   // ─── Track page view ────────────────────────────────────────────────────
 
@@ -118,7 +129,9 @@ export default function PublicForm() {
 
   useEffect(() => {
     if (!theme) return;
-    if (theme.backgroundColor) document.body.style.backgroundColor = theme.backgroundColor;
+    if (!isEmbedded && theme.backgroundColor) {
+      document.body.style.backgroundColor = theme.backgroundColor;
+    }
 
     if (theme.fontFamily && theme.fontFamily !== "Satoshi") {
       const fontUrl = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(theme.fontFamily)}:wght@400;500;600;700&display=swap`;
@@ -133,7 +146,36 @@ export default function PublicForm() {
     }
 
     return () => { document.body.style.backgroundColor = ""; };
-  }, [theme]);
+  }, [theme, isEmbedded]);
+
+  // ─── Embed: post height to parent + transparent background ─────────────
+  useEffect(() => {
+    if (!isEmbedded) return;
+    const prevBodyBg = document.body.style.backgroundColor;
+    const prevHtmlBg = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = "transparent";
+    document.documentElement.style.backgroundColor = "transparent";
+
+    let last = 0;
+    const sendHeight = () => {
+      const h = document.documentElement.scrollHeight;
+      if (h !== last) {
+        last = h;
+        window.parent.postMessage({ type: "lc-height", height: h }, "*");
+      }
+    };
+    sendHeight();
+    const ro = new ResizeObserver(sendHeight);
+    ro.observe(document.documentElement);
+    window.addEventListener("resize", sendHeight);
+
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", sendHeight);
+      document.body.style.backgroundColor = prevBodyBg;
+      document.documentElement.style.backgroundColor = prevHtmlBg;
+    };
+  }, [isEmbedded]);
 
   const allSortedSteps = form?.steps
     ? [...form.steps].sort((a, b) => a.sortOrder - b.sortOrder)
@@ -414,6 +456,48 @@ export default function PublicForm() {
 // ─── Page Shell ──────────────────────────────────────────────────────────────
 
 function PageShell({ children, theme }: { children: React.ReactNode; theme?: BookingTheme }) {
+  const [searchParams] = useSearchParams();
+  const isEmbedded = searchParams.get("embed") === "1";
+
+  const card = (
+    <div className="w-full max-w-[52rem] mx-auto">
+      {theme?.bannerImage && (
+        <div
+          className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"
+          style={{ backgroundImage: `url(${theme.bannerImage})` }}
+        />
+      )}
+      <div
+        className={cn(
+          "bg-card px-6 py-7 sm:px-10 sm:py-9",
+          theme?.bannerImage ? "rounded-b-[20px]" : "rounded-[20px]"
+        )}
+        style={{
+          borderRadius: theme?.borderRadius != null
+            ? theme.bannerImage
+              ? `0 0 ${theme.borderRadius}px ${theme.borderRadius}px`
+              : `${theme.borderRadius}px`
+            : undefined,
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+
+  if (isEmbedded) {
+    return (
+      <div
+        style={{
+          color: theme?.textColor || undefined,
+          fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
+        }}
+      >
+        {card}
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-background flex flex-col"
@@ -430,31 +514,7 @@ function PageShell({ children, theme }: { children: React.ReactNode; theme?: Boo
       }}
     >
       <div className="flex-1 flex items-center justify-center px-5 py-10 sm:px-6 sm:py-14">
-        <div className="w-full max-w-[44rem]">
-          {theme?.bannerImage && (
-            <div
-              className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"
-              style={{ backgroundImage: `url(${theme.bannerImage})` }}
-            />
-          )}
-          <div
-            className={cn(
-              "bg-card px-6 py-7 sm:px-10 sm:py-9",
-              theme?.bannerImage
-                ? "rounded-b-[20px]"
-                : "rounded-[20px]"
-            )}
-            style={{
-              borderRadius: theme?.borderRadius != null
-                ? theme.bannerImage
-                  ? `0 0 ${theme.borderRadius}px ${theme.borderRadius}px`
-                  : `${theme.borderRadius}px`
-                : undefined,
-            }}
-          >
-            {children}
-          </div>
-        </div>
+        {card}
       </div>
       <footer className="py-4 text-center">
         <Link
