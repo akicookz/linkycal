@@ -74,6 +74,9 @@ export interface AppEnv {
   // Analytics queries
   CF_ACCOUNT_ID: string;
   WAE_API_TOKEN: string;
+
+  // Prerender
+  LOVABLEHTML_API_KEY: string;
 }
 
 // ─── Hono App Context ───────────────────────────────────────────────────────

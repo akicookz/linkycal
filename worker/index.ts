@@ -4833,9 +4833,49 @@ Bearer token via API key: Authorization: Bearer lc_live_...
 
 // ─── SPA Fallback ────────────────────────────────────────────────────────────
 
+const LOVABLEHTML_FORWARD_HEADERS = [
+  "accept-language",
+  "sec-fetch-mode",
+  "sec-fetch-site",
+  "sec-fetch-dest",
+  "sec-fetch-user",
+  "upgrade-insecure-requests",
+  "referer",
+  "user-agent",
+];
+
+async function tryPrerender(req: Request, apiKey: string): Promise<Response | null> {
+  if (!apiKey) return null;
+  if (req.method !== "GET") return null;
+  if (!(req.headers.get("accept") || "").includes("text/html")) return null;
+
+  const headers = new Headers();
+  headers.set("x-lovablehtml-api-key", apiKey);
+  headers.set("accept", "text/html");
+  for (const name of LOVABLEHTML_FORWARD_HEADERS) {
+    const v = req.headers.get(name);
+    if (v) headers.set(name, v);
+  }
+
+  const r = await fetch(
+    "https://lovablehtml.com/api/prerender/render?url=" + encodeURIComponent(req.url),
+    { headers },
+  );
+
+  if (r.status === 304) return null;
+  if ((r.headers.get("content-type") || "").includes("text/html")) {
+    return new Response(await r.text(), {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  return null;
+}
+
 app.use(
   "*",
   except(["/api/*"], async (c) => {
+    const prerendered = await tryPrerender(c.req.raw, c.env.LOVABLEHTML_API_KEY);
+    if (prerendered) return prerendered;
     return c.env.ASSETS.fetch(c.req.raw);
   }),
 );
