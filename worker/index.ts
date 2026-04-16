@@ -4893,7 +4893,15 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
-  console.log("[prerender] unexpected response", url, r.status, ct, `${ms}ms`);
+  const errBody = await r.text().catch(() => "");
+  console.log(
+    "[prerender] unexpected response",
+    url,
+    r.status,
+    ct,
+    `${ms}ms`,
+    errBody.slice(0, 500),
+  );
   return null;
 }
 
