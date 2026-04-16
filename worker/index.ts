@@ -4845,9 +4845,19 @@ const LOVABLEHTML_FORWARD_HEADERS = [
 ];
 
 async function tryPrerender(req: Request, apiKey: string): Promise<Response | null> {
-  if (!apiKey) return null;
-  if (req.method !== "GET") return null;
-  if (!(req.headers.get("accept") || "").includes("text/html")) return null;
+  const url = req.url;
+  if (!apiKey) {
+    console.log("[prerender] skip: no api key", url);
+    return null;
+  }
+  if (req.method !== "GET") {
+    console.log("[prerender] skip: non-GET", req.method, url);
+    return null;
+  }
+  if (!(req.headers.get("accept") || "").includes("text/html")) {
+    console.log("[prerender] skip: non-html accept", url);
+    return null;
+  }
 
   const headers = new Headers();
   headers.set("x-lovablehtml-api-key", apiKey);
@@ -4857,17 +4867,33 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
     if (v) headers.set(name, v);
   }
 
-  const r = await fetch(
-    "https://lovablehtml.com/api/prerender/render?url=" + encodeURIComponent(req.url),
-    { headers },
-  );
+  console.log("[prerender] requesting", url);
+  const started = Date.now();
+  let r: Response;
+  try {
+    r = await fetch(
+      "https://lovablehtml.com/api/prerender/render?url=" + encodeURIComponent(url),
+      { headers },
+    );
+  } catch (err) {
+    console.error("[prerender] fetch failed", url, err);
+    return null;
+  }
+  const ms = Date.now() - started;
+  const ct = r.headers.get("content-type") || "";
 
-  if (r.status === 304) return null;
-  if ((r.headers.get("content-type") || "").includes("text/html")) {
-    return new Response(await r.text(), {
+  if (r.status === 304) {
+    console.log("[prerender] 304 passthrough", url, `${ms}ms`);
+    return null;
+  }
+  if (ct.includes("text/html")) {
+    const body = await r.text();
+    console.log("[prerender] hit", url, r.status, `${ms}ms`, `${body.length}b`);
+    return new Response(body, {
       headers: { "content-type": "text/html; charset=utf-8" },
     });
   }
+  console.log("[prerender] unexpected response", url, r.status, ct, `${ms}ms`);
   return null;
 }
 
