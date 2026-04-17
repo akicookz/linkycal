@@ -213,6 +213,7 @@ export default function PublicBooking() {
       }>;
     } | null;
     availableDays: number[];
+    canHideBranding?: boolean;
   }>({
     queryKey: ["public-event-type", projectSlug, eventSlug],
     queryFn: async () => {
@@ -236,8 +237,15 @@ export default function PublicBooking() {
       return undefined;
     }
   }, [searchParams]);
-  const theme = themeOverride ?? themeFromProject;
+  const theme = useMemo<BookingTheme | undefined>(() => {
+    if (!themeOverride && !themeFromProject) return undefined;
+    return { ...(themeFromProject ?? {}), ...(themeOverride ?? {}) };
+  }, [themeFromProject, themeOverride]);
   const isEmbedded = searchParams.get("embed") === "1";
+  const hideBanner = searchParams.get("hide_banner") === "1";
+  const showBanner = !!theme?.bannerImage && !hideBanner;
+  const hideBrandingRequested = searchParams.get("hide_branding") === "1";
+  const showBranding = !(hideBrandingRequested && data?.canHideBranding);
   const bookingForm = data?.bookingForm;
   const availableDays = data?.availableDays ?? [];
 
@@ -559,10 +567,14 @@ export default function PublicBooking() {
       style={isEmbedded ? {
         color: theme?.textColor || undefined,
         fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
+        ...(theme?.primaryBg ? { ["--theme-primary" as string]: theme.primaryBg } : {}),
+        ...(theme?.borderRadius != null ? { ["--theme-radius" as string]: `${theme.borderRadius}px` } : {}),
       } : {
         backgroundColor: theme?.backgroundColor || "var(--background)",
         color: theme?.textColor || "var(--foreground)",
         fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
+        ...(theme?.primaryBg ? { ["--theme-primary" as string]: theme.primaryBg } : {}),
+        ...(theme?.borderRadius != null ? { ["--theme-radius" as string]: `${theme.borderRadius}px` } : {}),
         ...(theme?.backgroundImage ? {
           backgroundImage: `url(${theme.backgroundImage})`,
           backgroundSize: "cover",
@@ -576,10 +588,10 @@ export default function PublicBooking() {
         style={{ maxWidth: step === 1 ? "880px" : "680px" }}
       >
         {/* ─── Banner ─── */}
-        {theme?.bannerImage && (
+        {showBanner && (
           <div
             className="w-full h-36 sm:h-44 rounded-t-[16px] bg-cover bg-center mb-0"
-            style={{ backgroundImage: `url(${theme.bannerImage})` }}
+            style={{ backgroundImage: `url(${theme!.bannerImage})` }}
           />
         )}
 
@@ -587,28 +599,28 @@ export default function PublicBooking() {
         <div
           className={cn(
             "bg-card p-6 sm:p-8 transition-all duration-500",
-            theme?.bannerImage ? "rounded-b-[16px]" : "rounded-[16px]",
+            showBanner ? "rounded-b-[16px]" : "rounded-[16px]",
           )}
-          style={{ borderRadius: theme?.bannerImage ? undefined : theme?.borderRadius ? `${theme.borderRadius}px` : undefined }}
+          style={{ borderRadius: showBanner ? undefined : theme?.borderRadius ? `${theme.borderRadius}px` : undefined }}
         >
 
           {/* ─── Owner Avatar (always visible) ─── */}
           {owner && (
-            <div className={theme?.bannerImage ? "-mt-14 mb-4" : "mb-4"}>
+            <div className={showBanner ? "-mt-14 mb-4" : "mb-4"}>
               {owner.image ? (
                 <img
                   src={owner.image}
                   alt={owner.name}
                   className={cn(
                     "h-16 w-16 rounded-full object-cover",
-                    theme?.bannerImage && "ring-4 ring-white",
+                    showBanner && "ring-4 ring-white",
                   )}
                 />
               ) : (
                 <div
                   className={cn(
                     "h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center text-lg font-semibold text-primary",
-                    theme?.bannerImage && "ring-4 ring-white",
+                    showBanner && "ring-4 ring-white",
                   )}
                 >
                   {owner.name?.charAt(0)?.toUpperCase() ?? "?"}
@@ -730,12 +742,13 @@ export default function PublicBooking() {
                             disabled={day.disabled}
                             onClick={() => handleDateSelect(day.dateStr)}
                             className={cn(
-                              "aspect-square flex flex-col items-center justify-center text-[14px] font-medium transition-all relative",
+                              "lc-themed-hover aspect-square flex flex-col items-center justify-center text-[14px] font-medium transition-all relative border border-transparent",
                               day.disabled && "text-muted-foreground/30 cursor-not-allowed",
-                              !day.disabled && !isSelected && "bg-muted/50 hover:bg-muted cursor-pointer",
+                              !day.disabled && !isSelected && "bg-muted/50 cursor-pointer",
                               isSelected && !primaryStyle && "bg-primary text-primary-foreground shadow-sm",
                               isSelected && primaryStyle && "shadow-sm",
                             )}
+                            data-selected={isSelected || undefined}
                             style={{
                               borderRadius: !day.disabled || isSelected ? cellRadius : undefined,
                               ...(isSelected && primaryStyle ? primaryStyle : {}),
@@ -802,11 +815,12 @@ export default function PublicBooking() {
                             <button
                               onClick={() => setTimeFormat("12h")}
                               className={cn(
-                                "px-3 py-1 rounded-[8px] transition-all",
+                                "lc-themed-hover px-3 py-1 rounded-[8px] border border-transparent transition-all",
                                 timeFormat === "12h"
                                   ? "bg-primary text-primary-foreground shadow-sm"
                                   : "text-muted-foreground hover:text-foreground",
                               )}
+                              data-selected={timeFormat === "12h" || undefined}
                               style={timeFormat === "12h" && primaryStyle ? primaryStyle : undefined}
                             >
                               12h
@@ -814,11 +828,12 @@ export default function PublicBooking() {
                             <button
                               onClick={() => setTimeFormat("24h")}
                               className={cn(
-                                "px-3 py-1 rounded-[8px] transition-all",
+                                "lc-themed-hover px-3 py-1 rounded-[8px] border border-transparent transition-all",
                                 timeFormat === "24h"
                                   ? "bg-primary text-primary-foreground shadow-sm"
                                   : "text-muted-foreground hover:text-foreground",
                               )}
+                              data-selected={timeFormat === "24h" || undefined}
                               style={timeFormat === "24h" && primaryStyle ? primaryStyle : undefined}
                             >
                               24h
@@ -833,10 +848,11 @@ export default function PublicBooking() {
                                 key={slot.start}
                                 onClick={() => setSelectedSlot(slot)}
                                 className={cn(
-                                  "py-2.5 px-3 rounded-[12px] border-2 border-transparent text-[13px] font-medium text-center transition-all",
+                                  "lc-themed-button lc-themed-hover py-2.5 px-3 border border-transparent text-[13px] font-medium text-center transition-all",
                                   isSelected && !primaryStyle && "bg-primary text-primary-foreground shadow-sm border-primary",
-                                  !isSelected && "bg-muted/50 hover:bg-muted hover:border-primary",
+                                  !isSelected && "bg-muted/50",
                                 )}
+                                data-selected={isSelected || undefined}
                                 style={isSelected && primaryStyle ? primaryStyle : undefined}
                               >
                                 {formatTime(slot.start, timezone, timeFormat)} - {formatTime(slot.end, timezone, timeFormat)}
@@ -1115,17 +1131,19 @@ export default function PublicBooking() {
           )}
 
           {/* ─── Footer: Made with LinkyCal ─── */}
-          <div className="mt-6 pt-4 flex">
-            <a
-              href="https://linkycal.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground transition-colors"
-            >
-              <Logo size="sm" iconOnly />
-              Made with <span className="font-semibold">LinkyCal</span>
-            </a>
-          </div>
+          {showBranding && (
+            <div className="mt-6 pt-4 flex">
+              <a
+                href="https://linkycal.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground transition-colors"
+              >
+                <Logo size="sm" iconOnly />
+                Made with <span className="font-semibold">LinkyCal</span>
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>

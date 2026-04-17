@@ -109,7 +109,7 @@ export default function PublicForm() {
     data: formData,
     isLoading,
     isError,
-  } = useQuery<{ form: PublicFormData; project: ProjectInfo | null }>({
+  } = useQuery<{ form: PublicFormData; project: ProjectInfo | null; canHideBranding?: boolean }>({
     queryKey: ["public-form", formSlug],
     queryFn: async () => {
       const res = await fetch(`/api/public/forms/${formSlug}`);
@@ -124,7 +124,12 @@ export default function PublicForm() {
 
   const form = formData?.form;
   const project = formData?.project;
-  const theme = themeOverride ?? project?.settings?.theme;
+  const canHideBranding = formData?.canHideBranding;
+  const themeFromProject = project?.settings?.theme;
+  const theme = useMemo<BookingTheme | undefined>(() => {
+    if (!themeOverride && !themeFromProject) return undefined;
+    return { ...(themeFromProject ?? {}), ...(themeOverride ?? {}) };
+  }, [themeFromProject, themeOverride]);
 
   // ─── Track page view ────────────────────────────────────────────────────
 
@@ -388,7 +393,7 @@ export default function PublicForm() {
 
   if (isLoading) {
     return (
-      <PageShell theme={theme}>
+      <PageShell theme={theme} canHideBranding={canHideBranding}>
         <div className="flex items-center justify-center py-20">
           <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
@@ -398,7 +403,7 @@ export default function PublicForm() {
 
   if (isError || !form) {
     return (
-      <PageShell theme={theme}>
+      <PageShell theme={theme} canHideBranding={canHideBranding}>
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
           <h2 className="text-lg font-semibold mb-1">Form not found</h2>
@@ -435,7 +440,7 @@ export default function PublicForm() {
 
   if (submitted) {
     return (
-      <PageShell theme={theme}>
+      <PageShell theme={theme} canHideBranding={canHideBranding}>
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-5">
             <CheckCircle2 className="h-7 w-7 text-primary" />
@@ -462,7 +467,7 @@ export default function PublicForm() {
   // ─── Form Rendering ────────────────────────────────────────────────────
 
   return (
-    <PageShell theme={theme}>
+    <PageShell theme={theme} canHideBranding={canHideBranding}>
       <div className="space-y-1.5 mb-7">
         <h1 className="text-lg font-semibold">{form.name}</h1>
         {steps.length > 1 && currentStep?.title && (
@@ -561,26 +566,38 @@ export default function PublicForm() {
 
 // ─── Page Shell ──────────────────────────────────────────────────────────────
 
-function PageShell({ children, theme }: { children: React.ReactNode; theme?: BookingTheme }) {
+function PageShell({
+  children,
+  theme,
+  canHideBranding,
+}: {
+  children: React.ReactNode;
+  theme?: BookingTheme;
+  canHideBranding?: boolean;
+}) {
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
+  const hideBanner = searchParams.get("hide_banner") === "1";
+  const showBanner = !!theme?.bannerImage && !hideBanner;
+  const hideBrandingRequested = searchParams.get("hide_branding") === "1";
+  const showBranding = !(hideBrandingRequested && canHideBranding);
 
   const card = (
     <div className="w-full max-w-[52rem] mx-auto">
-      {theme?.bannerImage && (
+      {showBanner && (
         <div
           className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"
-          style={{ backgroundImage: `url(${theme.bannerImage})` }}
+          style={{ backgroundImage: `url(${theme!.bannerImage})` }}
         />
       )}
       <div
         className={cn(
           "bg-card px-6 py-7 sm:px-10 sm:py-9",
-          theme?.bannerImage ? "rounded-b-[20px]" : "rounded-[20px]"
+          showBanner ? "rounded-b-[20px]" : "rounded-[20px]"
         )}
         style={{
           borderRadius: theme?.borderRadius != null
-            ? theme.bannerImage
+            ? showBanner
               ? `0 0 ${theme.borderRadius}px ${theme.borderRadius}px`
               : `${theme.borderRadius}px`
             : undefined,
@@ -591,6 +608,17 @@ function PageShell({ children, theme }: { children: React.ReactNode; theme?: Boo
     </div>
   );
 
+  const footer = showBranding ? (
+    <footer className="py-4 text-center">
+      <Link
+        to="/"
+        className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        Powered by <Logo size="sm" />
+      </Link>
+    </footer>
+  ) : null;
+
   if (isEmbedded) {
     return (
       <div
@@ -600,6 +628,7 @@ function PageShell({ children, theme }: { children: React.ReactNode; theme?: Boo
         }}
       >
         {card}
+        {footer}
       </div>
     );
   }
@@ -622,14 +651,7 @@ function PageShell({ children, theme }: { children: React.ReactNode; theme?: Boo
       <div className="flex-1 flex items-center justify-center px-5 py-10 sm:px-6 sm:py-14">
         {card}
       </div>
-      <footer className="py-4 text-center">
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Powered by <Logo size="sm" />
-        </Link>
-      </footer>
+      {footer}
     </div>
   );
 }

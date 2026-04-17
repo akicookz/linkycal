@@ -1569,6 +1569,9 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       availableDays = [...new Set(rules.map((r) => r.dayOfWeek))];
     }
 
+    const subscription = await getSubscriptionRecordByUserId(db, project.userId);
+    const canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
+
     return c.json({
       project: {
         id: project.id,
@@ -1580,6 +1583,7 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       eventType,
       bookingForm,
       availableDays,
+      canHideBranding,
     });
   } catch (err) {
     console.error("Event type detail error:", err);
@@ -1638,6 +1642,7 @@ app.get("/api/public/forms/:slug", async (c) => {
         name: dbSchema.projects.name,
         slug: dbSchema.projects.slug,
         settings: dbSchema.projects.settings,
+        userId: dbSchema.projects.userId,
       })
       .from(dbSchema.projects)
       .where(eq(dbSchema.projects.id, form.projectId))
@@ -1654,7 +1659,13 @@ app.get("/api/public/forms/:slug", async (c) => {
         }
       : null;
 
-    return c.json({ form, project: projectInfo });
+    let canHideBranding = false;
+    if (project) {
+      const subscription = await getSubscriptionRecordByUserId(db, project.userId);
+      canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
+    }
+
+    return c.json({ form, project: projectInfo, canHideBranding });
   } catch (err) {
     console.error("Public form fetch error:", err);
     return c.json({ error: "Failed to load form" }, 500);
