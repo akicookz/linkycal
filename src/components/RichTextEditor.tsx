@@ -34,13 +34,12 @@ export function RichTextEditor({
   }, [value]);
 
   function syncDraftFromDom(): string {
+    // Never re-assign innerHTML here: even identical-looking reassignment
+    // collapses the caret to the start of the contentEditable in every
+    // browser. The external useEffect above handles DOM resets when the
+    // `value` prop changes. Sanitization applied at save-time is enough.
     const nextValue = sanitizeRichTextHtml(editorRef.current?.innerHTML ?? "") ?? "";
     setDraftValue(nextValue);
-
-    if (editorRef.current && editorRef.current.innerHTML !== nextValue) {
-      editorRef.current.innerHTML = nextValue;
-    }
-
     return nextValue;
   }
 
