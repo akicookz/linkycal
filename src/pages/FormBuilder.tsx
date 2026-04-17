@@ -95,6 +95,12 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import {
+  FormConditionEditor,
+  FieldQueryParamInput,
+  type ConditionSourceField,
+} from "@/components/FormConditionEditor";
+import type { FormCondition } from "@/lib/form-conditions";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -110,6 +116,8 @@ interface FormField {
   validation: unknown;
   options: Array<{ label: string; value: string }> | null;
   contactMapping: string | null;
+  visibility?: FormCondition | null;
+  queryParam?: string | null;
   createdAt: string;
 }
 
@@ -121,6 +129,7 @@ interface FormStep {
   description: string | null;
   richDescription: string | null;
   settings: unknown;
+  visibility?: FormCondition | null;
   fields: FormField[];
 }
 
@@ -677,6 +686,54 @@ export default function FormBuilder() {
   const activeStepCanvasDroppableId = activeStep
     ? getStepCanvasDroppableId(activeStep.id)
     : null;
+
+  // ─── Condition source lookups ────────────────────────────────────────────
+  //
+  // For each field, "earlier fields" = all fields in steps with lower
+  // sortOrder + fields in the same step with lower sortOrder.
+  // For each step, "earlier fields" = all fields in steps with lower sortOrder.
+  const { sourcesByFieldId, sourcesByStepId } = useMemo(() => {
+    const stepTitleFor = (step: FormStep) =>
+      step.title?.trim() || `Step ${step.sortOrder + 1}`;
+
+    const byStep: Record<string, ConditionSourceField[]> = {};
+    for (const step of sortedSteps) {
+      const earlier = sortedSteps.filter((s) => s.sortOrder < step.sortOrder);
+      byStep[step.id] = earlier.flatMap((s) =>
+        sortFields(s.fields ?? [])
+          .filter((f) => f.type !== "completion")
+          .map((f) => ({
+            id: f.id,
+            label: f.label,
+            type: f.type,
+            stepTitle: stepTitleFor(s),
+            options: f.options ?? null,
+          })),
+      );
+    }
+
+    const byField: Record<string, ConditionSourceField[]> = {};
+    for (const step of sortedSteps) {
+      const ownFields = sortFields(step.fields ?? []);
+      for (let i = 0; i < ownFields.length; i++) {
+        const target = ownFields[i];
+        if (target.type === "completion") continue;
+        const earlierInStep: ConditionSourceField[] = ownFields
+          .slice(0, i)
+          .filter((ff) => ff.type !== "completion")
+          .map((ff) => ({
+            id: ff.id,
+            label: ff.label,
+            type: ff.type,
+            stepTitle: stepTitleFor(step),
+            options: ff.options ?? null,
+          }));
+        byField[target.id] = [...(byStep[step.id] ?? []), ...earlierInStep];
+      }
+    }
+
+    return { sourcesByFieldId: byField, sourcesByStepId: byStep };
+  }, [sortedSteps]);
   const fieldDropTargetSteps = draggingField
     ? sortedSteps.filter((step) => step.id !== draggingField.stepId)
     : [];
@@ -867,6 +924,7 @@ export default function FormBuilder() {
         title: string;
         description: string | null;
         richDescription: string | null;
+        visibility: FormCondition | null;
       }>;
     }) => {
       const res = await fetch(
@@ -1075,6 +1133,8 @@ export default function FormBuilder() {
         stepId: string;
         sortOrder: number;
         contactMapping: string | null;
+        visibility: FormCondition | null;
+        queryParam: string | null;
       }>;
     }) => {
       const res = await fetch(
@@ -2110,6 +2170,19 @@ export default function FormBuilder() {
                           }}
                         />
                       )}
+
+                      {/* Step-level conditional visibility */}
+                      <FormConditionEditor
+                        title="Show this step when"
+                        condition={activeStep.visibility ?? null}
+                        sources={sourcesByStepId[activeStep.id] ?? []}
+                        onChange={(next) =>
+                          updateStepMutation.mutate({
+                            stepId: activeStep.id,
+                            data: { visibility: next },
+                          })
+                        }
+                      />
                     </div>
                     )}
 
@@ -2414,6 +2487,31 @@ export default function FormBuilder() {
                                          Add description
                                        </button>
                                      )}
+                                   </div>
+
+                                   {/* Conditional visibility + URL prefill override */}
+                                   <div className="pl-7 mt-3 space-y-2">
+                                     <FormConditionEditor
+                                       title="Show this field when"
+                                       condition={field.visibility ?? null}
+                                       sources={sourcesByFieldId[field.id] ?? []}
+                                       onChange={(next) =>
+                                         updateFieldMutation.mutate({
+                                           fieldId: field.id,
+                                           data: { visibility: next },
+                                         })
+                                       }
+                                     />
+                                     <FieldQueryParamInput
+                                       fieldId={field.id}
+                                       value={field.queryParam ?? ""}
+                                       onSave={(next) =>
+                                         updateFieldMutation.mutate({
+                                           fieldId: field.id,
+                                           data: { queryParam: next ? next : null },
+                                         })
+                                       }
+                                     />
                                    </div>
 
                                    {hasOptions && Array.isArray(options) && options.length > 0 && (() => {

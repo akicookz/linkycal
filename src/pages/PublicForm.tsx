@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
@@ -15,6 +15,13 @@ import { FormFieldRenderer } from "@/components/FormFieldRenderer";
 import { Logo } from "@/components/Logo";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/track";
+import {
+  isFieldVisible,
+  isStepVisible,
+  type FormCondition,
+  type FormConditionField,
+} from "@/lib/form-conditions";
+import { prefillFromQuery, parseQueryString } from "@/lib/form-prefill";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,6 +36,8 @@ interface FormField {
   required: boolean;
   validation: Record<string, unknown> | null;
   options: Array<{ label: string; value: string }> | null;
+  visibility?: FormCondition | null;
+  queryParam?: string | null;
 }
 
 interface FormStep {
@@ -37,6 +46,7 @@ interface FormStep {
   title: string | null;
   description: string | null;
   richDescription: string | null;
+  visibility?: FormCondition | null;
   fields: FormField[];
 }
 
@@ -177,23 +187,121 @@ export default function PublicForm() {
     };
   }, [isEmbedded]);
 
-  const allSortedSteps = form?.steps
-    ? [...form.steps].sort((a, b) => a.sortOrder - b.sortOrder)
-    : [];
+  const allSortedSteps = useMemo(
+    () => (form?.steps ? [...form.steps].sort((a, b) => a.sortOrder - b.sortOrder) : []),
+    [form],
+  );
   // Filter out steps that contain a completion field
-  const steps = allSortedSteps.filter(
-    (s) => !(s.fields.length > 0 && s.fields.every((f) => f.type === "completion")),
+  const stepsAfterCompletion = useMemo(
+    () =>
+      allSortedSteps.filter(
+        (s) => !(s.fields.length > 0 && s.fields.every((f) => f.type === "completion")),
+      ),
+    [allSortedSteps],
   );
   // Find the completion field (if any)
-  const completionField = allSortedSteps
-    .flatMap((s) => s.fields)
-    .find((f) => f.type === "completion") ?? null;
+  const completionField = useMemo(
+    () =>
+      allSortedSteps.flatMap((s) => s.fields).find((f) => f.type === "completion") ?? null,
+    [allSortedSteps],
+  );
+
+  const allFields = useMemo<FormField[]>(
+    () => allSortedSteps.flatMap((s) => s.fields),
+    [allSortedSteps],
+  );
+  const fieldsById = useMemo<Record<string, FormConditionField>>(() => {
+    const map: Record<string, FormConditionField> = {};
+    for (const f of allFields) {
+      map[f.id] = {
+        id: f.id,
+        type: f.type,
+        options: f.options,
+        visibility: f.visibility ?? null,
+      };
+    }
+    return map;
+  }, [allFields]);
+
+  const conditionInputs = useMemo(
+    () => ({ values, fieldsById }),
+    [values, fieldsById],
+  );
+
+  const steps = stepsAfterCompletion.filter((s) =>
+    isStepVisible({ visibility: s.visibility ?? null }, conditionInputs),
+  );
   const currentStep = steps[currentStepIndex];
   const currentFields = currentStep
-    ? [...currentStep.fields].sort((a, b) => a.sortOrder - b.sortOrder)
+    ? [...currentStep.fields]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .filter((f) => isFieldVisible(
+          {
+            id: f.id,
+            type: f.type,
+            options: f.options,
+            visibility: f.visibility ?? null,
+          },
+          conditionInputs,
+        ))
     : [];
   const isLastStep = currentStepIndex === steps.length - 1;
   const isFirstStep = currentStepIndex === 0;
+
+  // ─── URL prefill (once per form load) ──────────────────────────────────
+  const didPrefill = useRef(false);
+  useEffect(() => {
+    if (!form) return;
+    if (didPrefill.current) return;
+    didPrefill.current = true;
+
+    const query = parseQueryString(window.location.search);
+    const prefilled = prefillFromQuery(
+      allFields.map((f) => ({
+        id: f.id,
+        type: f.type,
+        options: f.options,
+        queryParam: f.queryParam ?? null,
+      })),
+      query,
+    );
+    if (Object.keys(prefilled).length > 0) {
+      setValues((prev) => ({ ...prefilled, ...prev }));
+    }
+  }, [form, allFields]);
+
+  // ─── Clamp currentStepIndex if visibility shrinks the step list ────────
+  useEffect(() => {
+    if (steps.length === 0) return;
+    if (currentStepIndex >= steps.length) {
+      setCurrentStepIndex(steps.length - 1);
+    }
+  }, [steps.length, currentStepIndex]);
+
+  // ─── Clear hidden-field values whenever visibility changes ─────────────
+  useEffect(() => {
+    const hiddenWithValue: string[] = [];
+    for (const f of allFields) {
+      if (f.type === "completion") continue;
+      if (values[f.id] === undefined) continue;
+      const visible = isFieldVisible(
+        {
+          id: f.id,
+          type: f.type,
+          options: f.options,
+          visibility: f.visibility ?? null,
+        },
+        conditionInputs,
+      );
+      if (!visible) hiddenWithValue.push(f.id);
+    }
+    if (hiddenWithValue.length === 0) return;
+    setValues((prev) => {
+      const next = { ...prev };
+      for (const id of hiddenWithValue) delete next[id];
+      return next;
+    });
+  }, [allFields, conditionInputs, values]);
 
   function setValue(fieldId: string, value: string) {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
@@ -255,7 +363,7 @@ export default function PublicForm() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fields }),
+          body: JSON.stringify({ fields, complete: isLastStep }),
         }
       );
 

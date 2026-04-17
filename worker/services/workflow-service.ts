@@ -110,6 +110,7 @@ export class WorkflowService {
       sortOrder?: number;
       type: "send_email" | "ai_research" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
       config?: Record<string, unknown>;
+      condition?: Record<string, unknown> | null;
     },
   ) {
     const id = crypto.randomUUID();
@@ -126,6 +127,7 @@ export class WorkflowService {
       sortOrder,
       type: data.type,
       config: data.config ?? null,
+      condition: data.condition ?? null,
     });
 
     return this.getStepById(id);
@@ -137,6 +139,7 @@ export class WorkflowService {
       sortOrder?: number;
       type?: "send_email" | "ai_research" | "add_tag" | "remove_tag" | "wait" | "condition" | "webhook" | "update_contact";
       config?: Record<string, unknown> | null;
+      condition?: Record<string, unknown> | null;
     },
   ) {
     const values: Record<string, unknown> = {};
@@ -144,6 +147,8 @@ export class WorkflowService {
     if (data.type !== undefined) values.type = data.type;
     if (data.config !== undefined)
       values.config = data.config ?? null;
+    if (data.condition !== undefined)
+      values.condition = data.condition ?? null;
 
     if (Object.keys(values).length === 0) return this.getStepById(id);
 

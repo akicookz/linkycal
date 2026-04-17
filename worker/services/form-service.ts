@@ -74,6 +74,7 @@ function normalizeFormRow<T extends { settings: unknown }>(form: T) {
 function normalizeStepRow<
   T extends {
     settings: unknown;
+    visibility?: unknown;
     description?: string | null;
     richDescription?: string | null;
   },
@@ -83,16 +84,18 @@ function normalizeStepRow<
     richDescription:
       step.richDescription ?? plainTextToRichTextHtml(step.description ?? null),
     settings: parseJsonObject(step.settings),
+    visibility: parseJsonObject(step.visibility),
   };
 }
 
 function normalizeFieldRow<
-  T extends { validation: unknown; options: unknown },
+  T extends { validation: unknown; options: unknown; visibility?: unknown },
 >(field: T) {
   return {
     ...field,
     validation: parseJsonObject(field.validation),
     options: parseFieldOptions(field.options),
+    visibility: parseJsonObject(field.visibility),
   };
 }
 
@@ -335,6 +338,7 @@ export class FormService {
       description?: string;
       richDescription?: string;
       settings?: Record<string, unknown>;
+      visibility?: Record<string, unknown> | null;
     },
   ) {
     const id = crypto.randomUUID();
@@ -354,6 +358,7 @@ export class FormService {
       description: data.description ?? null,
       richDescription: data.richDescription ?? null,
       settings: data.settings ? JSON.stringify(data.settings) : null,
+      visibility: data.visibility ? JSON.stringify(data.visibility) : null,
     });
 
     return this.getStepById(id);
@@ -367,6 +372,7 @@ export class FormService {
       description?: string | null;
       richDescription?: string | null;
       settings?: Record<string, unknown> | null;
+      visibility?: Record<string, unknown> | null;
     },
   ) {
     const values: Record<string, unknown> = {};
@@ -377,6 +383,10 @@ export class FormService {
       values.richDescription = data.richDescription;
     if (data.settings !== undefined)
       values.settings = data.settings ? JSON.stringify(data.settings) : null;
+    if (data.visibility !== undefined)
+      values.visibility = data.visibility
+        ? JSON.stringify(data.visibility)
+        : null;
 
     if (Object.keys(values).length === 0) return this.getStepById(id);
 
@@ -467,6 +477,9 @@ export class FormService {
     required?: boolean;
     validation?: Record<string, unknown>;
     options?: Array<{ label: string; value: string }>;
+    visibility?: Record<string, unknown> | null;
+    queryParam?: string | null;
+    contactMapping?: "name" | "email" | null;
   }) {
     // Get the form ID from the step to check for duplicate IDs across the whole form
     const [step] = await this.db
@@ -501,6 +514,9 @@ export class FormService {
       required: data.required ?? false,
       validation: data.validation ? JSON.stringify(data.validation) : null,
       options: data.options ? JSON.stringify(data.options) : null,
+      visibility: data.visibility ? JSON.stringify(data.visibility) : null,
+      queryParam: data.queryParam ?? null,
+      contactMapping: data.contactMapping ?? null,
     });
 
     return this.getFieldById(id);
@@ -519,6 +535,8 @@ export class FormService {
       validation?: Record<string, unknown> | null;
       options?: Array<{ label: string; value: string }> | null;
       contactMapping?: string | null;
+      visibility?: Record<string, unknown> | null;
+      queryParam?: string | null;
     },
   ) {
     let currentField = await this.getFieldById(id);
@@ -547,6 +565,11 @@ export class FormService {
       values.options = data.options ? JSON.stringify(data.options) : null;
     if (data.contactMapping !== undefined)
       values.contactMapping = data.contactMapping;
+    if (data.visibility !== undefined)
+      values.visibility = data.visibility
+        ? JSON.stringify(data.visibility)
+        : null;
+    if (data.queryParam !== undefined) values.queryParam = data.queryParam;
 
     if (data.contactMapping) {
       const step = await this.getStepById(currentField.stepId);
@@ -721,6 +744,7 @@ export class FormService {
       value?: string | null;
       fileUrl?: string | null;
     }>,
+    options: { complete?: boolean } = {},
   ) {
     // Save field values
     for (const field of fields) {
@@ -747,7 +771,10 @@ export class FormService {
       return !(stepFields.length > 0 && stepFields.every((f) => f.type === "completion"));
     });
     const nextStepIndex = stepIndex + 1;
-    const isComplete = nextStepIndex >= steps.length;
+    // Client can force completion when it's on the last visible step (conditional
+    // steps may hide later server-side steps, making stepIndex-based detection
+    // under-count). Still fall back to the server-side count as a safety net.
+    const isComplete = options.complete === true || nextStepIndex >= steps.length;
 
     // Update response progress
     await this.db

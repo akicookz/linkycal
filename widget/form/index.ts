@@ -20,6 +20,21 @@ function getUtmsFromUrl(): Record<string, string> {
   return out;
 }
 
+// Forward all host-page query params (except iframe-internal ones) so that
+// ?field_id=value on the embedding page flows through to the form prefill.
+const WIDGET_RESERVED_PARAMS = new Set(["embed", "theme"]);
+function getHostPageParams(): Array<[string, string]> {
+  const pairs: Array<[string, string]> = [];
+  try {
+    const params = new URLSearchParams(window.location.search);
+    for (const [k, v] of params) {
+      if (WIDGET_RESERVED_PARAMS.has(k)) continue;
+      pairs.push([k, v]);
+    }
+  } catch { /* ignore */ }
+  return pairs;
+}
+
 function initFormWidget(options: FormWidgetOptions): void {
   const { projectSlug, formSlug, theme, utms } = options;
   const root =
@@ -34,6 +49,11 @@ function initFormWidget(options: FormWidgetOptions): void {
 
   const base = getApiBase();
   const url = new URL(`${base}/f/${formSlug}`);
+  // Forward host-page query params first so prefill inside the iframe can use
+  // them. UTMs + explicit options below take precedence on conflict.
+  for (const [k, v] of getHostPageParams()) {
+    url.searchParams.append(k, v);
+  }
   url.searchParams.set("embed", "1");
   if (theme) {
     try {

@@ -67,6 +67,10 @@ import { queryClient } from "@/lib/query-client";
 import { VariableInput, VariableTextarea } from "@/components/ui/variable-input";
 import { WORKFLOW_VARIABLES } from "@/lib/workflow-variables";
 import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
+import {
+  WorkflowConditionEditor,
+  type WorkflowCondition,
+} from "@/components/WorkflowConditionEditor";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -95,6 +99,7 @@ interface WorkflowStep {
   sortOrder: number;
   type: StepType;
   config: Record<string, unknown> | null;
+  condition: WorkflowCondition | null;
   createdAt: string;
 }
 
@@ -274,6 +279,7 @@ export default function WorkflowBuilder() {
   const [selectedStepType, setSelectedStepType] = useState<StepType | null>(null);
   const [editingStepId, setEditingStepId] = useState<string | null>(null);
   const [stepConfig, setStepConfig] = useState<Record<string, unknown>>({});
+  const [stepCondition, setStepCondition] = useState<WorkflowCondition | null>(null);
   const [deleteStepId, setDeleteStepId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
@@ -372,7 +378,12 @@ export default function WorkflowBuilder() {
   });
 
   const addStepMutation = useMutation({
-    mutationFn: async (data: { type: StepType; sortOrder?: number; config?: Record<string, unknown> }) => {
+    mutationFn: async (data: {
+      type: StepType;
+      sortOrder?: number;
+      config?: Record<string, unknown>;
+      condition?: WorkflowCondition | null;
+    }) => {
       const res = await fetch(
         `/api/projects/${projectId}/workflows/${workflowId}/steps`,
         {
@@ -445,6 +456,7 @@ export default function WorkflowBuilder() {
     setInsertIndex(atIndex ?? null);
     setSelectedStepType(null);
     setStepConfig({});
+    setStepCondition(null);
     setAddStepDialogOpen(true);
   }
 
@@ -454,6 +466,7 @@ export default function WorkflowBuilder() {
     const existing = parseConfig(step.config) ?? {};
     // Merge defaults under existing config so missing fields get filled
     setStepConfig({ ...getDefaultConfig(step.type), ...existing });
+    setStepCondition(step.condition ?? null);
     setAddStepDialogOpen(true);
   }
 
@@ -462,6 +475,7 @@ export default function WorkflowBuilder() {
     setSelectedStepType(null);
     setEditingStepId(null);
     setStepConfig({});
+    setStepCondition(null);
     setInsertIndex(null);
   }
 
@@ -471,7 +485,14 @@ export default function WorkflowBuilder() {
 
     if (editingStepId) {
       updateStepMutation.mutate(
-        { stepId: editingStepId, data: { type: selectedStepType, config: stepConfig } },
+        {
+          stepId: editingStepId,
+          data: {
+            type: selectedStepType,
+            config: stepConfig,
+            condition: stepCondition,
+          },
+        },
         { onSuccess: () => closeStepDialog() },
       );
     } else {
@@ -480,6 +501,7 @@ export default function WorkflowBuilder() {
           type: selectedStepType,
           sortOrder: insertIndex ?? undefined,
           config: stepConfig,
+          condition: stepCondition ?? undefined,
         },
         { onSuccess: () => closeStepDialog() },
       );
@@ -649,9 +671,16 @@ export default function WorkflowBuilder() {
                           <StepIcon className="h-5 w-5 text-muted-foreground" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold text-foreground">
-                            {stepMeta.label}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-sm font-semibold text-foreground">
+                              {stepMeta.label}
+                            </p>
+                            {step.condition && step.condition.rules.length > 0 && (
+                              <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                                Conditional
+                              </Badge>
+                            )}
+                          </div>
                           <p className="text-xs text-muted-foreground truncate">
                             {summary}
                           </p>
@@ -962,6 +991,13 @@ export default function WorkflowBuilder() {
                   onChange={setStepConfig}
                   tags={tags}
                 />
+
+                <div className="pt-3 border-t">
+                  <WorkflowConditionEditor
+                    condition={stepCondition}
+                    onChange={setStepCondition}
+                  />
+                </div>
               </>
             )}
 

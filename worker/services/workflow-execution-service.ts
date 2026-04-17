@@ -8,6 +8,10 @@ import {
   resolveWorkflowValue,
   type WorkflowTriggerContext,
 } from "../lib/workflow-runtime";
+import {
+  evaluateWorkflowCondition,
+  parseWorkflowCondition,
+} from "../lib/workflow-conditions";
 import type { AppEnv } from "../types";
 import { WorkflowService, type StepLog } from "./workflow-service";
 import { WorkflowAiResearchService } from "./workflow-ai-research-service";
@@ -210,9 +214,44 @@ export class WorkflowExecutionService {
       return;
     }
 
-    // ── Step logging: mark as running ──
     const stepLogs = await this.workflowService.getStepLogs(workflowRunId);
     const config = (step.config ?? {}) as Record<string, unknown>;
+
+    // ── Per-step condition gate ──
+    // Distinct from the "condition" step type which halts the run. If this
+    // step's `condition` column evaluates to false, skip this step only and
+    // continue to the next one. Check before marking as running so a skipped
+    // step never shows a startedAt timestamp.
+    const stepGate = parseWorkflowCondition(step.condition);
+    if (stepGate && !evaluateWorkflowCondition(stepGate, context)) {
+      const now = new Date().toISOString();
+      if (stepLogs[stepIndex]) {
+        stepLogs[stepIndex].status = "skipped";
+        stepLogs[stepIndex].completedAt = now;
+        stepLogs[stepIndex].output = { reason: "condition_not_met" };
+      }
+      await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
+      await this.workflowService.updateRunProgress(
+        workflowRunId,
+        stepIndex,
+        undefined,
+        undefined,
+        JSON.stringify(context),
+      );
+
+      const nextIndex = stepIndex + 1;
+      if (nextIndex < full.steps.length) {
+        await env.WORKFLOW_QUEUE.send({
+          workflowRunId,
+          stepIndex: nextIndex,
+        });
+      } else {
+        await this.workflowService.completeRun(workflowRunId);
+      }
+      return;
+    }
+
+    // ── Step logging: mark as running ──
     if (stepLogs[stepIndex]) {
       stepLogs[stepIndex].status = "running";
       stepLogs[stepIndex].startedAt = new Date().toISOString();

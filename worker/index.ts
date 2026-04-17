@@ -1432,6 +1432,7 @@ app.patch(
         responseId,
         stepIndex,
         data.fields,
+        { complete: data.complete === true },
       );
 
       if (!response) {
@@ -1734,6 +1735,7 @@ app.patch(
         responseId,
         stepIndex,
         data.fields,
+        { complete: data.complete === true },
       );
 
       if (!response) {

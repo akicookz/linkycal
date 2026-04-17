@@ -182,6 +182,67 @@ export const reorderFieldsSchema = z.object({
   fieldIds: z.array(z.string().min(1)),
 });
 
+// ─── Conditions (shared by forms and workflows) ──────────────────────────────
+
+const formConditionOperatorEnum = z.enum([
+  "equals",
+  "not_equals",
+  "is_one_of",
+  "is_not_one_of",
+  "contains",
+  "not_contains",
+  "exists",
+  "not_exists",
+  "gt",
+  "lt",
+  "gte",
+  "lte",
+]);
+
+const workflowConditionOperatorEnum = z.enum([
+  "equals",
+  "not_equals",
+  "contains",
+  "not_contains",
+  "exists",
+  "not_exists",
+  "gt",
+  "lt",
+  "gte",
+  "lte",
+]);
+
+const conditionMatchEnum = z.enum(["all", "any"]);
+
+export const formConditionSchema = z.object({
+  when: conditionMatchEnum.default("all"),
+  rules: z
+    .array(
+      z.object({
+        fieldId: z.string().min(1),
+        operator: formConditionOperatorEnum,
+        value: z
+          .union([z.string(), z.number(), z.array(z.string())])
+          .nullable()
+          .optional(),
+      }),
+    )
+    .max(20),
+});
+
+export const workflowConditionSchema = z.object({
+  when: conditionMatchEnum.default("all"),
+  rules: z
+    .array(
+      z.object({
+        source: z.string().min(1).max(200),
+        operator: workflowConditionOperatorEnum,
+        value: z.union([z.string(), z.number()]).nullable().optional(),
+      }),
+    )
+    .max(20),
+});
+
 // ─── Forms ───────────────────────────────────────────────────────────────────
 
 export const createFormSchema = z.object({
@@ -214,6 +275,7 @@ export const createFormStepSchema = z.object({
   description: z.string().max(2000).optional(),
   richDescription: z.string().max(10000).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  visibility: formConditionSchema.nullable().optional(),
 });
 
 export const updateFormStepSchema = z.object({
@@ -222,6 +284,7 @@ export const updateFormStepSchema = z.object({
   description: z.string().max(2000).nullable().optional(),
   richDescription: z.string().max(10000).nullable().optional(),
   settings: z.record(z.string(), z.unknown()).nullable().optional(),
+  visibility: formConditionSchema.nullable().optional(),
 });
 
 export const createFormFieldSchema = z.object({
@@ -251,6 +314,14 @@ export const createFormFieldSchema = z.object({
   required: z.boolean().default(false),
   validation: z.record(z.string(), z.unknown()).optional(),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
+  visibility: formConditionSchema.nullable().optional(),
+  queryParam: z
+    .string()
+    .max(64)
+    .regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, underscore and hyphen")
+    .nullable()
+    .optional(),
+  contactMapping: z.enum(["name", "email"]).nullable().optional(),
 });
 
 export const updateFormFieldSchema = z.object({
@@ -286,6 +357,13 @@ export const updateFormFieldSchema = z.object({
     .nullable()
     .optional(),
   contactMapping: z.enum(["name", "email"]).nullable().optional(),
+  visibility: formConditionSchema.nullable().optional(),
+  queryParam: z
+    .string()
+    .max(64)
+    .regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, underscore and hyphen")
+    .nullable()
+    .optional(),
 });
 
 export const submitFormStepSchema = z.object({
@@ -296,6 +374,11 @@ export const submitFormStepSchema = z.object({
       fileUrl: z.string().url().nullable().optional(),
     }),
   ),
+  // Client-authoritative flag: true when the user is on their last visible
+  // step. Needed because conditional steps can shrink the visible count below
+  // the server-side step count, so the server can't derive completion from
+  // stepIndex alone.
+  complete: z.boolean().optional(),
 });
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
@@ -415,12 +498,14 @@ export const createWorkflowStepSchema = z.object({
   sortOrder: z.number().int().min(0).default(0),
   type: workflowStepTypeEnum,
   config: z.record(z.string(), z.unknown()).optional(),
+  condition: workflowConditionSchema.nullable().optional(),
 });
 
 export const updateWorkflowStepSchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
   type: workflowStepTypeEnum.optional(),
   config: z.record(z.string(), z.unknown()).nullable().optional(),
+  condition: workflowConditionSchema.nullable().optional(),
 });
 
 // ─── API Keys ────────────────────────────────────────────────────────────────

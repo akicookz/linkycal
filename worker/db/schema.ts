@@ -296,6 +296,7 @@ export const formSteps = sqliteTable(
     description: text("description"),
     richDescription: text("rich_description"),
     settings: text("settings", { mode: "json" }),
+    visibility: text("visibility", { mode: "json" }),
   },
   (t) => [index("form_steps_form_id_idx").on(t.formId)],
 );
@@ -339,6 +340,8 @@ export const formFields = sqliteTable(
     required: integer("required", { mode: "boolean" }).notNull().default(false),
     validation: text("validation", { mode: "json" }),
     options: text("options", { mode: "json" }),
+    visibility: text("visibility", { mode: "json" }),
+    queryParam: text("query_param"),
     contactMapping: text("contact_mapping", {
       enum: ["name", "email"],
     }),
@@ -616,6 +619,7 @@ export const workflowSteps = sqliteTable(
       ],
     }).notNull(),
     config: text("config", { mode: "json" }),
+    condition: text("condition", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
