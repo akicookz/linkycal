@@ -1113,23 +1113,21 @@ export default function PublicBooking() {
               </Button>
             </div>
           )}
+
+          {/* ─── Footer: Made with LinkyCal ─── */}
+          <div className="mt-6 pt-4 flex">
+            <a
+              href="https://linkycal.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground transition-colors"
+            >
+              <Logo size="sm" iconOnly />
+              Made with <span className="font-semibold">LinkyCal</span>
+            </a>
+          </div>
         </div>
       </div>
-
-      {/* Footer — bottom right (hidden in embed mode; outer widget shows its own) */}
-      {!isEmbedded && (
-        <div className="fixed bottom-4 right-4">
-          <a
-            href="https://linkycal.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors bg-background/80 backdrop-blur-sm border border-border rounded-full px-3 py-1.5"
-          >
-            <Logo size="sm" iconOnly />
-            Made with LinkyCal
-          </a>
-        </div>
-      )}
     </div>
   );
 }
