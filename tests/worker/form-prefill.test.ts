@@ -23,12 +23,6 @@ describe("prefillFromQuery", () => {
     expect(out).toEqual({});
   });
 
-  test("queryParam override takes precedence over field id", () => {
-    const fields = [textField("email", { queryParam: "e" })];
-    const out = prefillFromQuery(fields, { e: "a@b.com", email: "other@b.com" });
-    expect(out).toEqual({ email: "a@b.com" });
-  });
-
   test("select field only accepts matching option value", () => {
     const fields: FormPrefillField[] = [
       {

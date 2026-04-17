@@ -315,12 +315,6 @@ export const createFormFieldSchema = z.object({
   validation: z.record(z.string(), z.unknown()).optional(),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
   visibility: formConditionSchema.nullable().optional(),
-  queryParam: z
-    .string()
-    .max(64)
-    .regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, underscore and hyphen")
-    .nullable()
-    .optional(),
   contactMapping: z.enum(["name", "email"]).nullable().optional(),
 });
 
@@ -358,12 +352,6 @@ export const updateFormFieldSchema = z.object({
     .optional(),
   contactMapping: z.enum(["name", "email"]).nullable().optional(),
   visibility: formConditionSchema.nullable().optional(),
-  queryParam: z
-    .string()
-    .max(64)
-    .regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, underscore and hyphen")
-    .nullable()
-    .optional(),
 });
 
 export const submitFormStepSchema = z.object({

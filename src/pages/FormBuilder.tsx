@@ -97,7 +97,6 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import {
   FormConditionEditor,
-  FieldQueryParamInput,
   type ConditionSourceField,
 } from "@/components/FormConditionEditor";
 import type { FormCondition } from "@/lib/form-conditions";
@@ -117,7 +116,6 @@ interface FormField {
   options: Array<{ label: string; value: string }> | null;
   contactMapping: string | null;
   visibility?: FormCondition | null;
-  queryParam?: string | null;
   createdAt: string;
 }
 
@@ -1134,7 +1132,6 @@ export default function FormBuilder() {
         sortOrder: number;
         contactMapping: string | null;
         visibility: FormCondition | null;
-        queryParam: string | null;
       }>;
     }) => {
       const res = await fetch(
@@ -2460,58 +2457,80 @@ export default function FormBuilder() {
                                      </div>
                                    </div>
 
-                                   {/* Field description — collapsible */}
-                                   <div className="pl-7 mt-2">
-                                     {expandedFieldDesc.has(field.id) || field.description ? (
-                                       <RichTextEditor
-                                         key={`field-desc-${field.id}`}
-                                         value={field.description ?? ""}
-                                         placeholder="Add a description or helper text"
-                                         className="text-xs"
-                                         onSave={(html) =>
+                                   {/* Conditional visibility card when rules exist */}
+                                   {field.visibility && (field.visibility.rules?.length ?? 0) > 0 && (
+                                     <div className="pl-7 mt-3">
+                                       <FormConditionEditor
+                                         title="Show this field when"
+                                         condition={field.visibility}
+                                         sources={sourcesByFieldId[field.id] ?? []}
+                                         onChange={(next) =>
                                            updateFieldMutation.mutate({
                                              fieldId: field.id,
-                                             data: { description: html },
+                                             data: { visibility: next },
                                            })
                                          }
                                        />
-                                     ) : (
-                                       <button
-                                         type="button"
-                                         className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                         onClick={() =>
-                                           setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
-                                         }
-                                       >
-                                         <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-                                         Add description
-                                       </button>
-                                     )}
-                                   </div>
+                                     </div>
+                                   )}
 
-                                   {/* Conditional visibility + URL prefill override */}
-                                   <div className="pl-7 mt-3 space-y-2">
-                                     <FormConditionEditor
-                                       title="Show this field when"
-                                       condition={field.visibility ?? null}
-                                       sources={sourcesByFieldId[field.id] ?? []}
-                                       onChange={(next) =>
-                                         updateFieldMutation.mutate({
-                                           fieldId: field.id,
-                                           data: { visibility: next },
-                                         })
-                                       }
-                                     />
-                                     <FieldQueryParamInput
-                                       fieldId={field.id}
-                                       value={field.queryParam ?? ""}
-                                       onSave={(next) =>
-                                         updateFieldMutation.mutate({
-                                           fieldId: field.id,
-                                           data: { queryParam: next ? next : null },
-                                         })
-                                       }
-                                     />
+                                   {/* Description + "Show this field when" inline row */}
+                                   <div className="pl-7 mt-2">
+                                     {expandedFieldDesc.has(field.id) || field.description ? (
+                                       <div className="space-y-2">
+                                         <RichTextEditor
+                                           key={`field-desc-${field.id}`}
+                                           value={field.description ?? ""}
+                                           placeholder="Add a description or helper text"
+                                           className="text-xs"
+                                           onSave={(html) =>
+                                             updateFieldMutation.mutate({
+                                               fieldId: field.id,
+                                               data: { description: html },
+                                             })
+                                           }
+                                         />
+                                         {(!field.visibility || (field.visibility.rules?.length ?? 0) === 0) && (
+                                           <FormConditionEditor
+                                             title="Show this field when"
+                                             condition={null}
+                                             sources={sourcesByFieldId[field.id] ?? []}
+                                             onChange={(next) =>
+                                               updateFieldMutation.mutate({
+                                                 fieldId: field.id,
+                                                 data: { visibility: next },
+                                               })
+                                             }
+                                           />
+                                         )}
+                                       </div>
+                                     ) : (
+                                       <div className="flex items-center gap-4 flex-wrap">
+                                         {(!field.visibility || (field.visibility.rules?.length ?? 0) === 0) && (
+                                           <FormConditionEditor
+                                             title="Show this field when"
+                                             condition={null}
+                                             sources={sourcesByFieldId[field.id] ?? []}
+                                             onChange={(next) =>
+                                               updateFieldMutation.mutate({
+                                                 fieldId: field.id,
+                                                 data: { visibility: next },
+                                               })
+                                             }
+                                           />
+                                         )}
+                                         <button
+                                           type="button"
+                                           className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                                           onClick={() =>
+                                             setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
+                                           }
+                                         >
+                                           <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+                                           Add description
+                                         </button>
+                                       </div>
+                                     )}
                                    </div>
 
                                    {hasOptions && Array.isArray(options) && options.length > 0 && (() => {

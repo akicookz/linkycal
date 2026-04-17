@@ -2,15 +2,9 @@ export type FormPrefillField = {
   id: string;
   type: string;
   options?: Array<{ label: string; value: string }> | null;
-  queryParam?: string | null;
 };
 
 export type FormPrefillQuery = Record<string, string | string[]>;
-
-function paramKey(field: FormPrefillField): string {
-  const override = (field.queryParam ?? "").trim();
-  return override.length > 0 ? override : field.id;
-}
 
 function firstValue(value: string | string[] | undefined): string | undefined {
   if (value === undefined) return undefined;
@@ -93,9 +87,8 @@ export function prefillFromQuery(
   const out: Record<string, string> = {};
 
   for (const field of fields) {
-    const key = paramKey(field);
-    if (!(key in query)) continue;
-    const coerced = coerceForField(field, query[key]);
+    if (!(field.id in query)) continue;
+    const coerced = coerceForField(field, query[field.id]);
     if (coerced !== null) {
       out[field.id] = coerced;
     }

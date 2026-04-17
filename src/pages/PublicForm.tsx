@@ -37,7 +37,6 @@ interface FormField {
   validation: Record<string, unknown> | null;
   options: Array<{ label: string; value: string }> | null;
   visibility?: FormCondition | null;
-  queryParam?: string | null;
 }
 
 interface FormStep {
@@ -261,7 +260,6 @@ export default function PublicForm() {
         id: f.id,
         type: f.type,
         options: f.options,
-        queryParam: f.queryParam ?? null,
       })),
       query,
     );

@@ -478,7 +478,6 @@ export class FormService {
     validation?: Record<string, unknown>;
     options?: Array<{ label: string; value: string }>;
     visibility?: Record<string, unknown> | null;
-    queryParam?: string | null;
     contactMapping?: "name" | "email" | null;
   }) {
     // Get the form ID from the step to check for duplicate IDs across the whole form
@@ -515,7 +514,6 @@ export class FormService {
       validation: data.validation ? JSON.stringify(data.validation) : null,
       options: data.options ? JSON.stringify(data.options) : null,
       visibility: data.visibility ? JSON.stringify(data.visibility) : null,
-      queryParam: data.queryParam ?? null,
       contactMapping: data.contactMapping ?? null,
     });
 
@@ -536,7 +534,6 @@ export class FormService {
       options?: Array<{ label: string; value: string }> | null;
       contactMapping?: string | null;
       visibility?: Record<string, unknown> | null;
-      queryParam?: string | null;
     },
   ) {
     let currentField = await this.getFieldById(id);
@@ -569,7 +566,6 @@ export class FormService {
       values.visibility = data.visibility
         ? JSON.stringify(data.visibility)
         : null;
-    if (data.queryParam !== undefined) values.queryParam = data.queryParam;
 
     if (data.contactMapping) {
       const step = await this.getStepById(currentField.stepId);

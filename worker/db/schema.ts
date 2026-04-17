@@ -341,7 +341,6 @@ export const formFields = sqliteTable(
     validation: text("validation", { mode: "json" }),
     options: text("options", { mode: "json" }),
     visibility: text("visibility", { mode: "json" }),
-    queryParam: text("query_param"),
     contactMapping: text("contact_mapping", {
       enum: ["name", "email"],
     }),

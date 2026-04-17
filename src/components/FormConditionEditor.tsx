@@ -316,62 +316,6 @@ export function FormConditionEditor({
   );
 }
 
-export function FieldQueryParamInput({
-  fieldId,
-  value,
-  onSave,
-}: {
-  fieldId: string;
-  value: string;
-  onSave: (next: string) => void;
-}) {
-  const [expanded, setExpanded] = useState<boolean>(() => value.trim().length > 0);
-  const [draft, setDraft] = useState(value);
-
-  useEffect(() => {
-    setDraft(value);
-  }, [value]);
-
-  if (!expanded) {
-    return (
-      <button
-        type="button"
-        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-        onClick={() => setExpanded(true)}
-      >
-        <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-        URL parameter
-      </button>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2">
-      <label
-        htmlFor={`field-qp-${fieldId}`}
-        className="text-[11px] text-muted-foreground whitespace-nowrap"
-      >
-        URL parameter
-      </label>
-      <Input
-        id={`field-qp-${fieldId}`}
-        className="h-7 text-[11px] w-[160px] bg-background"
-        placeholder={fieldId}
-        value={draft}
-        onChange={(e) => {
-          const filtered = e.target.value.replace(/[^a-zA-Z0-9_-]/g, "");
-          setDraft(filtered);
-        }}
-        onBlur={() => {
-          const next = draft.trim();
-          if (next !== value) onSave(next);
-          if (next.length === 0) setExpanded(false);
-        }}
-      />
-    </div>
-  );
-}
-
 function ConditionValueInput({
   source,
   multi,
