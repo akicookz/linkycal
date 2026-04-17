@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context, Next } from "hono";
 import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
@@ -32,6 +33,8 @@ import {
   createContactSchema,
   updateContactSchema,
   createTagSchema,
+  createContactViewSchema,
+  updateContactViewSchema,
   createWorkflowSchema,
   updateWorkflowSchema,
   createWorkflowStepSchema,
@@ -2127,6 +2130,35 @@ app.use("/api/*", async (c, next) => {
   return next();
 });
 
+// ─── Project Ownership Middleware ────────────────────────────────────────────
+// Ensures the authed user owns :projectId before any sub-route runs.
+
+const projectOwnership = async (
+  c: Context<HonoAppContext>,
+  next: Next,
+) => {
+  const projectId = c.req.param("projectId");
+  if (!projectId) return next();
+
+  const db = c.get("db");
+  const userId = c.get("effectiveUserId");
+  if (!db || !userId) return c.json({ error: "Unauthorized" }, 401);
+
+  const [project] = await db
+    .select()
+    .from(dbSchema.projects)
+    .where(eq(dbSchema.projects.id, projectId))
+    .limit(1);
+
+  if (!project) return c.json({ error: "Project not found" }, 404);
+  if (project.userId !== userId) return c.json({ error: "Forbidden" }, 403);
+
+  return next();
+};
+
+app.use("/api/projects/:projectId", projectOwnership);
+app.use("/api/projects/:projectId/*", projectOwnership);
+
 // ─── Projects ────────────────────────────────────────────────────────────────
 
 app.get("/api/projects", async (c) => {
@@ -3492,12 +3524,132 @@ app.delete(
 
 app.get("/api/projects/:projectId/contacts", async (c) => {
   const projectId = c.req.param("projectId");
-  const search = c.req.query("search");
-  const tagId = c.req.query("tagId");
+  const url = new URL(c.req.url);
+  const search = url.searchParams.get("search") ?? undefined;
+  const tagId = url.searchParams.get("tagId") ?? undefined;
+  const tagIds = url.searchParams.getAll("tagIds");
+  const matchAllTags = url.searchParams.get("matchAllTags") === "true";
+  const activityType = url.searchParams.get("activityType") ?? undefined;
+  const activitySinceDays = url.searchParams.get("activitySinceDays");
+  const noActivitySinceDays = url.searchParams.get("noActivitySinceDays");
+  const bookingStatus = url.searchParams.get("bookingStatus") ?? undefined;
+
+  const validActivity = [
+    "form_submitted",
+    "booked",
+    "cancelled",
+    "tag_added",
+    "tag_removed",
+    "workflow_researched",
+  ] as const;
+  const validBooking = [
+    "confirmed",
+    "cancelled",
+    "rescheduled",
+    "pending",
+    "declined",
+  ] as const;
+
+  const parsedActivitySince = activitySinceDays
+    ? Number(activitySinceDays)
+    : NaN;
+  const parsedNoActivitySince = noActivitySinceDays
+    ? Number(noActivitySinceDays)
+    : NaN;
+
   const db = c.get("db");
   const service = new ContactService(db);
-  const contacts = await service.listWithTags(projectId, { search, tagId });
+  const contacts = await service.listWithTags(projectId, {
+    search,
+    tagId,
+    tagIds: tagIds.length > 0 ? tagIds : undefined,
+    matchAllTags,
+    activityType:
+      activityType && (validActivity as readonly string[]).includes(activityType)
+        ? (activityType as (typeof validActivity)[number])
+        : undefined,
+    activitySinceDays:
+      Number.isFinite(parsedActivitySince) && parsedActivitySince >= 0
+        ? parsedActivitySince
+        : undefined,
+    noActivitySinceDays:
+      Number.isFinite(parsedNoActivitySince) && parsedNoActivitySince >= 0
+        ? parsedNoActivitySince
+        : undefined,
+    bookingStatus:
+      bookingStatus && (validBooking as readonly string[]).includes(bookingStatus)
+        ? (bookingStatus as (typeof validBooking)[number])
+        : undefined,
+  });
   return c.json({ contacts });
+});
+
+// ─── Contact Views (saved filters / kanban configs) ──────────────────────────
+
+app.get("/api/projects/:projectId/contact-views", async (c) => {
+  const projectId = c.req.param("projectId");
+  const db = c.get("db");
+  const service = new ContactService(db);
+  const views = await service.listViews(projectId);
+  return c.json({ views });
+});
+
+app.post("/api/projects/:projectId/contact-views", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const body = await c.req.json();
+    const data = validate(createContactViewSchema, body);
+
+    const db = c.get("db");
+    const service = new ContactService(db);
+    const view = await service.createView(projectId, data);
+    return c.json({ view }, 201);
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Contact view creation error:", err);
+    return c.json({ error: "Failed to create view" }, 500);
+  }
+});
+
+app.put("/api/projects/:projectId/contact-views/:id", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const data = validate(updateContactViewSchema, body);
+
+    const db = c.get("db");
+    const service = new ContactService(db);
+    const view = await service.updateView(projectId, id, data);
+
+    if (!view) return c.json({ error: "View not found" }, 404);
+    if (view.projectId !== projectId) {
+      return c.json({ error: "View not found" }, 404);
+    }
+    return c.json({ view });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Contact view update error:", err);
+    return c.json({ error: "Failed to update view" }, 500);
+  }
+});
+
+app.delete("/api/projects/:projectId/contact-views/:id", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    const db = c.get("db");
+    const service = new ContactService(db);
+    await service.deleteView(projectId, id);
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Contact view deletion error:", err);
+    return c.json({ error: "Failed to delete view" }, 500);
+  }
 });
 
 app.post("/api/projects/:projectId/contacts", async (c) => {
@@ -3615,9 +3767,11 @@ app.post("/api/projects/:projectId/tags", async (c) => {
 
 app.delete("/api/projects/:projectId/tags/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new ContactService(db);
+    await service.pruneTagFromViews(projectId, id);
     await service.deleteTag(id);
     return c.json({ success: true });
   } catch (err) {

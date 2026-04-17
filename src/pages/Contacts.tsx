@@ -5,13 +5,19 @@ import {
   Plus,
   Users,
   Search,
-
   Pencil,
   Trash2,
   Tags,
   Loader,
   AlertCircle,
   X,
+  Filter,
+  ListIcon,
+  LayoutGrid,
+  Bookmark,
+  Save,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -27,9 +33,16 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
+import ContactsKanban from "./ContactsKanban";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -67,6 +80,46 @@ interface ContactFormData {
   notes: string;
 }
 
+type ActivityType =
+  | "form_submitted"
+  | "booked"
+  | "cancelled"
+  | "tag_added"
+  | "tag_removed"
+  | "workflow_researched";
+
+type BookingStatus =
+  | "confirmed"
+  | "cancelled"
+  | "rescheduled"
+  | "pending"
+  | "declined";
+
+type ViewType = "list" | "kanban";
+
+interface ViewConfig {
+  search?: string;
+  tagIds?: string[];
+  matchAllTags?: boolean;
+  activityType?: ActivityType;
+  activitySinceDays?: number;
+  noActivitySinceDays?: number;
+  bookingStatus?: BookingStatus;
+  pivotTagIds?: string[];
+  showUntagged?: boolean;
+}
+
+interface SavedView {
+  id: string;
+  projectId: string;
+  name: string;
+  type: ViewType;
+  config: ViewConfig | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getAvatarColor(name: string): string {
@@ -101,6 +154,56 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 const EMPTY_FORM: ContactFormData = { name: "", email: "", phone: "", notes: "" };
+const EMPTY_CONFIG: ViewConfig = {};
+
+const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
+  form_submitted: "Submitted a form",
+  booked: "Booked",
+  cancelled: "Cancelled a booking",
+  tag_added: "Tag added",
+  tag_removed: "Tag removed",
+  workflow_researched: "Researched by workflow",
+};
+
+const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
+  confirmed: "Confirmed",
+  cancelled: "Cancelled",
+  rescheduled: "Rescheduled",
+  pending: "Pending",
+  declined: "Declined",
+};
+
+function configsEqual(a: ViewConfig, b: ViewConfig): boolean {
+  // Preserve explicit `false` so toggling a boolean off still registers
+  // as a change vs. a saved view that had it `true`.
+  const norm = (c: ViewConfig) =>
+    JSON.stringify({
+      search: c.search ? c.search : undefined,
+      tagIds:
+        c.tagIds && c.tagIds.length > 0 ? [...c.tagIds].sort() : undefined,
+      matchAllTags: c.matchAllTags ?? undefined,
+      activityType: c.activityType,
+      activitySinceDays: c.activitySinceDays,
+      noActivitySinceDays: c.noActivitySinceDays,
+      bookingStatus: c.bookingStatus,
+      pivotTagIds:
+        c.pivotTagIds && c.pivotTagIds.length > 0
+          ? [...c.pivotTagIds].sort()
+          : undefined,
+      showUntagged: c.showUntagged ?? undefined,
+    });
+  return norm(a) === norm(b);
+}
+
+function activeFilterCount(c: ViewConfig): number {
+  let n = 0;
+  if (c.tagIds && c.tagIds.length > 0) n++;
+  if (c.activityType) n++;
+  if (c.activitySinceDays !== undefined) n++;
+  if (c.noActivitySinceDays !== undefined) n++;
+  if (c.bookingStatus) n++;
+  return n;
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -108,11 +211,14 @@ export default function Contacts() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
 
-  // ─── State ───
+  // ─── View / filter state ───
+  const [viewType, setViewType] = useState<ViewType>("list");
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [config, setConfig] = useState<ViewConfig>(EMPTY_CONFIG);
   const [searchInput, setSearchInput] = useState("");
   const debouncedSearch = useDebounce(searchInput, 300);
-  const [activeTagId, setActiveTagId] = useState<string | null>(null);
 
+  // ─── CRUD dialogs ───
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [createForm, setCreateForm] = useState<ContactFormData>(EMPTY_FORM);
 
@@ -127,19 +233,47 @@ export default function Contacts() {
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState("#6366f1");
 
+  // ─── View dialogs ───
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState("");
+  const [viewsMenuOpen, setViewsMenuOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [deleteViewTarget, setDeleteViewTarget] = useState<SavedView | null>(null);
+
   // ─── Queries ───
+
+  const queryConfig: ViewConfig = useMemo(
+    () => ({ ...config, search: debouncedSearch || undefined }),
+    [config, debouncedSearch],
+  );
 
   const {
     data: contactsData,
     isLoading: loadingContacts,
     isError: errorContacts,
   } = useQuery<Contact[]>({
-    queryKey: ["projects", projectId, "contacts", { search: debouncedSearch, tagId: activeTagId }],
+    queryKey: ["projects", projectId, "contacts", queryConfig],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (debouncedSearch) params.set("search", debouncedSearch);
-      if (activeTagId) params.set("tagId", activeTagId);
-      const res = await fetch(`/api/projects/${projectId}/contacts?${params.toString()}`);
+      if (queryConfig.search) params.set("search", queryConfig.search);
+      if (queryConfig.tagIds) {
+        for (const id of queryConfig.tagIds) params.append("tagIds", id);
+      }
+      if (queryConfig.matchAllTags) params.set("matchAllTags", "true");
+      if (queryConfig.activityType)
+        params.set("activityType", queryConfig.activityType);
+      if (queryConfig.activitySinceDays !== undefined)
+        params.set("activitySinceDays", String(queryConfig.activitySinceDays));
+      if (queryConfig.noActivitySinceDays !== undefined)
+        params.set(
+          "noActivitySinceDays",
+          String(queryConfig.noActivitySinceDays),
+        );
+      if (queryConfig.bookingStatus)
+        params.set("bookingStatus", queryConfig.bookingStatus);
+      const res = await fetch(
+        `/api/projects/${projectId}/contacts?${params.toString()}`,
+      );
       if (!res.ok) throw new Error("Failed to fetch contacts");
       const data = await res.json();
       return data.contacts ?? [];
@@ -158,8 +292,38 @@ export default function Contacts() {
     enabled: !!projectId,
   });
 
+  const { data: savedViews = [] } = useQuery<SavedView[]>({
+    queryKey: ["projects", projectId, "contact-views"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/contact-views`);
+      if (!res.ok) throw new Error("Failed to fetch views");
+      const data = await res.json();
+      return data.views ?? [];
+    },
+    enabled: !!projectId,
+  });
+
   const contacts = contactsData ?? [];
-  // tags is directly available from the query above
+
+  const activeView = useMemo(
+    () => savedViews.find((v) => v.id === activeViewId) ?? null,
+    [savedViews, activeViewId],
+  );
+
+  const isDirty = useMemo(() => {
+    const liveConfig: ViewConfig = { ...config, search: searchInput || undefined };
+    if (!activeView) {
+      return (
+        activeFilterCount(liveConfig) > 0 ||
+        viewType !== "list" ||
+        !!searchInput
+      );
+    }
+    return (
+      activeView.type !== viewType ||
+      !configsEqual(activeView.config ?? {}, liveConfig)
+    );
+  }, [activeView, config, viewType, searchInput]);
 
   // ─── Mutations ───
 
@@ -251,11 +415,99 @@ export default function Contacts() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
-      if (activeTagId) setActiveTagId(null);
+    },
+  });
+
+  const createViewMutation = useMutation({
+    mutationFn: async (payload: {
+      name: string;
+      type: ViewType;
+      config: ViewConfig;
+    }) => {
+      const res = await fetch(`/api/projects/${projectId}/contact-views`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to save view");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contact-views"],
+      });
+      if (data?.view?.id) setActiveViewId(data.view.id);
+      setSaveViewOpen(false);
+      setSaveViewName("");
+    },
+  });
+
+  const updateViewMutation = useMutation({
+    mutationFn: async (payload: {
+      id: string;
+      type: ViewType;
+      config: ViewConfig;
+    }) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/contact-views/${payload.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: payload.type,
+            config: payload.config,
+          }),
+        },
+      );
+      if (!res.ok) throw new Error("Failed to update view");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contact-views"],
+      });
+    },
+  });
+
+  const deleteViewMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/contact-views/${id}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error("Failed to delete view");
+      return res.json();
+    },
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contact-views"],
+      });
+      if (activeViewId === id) {
+        setActiveViewId(null);
+        setConfig(EMPTY_CONFIG);
+        setSearchInput("");
+        setViewType("list");
+      }
+      setDeleteViewTarget(null);
     },
   });
 
   // ─── Handlers ───
+
+  const applyView = useCallback((view: SavedView | null) => {
+    if (!view) {
+      setActiveViewId(null);
+      setConfig(EMPTY_CONFIG);
+      setSearchInput("");
+      setViewType("list");
+      return;
+    }
+    setActiveViewId(view.id);
+    const cfg = view.config ?? {};
+    setConfig({ ...cfg, search: undefined });
+    setSearchInput(cfg.search ?? "");
+    setViewType(view.type);
+  }, []);
 
   const openEditDialog = useCallback((contact: Contact) => {
     setEditingContact(contact);
@@ -294,8 +546,47 @@ export default function Contacts() {
     });
   }
 
+  function handleSaveView(e: React.FormEvent) {
+    e.preventDefault();
+    if (!saveViewName.trim()) return;
+    createViewMutation.mutate({
+      name: saveViewName.trim(),
+      type: viewType,
+      config: { ...config, search: searchInput || undefined },
+    });
+  }
+
+  function handleUpdateActiveView() {
+    if (!activeView) return;
+    updateViewMutation.mutate({
+      id: activeView.id,
+      type: viewType,
+      config: { ...config, search: searchInput || undefined },
+    });
+  }
+
   function navigateToContact(contactId: string) {
     navigate(`/app/projects/${projectId}/contacts/${contactId}`);
+  }
+
+  function toggleTagFilter(tagId: string) {
+    const current = new Set(config.tagIds ?? []);
+    if (current.has(tagId)) current.delete(tagId);
+    else current.add(tagId);
+    setConfig((c) => ({
+      ...c,
+      tagIds: current.size === 0 ? undefined : Array.from(current),
+    }));
+  }
+
+  function togglePivotTag(tagId: string) {
+    const current = new Set(config.pivotTagIds ?? []);
+    if (current.has(tagId)) current.delete(tagId);
+    else current.add(tagId);
+    setConfig((c) => ({
+      ...c,
+      pivotTagIds: current.size === 0 ? undefined : Array.from(current),
+    }));
   }
 
   // ─── Description ───
@@ -330,7 +621,8 @@ export default function Contacts() {
   }
 
   function renderEmptyState() {
-    if (debouncedSearch || activeTagId) {
+    const hasFilters = searchInput || activeFilterCount(config) > 0;
+    if (hasFilters) {
       return (
         <div className="flex flex-col items-center justify-center py-16">
           <Search className="h-10 w-10 text-muted-foreground mb-4" />
@@ -375,7 +667,6 @@ export default function Contacts() {
         {contacts.map((contact) => (
           <div key={contact.id}>
             <div className="flex items-center gap-4 py-3">
-              {/* Avatar */}
               <div
                 className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0 cursor-pointer"
                 style={{ backgroundColor: getAvatarColor(contact.name) }}
@@ -384,7 +675,6 @@ export default function Contacts() {
                 {getInitial(contact.name)}
               </div>
 
-              {/* Info */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
                   <button
@@ -423,7 +713,6 @@ export default function Contacts() {
                 </p>
               </div>
 
-              {/* Actions */}
               <div className="flex items-center gap-1.5 shrink-0">
                 <Button
                   variant="outline"
@@ -445,14 +734,11 @@ export default function Contacts() {
                 </Button>
               </div>
             </div>
-
           </div>
         ))}
       </div>
     );
   }
-
-  // ─── Contact form fields (shared between create & edit) ───
 
   function renderContactFormFields(
     form: ContactFormData,
@@ -507,6 +793,13 @@ export default function Contacts() {
 
   // ─── Render ───
 
+  const filterCount = activeFilterCount(config);
+  const allTagsForKanban = useMemo(
+    () =>
+      tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+    [tags],
+  );
+
   return (
     <div>
       <PageHeader title="Contacts" description={headerDescription}>
@@ -519,6 +812,377 @@ export default function Contacts() {
           Add Contact
         </Button>
       </PageHeader>
+
+      {/* Toolbar: views + view-type tabs + filters */}
+      <div className="flex items-center flex-wrap gap-2 mb-4">
+        {/* Saved views dropdown */}
+        <Popover open={viewsMenuOpen} onOpenChange={setViewsMenuOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="h-9">
+              <Bookmark className="h-4 w-4" />
+              {activeView ? activeView.name : "All contacts"}
+              {isDirty && activeView && (
+                <span className="ml-1 text-xs text-muted-foreground">·</span>
+              )}
+              <ChevronDown className="h-4 w-4 opacity-60" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 p-2">
+            <div className="space-y-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  applyView(null);
+                  setViewsMenuOpen(false);
+                }}
+                className={cn(
+                  "flex w-full items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-sm hover:bg-accent text-left",
+                  activeViewId === null && "bg-accent",
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                  All contacts
+                </span>
+                {activeViewId === null && <Check className="h-4 w-4" />}
+              </button>
+              {savedViews.length > 0 && (
+                <div className="my-1 h-px bg-border" />
+              )}
+              {savedViews.map((v) => (
+                <div
+                  key={v.id}
+                  className={cn(
+                    "group flex items-center gap-1 rounded-[10px] pr-1 hover:bg-accent",
+                    activeViewId === v.id && "bg-accent",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      applyView(v);
+                      setViewsMenuOpen(false);
+                    }}
+                    className="flex flex-1 items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-sm text-left"
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      {v.type === "kanban" ? (
+                        <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      ) : (
+                        <ListIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                      )}
+                      <span className="truncate">{v.name}</span>
+                    </span>
+                    {activeViewId === v.id && (
+                      <Check className="h-4 w-4 shrink-0" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteViewTarget(v);
+                      setViewsMenuOpen(false);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-muted-foreground hover:text-destructive transition-opacity"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* View type tabs */}
+        <Tabs
+          value={viewType}
+          onValueChange={(v) => setViewType(v as ViewType)}
+        >
+          <TabsList className="h-9">
+            <TabsTrigger value="list" className="h-7 px-2.5">
+              <ListIcon className="h-3.5 w-3.5" />
+              List
+            </TabsTrigger>
+            <TabsTrigger value="kanban" className="h-7 px-2.5">
+              <LayoutGrid className="h-3.5 w-3.5" />
+              Kanban
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {/* Filters popover */}
+        <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="h-9">
+              <Filter className="h-4 w-4" />
+              Filters
+              {filterCount > 0 && (
+                <span className="inline-flex items-center justify-center h-5 min-w-5 rounded-full bg-primary text-primary-foreground text-[10px] font-medium px-1.5">
+                  {filterCount}
+                </span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-80 max-h-[70vh] overflow-y-auto">
+            <div className="space-y-4">
+              {/* Activity */}
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Activity
+                </Label>
+                <select
+                  value={config.activityType ?? ""}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      activityType: (e.target.value || undefined) as
+                        | ActivityType
+                        | undefined,
+                    }))
+                  }
+                  className="flex h-9 w-full rounded-[12px] border border-input bg-white px-3 py-1 text-sm shadow-xs"
+                >
+                  <option value="">Any activity type</option>
+                  {(Object.keys(ACTIVITY_TYPE_LABELS) as ActivityType[]).map(
+                    (t) => (
+                      <option key={t} value={t}>
+                        {ACTIVITY_TYPE_LABELS[t]}
+                      </option>
+                    ),
+                  )}
+                </select>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-xs text-muted-foreground">
+                      Active in last (days)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 30"
+                      value={config.activitySinceDays ?? ""}
+                      onChange={(e) =>
+                        setConfig((c) => ({
+                          ...c,
+                          activitySinceDays: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                        }))
+                      }
+                      className="h-9"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">
+                      Inactive for (days)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      placeholder="e.g. 90"
+                      value={config.noActivitySinceDays ?? ""}
+                      onChange={(e) =>
+                        setConfig((c) => ({
+                          ...c,
+                          noActivitySinceDays: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                        }))
+                      }
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Booking status */}
+              <div className="space-y-2">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Has booking with status
+                </Label>
+                <select
+                  value={config.bookingStatus ?? ""}
+                  onChange={(e) =>
+                    setConfig((c) => ({
+                      ...c,
+                      bookingStatus: (e.target.value || undefined) as
+                        | BookingStatus
+                        | undefined,
+                    }))
+                  }
+                  className="flex h-9 w-full rounded-[12px] border border-input bg-white px-3 py-1 text-sm shadow-xs"
+                >
+                  <option value="">Any</option>
+                  {(Object.keys(BOOKING_STATUS_LABELS) as BookingStatus[]).map(
+                    (s) => (
+                      <option key={s} value={s}>
+                        {BOOKING_STATUS_LABELS[s]}
+                      </option>
+                    ),
+                  )}
+                </select>
+              </div>
+
+              {/* Tags filter */}
+              {tags.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                      Tags
+                    </Label>
+                    <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={!!config.matchAllTags}
+                        onChange={(e) =>
+                          setConfig((c) => ({
+                            ...c,
+                            matchAllTags: e.target.checked || undefined,
+                          }))
+                        }
+                      />
+                      Match all
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((tag) => {
+                      const active = config.tagIds?.includes(tag.id) ?? false;
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={() => toggleTagFilter(tag.id)}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors",
+                            active
+                              ? "border-foreground/30"
+                              : "border-border hover:bg-accent",
+                          )}
+                          style={{
+                            backgroundColor: active
+                              ? `${tag.color ?? "#6366f1"}20`
+                              : undefined,
+                            color: active ? tag.color ?? undefined : undefined,
+                          }}
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: tag.color ?? "#94a3b8" }}
+                          />
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Kanban-only: pivot tags */}
+              {viewType === "kanban" && tags.length > 0 && (
+                <div className="space-y-2 pt-3 border-t border-border">
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Kanban columns
+                  </Label>
+                  <p className="text-[11px] text-muted-foreground">
+                    Pick which tags become columns. Default: all tags.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tags.map((tag) => {
+                      const active =
+                        config.pivotTagIds?.includes(tag.id) ?? false;
+                      return (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          onClick={() => togglePivotTag(tag.id)}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium border transition-colors",
+                            active
+                              ? "border-foreground/30"
+                              : "border-border hover:bg-accent",
+                          )}
+                          style={{
+                            backgroundColor: active
+                              ? `${tag.color ?? "#6366f1"}20`
+                              : undefined,
+                            color: active ? tag.color ?? undefined : undefined,
+                          }}
+                        >
+                          {tag.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                    <input
+                      type="checkbox"
+                      checked={!!config.showUntagged}
+                      onChange={(e) =>
+                        setConfig((c) => ({
+                          ...c,
+                          showUntagged: e.target.checked || undefined,
+                        }))
+                      }
+                    />
+                    Show "Untagged" column
+                  </label>
+                </div>
+              )}
+
+              {filterCount > 0 && (
+                <div className="pt-2 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs h-8"
+                    onClick={() =>
+                      setConfig((c) => ({
+                        // keep kanban pivot config when clearing data filters
+                        pivotTagIds: c.pivotTagIds,
+                        showUntagged: c.showUntagged,
+                      }))
+                    }
+                  >
+                    Clear filters
+                  </Button>
+                </div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        <div className="ml-auto flex items-center gap-2">
+          {isDirty && activeView && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={handleUpdateActiveView}
+              disabled={updateViewMutation.isPending}
+            >
+              {updateViewMutation.isPending ? (
+                <Loader className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5" />
+              )}
+              Update view
+            </Button>
+          )}
+          {isDirty && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => setSaveViewOpen(true)}
+            >
+              <Save className="h-3.5 w-3.5" />
+              Save as new view
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* Search bar */}
       <div className="mb-4">
@@ -542,54 +1206,31 @@ export default function Contacts() {
         </div>
       </div>
 
-      {/* Tag filter pills */}
-      {!loadingTags && tags.length > 0 && (
-        <div className="flex items-center gap-2 mb-6 flex-wrap">
-          <button
-            type="button"
-            className={cn(
-              "inline-flex items-center rounded-full px-3 py-1 text-xs font-medium border transition-colors",
-              activeTagId === null
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-card text-muted-foreground border-border hover:bg-accent",
-            )}
-            onClick={() => setActiveTagId(null)}
-          >
-            All
-          </button>
-          {tags.map((tag) => (
-            <button
-              key={tag.id}
-              type="button"
-              className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium border transition-colors",
-                activeTagId === tag.id
-                  ? "ring-2 ring-ring ring-offset-1"
-                  : "hover:bg-accent",
-              )}
-              style={{
-                backgroundColor: activeTagId === tag.id ? `${tag.color ?? "#6366f1"}20` : undefined,
-                borderColor: tag.color ?? "#e2e8f0",
-                color: tag.color ?? undefined,
-              }}
-              onClick={() => setActiveTagId(activeTagId === tag.id ? null : tag.id)}
-            >
-              <span
-                className="h-2 w-2 rounded-full shrink-0"
-                style={{ backgroundColor: tag.color ?? "#94a3b8" }}
-              />
-              {tag.name}
-            </button>
-          ))}
-        </div>
+      {/* Body */}
+      {viewType === "list" ? (
+        <Card>
+          {loadingContacts && renderSkeletonRows()}
+          {errorContacts && !loadingContacts && renderErrorState()}
+          {!loadingContacts && !errorContacts && renderTable()}
+        </Card>
+      ) : loadingContacts ? (
+        <Card className="p-12">
+          <div className="flex justify-center">
+            <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        </Card>
+      ) : errorContacts ? (
+        <Card>{renderErrorState()}</Card>
+      ) : contacts.length === 0 ? (
+        <Card>{renderEmptyState()}</Card>
+      ) : (
+        <ContactsKanban
+          contacts={contacts}
+          allTags={allTagsForKanban}
+          pivotTagIds={config.pivotTagIds ?? null}
+          showUntagged={!!config.showUntagged}
+        />
       )}
-
-      {/* Contact list */}
-      <Card>
-        {loadingContacts && renderSkeletonRows()}
-        {errorContacts && !loadingContacts && renderErrorState()}
-        {!loadingContacts && !errorContacts && renderTable()}
-      </Card>
 
       {/* ─── Create Contact Dialog ─── */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
@@ -705,6 +1346,94 @@ export default function Contacts() {
         </DialogContent>
       </Dialog>
 
+      {/* ─── Save View Dialog ─── */}
+      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Save view</DialogTitle>
+            <DialogDescription>
+              Give this view a name. It will save the current filters and{" "}
+              {viewType === "kanban" ? "kanban layout" : "list mode"}.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleSaveView}>
+            <div className="space-y-2">
+              <Label htmlFor="view-name">Name</Label>
+              <Input
+                id="view-name"
+                placeholder="e.g. Hot leads, Stale contacts"
+                value={saveViewName}
+                onChange={(e) => setSaveViewName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter className="mt-6">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSaveViewOpen(false)}
+                disabled={createViewMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  createViewMutation.isPending || !saveViewName.trim()
+                }
+              >
+                {createViewMutation.isPending && (
+                  <Loader className="h-4 w-4 animate-spin" />
+                )}
+                Save view
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Delete View Dialog ─── */}
+      <Dialog
+        open={!!deleteViewTarget}
+        onOpenChange={(open) => {
+          if (!open) setDeleteViewTarget(null);
+        }}
+      >
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete view</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-medium text-foreground">
+                {deleteViewTarget?.name}
+              </span>
+              ? This won't delete any contacts.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteViewTarget(null)}
+              disabled={deleteViewMutation.isPending}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                deleteViewTarget && deleteViewMutation.mutate(deleteViewTarget.id)
+              }
+              disabled={deleteViewMutation.isPending}
+            >
+              {deleteViewMutation.isPending && (
+                <Loader className="h-4 w-4 animate-spin" />
+              )}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ─── Manage Tags Dialog ─── */}
       <Dialog open={manageTagsOpen} onOpenChange={setManageTagsOpen}>
         <DialogContent>
@@ -715,7 +1444,6 @@ export default function Contacts() {
             </DialogDescription>
           </DialogHeader>
 
-          {/* Existing tags */}
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {tags.length === 0 && !loadingTags && (
               <p className="text-sm text-muted-foreground py-4 text-center">
@@ -761,7 +1489,6 @@ export default function Contacts() {
             ))}
           </div>
 
-          {/* Create new tag */}
           <form onSubmit={handleCreateTag} className="mt-4 pt-4">
             <p className="text-sm font-medium mb-3">Create new tag</p>
             <div className="flex items-end gap-3">

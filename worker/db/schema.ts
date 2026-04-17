@@ -479,6 +479,35 @@ export const contactActivity = sqliteTable(
 export type ContactActivityRow = typeof contactActivity.$inferSelect;
 export type NewContactActivityRow = typeof contactActivity.$inferInsert;
 
+// ─── Contact Views ───────────────────────────────────────────────────────────
+
+export const contactViews = sqliteTable(
+  "contact_views",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    type: text("type", { enum: ["list", "kanban"] })
+      .notNull()
+      .default("list"),
+    config: text("config", { mode: "json" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [index("contact_views_project_id_idx").on(t.projectId)],
+);
+
+export type ContactViewRow = typeof contactViews.$inferSelect;
+export type NewContactViewRow = typeof contactViews.$inferInsert;
+
 // ─── Calendar Connections ───────────────────────────────────────────────────
 
 export const calendarConnections = sqliteTable(
@@ -743,6 +772,7 @@ export const schema = {
   tags,
   contactTags,
   contactActivity,
+  contactViews,
   calendarConnections,
   eventTypeBusyCalendars,
   workflows,

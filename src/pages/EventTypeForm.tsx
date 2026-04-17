@@ -266,7 +266,7 @@ export default function EventTypeForm() {
       const res = await fetch(`/api/projects/${projectId}/forms`);
       if (!res.ok) throw new Error("Failed to fetch forms");
       const data = await res.json();
-      return (data.forms ?? []).filter((f: { status: string }) => f.status === "active");
+      return (data.forms ?? []).filter((f: { status: string }) => f.status !== "archived");
     },
     enabled: !!projectId,
   });
@@ -1009,6 +1009,7 @@ export default function EventTypeForm() {
               <div className="space-y-2">
                 <Label>Booking Form</Label>
                 <Select
+                  key={`bookingForm-${selectRenderVersion}-${projectForms ? "loaded" : "pending"}`}
                   value={formData.bookingFormId ?? "none"}
                   onValueChange={(val) =>
                     setFormData((prev) => ({

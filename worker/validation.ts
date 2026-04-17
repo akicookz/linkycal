@@ -323,6 +323,52 @@ export const createTagSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
 
+// ─── Contact Views ───────────────────────────────────────────────────────────
+
+const activityTypeEnum = z.enum([
+  "form_submitted",
+  "booked",
+  "cancelled",
+  "tag_added",
+  "tag_removed",
+  "workflow_researched",
+]);
+
+const bookingStatusEnum = z.enum([
+  "confirmed",
+  "cancelled",
+  "rescheduled",
+  "pending",
+  "declined",
+]);
+
+export const contactViewConfigSchema = z.object({
+  search: z.string().max(200).optional(),
+  tagIds: z.array(z.string()).optional(),
+  matchAllTags: z.boolean().optional(),
+  activityType: activityTypeEnum.optional(),
+  activitySinceDays: z.number().int().min(0).max(3650).optional(),
+  noActivitySinceDays: z.number().int().min(0).max(3650).optional(),
+  bookingStatus: bookingStatusEnum.optional(),
+  // Kanban-specific:
+  pivotTagIds: z.array(z.string()).optional(),
+  showUntagged: z.boolean().optional(),
+});
+
+export const createContactViewSchema = z.object({
+  name: z.string().min(1).max(100),
+  type: z.enum(["list", "kanban"]),
+  config: contactViewConfigSchema.optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateContactViewSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  type: z.enum(["list", "kanban"]).optional(),
+  config: contactViewConfigSchema.nullable().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
 // ─── Workflows ───────────────────────────────────────────────────────────────
 
 export const createWorkflowSchema = z.object({
