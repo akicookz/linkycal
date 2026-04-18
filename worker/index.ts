@@ -4,7 +4,7 @@ import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, or, desc, like, sql, gte, inArray, isNotNull } from "drizzle-orm";
+import { eq, and, or, desc, like, sql, gte, inArray } from "drizzle-orm";
 import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
@@ -543,6 +543,14 @@ async function dispatchWorkflowTrigger(
   await executionService.dispatchTrigger(projectId, trigger, context, env);
 }
 
+function slugifyFormFieldKey(label: string | null | undefined): string {
+  return (label ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 /**
  * Dispatch form_submitted workflow trigger. Resolves projectId from formId.
  */
@@ -574,27 +582,28 @@ async function dispatchFormSubmittedTrigger(
     // Look up contact-mapped fields (explicit mapping takes priority)
     let resolvedEmail = email;
     let contactName = email ? email.split("@")[0] : undefined;
+    const formFields: Record<string, string> = {};
     try {
-      const mappedValues = await db
+      const allValues = await db
         .select({
+          fieldId: dbSchema.formFieldValues.fieldId,
           contactMapping: dbSchema.formFields.contactMapping,
           type: dbSchema.formFields.type,
+          label: dbSchema.formFields.label,
           value: dbSchema.formFieldValues.value,
         })
         .from(dbSchema.formFieldValues)
         .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
-        .where(
-          and(
-            eq(dbSchema.formFieldValues.responseId, responseId),
-            or(
-              isNotNull(dbSchema.formFields.contactMapping),
-              eq(dbSchema.formFields.type, "name"),
-              eq(dbSchema.formFields.type, "email"),
-            ),
-          ),
-        );
-      for (const row of mappedValues) {
+        .where(eq(dbSchema.formFieldValues.responseId, responseId));
+
+      for (const row of allValues) {
         if (!row.value) continue;
+        // Address by fieldId and a human-friendly label slug for template resolution.
+        formFields[row.fieldId] = row.value;
+        const labelSlug = slugifyFormFieldKey(row.label);
+        if (labelSlug && !(labelSlug in formFields)) {
+          formFields[labelSlug] = row.value;
+        }
         if (row.contactMapping === "email") {
           resolvedEmail = row.value;
         } else if (row.contactMapping === "name") {
@@ -623,7 +632,9 @@ async function dispatchFormSubmittedTrigger(
       projectId: form.projectId,
       formResponseId: responseId,
       contactId,
-      contactEmail: email,
+      contactEmail: resolvedEmail ?? email,
+      contactName,
+      metadata: { formFields },
     });
   } catch (err) {
     console.error("Form workflow dispatch failed:", err);
@@ -4151,6 +4162,51 @@ app.post(
         contactName: contact.name ?? undefined,
         tagId,
       };
+
+      // For form_submitted test runs, seed metadata.formFields from the
+      // contact's most recent form response so {{form.fields.*}} and any
+      // step inputs that reference form fields resolve during the test.
+      if (workflow.trigger === "form_submitted" && contact.email) {
+        const [latestResponse] = await db
+          .select({ id: dbSchema.formResponses.id })
+          .from(dbSchema.formResponses)
+          .innerJoin(dbSchema.forms, eq(dbSchema.formResponses.formId, dbSchema.forms.id))
+          .where(
+            and(
+              eq(dbSchema.forms.projectId, projectId),
+              eq(dbSchema.formResponses.respondentEmail, contact.email),
+            ),
+          )
+          .orderBy(desc(dbSchema.formResponses.createdAt))
+          .limit(1);
+
+        if (latestResponse) {
+          context.formResponseId = latestResponse.id;
+          const values = await db
+            .select({
+              fieldId: dbSchema.formFieldValues.fieldId,
+              label: dbSchema.formFields.label,
+              value: dbSchema.formFieldValues.value,
+            })
+            .from(dbSchema.formFieldValues)
+            .innerJoin(
+              dbSchema.formFields,
+              eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+            )
+            .where(eq(dbSchema.formFieldValues.responseId, latestResponse.id));
+
+          const formFields: Record<string, string> = {};
+          for (const row of values) {
+            if (!row.value) continue;
+            formFields[row.fieldId] = row.value;
+            const labelSlug = slugifyFormFieldKey(row.label);
+            if (labelSlug && !(labelSlug in formFields)) {
+              formFields[labelSlug] = row.value;
+            }
+          }
+          context.metadata = { ...(context.metadata ?? {}), formFields };
+        }
+      }
 
       const executionService = new WorkflowExecutionService(db);
       const runId = await executionService.dispatchTestRun(workflowId, context, c.env as AppEnv);

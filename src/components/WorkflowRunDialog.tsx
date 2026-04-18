@@ -74,7 +74,7 @@ export function WorkflowRunDialog({
       const data = await res.json();
       return (data.contacts ?? []) as ContactItem[];
     },
-    enabled: !!projectId && open,
+    enabled: !!projectId,
   });
 
   const { data: tags = [] } = useQuery<TagItem[]>({
@@ -85,7 +85,7 @@ export function WorkflowRunDialog({
       const data = await res.json();
       return data.tags ?? [];
     },
-    enabled: !!projectId && open && trigger === "tag_added",
+    enabled: !!projectId && trigger === "tag_added",
   });
 
   const runMutation = useMutation({

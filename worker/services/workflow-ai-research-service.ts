@@ -14,7 +14,6 @@ import {
   type WorkflowResearchProvider,
   type WorkflowResearchRecord,
   type WorkflowResearchResult,
-  type WorkflowTriggerContext,
 } from "../lib/workflow-runtime";
 import type { AppEnv } from "../types";
 
@@ -30,7 +29,6 @@ const GEMINI_MODEL = "gemini-2.5-pro";
 export class WorkflowAiResearchService {
   async execute(
     config: WorkflowAiResearchConfig,
-    context: WorkflowTriggerContext,
     env: AppEnv,
   ): Promise<WorkflowResearchRecord> {
     const prompt = config.prompt.trim();
@@ -42,16 +40,15 @@ export class WorkflowAiResearchService {
     const resultKey = slugifyWorkflowKey(config.resultKey);
 
     if (provider === "gemini") {
-      return this.executeGeminiResearch(prompt, resultKey, context, env);
+      return this.executeGeminiResearch(prompt, resultKey, env);
     }
 
-    return this.executeChatGptResearch(prompt, resultKey, context, env);
+    return this.executeChatGptResearch(prompt, resultKey, env);
   }
 
   private async executeChatGptResearch(
     prompt: string,
     resultKey: string,
-    context: WorkflowTriggerContext,
     env: AppEnv,
   ): Promise<WorkflowResearchRecord> {
     if (!env.OPENAI_API_KEY) {
@@ -63,7 +60,7 @@ export class WorkflowAiResearchService {
     });
     const result = await generateText({
       model: openai(CHATGPT_MODEL),
-      prompt: buildResearchPrompt(prompt, context),
+      prompt: buildResearchPrompt(prompt),
       output: Output.object({
         schema: workflowResearchResultSchema,
       }),
@@ -95,7 +92,6 @@ export class WorkflowAiResearchService {
   private async executeGeminiResearch(
     prompt: string,
     resultKey: string,
-    context: WorkflowTriggerContext,
     env: AppEnv,
   ): Promise<WorkflowResearchRecord> {
     if (!env.GOOGLE_GENERATIVE_AI_API_KEY) {
@@ -107,7 +103,7 @@ export class WorkflowAiResearchService {
     });
     const result = await generateText({
       model: google(GEMINI_MODEL),
-      prompt: buildResearchPrompt(prompt, context),
+      prompt: buildResearchPrompt(prompt),
       output: Output.object({
         schema: workflowResearchResultSchema,
       }),
@@ -136,28 +132,17 @@ export class WorkflowAiResearchService {
   }
 }
 
-function buildResearchPrompt(
-  userPrompt: string,
-  context: WorkflowTriggerContext,
-): string {
+function buildResearchPrompt(userPrompt: string): string {
   return [
     "You are researching a contact for an automation workflow.",
     "Always use the available search tools before answering.",
     "Return factual, concise, structured research.",
     "If a field is unknown, return null.",
     "Do not invent companies, roles, or URLs.",
-    "",
-    "Contact context:",
-    `- Name: ${context.contactName ?? "Unknown"}`,
-    `- Email: ${context.contactEmail ?? "Unknown"}`,
-    `- Contact ID: ${context.contactId ?? "Unknown"}`,
-    `- Booking ID: ${context.bookingId ?? "Unknown"}`,
-    `- Form response ID: ${context.formResponseId ?? "Unknown"}`,
-    "",
-    "User research prompt:",
-    userPrompt,
-    "",
     "Focus on information that would help a sales or operations workflow decide what to do next.",
+    "",
+    "Research request:",
+    userPrompt,
   ].join("\n");
 }
 

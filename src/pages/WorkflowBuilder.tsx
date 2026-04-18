@@ -65,12 +65,22 @@ import {
 } from "@/components/ui/sheet";
 import { queryClient } from "@/lib/query-client";
 import { VariableInput, VariableTextarea } from "@/components/ui/variable-input";
-import { WORKFLOW_VARIABLES } from "@/lib/workflow-variables";
+import {
+  buildWorkflowVariableGroups,
+  type FormFieldSource,
+  type PriorStepSource,
+} from "@/lib/workflow-variables";
 import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
 import {
   WorkflowConditionEditor,
   type WorkflowCondition,
 } from "@/components/WorkflowConditionEditor";
+import {
+  WorkflowInputsEditor,
+  seedAllInputs,
+  type WorkflowStepInput,
+} from "@/components/WorkflowInputsEditor";
+import { WorkflowStepLog } from "@/components/WorkflowStepLog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -324,6 +334,37 @@ export default function WorkflowBuilder() {
 
   // tags is directly available from the query above
 
+  // ─── Fetch form fields (for Inputs picker on form_submitted workflows) ──
+
+  const isFormTrigger = workflow?.trigger === "form_submitted";
+  const { data: formFieldSources = [] } = useQuery<FormFieldSource[]>({
+    queryKey: ["projects", projectId, "workflow-form-fields"],
+    enabled: !!projectId && isFormTrigger,
+    queryFn: async () => {
+      const formsRes = await fetch(`/api/projects/${projectId}/forms`);
+      if (!formsRes.ok) throw new Error("Failed to fetch forms");
+      const formsData = await formsRes.json();
+      const forms: Array<{ id: string; name: string }> = formsData.forms ?? [];
+      const allFields = await Promise.all(
+        forms.map(async (form) => {
+          const res = await fetch(
+            `/api/projects/${projectId}/forms/${form.id}/fields`,
+          );
+          if (!res.ok) return [];
+          const data = await res.json();
+          const fields: Array<{ id: string; label: string }> = data.fields ?? [];
+          return fields.map((f) => ({
+            formId: form.id,
+            formName: form.name,
+            fieldId: f.id,
+            label: f.label,
+          }));
+        }),
+      );
+      return allFields.flat();
+    },
+  });
+
   // ─── Fetch runs ─────────────────────────────────────────────────────────
 
   const { data: runs = [] } = useQuery<WorkflowRun[]>({
@@ -452,6 +493,22 @@ export default function WorkflowBuilder() {
     }
   }, [workflow, editingName, updateWorkflowMutation]);
 
+  function computePriorSteps(): PriorStepSource[] {
+    const boundary = editingStepId
+      ? steps.findIndex((s) => s.id === editingStepId)
+      : insertIndex ?? steps.length;
+    return steps
+      .slice(0, boundary < 0 ? steps.length : boundary)
+      .map<PriorStepSource>((s) => {
+        const cfg = parseConfig(s.config) ?? {};
+        return {
+          type: s.type,
+          label: STEP_TYPES.find((t) => t.type === s.type)?.label ?? s.type,
+          resultKey: typeof cfg.resultKey === "string" ? cfg.resultKey : undefined,
+        };
+      });
+  }
+
   function openAddStepDialog(atIndex?: number) {
     setInsertIndex(atIndex ?? null);
     setSelectedStepType(null);
@@ -464,8 +521,20 @@ export default function WorkflowBuilder() {
     setEditingStepId(step.id);
     setSelectedStepType(step.type);
     const existing = parseConfig(step.config) ?? {};
-    // Merge defaults under existing config so missing fields get filled
-    setStepConfig({ ...getDefaultConfig(step.type), ...existing });
+    // Merge defaults under existing config so missing fields get filled.
+    // If no inputs were configured yet, seed sensible defaults based on the trigger.
+    const merged: Record<string, unknown> = {
+      ...getDefaultConfig(step.type),
+      ...existing,
+    };
+    if (!Array.isArray(merged.inputs)) {
+      merged.inputs = seedAllInputs({
+        trigger: workflow?.trigger,
+        formFields: formFieldSources,
+        priorSteps: computePriorSteps(),
+      });
+    }
+    setStepConfig(merged);
     setStepCondition(step.condition ?? null);
     setAddStepDialogOpen(true);
   }
@@ -854,33 +923,15 @@ export default function WorkflowBuilder() {
                                       )}
                                     </button>
 
-                                    {/* Expanded: input/output */}
+                                    {/* Expanded: polished step log */}
                                     {isStepExpanded && (sl.input || sl.output || sl.error) && (
-                                      <div className="mt-2 space-y-2">
-                                        {sl.input && (
-                                          <div className="rounded-[12px] bg-muted/50 p-3">
-                                            <p className="text-[11px] font-medium text-muted-foreground mb-1">Input</p>
-                                            <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all">
-                                              {JSON.stringify(sl.input, null, 2)}
-                                            </pre>
-                                          </div>
-                                        )}
-                                        {sl.output && (
-                                          <div className="rounded-[12px] bg-muted/50 p-3">
-                                            <p className="text-[11px] font-medium text-muted-foreground mb-1">Output</p>
-                                            <pre className="text-xs font-mono text-foreground whitespace-pre-wrap break-all">
-                                              {JSON.stringify(sl.output, null, 2)}
-                                            </pre>
-                                          </div>
-                                        )}
-                                        {sl.error && (
-                                          <div className="rounded-[12px] bg-destructive/5 p-3">
-                                            <p className="text-[11px] font-medium text-destructive mb-1">Error</p>
-                                            <pre className="text-xs font-mono text-destructive whitespace-pre-wrap break-all">
-                                              {sl.error}
-                                            </pre>
-                                          </div>
-                                        )}
+                                      <div className="mt-2">
+                                        <WorkflowStepLog
+                                          stepType={sl.stepType}
+                                          input={sl.input}
+                                          output={sl.output}
+                                          error={sl.error}
+                                        />
                                       </div>
                                     )}
                                   </div>
@@ -941,7 +992,14 @@ export default function WorkflowBuilder() {
                     type="button"
                     onClick={() => {
                       setSelectedStepType(st.type);
-                      setStepConfig(getDefaultConfig(st.type));
+                      setStepConfig({
+                        ...getDefaultConfig(st.type),
+                        inputs: seedAllInputs({
+                          trigger: workflow?.trigger,
+                          formFields: formFieldSources,
+                          priorSteps: computePriorSteps(),
+                        }),
+                      });
                     }}
                     className="flex items-center gap-3 rounded-[16px] border px-3 py-3 text-sm text-left hover:bg-accent transition-colors"
                   >
@@ -990,9 +1048,12 @@ export default function WorkflowBuilder() {
                   config={stepConfig}
                   onChange={setStepConfig}
                   tags={tags}
+                  trigger={workflow?.trigger}
+                  formFields={formFieldSources}
+                  priorSteps={computePriorSteps()}
                 />
 
-                <div className="pt-3 border-t">
+                <div className="pt-3">
                   <WorkflowConditionEditor
                     condition={stepCondition}
                     onChange={setStepCondition}
@@ -1113,25 +1174,55 @@ function StepConfigForm({
   config,
   onChange,
   tags,
+  trigger,
+  formFields,
+  priorSteps,
 }: {
   type: StepType;
   config: Record<string, unknown>;
   onChange: (config: Record<string, unknown>) => void;
   tags: TagItem[];
+  trigger?: TriggerType;
+  formFields?: FormFieldSource[];
+  priorSteps?: PriorStepSource[];
 }) {
   function set(key: string, value: unknown) {
     onChange({ ...config, [key]: value });
   }
 
+  const inputs: WorkflowStepInput[] = Array.isArray(config.inputs)
+    ? (config.inputs as WorkflowStepInput[])
+    : [];
+  const inputKeys = inputs.map((i) => i.key).filter(Boolean);
+  const variablesForTemplates = buildWorkflowVariableGroups({
+    trigger,
+    formFields,
+    priorSteps,
+    resolvedInputKeys: inputKeys,
+  });
+
+  const inputsSection = type === "wait" || type === "condition" ? null : (
+    <div className="pb-1">
+      <WorkflowInputsEditor
+        inputs={inputs}
+        onChange={(next) => set("inputs", next)}
+        trigger={trigger}
+        formFields={formFields}
+        priorSteps={priorSteps}
+      />
+    </div>
+  );
+
   switch (type) {
     case "send_email":
       return (
         <div className="space-y-3">
+          {inputsSection}
           <div className="space-y-2">
             <Label htmlFor="email-to">Recipients</Label>
             <VariableTextarea
               id="email-to"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={Array.isArray(config.toList) ? config.toList.join("\n") : ((config.to as string) ?? "{{contact.email}}")}
               onValueChange={(val) =>
                 set(
@@ -1153,7 +1244,7 @@ function StepConfigForm({
             <Label htmlFor="email-subject">Subject</Label>
             <VariableInput
               id="email-subject"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.subject as string) ?? ""}
               onValueChange={(val) => set("subject", val)}
               placeholder="Welcome to our platform"
@@ -1163,15 +1254,12 @@ function StepConfigForm({
             <Label htmlFor="email-body">Body</Label>
             <VariableTextarea
               id="email-body"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.body as string) ?? ""}
               onValueChange={(val) => set("body", val)}
               placeholder="Hello {{contact.name}},\n\nThank you for..."
               rows={5}
             />
-            <p className="text-[11px] text-muted-foreground">
-              Common variables: {"{{contact.name}}"}, {"{{contact.email}}"}, {"{{research.summary}}"}.
-            </p>
           </div>
         </div>
       );
@@ -1179,6 +1267,7 @@ function StepConfigForm({
     case "ai_research":
       return (
         <div className="space-y-3">
+          {inputsSection}
           <div className="space-y-2">
             <Label htmlFor="research-provider">AI Provider</Label>
             <Select
@@ -1212,14 +1301,14 @@ function StepConfigForm({
             <Label htmlFor="research-prompt">Research Prompt</Label>
             <VariableTextarea
               id="research-prompt"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.prompt as string) ?? ""}
               onValueChange={(val) => set("prompt", val)}
-              placeholder="Research this contact and company using public web sources. Summarize who they are, what the company does, and any signals that matter for follow-up."
+              placeholder="Research {{input.name}} at {{input.company}} using public web sources. Summarize who they are, what the company does, and any signals that matter for follow-up."
               rows={6}
             />
             <p className="text-[11px] text-muted-foreground">
-              The workflow automatically adds contact name and email to the research context.
+              Reference any input above as {"{{input.<key>}}"}. Only the data you wire in is sent to the model.
             </p>
           </div>
         </div>
@@ -1229,6 +1318,7 @@ function StepConfigForm({
     case "remove_tag":
       return (
         <div className="space-y-3">
+          {inputsSection}
           <div className="space-y-2">
             <Label htmlFor="tag-select">Tag</Label>
             <Select
@@ -1309,7 +1399,7 @@ function StepConfigForm({
             <Label htmlFor="condition-field">Field</Label>
             <VariableInput
               id="condition-field"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.field as string) ?? ""}
               onValueChange={(val) => set("field", val)}
               placeholder="e.g. contact.email or research.company"
@@ -1338,7 +1428,7 @@ function StepConfigForm({
             <Label htmlFor="condition-value">Value</Label>
             <VariableInput
               id="condition-value"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.value as string) ?? ""}
               onValueChange={(val) => set("value", val)}
               placeholder="Expected value"
@@ -1350,11 +1440,12 @@ function StepConfigForm({
     case "webhook":
       return (
         <div className="space-y-3">
+          {inputsSection}
           <div className="space-y-2">
             <Label htmlFor="webhook-url">URL</Label>
             <VariableInput
               id="webhook-url"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.url as string) ?? ""}
               onValueChange={(val) => set("url", val)}
               placeholder="https://example.com/webhook"
@@ -1393,7 +1484,7 @@ function StepConfigForm({
             <Label htmlFor="webhook-body">Body</Label>
             <VariableTextarea
               id="webhook-body"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.body as string) ?? ""}
               onValueChange={(val) => set("body", val)}
               placeholder='{"contactEmail":"{{contact.email}}","summary":"{{research.summary}}"}'
@@ -1410,6 +1501,7 @@ function StepConfigForm({
     case "update_contact":
       return (
         <div className="space-y-3">
+          {inputsSection}
           <div className="space-y-2">
             <Label htmlFor="update-field">Field to Update</Label>
             <Select
@@ -1431,7 +1523,7 @@ function StepConfigForm({
             <Label htmlFor="update-value">Value</Label>
             <VariableInput
               id="update-value"
-              variables={WORKFLOW_VARIABLES}
+              variables={variablesForTemplates}
               value={(config.value as string) ?? ""}
               onValueChange={(val) => set("value", val)}
               placeholder="New value or {{research.summary}}"

@@ -9,7 +9,18 @@ export interface WorkflowTriggerContext {
   bookingId?: string;
   tagId?: string;
   metadata?: Record<string, unknown>;
+  stepInputs?: Record<string, unknown>;
 }
+
+export const workflowStepInputSchema = z.object({
+  key: z.string().min(1).max(64),
+  source: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("path"), path: z.string().min(1).max(512) }),
+    z.object({ kind: z.literal("literal"), value: z.string() }),
+  ]),
+});
+
+export type WorkflowStepInput = z.infer<typeof workflowStepInputSchema>;
 
 export const workflowResearchProviderSchema = z.enum(["chatgpt", "gemini"]);
 
@@ -71,6 +82,8 @@ export function buildWorkflowContextView(
     "byKey",
   ]);
 
+  const formFields = getNestedValue(metadata, ["formFields"]);
+
   return {
     project: { id: context.projectId },
     contact: {
@@ -80,6 +93,10 @@ export function buildWorkflowContextView(
     },
     booking: { id: context.bookingId ?? "" },
     formResponse: { id: context.formResponseId ?? "" },
+    form: {
+      responseId: context.formResponseId ?? "",
+      fields: isRecord(formFields) ? formFields : {},
+    },
     tag: { id: context.tagId ?? "" },
     trigger: {
       projectId: context.projectId,
@@ -95,7 +112,32 @@ export function buildWorkflowContextView(
       ...(isRecord(latestResearch) ? latestResearch : {}),
       byKey: isRecord(researchByKey) ? researchByKey : {},
     },
+    input: isRecord(context.stepInputs) ? context.stepInputs : {},
   };
+}
+
+export function resolveStepInputs(
+  inputs: unknown,
+  context: WorkflowTriggerContext,
+): Record<string, string> {
+  if (!Array.isArray(inputs)) return {};
+
+  const resolved: Record<string, string> = {};
+  for (const raw of inputs) {
+    const parsed = workflowStepInputSchema.safeParse(raw);
+    if (!parsed.success) continue;
+    const input = parsed.data;
+
+    if (input.source.kind === "literal") {
+      resolved[input.key] = interpolateWorkflowTemplate(input.source.value, context);
+      continue;
+    }
+
+    const value = resolveWorkflowValue(context, input.source.path);
+    resolved[input.key] = stringifyWorkflowValue(value);
+  }
+
+  return resolved;
 }
 
 export function interpolateWorkflowTemplate(

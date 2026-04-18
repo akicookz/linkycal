@@ -5,6 +5,7 @@ import {
   interpolateWorkflowTemplate,
   mergeWorkflowResearchMetadata,
   normalizeRecipientList,
+  resolveStepInputs,
   resolveWorkflowValue,
   type WorkflowTriggerContext,
 } from "../lib/workflow-runtime";
@@ -20,6 +21,11 @@ import { ContactService } from "./contact-service";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface TriggerContext extends WorkflowTriggerContext {}
+
+interface StepSnapshot {
+  resolved: Record<string, unknown>;
+  output: Record<string, unknown>;
+}
 
 type WorkflowTrigger =
   | "form_submitted"
@@ -217,6 +223,11 @@ export class WorkflowExecutionService {
     const stepLogs = await this.workflowService.getStepLogs(workflowRunId);
     const config = (step.config ?? {}) as Record<string, unknown>;
 
+    // Resolve per-step inputs into context.stepInputs so executors can
+    // reference them via {{input.<key>}}. Each run of executeStep gets a
+    // fresh resolution so step outputs accumulated in context propagate.
+    context.stepInputs = resolveStepInputs(config.inputs, context);
+
     // ── Per-step condition gate ──
     // Distinct from the "condition" step type which halts the run. If this
     // step's `condition` column evaluates to false, skip this step only and
@@ -255,10 +266,11 @@ export class WorkflowExecutionService {
     if (stepLogs[stepIndex]) {
       stepLogs[stepIndex].status = "running";
       stepLogs[stepIndex].startedAt = new Date().toISOString();
-      stepLogs[stepIndex].input = { config };
+      stepLogs[stepIndex].input = { config, resolvedInputs: context.stepInputs };
     }
     await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
 
+    const snapshot: StepSnapshot = { resolved: {}, output: {} };
     try {
       // Execute the step based on type
       const shouldContinue = await this.executeStepAction(
@@ -266,6 +278,7 @@ export class WorkflowExecutionService {
         config,
         context,
         env,
+        snapshot,
       );
 
       // ── Step logging: mark as completed ──
@@ -273,7 +286,15 @@ export class WorkflowExecutionService {
       if (stepLogs[stepIndex]) {
         stepLogs[stepIndex].status = "completed";
         stepLogs[stepIndex].completedAt = now;
-        stepLogs[stepIndex].output = { continued: shouldContinue };
+        stepLogs[stepIndex].input = {
+          config,
+          resolvedInputs: context.stepInputs,
+          ...snapshot.resolved,
+        };
+        stepLogs[stepIndex].output = {
+          continued: shouldContinue,
+          ...snapshot.output,
+        };
       }
       await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
 
@@ -425,22 +446,23 @@ export class WorkflowExecutionService {
     config: Record<string, unknown>,
     context: TriggerContext,
     env: AppEnv,
+    snap: StepSnapshot,
   ): Promise<boolean> {
     switch (type) {
       case "send_email":
-        await this.executeSendEmail(config, context, env);
+        await this.executeSendEmail(config, context, env, snap);
         return true;
 
       case "ai_research":
-        await this.executeAiResearch(config, context, env);
+        await this.executeAiResearch(config, context, env, snap);
         return true;
 
       case "add_tag":
-        await this.executeAddTag(config, context);
+        await this.executeAddTag(config, context, snap);
         return true;
 
       case "remove_tag":
-        await this.executeRemoveTag(config, context);
+        await this.executeRemoveTag(config, context, snap);
         return true;
 
       case "wait":
@@ -450,14 +472,14 @@ export class WorkflowExecutionService {
         return false;
 
       case "condition":
-        return this.executeCondition(config, context);
+        return this.executeCondition(config, context, snap);
 
       case "webhook":
-        await this.executeWebhook(config, context);
+        await this.executeWebhook(config, context, snap);
         return true;
 
       case "update_contact":
-        await this.executeUpdateContact(config, context);
+        await this.executeUpdateContact(config, context, snap);
         return true;
 
       default:
@@ -472,6 +494,7 @@ export class WorkflowExecutionService {
     config: Record<string, unknown>,
     context: TriggerContext,
     env: AppEnv,
+    snap: StepSnapshot,
   ): Promise<void> {
     const recipients = normalizeRecipientList(
       config.toList ?? config.to,
@@ -479,6 +502,8 @@ export class WorkflowExecutionService {
     );
     const subject = this.interpolate(config.subject as string, context);
     const body = this.interpolate(config.body as string, context);
+
+    snap.resolved = { recipients, subject, body, from: FROM_ADDRESS };
 
     if (recipients.length === 0) {
       throw new Error("send_email: missing 'to' address");
@@ -503,6 +528,8 @@ export class WorkflowExecutionService {
       const error = await response.text();
       throw new Error(`send_email failed: ${error}`);
     }
+
+    snap.output = { sent: true, recipientCount: recipients.length };
   }
 
   // ─── ai_research ────────────────────────────────────────────────────────
@@ -511,6 +538,7 @@ export class WorkflowExecutionService {
     config: Record<string, unknown>,
     context: TriggerContext,
     env: AppEnv,
+    snap: StepSnapshot,
   ): Promise<void> {
     const contactId = context.contactId;
     if (!contactId) {
@@ -523,13 +551,19 @@ export class WorkflowExecutionService {
       throw new Error("ai_research: invalid 'provider'. Allowed: chatgpt, gemini");
     }
 
+    const userPrompt = this.interpolate(String(config.prompt ?? ""), context);
+    const contextBlock = buildInputContextBlock(context.stepInputs);
+    const finalPrompt = contextBlock ? `${contextBlock}\n\n${userPrompt}` : userPrompt;
+    const resultKey = typeof config.resultKey === "string" ? config.resultKey : undefined;
+
+    snap.resolved = {
+      provider,
+      resultKey: resultKey ?? "research",
+      finalPrompt,
+    };
+
     const record = await this.workflowAiResearchService.execute(
-      {
-        provider,
-        prompt: String(config.prompt ?? ""),
-        resultKey: typeof config.resultKey === "string" ? config.resultKey : undefined,
-      },
-      context,
+      { provider, prompt: finalPrompt, resultKey },
       env,
     );
 
@@ -547,6 +581,19 @@ export class WorkflowExecutionService {
     });
 
     context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
+
+    snap.output = {
+      summary: record.result.summary,
+      company: record.result.company,
+      role: record.result.role,
+      website: record.result.website,
+      location: record.result.location,
+      linkedinUrl: record.result.linkedinUrl,
+      sources: record.result.sources,
+      recommendedTags: record.result.recommendedTags,
+      insights: record.result.insights,
+      model: record.model,
+    };
   }
 
   // ─── add_tag ───────────────────────────────────────────────────────────
@@ -554,17 +601,23 @@ export class WorkflowExecutionService {
   private async executeAddTag(
     config: Record<string, unknown>,
     context: TriggerContext,
+    snap: StepSnapshot,
   ): Promise<void> {
     const contactId = context.contactId;
     const tagId = config.tagId as string;
+    const tagName = typeof config.tagName === "string" ? config.tagName : undefined;
+
+    snap.resolved = { tagId, tagName };
 
     if (!contactId) {
       console.warn("add_tag: no contactId in context, skipping");
+      snap.output = { applied: false, reason: "no_contact" };
       return;
     }
     if (!tagId) throw new Error("add_tag: missing 'tagId' in config");
 
     await this.contactService.addTag(contactId, tagId);
+    snap.output = { applied: true };
   }
 
   // ─── remove_tag ────────────────────────────────────────────────────────
@@ -572,17 +625,23 @@ export class WorkflowExecutionService {
   private async executeRemoveTag(
     config: Record<string, unknown>,
     context: TriggerContext,
+    snap: StepSnapshot,
   ): Promise<void> {
     const contactId = context.contactId;
     const tagId = config.tagId as string;
+    const tagName = typeof config.tagName === "string" ? config.tagName : undefined;
+
+    snap.resolved = { tagId, tagName };
 
     if (!contactId) {
       console.warn("remove_tag: no contactId in context, skipping");
+      snap.output = { removed: false, reason: "no_contact" };
       return;
     }
     if (!tagId) throw new Error("remove_tag: missing 'tagId' in config");
 
     await this.contactService.removeTag(contactId, tagId);
+    snap.output = { removed: true };
   }
 
   // ─── wait ──────────────────────────────────────────────────────────────
@@ -623,6 +682,7 @@ export class WorkflowExecutionService {
   private executeCondition(
     config: Record<string, unknown>,
     context: TriggerContext,
+    snap: StepSnapshot,
   ): boolean {
     const field = config.field as string;
     const operator = config.operator as string;
@@ -630,29 +690,40 @@ export class WorkflowExecutionService {
 
     if (!field || !operator) {
       console.warn("condition: missing field or operator, continuing");
+      snap.resolved = { field, operator, value };
+      snap.output = { passed: true, reason: "missing_field_or_operator" };
       return true;
     }
 
-    // Resolve the field value from context
     const actual = this.resolveField(field, context);
+    snap.resolved = { field, operator, value, actual };
 
+    let passed: boolean;
     switch (operator) {
       case "equals":
-        return String(actual) === String(value);
+        passed = String(actual) === String(value);
+        break;
       case "not_equals":
-        return String(actual) !== String(value);
+        passed = String(actual) !== String(value);
+        break;
       case "contains":
-        return String(actual).includes(String(value));
+        passed = String(actual).includes(String(value));
+        break;
       case "not_contains":
-        return !String(actual).includes(String(value));
+        passed = !String(actual).includes(String(value));
+        break;
       case "exists":
-        return actual !== undefined && actual !== null && actual !== "";
+        passed = actual !== undefined && actual !== null && actual !== "";
+        break;
       case "not_exists":
-        return actual === undefined || actual === null || actual === "";
+        passed = actual === undefined || actual === null || actual === "";
+        break;
       default:
         console.warn(`condition: unknown operator '${operator}', continuing`);
-        return true;
+        passed = true;
     }
+    snap.output = { passed };
+    return passed;
   }
 
   // ─── webhook ───────────────────────────────────────────────────────────
@@ -660,8 +731,9 @@ export class WorkflowExecutionService {
   private async executeWebhook(
     config: Record<string, unknown>,
     context: TriggerContext,
+    snap: StepSnapshot,
   ): Promise<void> {
-    const url = config.url as string;
+    const url = this.interpolate(config.url as string, context) || (config.url as string);
     if (!url) throw new Error("webhook: missing 'url' in config");
 
     const method = ((config.method as string) || "POST").toUpperCase();
@@ -689,6 +761,8 @@ export class WorkflowExecutionService {
           )
         : undefined;
 
+    snap.resolved = { url, method, headers, body };
+
     const response = await fetch(url, {
       method,
       headers,
@@ -702,6 +776,8 @@ export class WorkflowExecutionService {
         `webhook failed: ${response.status} ${response.statusText} — ${text.slice(0, 200)}`,
       );
     }
+
+    snap.output = { status: response.status, ok: true };
   }
 
   // ─── update_contact ────────────────────────────────────────────────────
@@ -709,15 +785,19 @@ export class WorkflowExecutionService {
   private async executeUpdateContact(
     config: Record<string, unknown>,
     context: TriggerContext,
+    snap: StepSnapshot,
   ): Promise<void> {
     const contactId = context.contactId;
-    if (!contactId) {
-      console.warn("update_contact: no contactId in context, skipping");
-      return;
-    }
-
     const field = config.field as string;
     const value = this.interpolate(config.value as string, context);
+
+    snap.resolved = { field, value };
+
+    if (!contactId) {
+      console.warn("update_contact: no contactId in context, skipping");
+      snap.output = { updated: false, reason: "no_contact" };
+      return;
+    }
 
     if (!field) throw new Error("update_contact: missing 'field' in config");
 
@@ -727,6 +807,7 @@ export class WorkflowExecutionService {
     }
 
     await this.contactService.update(contactId, { [field]: value });
+    snap.output = { updated: true, field, value };
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────
@@ -759,6 +840,21 @@ export class WaitSignal extends Error {
     super(`wait:${delaySeconds}`);
     this.name = "WaitSignal";
   }
+}
+
+function buildInputContextBlock(
+  stepInputs: Record<string, unknown> | undefined,
+): string {
+  if (!stepInputs) return "";
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(stepInputs)) {
+    if (value == null) continue;
+    const str = typeof value === "string" ? value : String(value);
+    if (str.length === 0) continue;
+    lines.push(`- ${key}: ${str}`);
+  }
+  if (lines.length === 0) return "";
+  return ["Context:", ...lines].join("\n");
 }
 
 function parseRecord(value: unknown): Record<string, unknown> | undefined {

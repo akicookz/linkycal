@@ -4,6 +4,7 @@ import {
   interpolateWorkflowTemplate,
   mergeWorkflowResearchMetadata,
   normalizeRecipientList,
+  resolveStepInputs,
   resolveWorkflowValue,
   type WorkflowResearchRecord,
   type WorkflowTriggerContext,
@@ -81,5 +82,57 @@ describe("workflow runtime helpers", () => {
     expect(
       resolveWorkflowValue(nextContext, "research.byKey.lead_research.result.company"),
     ).toBe("Acme");
+  });
+
+  test("resolveStepInputs pulls path and literal sources, skips malformed entries", () => {
+    const context: WorkflowTriggerContext = {
+      ...buildContext(),
+      metadata: { formFields: { company_field: "Acme" } },
+    };
+
+    const resolved = resolveStepInputs(
+      [
+        { key: "name", source: { kind: "path", path: "contact.name" } },
+        { key: "company", source: { kind: "path", path: "form.fields.company_field" } },
+        { key: "tier", source: { kind: "literal", value: "enterprise" } },
+        { key: "templated", source: { kind: "literal", value: "Hi {{contact.name}}" } },
+        { key: "missing", source: { kind: "path", path: "does.not.exist" } },
+        { bogus: "shape" },
+      ],
+      context,
+    );
+
+    expect(resolved).toEqual({
+      name: "Ava",
+      company: "Acme",
+      tier: "enterprise",
+      templated: "Hi Ava",
+      missing: "",
+    });
+  });
+
+  test("exposes resolved step inputs to interpolation as {{input.*}}", () => {
+    const context: WorkflowTriggerContext = {
+      ...buildContext(),
+      stepInputs: { name: "Ava", company: "Acme" },
+    };
+
+    expect(
+      interpolateWorkflowTemplate(
+        "Research {{input.name}} at {{input.company}}.",
+        context,
+      ),
+    ).toBe("Research Ava at Acme.");
+  });
+
+  test("form field values under metadata.formFields are addressable via form.fields.*", () => {
+    const context: WorkflowTriggerContext = {
+      ...buildContext(),
+      metadata: { formFields: { role: "CTO" } },
+    };
+
+    expect(
+      interpolateWorkflowTemplate("Role: {{form.fields.role}}", context),
+    ).toBe("Role: CTO");
   });
 });
