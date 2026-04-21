@@ -152,4 +152,47 @@ describe("owner booking notifications", () => {
     expect(payload.html).toContain("CRM");
     expect(payload.html).toContain("HubSpot");
   });
+
+  test("CCs the account owner on booking notifications when organizer differs", async () => {
+    const fetchMock = mockFetch();
+    const emailService = new EmailService("test-key");
+
+    await emailService.sendBookingNotification({
+      to: "organizer@example.com",
+      cc: ["owner@example.com"],
+      ownerName: "Admin",
+      guestName: "Ava",
+      guestEmail: "guest@example.com",
+      eventTypeName: "Intro Call",
+      startTime: new Date("2026-04-01T13:00:00.000Z"),
+      endTime: new Date("2026-04-01T13:30:00.000Z"),
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    const body = JSON.parse(String(init.body)) as {
+      to: string[];
+      cc?: string[];
+    };
+    expect(body.to).toEqual(["organizer@example.com"]);
+    expect(body.cc).toEqual(["owner@example.com"]);
+  });
+
+  test("omits cc field when no cc is passed", async () => {
+    const fetchMock = mockFetch();
+    const emailService = new EmailService("test-key");
+
+    await emailService.sendBookingNotification({
+      to: "owner@example.com",
+      ownerName: "Admin",
+      guestName: "Ava",
+      guestEmail: "guest@example.com",
+      eventTypeName: "Intro Call",
+      startTime: new Date("2026-04-01T13:00:00.000Z"),
+      endTime: new Date("2026-04-01T13:30:00.000Z"),
+    });
+
+    const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+    const body = JSON.parse(String(init.body)) as { cc?: string[] };
+    expect(body.cc).toBeUndefined();
+  });
 });

@@ -45,6 +45,7 @@ interface BookingCancellationParams {
 
 interface BookingNotificationParams {
   to: string;
+  cc?: string[];
   ownerName: string;
   guestName: string;
   guestEmail: string;
@@ -67,6 +68,7 @@ interface BookingRequestReceivedParams {
 
 interface BookingRequestNotificationParams {
   to: string;
+  cc?: string[];
   ownerName: string;
   guestName: string;
   guestEmail: string;
@@ -125,7 +127,7 @@ function resolveTheme(theme?: EmailTheme): ResolvedPalette {
     primaryText: isHex(theme?.primaryText)
       ? theme!.primaryText!
       : DEFAULT_PRIMARY_TEXT,
-    primaryTint: lighten(primary, 0.88),
+    primaryTint: lighten(primary, 0.95),
     background: isHex(theme?.backgroundColor)
       ? theme!.backgroundColor!
       : DEFAULT_BACKGROUND,
@@ -320,6 +322,7 @@ export class EmailService {
   ): Promise<void> {
     const {
       to,
+      cc,
       ownerName,
       guestName,
       guestEmail,
@@ -355,6 +358,7 @@ export class EmailService {
 
     await this.send({
       to,
+      cc,
       subject: `New Booking: ${guestName} - ${eventTypeName}`,
       html,
     });
@@ -407,6 +411,7 @@ export class EmailService {
   ): Promise<void> {
     const {
       to,
+      cc,
       ownerName,
       guestName,
       guestEmail,
@@ -447,6 +452,7 @@ export class EmailService {
 
     await this.send({
       to,
+      cc,
       subject: `Action Needed: ${guestName} - ${eventTypeName}`,
       html,
     });
@@ -550,21 +556,27 @@ export class EmailService {
 
   private async send(params: {
     to: string;
+    cc?: string[];
     subject: string;
     html: string;
   }): Promise<void> {
+    const body: Record<string, unknown> = {
+      from: FROM_ADDRESS,
+      to: [params.to],
+      subject: params.subject,
+      html: params.html,
+    };
+    if (params.cc && params.cc.length > 0) {
+      body.cc = params.cc;
+    }
+
     const response = await fetch(RESEND_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${this.resendApiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: [params.to],
-        subject: params.subject,
-        html: params.html,
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

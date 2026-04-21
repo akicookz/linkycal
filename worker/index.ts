@@ -769,6 +769,27 @@ async function getBookingSubmittedFields(
   }));
 }
 
+async function resolveOrganizerEmail(
+  db: AppDatabase,
+  eventType: { destinationConnectionId: string | null },
+  ownerUserId: string,
+): Promise<string | null> {
+  if (eventType.destinationConnectionId) {
+    const [conn] = await db
+      .select({ email: dbSchema.calendarConnections.email })
+      .from(dbSchema.calendarConnections)
+      .where(eq(dbSchema.calendarConnections.id, eventType.destinationConnectionId))
+      .limit(1);
+    if (conn?.email) return conn.email;
+  }
+  const [conn] = await db
+    .select({ email: dbSchema.calendarConnections.email })
+    .from(dbSchema.calendarConnections)
+    .where(eq(dbSchema.calendarConnections.userId, ownerUserId))
+    .limit(1);
+  return conn?.email ?? null;
+}
+
 async function resolveInviteAttendees(
   db: DrizzleD1Database<Record<string, unknown>>,
   eventType: { inviteConnectionIds: string | null },
@@ -1227,11 +1248,17 @@ app.post("/api/v1/bookings", async (c) => {
               theme: projectTheme,
             });
 
-            // Send "action needed" email to owner
+            // Send "action needed" email to owner/organizer
             if (owner) {
               const dashboardUrl = `${c.env.BETTER_AUTH_URL}/app/projects/${project.id}/bookings?tab=pending`;
+              const organizerEmail = await resolveOrganizerEmail(db, eventType, project.userId);
+              const to = organizerEmail ?? owner.email;
+              const cc = organizerEmail && organizerEmail.toLowerCase() !== owner.email.toLowerCase()
+                ? [owner.email]
+                : undefined;
               await emailService.sendBookingRequestNotification({
-                to: owner.email,
+                to,
+                cc,
                 ownerName: owner.name,
                 guestName: data.name,
                 guestEmail: data.email,
@@ -1335,8 +1362,14 @@ app.post("/api/v1/bookings", async (c) => {
             });
 
             if (owner) {
+              const organizerEmail = await resolveOrganizerEmail(db, eventType, project.userId);
+              const to = organizerEmail ?? owner.email;
+              const cc = organizerEmail && organizerEmail.toLowerCase() !== owner.email.toLowerCase()
+                ? [owner.email]
+                : undefined;
               await emailService.sendBookingNotification({
-                to: owner.email,
+                to,
+                cc,
                 ownerName: owner.name,
                 guestName: data.name,
                 guestEmail: data.email,
