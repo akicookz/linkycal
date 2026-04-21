@@ -64,6 +64,12 @@ import {
   formatDateInTimezone,
   getUtcRangeForLocalDate,
 } from "./lib/timezone";
+import {
+  parseBusyCalendars,
+  parseInviteConnectionIds,
+  serializeBusyCalendars,
+  serializeInviteConnectionIds,
+} from "./lib/calendar-refs";
 import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
@@ -743,6 +749,32 @@ async function getBookingSubmittedFields(
   }));
 }
 
+async function resolveInviteAttendees(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  eventType: { inviteConnectionIds: string | null },
+  destinationConnectionId: string,
+  guestEmail: string,
+): Promise<string[]> {
+  const inviteIds = parseInviteConnectionIds(eventType.inviteConnectionIds).filter(
+    (id) => id !== destinationConnectionId,
+  );
+
+  const emails = new Set<string>();
+  if (guestEmail) emails.add(guestEmail.toLowerCase());
+
+  if (inviteIds.length > 0) {
+    const rows = await db
+      .select({ id: dbSchema.calendarConnections.id, email: dbSchema.calendarConnections.email })
+      .from(dbSchema.calendarConnections)
+      .where(inArray(dbSchema.calendarConnections.id, inviteIds));
+    for (const row of rows) {
+      if (row.email) emails.add(row.email.toLowerCase());
+    }
+  }
+
+  return Array.from(emails);
+}
+
 // ─── Timestamp Normalization ─────────────────────────────────────────────────
 
 const TIMESTAMP_KEYS = new Set([
@@ -888,10 +920,7 @@ app.get("/api/v1/availability/:slug", async (c) => {
           .limit(1);
 
         if (eventType) {
-          const busyCalendars = await db
-            .select()
-            .from(dbSchema.eventTypeBusyCalendars)
-            .where(eq(dbSchema.eventTypeBusyCalendars.eventTypeId, eventType.id));
+          const busyCalendars = parseBusyCalendars(eventType.busyCalendars);
 
           if (busyCalendars.length > 0) {
             const viewerDayRange = getUtcRangeForLocalDate(date!, timezone);
@@ -1234,6 +1263,13 @@ app.post("/api/v1/bookings", async (c) => {
                 calConnection.refreshToken,
               );
 
+              const attendeeEmails = await resolveInviteAttendees(
+                db,
+                eventType,
+                calConnection.id,
+                data.email,
+              );
+
               const gcalResult = await calendarService.createEvent(
                 accessToken,
                 destinationCalendarId,
@@ -1242,9 +1278,7 @@ app.post("/api/v1/bookings", async (c) => {
                   start: startTime.toISOString(),
                   end: endTime.toISOString(),
                   description: data.notes,
-                  attendees: [data.email],
-                  organizerEmail: owner?.email,
-                  organizerName: owner?.name,
+                  attendees: attendeeEmails,
                   guestName: data.name,
                 },
               );
@@ -2999,13 +3033,6 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
       .where(eq(dbSchema.projects.id, eventType.projectId))
       .limit(1);
 
-    const ownerRows = await db
-      .select()
-      .from(dbSchema.schema.users)
-      .where(eq(dbSchema.schema.users.id, project.userId))
-      .limit(1);
-    const owner = ownerRows[0];
-
     // Create Google Calendar event now
     const calendarService = new CalendarService(db, {
       GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
@@ -3042,6 +3069,13 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
               calConnection.refreshToken,
             );
 
+            const attendeeEmails = await resolveInviteAttendees(
+              db,
+              eventType,
+              calConnection.id,
+              booking.email,
+            );
+
             const gcalResult = await calendarService.createEvent(
               accessToken,
               destinationCalendarId,
@@ -3050,9 +3084,7 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
                 start: new Date(booking.startTime).toISOString(),
                 end: new Date(booking.endTime).toISOString(),
                 description: booking.notes ?? undefined,
-                attendees: [booking.email],
-                organizerEmail: owner?.email,
-                organizerName: owner?.name,
+                attendees: attendeeEmails,
                 guestName: booking.name,
               },
             );
@@ -4501,11 +4533,6 @@ app.get("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
       return c.json({ error: "Event type not found" }, 404);
     }
 
-    const busyCalendars = await db
-      .select()
-      .from(dbSchema.eventTypeBusyCalendars)
-      .where(eq(dbSchema.eventTypeBusyCalendars.eventTypeId, eventTypeId));
-
     return c.json({
       destination:
         eventType.destinationConnectionId && eventType.destinationCalendarId
@@ -4514,10 +4541,8 @@ app.get("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
             calendarId: eventType.destinationCalendarId,
           }
         : null,
-      busyCalendars: busyCalendars.map((bc) => ({
-        connectionId: bc.connectionId,
-        calendarId: bc.calendarId,
-      })),
+      busyCalendars: parseBusyCalendars(eventType.busyCalendars),
+      inviteConnectionIds: parseInviteConnectionIds(eventType.inviteConnectionIds),
     });
   } catch (err) {
     console.error("Get event type calendars error:", err);
@@ -4532,30 +4557,15 @@ app.put("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
     const data = validate(updateEventTypeCalendarsSchema, body);
     const db = c.get("db");
 
-    // Update destination on event type
     await db
       .update(dbSchema.eventTypes)
       .set({
         destinationConnectionId: data.destination?.connectionId ?? null,
         destinationCalendarId: data.destination?.calendarId ?? null,
+        busyCalendars: serializeBusyCalendars(data.busyCalendars),
+        inviteConnectionIds: serializeInviteConnectionIds(data.inviteConnectionIds),
       })
       .where(eq(dbSchema.eventTypes.id, eventTypeId));
-
-    // Replace busy calendars: delete all, then insert new
-    await db
-      .delete(dbSchema.eventTypeBusyCalendars)
-      .where(eq(dbSchema.eventTypeBusyCalendars.eventTypeId, eventTypeId));
-
-    if (data.busyCalendars.length > 0) {
-      await db.insert(dbSchema.eventTypeBusyCalendars).values(
-        data.busyCalendars.map((bc) => ({
-          id: crypto.randomUUID(),
-          eventTypeId,
-          connectionId: bc.connectionId,
-          calendarId: bc.calendarId,
-        })),
-      );
-    }
 
     return c.json({ success: true });
   } catch (err) {

@@ -144,7 +144,7 @@ function Layout() {
   const userEmail = session?.user?.email ?? "";
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen overflow-hidden bg-background">
       {/* Mobile overlay */}
       {mobileOpen && (
         <div
@@ -316,7 +316,7 @@ function Layout() {
 
       {/* Main Content */}
       <MobileSidebarContext.Provider value={sidebarCtx}>
-        <main className="flex-1 overflow-y-auto overflow-x-hidden">
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain">
           <div className="p-4 md:p-8">
             <Outlet />
           </div>

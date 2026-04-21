@@ -33,8 +33,6 @@ interface CreateEventInput {
   end: string; // ISO 8601
   description?: string;
   attendees?: string[];
-  organizerEmail?: string;
-  organizerName?: string;
   guestName?: string;
 }
 
@@ -245,17 +243,7 @@ export class CalendarService {
       body.description = event.description;
     }
 
-    // Build attendees list with display names
     const attendees: Array<Record<string, unknown>> = [];
-
-    if (event.organizerEmail) {
-      attendees.push({
-        email: event.organizerEmail,
-        displayName: event.organizerName || event.organizerEmail,
-        responseStatus: "accepted",
-        organizer: true,
-      });
-    }
 
     if (event.attendees && event.attendees.length > 0) {
       for (const email of event.attendees) {

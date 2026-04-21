@@ -68,6 +68,8 @@ export const eventTypes = sqliteTable(
       { onDelete: "set null" },
     ),
     destinationCalendarId: text("destination_calendar_id"),
+    busyCalendars: text("busy_calendars"),
+    inviteConnectionIds: text("invite_connection_ids"),
     requiresConfirmation: integer("requires_confirmation", { mode: "boolean" })
       .notNull()
       .default(false),
@@ -537,26 +539,6 @@ export const calendarConnections = sqliteTable(
 export type CalendarConnectionRow = typeof calendarConnections.$inferSelect;
 export type NewCalendarConnectionRow = typeof calendarConnections.$inferInsert;
 
-// ─── Event Type Busy Calendars ──────────────────────────────────────────────
-
-export const eventTypeBusyCalendars = sqliteTable(
-  "event_type_busy_calendars",
-  {
-    id: text("id").primaryKey(),
-    eventTypeId: text("event_type_id")
-      .notNull()
-      .references(() => eventTypes.id, { onDelete: "cascade" }),
-    connectionId: text("connection_id")
-      .notNull()
-      .references(() => calendarConnections.id, { onDelete: "cascade" }),
-    calendarId: text("calendar_id").notNull(),
-  },
-  (t) => [index("event_type_busy_calendars_event_type_id_idx").on(t.eventTypeId)],
-);
-
-export type EventTypeBusyCalendarRow = typeof eventTypeBusyCalendars.$inferSelect;
-export type NewEventTypeBusyCalendarRow = typeof eventTypeBusyCalendars.$inferInsert;
-
 // ─── Workflows ───────────────────────────────────────────────────────────────
 
 export const workflows = sqliteTable(
@@ -777,7 +759,6 @@ export const schema = {
   contactActivity,
   contactViews,
   calendarConnections,
-  eventTypeBusyCalendars,
   workflows,
   workflowSteps,
   workflowRuns,

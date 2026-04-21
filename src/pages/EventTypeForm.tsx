@@ -47,7 +47,6 @@ import {
   type DayAvailabilityConfig,
 } from "@/lib/availability";
 import { queryClient } from "@/lib/query-client";
-import { cn } from "@/lib/utils";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -222,6 +221,7 @@ export default function EventTypeForm() {
   // Calendar state
   const [destinationCalendar, setDestinationCalendar] = useState<{ connectionId: string; calendarId: string } | null>(null);
   const [busyCalendars, setBusyCalendars] = useState<Array<{ connectionId: string; calendarId: string }>>([]);
+  const [inviteConnectionIds, setInviteConnectionIds] = useState<string[]>([]);
   const [calendarConnectError, setCalendarConnectError] = useState<string | null>(null);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
 
@@ -287,6 +287,7 @@ export default function EventTypeForm() {
   const { data: calendarConfig } = useQuery<{
     destination: { connectionId: string; calendarId: string } | null;
     busyCalendars: Array<{ connectionId: string; calendarId: string }>;
+    inviteConnectionIds: string[];
   }>({
     queryKey: ["projects", projectId, "event-types", eventTypeId, "calendars"],
     queryFn: async () => {
@@ -302,6 +303,7 @@ export default function EventTypeForm() {
     if (!calendarConfig) return;
     setDestinationCalendar(calendarConfig.destination);
     setBusyCalendars(calendarConfig.busyCalendars);
+    setInviteConnectionIds(calendarConfig.inviteConnectionIds ?? []);
   }, [calendarConfig]);
 
   const calendarAccountList = calendarAccounts?.accounts ?? [];
@@ -599,6 +601,7 @@ export default function EventTypeForm() {
       body: JSON.stringify({
         destination: destinationCalendar,
         busyCalendars,
+        inviteConnectionIds,
       }),
     });
 
@@ -1072,7 +1075,10 @@ export default function EventTypeForm() {
               {calendarAccounts?.accounts && calendarAccounts.accounts.length > 0 ? (
                 <>
                   <div className="space-y-2">
-                    <Label>Write new events to</Label>
+                    <Label>Organizer</Label>
+                    <p className="text-xs text-muted-foreground -mt-1">
+                      Events are added to this calendar.
+                    </p>
                     <Select
                       key={destinationSelectKey}
                       value={selectedDestinationValue}
@@ -1105,52 +1111,137 @@ export default function EventTypeForm() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Check for busy times</Label>
-                    <div className="space-y-2">
-                      {calendarAccounts.accounts.flatMap((account) =>
-                        account.calendars.map((cal) => {
-                          const key = `${account.connectionId}::${cal.id}`;
-                          const isChecked = busyCalendars.some(
-                            (bc) => bc.connectionId === account.connectionId && bc.calendarId === cal.id,
-                          );
-                          return (
-                            <div
-                              key={key}
-                              className={cn(
-                                "flex items-center justify-between rounded-[12px] border px-4 py-2.5 transition-colors",
-                                isChecked ? "bg-white border-border" : "bg-muted/30 border-transparent",
-                              )}
-                            >
-                              <div className="flex items-center gap-3">
-                                <Switch
-                                  checked={isChecked}
-                                  onCheckedChange={(checked) => {
-                                    if (checked) {
-                                      setBusyCalendars((prev) => [
-                                        ...prev,
-                                        { connectionId: account.connectionId, calendarId: cal.id },
-                                      ]);
-                                    } else {
-                                      setBusyCalendars((prev) =>
-                                        prev.filter(
-                                          (bc) =>
-                                            !(bc.connectionId === account.connectionId && bc.calendarId === cal.id),
-                                        ),
-                                      );
-                                    }
-                                  }}
-                                />
-                                <span className={cn("text-sm", isChecked ? "text-foreground" : "text-muted-foreground")}>
-                                  {cal.summary}
-                                  {calendarAccounts.accounts.length > 1 && (
-                                    <span className="text-muted-foreground ml-1">({account.email})</span>
+                    <div className="flex items-end justify-end">
+                      <div className="flex items-center gap-4 pr-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        <span className="w-16 text-center">Check busy</span>
+                        <span className="w-10 text-center">Invite</span>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      {calendarAccounts.accounts.map((account) => {
+                        const primaryCal =
+                          account.calendars.find((c) => c.id === account.email) ??
+                          account.calendars[0];
+                        const subCalendars = account.calendars.filter(
+                          (c) => c.id !== primaryCal?.id,
+                        );
+                        const isDestinationConnection =
+                          destinationCalendar?.connectionId === account.connectionId;
+                        const primaryBusy = primaryCal
+                          ? busyCalendars.some(
+                              (bc) =>
+                                bc.connectionId === account.connectionId &&
+                                bc.calendarId === primaryCal.id,
+                            )
+                          : false;
+                        const inviteAllowed = !!primaryCal && !isDestinationConnection;
+                        const isInvited =
+                          inviteAllowed &&
+                          inviteConnectionIds.includes(account.connectionId);
+
+                        function toggleBusy(calendarId: string, next: boolean) {
+                          if (next) {
+                            setBusyCalendars((prev) => [
+                              ...prev,
+                              { connectionId: account.connectionId, calendarId },
+                            ]);
+                          } else {
+                            setBusyCalendars((prev) =>
+                              prev.filter(
+                                (bc) =>
+                                  !(bc.connectionId === account.connectionId && bc.calendarId === calendarId),
+                              ),
+                            );
+                          }
+                        }
+
+                        return (
+                          <div
+                            key={account.connectionId}
+                            className="rounded-[16px] border border-border bg-white overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between px-4 py-3">
+                              <div className="min-w-0 flex-1 pr-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-medium text-foreground truncate">
+                                    {account.email}
+                                  </span>
+                                  {isDestinationConnection && (
+                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-5">
+                                      Organizer
+                                    </Badge>
                                   )}
-                                </span>
+                                </div>
+                                {isDestinationConnection && (
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    Always on the event
+                                  </p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-4">
+                                <div className="w-10 flex justify-center">
+                                  <Switch
+                                    checked={primaryBusy}
+                                    disabled={!primaryCal}
+                                    onCheckedChange={(checked) =>
+                                      primaryCal && toggleBusy(primaryCal.id, checked)
+                                    }
+                                  />
+                                </div>
+                                <div className="w-10 flex justify-center">
+                                  <Switch
+                                    checked={isInvited}
+                                    disabled={!inviteAllowed}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setInviteConnectionIds((prev) =>
+                                          prev.includes(account.connectionId)
+                                            ? prev
+                                            : [...prev, account.connectionId],
+                                        );
+                                      } else {
+                                        setInviteConnectionIds((prev) =>
+                                          prev.filter((id) => id !== account.connectionId),
+                                        );
+                                      }
+                                    }}
+                                  />
+                                </div>
                               </div>
                             </div>
-                          );
-                        }),
-                      )}
+                            {subCalendars.length > 0 && (
+                              <div className="bg-muted/40 px-4 py-2 space-y-1">
+                                {subCalendars.map((cal) => {
+                                  const isChecked = busyCalendars.some(
+                                    (bc) =>
+                                      bc.connectionId === account.connectionId &&
+                                      bc.calendarId === cal.id,
+                                  );
+                                  return (
+                                    <div
+                                      key={cal.id}
+                                      className="flex items-center justify-between py-1"
+                                    >
+                                      <span className="text-xs text-muted-foreground truncate pr-3">
+                                        {cal.summary}
+                                      </span>
+                                      <div className="flex items-center gap-4">
+                                        <div className="w-10 flex justify-center">
+                                          <Switch
+                                            checked={isChecked}
+                                            onCheckedChange={(checked) => toggleBusy(cal.id, checked)}
+                                          />
+                                        </div>
+                                        <div className="w-10" />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </>

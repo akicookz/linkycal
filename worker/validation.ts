@@ -84,6 +84,7 @@ const calendarRefSchema = z.object({
 export const updateEventTypeCalendarsSchema = z.object({
   destination: calendarRefSchema.nullable(),
   busyCalendars: z.array(calendarRefSchema).max(20),
+  inviteConnectionIds: z.array(z.string().min(1)).max(20).default([]),
 });
 
 // ─── Schedules ───────────────────────────────────────────────────────────────

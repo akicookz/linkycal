@@ -113,6 +113,13 @@
       "when": 1776000000000,
       "tag": "0018_contact_views",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "6",
+      "when": 1777104000000,
+      "tag": "0020_event_type_calendar_columns",
+      "breakpoints": true
     }
   ]
 }
