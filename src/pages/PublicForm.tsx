@@ -522,6 +522,9 @@ export default function PublicForm() {
             onChange={(val) => setValue(field.id, val)}
             error={fieldErrors[field.id]}
             textareaRows={3}
+            themeColor={theme?.primaryBg}
+            themeTextColor={theme?.primaryText}
+            themeRadius={theme?.borderRadius}
           />
         ))}
 
@@ -582,8 +585,16 @@ function PageShell({
   const hideBrandingRequested = searchParams.get("hide_branding") === "1";
   const showBranding = !(hideBrandingRequested && canHideBranding);
 
+  const themeVars = theme?.primaryBg
+    ? ({
+        ["--primary" as string]: theme.primaryBg,
+        ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
+        ["--ring" as string]: theme.primaryBg,
+      } as React.CSSProperties)
+    : undefined;
+
   const card = (
-    <div className="w-full max-w-[52rem] mx-auto">
+    <div className="w-full max-w-[52rem] mx-auto" style={themeVars}>
       {showBanner && (
         <div
           className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"

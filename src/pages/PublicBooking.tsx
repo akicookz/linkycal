@@ -567,13 +567,23 @@ export default function PublicBooking() {
       style={isEmbedded ? {
         color: theme?.textColor || undefined,
         fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
-        ...(theme?.primaryBg ? { ["--theme-primary" as string]: theme.primaryBg } : {}),
+        ...(theme?.primaryBg ? {
+          ["--theme-primary" as string]: theme.primaryBg,
+          ["--primary" as string]: theme.primaryBg,
+          ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
+          ["--ring" as string]: theme.primaryBg,
+        } : {}),
         ...(theme?.borderRadius != null ? { ["--theme-radius" as string]: `${theme.borderRadius}px` } : {}),
       } : {
         backgroundColor: theme?.backgroundColor || "var(--background)",
         color: theme?.textColor || "var(--foreground)",
         fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
-        ...(theme?.primaryBg ? { ["--theme-primary" as string]: theme.primaryBg } : {}),
+        ...(theme?.primaryBg ? {
+          ["--theme-primary" as string]: theme.primaryBg,
+          ["--primary" as string]: theme.primaryBg,
+          ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
+          ["--ring" as string]: theme.primaryBg,
+        } : {}),
         ...(theme?.borderRadius != null ? { ["--theme-radius" as string]: `${theme.borderRadius}px` } : {}),
         ...(theme?.backgroundImage ? {
           backgroundImage: `url(${theme.backgroundImage})`,
@@ -1023,6 +1033,9 @@ export default function PublicBooking() {
                           if (field.contactMapping === "email") setGuestEmail(val);
                         }}
                         error={formFieldErrors[field.id]}
+                        themeColor={theme?.primaryBg}
+                        themeTextColor={theme?.primaryText}
+                        themeRadius={theme?.borderRadius}
                       />
                     ))}
 

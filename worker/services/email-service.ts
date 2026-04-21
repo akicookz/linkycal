@@ -1,5 +1,25 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+export interface EmailTheme {
+  primaryBg?: string;
+  primaryText?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  borderRadius?: number;
+  fontFamily?: string;
+}
+
+interface ResolvedPalette {
+  primary: string;
+  primaryText: string;
+  primaryTint: string;
+  background: string;
+  text: string;
+  muted: string;
+  radius: number;
+  fontFamily: string;
+}
+
 interface BookingConfirmationParams {
   to: string;
   guestName: string;
@@ -9,7 +29,8 @@ interface BookingConfirmationParams {
   timezone: string;
   location?: string;
   notes?: string;
-  submittedFields?: Array<{ label: string; value: string }>;
+  meetingUrl?: string;
+  theme?: EmailTheme;
 }
 
 interface BookingCancellationParams {
@@ -19,6 +40,7 @@ interface BookingCancellationParams {
   startTime: Date;
   endTime: Date;
   reason?: string;
+  theme?: EmailTheme;
 }
 
 interface BookingNotificationParams {
@@ -30,6 +52,7 @@ interface BookingNotificationParams {
   startTime: Date;
   endTime: Date;
   submittedFields?: Array<{ label: string; value: string }>;
+  theme?: EmailTheme;
 }
 
 interface BookingRequestReceivedParams {
@@ -39,7 +62,7 @@ interface BookingRequestReceivedParams {
   startTime: Date;
   endTime: Date;
   timezone: string;
-  submittedFields?: Array<{ label: string; value: string }>;
+  theme?: EmailTheme;
 }
 
 interface BookingRequestNotificationParams {
@@ -52,6 +75,7 @@ interface BookingRequestNotificationParams {
   endTime: Date;
   dashboardUrl: string;
   submittedFields?: Array<{ label: string; value: string }>;
+  theme?: EmailTheme;
 }
 
 interface BookingDeclinedParams {
@@ -63,6 +87,7 @@ interface BookingDeclinedParams {
   endTime: Date;
   timezone: string;
   reason?: string;
+  theme?: EmailTheme;
 }
 
 interface FormResponseNotificationParams {
@@ -71,6 +96,7 @@ interface FormResponseNotificationParams {
   formName: string;
   respondentEmail: string | null;
   fields: Array<{ label: string; value: string }>;
+  theme?: EmailTheme;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -78,67 +104,98 @@ interface FormResponseNotificationParams {
 const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_ADDRESS = "LinkyCal <noreply@updates.linkycal.com>";
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+const DEFAULT_PRIMARY = "#1B4332";
+const DEFAULT_PRIMARY_TEXT = "#ffffff";
+const DEFAULT_BACKGROUND = "#ffffff";
+const DEFAULT_TEXT = "#374151";
+const DEFAULT_MUTED = "#6b7280";
+const DEFAULT_RADIUS = 12;
+const DEFAULT_FONT_STACK =
+  "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
 // ─── Email Template Helpers ──────────────────────────────────────────────────
 
-const BRAND_COLOR = "#1B4332";
-const BRAND_LIGHT = "#e8f0ec"; // light tint of brand for table bg
+function resolveTheme(theme?: EmailTheme): ResolvedPalette {
+  const primary = isHex(theme?.primaryBg) ? theme!.primaryBg! : DEFAULT_PRIMARY;
+  const fontFamily = theme?.fontFamily
+    ? `'${theme.fontFamily}', ${DEFAULT_FONT_STACK}`
+    : DEFAULT_FONT_STACK;
+  return {
+    primary,
+    primaryText: isHex(theme?.primaryText)
+      ? theme!.primaryText!
+      : DEFAULT_PRIMARY_TEXT,
+    primaryTint: lighten(primary, 0.88),
+    background: isHex(theme?.backgroundColor)
+      ? theme!.backgroundColor!
+      : DEFAULT_BACKGROUND,
+    text: isHex(theme?.textColor) ? theme!.textColor! : DEFAULT_TEXT,
+    muted: DEFAULT_MUTED,
+    radius:
+      typeof theme?.borderRadius === "number" && theme.borderRadius >= 0
+        ? Math.min(theme.borderRadius, 32)
+        : DEFAULT_RADIUS,
+    fontFamily,
+  };
+}
 
-function emailWrapper(content: string): string {
+function emailWrapper(content: string, p: ResolvedPalette): string {
   return `
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 48px 24px;">
+    <div style="font-family: ${p.fontFamily}; background: ${p.background}; max-width: 560px; margin: 0 auto; padding: 48px 24px;">
       ${content}
       <p style="color: #c0c5cc; font-size: 11px; margin-top: 48px; padding-top: 20px;">
-        Sent by <span style="color: ${BRAND_COLOR}; font-weight: 500;">LinkyCal</span>
+        Sent by <span style="color: ${p.primary}; font-weight: 500;">LinkyCal</span>
       </p>
     </div>`;
 }
 
-function emailHeading(text: string, color: string = BRAND_COLOR): string {
-  return `<h2 style="color: ${color}; font-size: 20px; font-weight: 600; margin: 0 0 16px 0; line-height: 1.3;">${text}</h2>`;
+function emailHeading(text: string, p: ResolvedPalette, color?: string): string {
+  return `<h2 style="color: ${color ?? p.primary}; font-size: 20px; font-weight: 600; margin: 0 0 16px 0; line-height: 1.3;">${text}</h2>`;
 }
 
-function emailBody(text: string): string {
-  return `<p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 28px 0;">${text}</p>`;
+function emailBody(text: string, p: ResolvedPalette): string {
+  return `<p style="color: ${p.text}; font-size: 15px; line-height: 1.6; margin: 0 0 28px 0;">${text}</p>`;
 }
 
 function emailInfoTable(
   rows: Array<{ label: string; value: string; bold?: boolean }>,
+  p: ResolvedPalette,
 ): string {
   const rowsHtml = rows
     .map(
       (r) => `
     <tr>
-      <td style="padding: 10px 16px; color: ${BRAND_COLOR}; font-size: 13px; font-weight: 500; width: 90px; vertical-align: top;">${r.label}</td>
+      <td style="padding: 10px 16px; color: ${p.primary}; font-size: 13px; font-weight: 500; width: 90px; vertical-align: top;">${r.label}</td>
       <td style="padding: 10px 16px; font-size: 14px; color: #1f2937;${r.bold ? " font-weight: 600;" : ""}">${r.value}</td>
     </tr>`,
     )
     .join("");
 
   return `
-    <div style="background: ${BRAND_LIGHT}; border-radius: 12px; overflow: hidden; margin-bottom: 28px;">
+    <div style="background: ${p.primaryTint}; border-radius: ${p.radius}px; overflow: hidden; margin-bottom: 28px;">
       <table style="width: 100%; border-collapse: collapse;">
         ${rowsHtml}
       </table>
     </div>`;
 }
 
-function emailNote(text: string): string {
-  return `<p style="color: #6b7280; font-size: 13px; line-height: 1.5; margin: 0;">${text}</p>`;
+function emailNote(text: string, p: ResolvedPalette): string {
+  return `<p style="color: ${p.muted}; font-size: 13px; line-height: 1.5; margin: 0;">${text}</p>`;
 }
 
-function emailButton(text: string, url: string): string {
+function emailButton(text: string, url: string, p: ResolvedPalette): string {
+  const btnRadius = Math.max(0, p.radius - 2);
   return `
     <div style="margin: 28px 0;">
-      <a href="${escapeHtml(url)}" style="display: inline-block; background: ${BRAND_COLOR}; color: #fff; padding: 12px 28px; border-radius: 10px; text-decoration: none; font-size: 14px; font-weight: 500;">
+      <a href="${escapeHtml(url)}" style="display: inline-block; background: ${p.primary}; color: ${p.primaryText}; padding: 12px 28px; border-radius: ${btnRadius}px; text-decoration: none; font-size: 14px; font-weight: 500;">
         ${text}
       </a>
     </div>`;
 }
 
 function bookingSubmittedFieldsSection(
-  submittedFields?: Array<{ label: string; value: string }>,
+  submittedFields: Array<{ label: string; value: string }> | undefined,
+  p: ResolvedPalette,
 ): string {
   const visibleFields = (submittedFields ?? []).filter((field) =>
     field.value.trim(),
@@ -157,7 +214,7 @@ function bookingSubmittedFieldsSection(
     });
   }
 
-  return emailHeading("Submitted Details", "#374151") + emailInfoTable(rows);
+  return emailHeading("Submitted Details", p, "#374151") + emailInfoTable(rows, p);
 }
 
 // ─── Service ────────────────────────────────────────────────────────────────
@@ -179,9 +236,11 @@ export class EmailService {
       timezone,
       location,
       notes,
-      submittedFields,
+      meetingUrl,
+      theme,
     } = params;
 
+    const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, timezone);
     const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)}`;
 
@@ -191,15 +250,22 @@ export class EmailService {
       { label: "Time", value: timeStr },
     ];
     if (location) rows.push({ label: "Location", value: escapeHtml(location) });
+    if (meetingUrl) {
+      rows.push({
+        label: "Join",
+        value: `<a href="${escapeHtml(meetingUrl)}" style="color: ${p.primary}; text-decoration: underline; font-weight: 500;">Join meeting</a>`,
+      });
+    }
     if (notes) rows.push({ label: "Notes", value: escapeHtml(notes) });
 
     const html = emailWrapper(
-      emailHeading("Booking Confirmed") +
+      emailHeading("Booking Confirmed", p) +
         emailBody(
           `Hi ${escapeHtml(guestName)}, your booking has been confirmed.`,
+          p,
         ) +
-        emailInfoTable(rows) +
-        bookingSubmittedFieldsSection(submittedFields),
+        emailInfoTable(rows, p),
+      p,
     );
 
     await this.send({
@@ -214,23 +280,30 @@ export class EmailService {
   async sendBookingCancellation(
     params: BookingCancellationParams,
   ): Promise<void> {
-    const { to, guestName, eventTypeName, startTime, endTime, reason } = params;
+    const { to, guestName, eventTypeName, startTime, endTime, reason, theme } =
+      params;
 
+    const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, "UTC");
     const timeStr = `${formatTime(startTime, "UTC")} - ${formatTime(endTime, "UTC")} UTC`;
 
     const html = emailWrapper(
-      emailHeading("Booking Cancelled", "#dc2626") +
+      emailHeading("Booking Cancelled", p, "#dc2626") +
         emailBody(
           `Hi ${escapeHtml(guestName)}, your booking for <strong>${escapeHtml(eventTypeName)}</strong> has been cancelled.`,
+          p,
         ) +
-        emailInfoTable([
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
-        ]) +
+        emailInfoTable(
+          [
+            { label: "Date", value: dateStr },
+            { label: "Time", value: timeStr },
+          ],
+          p,
+        ) +
         (reason
-          ? emailNote(`<strong>Reason:</strong> ${escapeHtml(reason)}`)
+          ? emailNote(`<strong>Reason:</strong> ${escapeHtml(reason)}`, p)
           : ""),
+      p,
     );
 
     await this.send({
@@ -254,24 +327,30 @@ export class EmailService {
       startTime,
       endTime,
       submittedFields,
+      theme,
     } = params;
 
+    const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, "UTC");
     const timeStr = `${formatTime(startTime, "UTC")} - ${formatTime(endTime, "UTC")} UTC`;
 
     const html = emailWrapper(
-      emailHeading("New Booking") +
-        emailBody(`Hi ${escapeHtml(ownerName)}, you have a new booking.`) +
-        emailInfoTable([
-          { label: "Event", value: escapeHtml(eventTypeName), bold: true },
-          {
-            label: "Guest",
-            value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})`,
-          },
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
-        ]) +
-        bookingSubmittedFieldsSection(submittedFields),
+      emailHeading("New Booking", p) +
+        emailBody(`Hi ${escapeHtml(ownerName)}, you have a new booking.`, p) +
+        emailInfoTable(
+          [
+            { label: "Event", value: escapeHtml(eventTypeName), bold: true },
+            {
+              label: "Guest",
+              value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})`,
+            },
+            { label: "Date", value: dateStr },
+            { label: "Time", value: timeStr },
+          ],
+          p,
+        ) +
+        bookingSubmittedFieldsSection(submittedFields, p),
+      p,
     );
 
     await this.send({
@@ -286,33 +365,32 @@ export class EmailService {
   async sendBookingRequestReceived(
     params: BookingRequestReceivedParams,
   ): Promise<void> {
-    const {
-      to,
-      guestName,
-      eventTypeName,
-      startTime,
-      endTime,
-      timezone,
-      submittedFields,
-    } = params;
+    const { to, guestName, eventTypeName, startTime, endTime, timezone, theme } =
+      params;
 
+    const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, timezone);
     const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)}`;
 
     const html = emailWrapper(
-      emailHeading("Booking Request Submitted") +
+      emailHeading("Booking Request Submitted", p) +
         emailBody(
           `Hi ${escapeHtml(guestName)}, your booking request is sent and awaiting confirmation from the host.`,
+          p,
         ) +
-        emailInfoTable([
-          { label: "Event", value: escapeHtml(eventTypeName), bold: true },
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
-        ]) +
-        bookingSubmittedFieldsSection(submittedFields) +
+        emailInfoTable(
+          [
+            { label: "Event", value: escapeHtml(eventTypeName), bold: true },
+            { label: "Date", value: dateStr },
+            { label: "Time", value: timeStr },
+          ],
+          p,
+        ) +
         emailNote(
           "You'll receive another email once your booking is confirmed.",
+          p,
         ),
+      p,
     );
 
     await this.send({
@@ -337,27 +415,34 @@ export class EmailService {
       endTime,
       dashboardUrl,
       submittedFields,
+      theme,
     } = params;
 
+    const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, "UTC");
     const timeStr = `${formatTime(startTime, "UTC")} - ${formatTime(endTime, "UTC")} UTC`;
 
     const html = emailWrapper(
-      emailHeading("Action Needed: New Booking Request") +
+      emailHeading("Action Needed: New Booking Request", p) +
         emailBody(
           `Hi ${escapeHtml(ownerName)}, you have a new booking request that needs your approval.`,
+          p,
         ) +
-        emailInfoTable([
-          { label: "Event", value: escapeHtml(eventTypeName), bold: true },
-          {
-            label: "Guest",
-            value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})`,
-          },
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
-        ]) +
-        bookingSubmittedFieldsSection(submittedFields) +
-        emailButton("Review in Dashboard", dashboardUrl),
+        emailInfoTable(
+          [
+            { label: "Event", value: escapeHtml(eventTypeName), bold: true },
+            {
+              label: "Guest",
+              value: `${escapeHtml(guestName)} (${escapeHtml(guestEmail)})`,
+            },
+            { label: "Date", value: dateStr },
+            { label: "Time", value: timeStr },
+          ],
+          p,
+        ) +
+        bookingSubmittedFieldsSection(submittedFields, p) +
+        emailButton("Review in Dashboard", dashboardUrl, p),
+      p,
     );
 
     await this.send({
@@ -379,27 +464,35 @@ export class EmailService {
       endTime,
       timezone,
       reason,
+      theme,
     } = params;
 
+    const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, timezone);
     const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)}`;
 
     const html = emailWrapper(
-      emailHeading("Booking Not Confirmed", "#6b7280") +
+      emailHeading("Booking Not Confirmed", p, "#6b7280") +
         emailBody(
           `Hi ${escapeHtml(guestName)}, unfortunately, <strong>${escapeHtml(hostName)}</strong> cannot take this call at the time you requested.`,
+          p,
         ) +
-        emailInfoTable([
-          { label: "Event", value: eventTypeName },
-          { label: "Date", value: dateStr },
-          { label: "Time", value: timeStr },
-        ]) +
+        emailInfoTable(
+          [
+            { label: "Event", value: eventTypeName },
+            { label: "Date", value: dateStr },
+            { label: "Time", value: timeStr },
+          ],
+          p,
+        ) +
         (reason
           ? emailNote(
               `<strong>Message from host:</strong> ${escapeHtml(reason)}`,
+              p,
             )
           : "") +
-        emailNote("You're welcome to book another time that works for you."),
+        emailNote("You're welcome to book another time that works for you.", p),
+      p,
     );
 
     await this.send({
@@ -414,8 +507,9 @@ export class EmailService {
   async sendFormResponseNotification(
     params: FormResponseNotificationParams,
   ): Promise<void> {
-    const { to, ownerName, formName, respondentEmail, fields } = params;
+    const { to, ownerName, formName, respondentEmail, fields, theme } = params;
 
+    const p = resolveTheme(theme);
     const infoRows: Array<{ label: string; value: string; bold?: boolean }> =
       [];
     if (respondentEmail) {
@@ -435,12 +529,14 @@ export class EmailService {
     }
 
     const html = emailWrapper(
-      emailHeading("New Form Response") +
+      emailHeading("New Form Response", p) +
         emailBody(
           `Hi ${escapeHtml(ownerName)}, someone submitted a response to <strong>${escapeHtml(formName)}</strong>.`,
+          p,
         ) +
-        (infoRows.length > 0 ? emailInfoTable(infoRows) : "") +
-        emailNote("View full details in your dashboard."),
+        (infoRows.length > 0 ? emailInfoTable(infoRows, p) : "") +
+        emailNote("View full details in your dashboard.", p),
+      p,
     );
 
     await this.send({
@@ -480,9 +576,6 @@ export class EmailService {
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
 
-/**
- * Format a Date to a human-readable date string in a timezone.
- */
 function formatDate(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     weekday: "long",
@@ -493,9 +586,6 @@ function formatDate(date: Date, timezone: string): string {
   }).format(date);
 }
 
-/**
- * Format a Date to a human-readable time string in a timezone.
- */
 function formatTime(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-US", {
     hour: "numeric",
@@ -505,9 +595,6 @@ function formatTime(date: Date, timezone: string): string {
   }).format(date);
 }
 
-/**
- * Escape HTML special characters to prevent XSS in email templates.
- */
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -515,4 +602,25 @@ function escapeHtml(str: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function isHex(value: string | undefined): value is string {
+  return typeof value === "string" && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+}
+
+function lighten(hex: string, amount: number): string {
+  const normalized = normalizeHex(hex);
+  const r = parseInt(normalized.slice(1, 3), 16);
+  const g = parseInt(normalized.slice(3, 5), 16);
+  const b = parseInt(normalized.slice(5, 7), 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * amount);
+  const toHex = (c: number) => c.toString(16).padStart(2, "0");
+  return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
+}
+
+function normalizeHex(hex: string): string {
+  if (hex.length === 4) {
+    return `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}`;
+  }
+  return hex;
 }

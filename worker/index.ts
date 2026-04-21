@@ -71,6 +71,7 @@ import {
   serializeInviteConnectionIds,
 } from "./lib/calendar-refs";
 import { EmailService } from "./services/email-service";
+import type { EmailTheme } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
 import { WorkflowService } from "./services/workflow-service";
@@ -84,6 +85,20 @@ import {
   queryForms,
   queryFilterOptions,
 } from "./services/analytics-service";
+
+// ─── Theme Helper ────────────────────────────────────────────────────────────
+
+function parseProjectTheme(
+  settings: string | null | undefined,
+): EmailTheme | undefined {
+  if (!settings) return undefined;
+  try {
+    const parsed = JSON.parse(settings) as { theme?: EmailTheme };
+    return parsed.theme;
+  } catch {
+    return undefined;
+  }
+}
 
 // ─── Plan Limits ─────────────────────────────────────────────────────────────
 
@@ -670,7 +685,11 @@ async function notifyFormResponseCompleted(
     if (!form) return;
 
     const [project] = await db
-      .select({ id: dbSchema.projects.id, userId: dbSchema.projects.userId })
+      .select({
+        id: dbSchema.projects.id,
+        userId: dbSchema.projects.userId,
+        settings: dbSchema.projects.settings,
+      })
       .from(dbSchema.projects)
       .where(eq(dbSchema.projects.id, form.projectId))
       .limit(1);
@@ -718,6 +737,7 @@ async function notifyFormResponseCompleted(
       formName: form.name,
       respondentEmail: formResponse?.respondentEmail ?? null,
       fields: fieldValues.map((f) => ({ label: f.label, value: f.value ?? "" })),
+      theme: parseProjectTheme(project.settings),
     });
   } catch (err) {
     console.error("Form response notification email failed:", err);
@@ -1187,6 +1207,7 @@ app.post("/api/v1/bookings", async (c) => {
       .limit(1);
     const owner = ownerRows[0];
     const submittedFields = await getBookingSubmittedFields(db, formResponseId);
+    const projectTheme = parseProjectTheme(project.settings);
 
     if (isPending) {
       // 8. Pending booking: send request emails, skip calendar event
@@ -1203,7 +1224,7 @@ app.post("/api/v1/bookings", async (c) => {
               startTime,
               endTime,
               timezone: data.timezone,
-              submittedFields,
+              theme: projectTheme,
             });
 
             // Send "action needed" email to owner
@@ -1219,6 +1240,7 @@ app.post("/api/v1/bookings", async (c) => {
                 endTime,
                 dashboardUrl,
                 submittedFields,
+                theme: projectTheme,
               });
             }
           } catch (err) {
@@ -1235,6 +1257,8 @@ app.post("/api/v1/bookings", async (c) => {
 
       c.executionCtx.waitUntil(
         (async () => {
+          let meetingUrl: string | undefined;
+
           try {
             let calConnection;
             let destinationCalendarId = "primary";
@@ -1283,6 +1307,8 @@ app.post("/api/v1/bookings", async (c) => {
                 },
               );
 
+              meetingUrl = gcalResult.meetingUrl ?? undefined;
+
               await db
                 .update(dbSchema.bookings)
                 .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
@@ -1291,11 +1317,7 @@ app.post("/api/v1/bookings", async (c) => {
           } catch (err) {
             console.error("Google Calendar event creation failed:", err);
           }
-        })(),
-      );
 
-      c.executionCtx.waitUntil(
-        (async () => {
           try {
             const emailService = new EmailService(c.env.RESEND_API_KEY);
 
@@ -1308,7 +1330,8 @@ app.post("/api/v1/bookings", async (c) => {
               timezone: data.timezone,
               location: eventType.location ?? undefined,
               notes: data.notes,
-              submittedFields,
+              meetingUrl,
+              theme: projectTheme,
             });
 
             if (owner) {
@@ -1321,6 +1344,7 @@ app.post("/api/v1/bookings", async (c) => {
                 startTime,
                 endTime,
                 submittedFields,
+                theme: projectTheme,
               });
             }
           } catch (err) {
@@ -2893,6 +2917,21 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
     c.executionCtx.waitUntil(
       (async () => {
         try {
+          const [eventType] = await db
+            .select({ projectId: dbSchema.eventTypes.projectId })
+            .from(dbSchema.eventTypes)
+            .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
+            .limit(1);
+          let theme: EmailTheme | undefined;
+          if (eventType) {
+            const [project] = await db
+              .select({ settings: dbSchema.projects.settings })
+              .from(dbSchema.projects)
+              .where(eq(dbSchema.projects.id, eventType.projectId))
+              .limit(1);
+            theme = parseProjectTheme(project?.settings);
+          }
+
           const emailService = new EmailService(c.env.RESEND_API_KEY);
           await emailService.sendBookingCancellation({
             to: booking.email,
@@ -2901,6 +2940,7 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
             startTime: new Date(booking.startTime),
             endTime: new Date(booking.endTime),
             reason: data.reason,
+            theme,
           });
         } catch (err) {
           console.error("Cancellation email failed:", err);
@@ -3039,8 +3079,12 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
       GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
     });
 
+    const projectTheme = parseProjectTheme(project?.settings);
+
     c.executionCtx.waitUntil(
       (async () => {
+        let meetingUrl: string | undefined;
+
         try {
           let calConnection;
           let destinationCalendarId = "primary";
@@ -3055,7 +3099,7 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
             if (eventType.destinationCalendarId) {
               destinationCalendarId = eventType.destinationCalendarId;
             }
-          } else {
+          } else if (project) {
             const [conn] = await db
               .select()
               .from(dbSchema.calendarConnections)
@@ -3089,6 +3133,8 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
               },
             );
 
+            meetingUrl = gcalResult.meetingUrl ?? undefined;
+
             await db
               .update(dbSchema.bookings)
               .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
@@ -3097,18 +3143,9 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
         } catch (err) {
           console.error("Calendar event creation on confirm failed:", err);
         }
-      })(),
-    );
 
-    // Send confirmation email to guest
-    c.executionCtx.waitUntil(
-      (async () => {
         try {
           const emailService = new EmailService(c.env.RESEND_API_KEY);
-          const submittedFields = await getBookingSubmittedFields(
-            db,
-            booking.formResponseId,
-          );
 
           await emailService.sendBookingConfirmation({
             to: booking.email,
@@ -3119,7 +3156,8 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
             timezone: booking.timezone,
             location: eventType.location ?? undefined,
             notes: booking.notes ?? undefined,
-            submittedFields,
+            meetingUrl,
+            theme: projectTheme,
           });
         } catch (err) {
           console.error("Confirmation email failed:", err);
@@ -3188,6 +3226,7 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
         .limit(1);
 
       let ownerName = "the host";
+      let declineTheme: EmailTheme | undefined;
       if (eventType) {
         const [project] = await db
           .select()
@@ -3195,6 +3234,7 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
           .where(eq(dbSchema.projects.id, eventType.projectId))
           .limit(1);
         if (project) {
+          declineTheme = parseProjectTheme(project.settings);
           const [owner] = await db
             .select()
             .from(dbSchema.schema.users)
@@ -3217,6 +3257,7 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
               endTime: new Date(booking.endTime),
               timezone: booking.timezone,
               reason,
+              theme: declineTheme,
             });
           } catch (err) {
             console.error("Decline email failed:", err);
