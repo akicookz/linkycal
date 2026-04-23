@@ -556,7 +556,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               Native HTML Form
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-2">
-              <IC>POST /api/public/forms/:formSlug/submit</IC>
+              <IC>POST /api/public/forms/:projectSlug/:formSlug/submit</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Post a regular browser form directly to LinkyCal without any client-side JavaScript.
@@ -565,7 +565,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </p>
 
             <CodeBlock title="HTML Form Action" language="html">
-{`<form action="https://linkycal.com/api/public/forms/contact/submit" method="post">
+{`<form action="https://linkycal.com/api/public/forms/acme/contact/submit" method="post">
   <input type="text" name="full_name" required />
   <input type="email" name="email" required />
   <textarea name="message"></textarea>

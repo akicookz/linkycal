@@ -237,14 +237,16 @@ export default function Forms() {
   }
 
   function handleCopyLink(form: Form) {
-    const url = `${window.location.origin}/f/${form.slug}`;
+    if (!currentProject) return;
+    const url = `${window.location.origin}/${currentProject.slug}/f/${form.slug}`;
     copyToClipboard(url);
     setCopiedId(`link-${form.id}`);
     setTimeout(() => setCopiedId(null), 2000);
   }
 
   function handleCopyEmbed(form: Form) {
-    const snippet = `<div id="linkycal-form"></div>\n<script src="https://cdn.linkycal.com/widgets/form.js"></script>\n<script>LinkyCal.form({ formSlug: "${form.slug}", container: "#linkycal-form" })</script>`;
+    if (!currentProject) return;
+    const snippet = `<div id="linkycal-form"></div>\n<script src="https://cdn.linkycal.com/widgets/form.js"></script>\n<script>LinkyCal.form({ projectSlug: "${currentProject.slug}", formSlug: "${form.slug}", container: "#linkycal-form" })</script>`;
     copyToClipboard(snippet);
     setCopiedId(`embed-${form.id}`);
     setTimeout(() => setCopiedId(null), 2000);
@@ -284,7 +286,8 @@ export default function Forms() {
   }
 
   function handleCopyEmbedPrompt(form: Form) {
-    const prompt = generateFormEmbedPrompt(form, window.location.origin);
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+    const prompt = generateFormEmbedPrompt(form, projectSlug, window.location.origin);
     copyToClipboard(prompt);
     setCopiedId(`embedprompt-${form.id}`);
     setTimeout(() => setCopiedId(null), 2000);

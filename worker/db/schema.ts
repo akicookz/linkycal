@@ -278,7 +278,6 @@ export const forms = sqliteTable(
   (t) => [
     index("forms_project_id_idx").on(t.projectId),
     uniqueIndex("forms_project_slug_idx").on(t.projectId, t.slug),
-    uniqueIndex("forms_slug_unique_idx").on(t.slug),
   ],
 );
 

@@ -674,8 +674,8 @@ export default function FormBuilder() {
     (step.fields ?? []).some((field) => field.type === "completion")
   );
 
-  const nativeActionUrl = form
-    ? `${window.location.origin}/api/public/forms/${form.slug}/submit`
+  const nativeActionUrl = form && currentProject
+    ? `${window.location.origin}/api/public/forms/${currentProject.slug}/${form.slug}/submit`
     : "";
   const activeStep = activeStepId
     ? sortedSteps.find((step) => step.id === activeStepId) ?? null
@@ -1250,7 +1250,8 @@ export default function FormBuilder() {
 
   function handleCopyEmbedPrompt() {
     if (!form) return;
-    const prompt = generateFormEmbedPrompt(form, window.location.origin);
+    const projectSlug = currentProject?.slug ?? projectId ?? "";
+    const prompt = generateFormEmbedPrompt(form, projectSlug, window.location.origin);
     copyToClipboard(prompt);
     markPromptCopied("embedprompt");
   }
@@ -1906,7 +1907,8 @@ export default function FormBuilder() {
             variant="outline"
             size="sm"
             onClick={() => {
-              const url = `${window.location.origin}/f/${form.slug}`;
+              if (!currentProject) return;
+              const url = `${window.location.origin}/${currentProject.slug}/f/${form.slug}`;
               navigator.clipboard.writeText(url);
               setLinkCopied(true);
               setTimeout(() => setLinkCopied(false), 2000);
@@ -1922,12 +1924,13 @@ export default function FormBuilder() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() =>
+            onClick={() => {
+              if (!currentProject) return;
               window.open(
-                `${window.location.origin}/f/${form.slug}`,
+                `${window.location.origin}/${currentProject.slug}/f/${form.slug}`,
                 "_blank"
-              )
-            }
+              );
+            }}
           >
             <ExternalLink className="h-3.5 w-3.5" />
             Preview

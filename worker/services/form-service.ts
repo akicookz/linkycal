@@ -230,22 +230,6 @@ export class FormService {
     return rows[0] ? normalizeFormRow(rows[0]) : null;
   }
 
-  async getBySlugGlobal(slug: string) {
-    const rows = await this.db
-      .select()
-      .from(dbSchema.forms)
-      .where(eq(dbSchema.forms.slug, slug))
-      .limit(1);
-
-    return rows[0] ? normalizeFormRow(rows[0]) : null;
-  }
-
-  async getFullFormBySlugGlobal(slug: string) {
-    const form = await this.getBySlugGlobal(slug);
-    if (!form) return null;
-    return this.getFullForm(form.id);
-  }
-
   async create(
     projectId: string,
     data: {

@@ -221,9 +221,9 @@ function renderHtmlField(field: FormFieldForPrompt): string {
   }
 }
 
-function renderHtmlFormExample(form: FormForPrompt, origin: string): string {
+function renderHtmlFormExample(form: FormForPrompt, projectSlug: string, origin: string): string {
   const lines = [
-    `<form action="${origin}/api/public/forms/${form.slug}/submit" method="post">`,
+    `<form action="${origin}/api/public/forms/${projectSlug}/${form.slug}/submit" method="post">`,
   ];
 
   for (let i = 0; i < (form.steps?.length ?? 0); i++) {
@@ -413,16 +413,16 @@ ${renderStepApiExample(origin, form.slug, index, step.fields)}`;
 
   const nativeHtmlSection = hasFileFields
     ? `## Native HTML Form Action
-POST ${origin}/api/public/forms/${form.slug}/submit
+POST ${origin}/api/public/forms/${projectSlug}/${form.slug}/submit
 
 This form includes file fields, so native HTML form submission is not supported. Use the JSON API flow above or the widget instead.`
     : `## Native HTML Form Action
-POST ${origin}/api/public/forms/${form.slug}/submit
+POST ${origin}/api/public/forms/${projectSlug}/${form.slug}/submit
 
 Use the exact field IDs above as your HTML input \`name\` attributes.
 
 \`\`\`html
-${renderHtmlFormExample(form, origin)}
+${renderHtmlFormExample(form, projectSlug, origin)}
 \`\`\``;
 
   return `# LinkyCal Form API / Form Action — "${form.name}"
@@ -465,6 +465,7 @@ ${nativeHtmlSection}
 
 export function generateFormEmbedPrompt(
   form: FormForPrompt,
+  projectSlug: string,
   origin = "https://linkycal.com",
 ): string {
   return `# Embed LinkyCal Form Widget — "${form.name}"
@@ -481,6 +482,7 @@ Add a container element and the widget script to your HTML page:
 <script src="https://cdn.linkycal.com/widgets/form.js"></script>
 <script>
   LinkyCal.form({
+    projectSlug: "${projectSlug}",
     formSlug: "${form.slug}",
     container: "#linkycal-form"
   });
@@ -493,6 +495,7 @@ Match the widget to your brand:
 
 \`\`\`javascript
 LinkyCal.form({
+  projectSlug: "${projectSlug}",
   formSlug: "${form.slug}",
   container: "#linkycal-form",
   theme: {

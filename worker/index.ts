@@ -1741,18 +1741,12 @@ app.get("/api/widget/form/:projectSlug/:formSlug/config", async (c) => {
 
 // ─── Public Form Routes (shareable links) ────────────────────────────────────
 
-app.get("/api/public/forms/:slug", async (c) => {
+app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
   try {
-    const slug = c.req.param("slug");
+    const projectSlug = c.req.param("projectSlug");
+    const formSlug = c.req.param("formSlug");
     const db = drizzle(c.env.DB, { schema });
-    const service = new FormService(db);
-    const form = await service.getFullFormBySlugGlobal(slug);
 
-    if (!form || form.status !== "active") {
-      return c.json({ error: "Form not found" }, 404);
-    }
-
-    // Fetch project settings for theming
     const [project] = await db
       .select({
         id: dbSchema.projects.id,
@@ -1762,25 +1756,31 @@ app.get("/api/public/forms/:slug", async (c) => {
         userId: dbSchema.projects.userId,
       })
       .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, form.projectId))
+      .where(eq(dbSchema.projects.slug, projectSlug))
       .limit(1);
 
-    const projectInfo = project
-      ? {
-          id: project.id,
-          name: project.name,
-          slug: project.slug,
-          settings: project.settings
-            ? JSON.parse(project.settings as string)
-            : {},
-        }
-      : null;
-
-    let canHideBranding = false;
-    if (project) {
-      const subscription = await getSubscriptionRecordByUserId(db, project.userId);
-      canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
+    if (!project) {
+      return c.json({ error: "Form not found" }, 404);
     }
+
+    const service = new FormService(db);
+    const form = await service.getFullFormBySlug(project.id, formSlug);
+
+    if (!form || form.status !== "active") {
+      return c.json({ error: "Form not found" }, 404);
+    }
+
+    const projectInfo = {
+      id: project.id,
+      name: project.name,
+      slug: project.slug,
+      settings: project.settings
+        ? JSON.parse(project.settings as string)
+        : {},
+    };
+
+    const subscription = await getSubscriptionRecordByUserId(db, project.userId);
+    const canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
 
     return c.json({ form, project: projectInfo, canHideBranding });
   } catch (err) {
@@ -1789,8 +1789,9 @@ app.get("/api/public/forms/:slug", async (c) => {
   }
 });
 
-app.post("/api/public/forms/:slug/responses", async (c) => {
-  const slug = c.req.param("slug");
+app.post("/api/public/forms/:projectSlug/:formSlug/responses", async (c) => {
+  const projectSlug = c.req.param("projectSlug");
+  const formSlug = c.req.param("formSlug");
   const ip = c.req.header("cf-connecting-ip") ?? "unknown";
   if (!checkRateLimit(`form:${ip}`, 30, 60_000)) {
     return c.json({ error: "Rate limit exceeded" }, 429);
@@ -1798,8 +1799,19 @@ app.post("/api/public/forms/:slug/responses", async (c) => {
 
   try {
     const db = drizzle(c.env.DB, { schema });
+
+    const [project] = await db
+      .select({ id: dbSchema.projects.id })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.slug, projectSlug))
+      .limit(1);
+
+    if (!project) {
+      return c.json({ error: "Form not found or inactive" }, 404);
+    }
+
     const service = new FormService(db);
-    const form = await service.getBySlugGlobal(slug);
+    const form = await service.getBySlug(project.id, formSlug);
 
     if (!form || form.status !== "active") {
       return c.json({ error: "Form not found or inactive" }, 404);
@@ -1828,7 +1840,7 @@ app.post("/api/public/forms/:slug/responses", async (c) => {
       writeAnalyticsEvent(c.env.ANALYTICS, {
         projectId: form.projectId,
         event: "form_started",
-        resourceSlug: slug,
+        resourceSlug: formSlug,
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
@@ -1842,7 +1854,7 @@ app.post("/api/public/forms/:slug/responses", async (c) => {
 });
 
 app.patch(
-  "/api/public/forms/:slug/responses/:responseId/steps/:stepIndex",
+  "/api/public/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex",
   async (c) => {
     const responseId = c.req.param("responseId");
     const stepIndex = parseInt(c.req.param("stepIndex"), 10);
@@ -1881,14 +1893,14 @@ app.patch(
 
         // Track form_completed event
         try {
-          const slug = c.req.param("slug");
+          const formSlug = c.req.param("formSlug");
           const [form] = await db.select({ projectId: dbSchema.forms.projectId }).from(dbSchema.forms).where(eq(dbSchema.forms.id, response.formId)).limit(1);
           if (form) {
             const cf = c.req.raw.cf as Record<string, unknown> | undefined;
             writeAnalyticsEvent(c.env.ANALYTICS, {
               projectId: form.projectId,
               event: "form_completed",
-              resourceSlug: slug,
+              resourceSlug: formSlug,
               country: (cf?.country as string) ?? "",
               city: (cf?.city as string) ?? "",
             });
@@ -1907,8 +1919,9 @@ app.patch(
   },
 );
 
-app.post("/api/public/forms/:slug/submit", async (c) => {
-  const slug = c.req.param("slug");
+app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
+  const projectSlug = c.req.param("projectSlug");
+  const formSlug = c.req.param("formSlug");
   const ip = c.req.header("cf-connecting-ip") ?? "unknown";
   if (!checkRateLimit(`formhtml:${ip}`, 30, 60_000)) {
     return createHtmlPageResponse(
@@ -1920,8 +1933,23 @@ app.post("/api/public/forms/:slug/submit", async (c) => {
 
   try {
     const db = drizzle(c.env.DB, { schema });
+
+    const [project] = await db
+      .select({ id: dbSchema.projects.id })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.slug, projectSlug))
+      .limit(1);
+
+    if (!project) {
+      return createHtmlPageResponse(
+        "Form not found",
+        "This form may have been removed or is not currently accepting responses.",
+        404,
+      );
+    }
+
     const service = new FormService(db);
-    const form = await service.getFullFormBySlugGlobal(slug);
+    const form = await service.getFullFormBySlug(project.id, formSlug);
 
     if (!form || form.status !== "active") {
       return createHtmlPageResponse(
@@ -3380,8 +3408,8 @@ app.post("/api/projects/:projectId/forms", async (c) => {
       );
     }
 
-    // Check slug uniqueness globally (slugs must be unique for shareable links)
-    const existingSlug = await service.getBySlugGlobal(data.slug);
+    // Check slug uniqueness within the project
+    const existingSlug = await service.getBySlug(projectId, data.slug);
     if (existingSlug) {
       return c.json(
         {
@@ -3406,15 +3434,16 @@ app.post("/api/projects/:projectId/forms", async (c) => {
 app.put("/api/projects/:projectId/forms/:id", async (c) => {
   try {
     const id = c.req.param("id");
+    const projectId = c.req.param("projectId");
     const body = await c.req.json();
     const data = validate(updateFormSchema, body);
 
     const db = c.get("db");
     const service = new FormService(db);
 
-    // Check slug uniqueness globally if slug is being changed
+    // Check slug uniqueness within the project if slug is being changed
     if (data.slug) {
-      const existing = await service.getBySlugGlobal(data.slug);
+      const existing = await service.getBySlug(projectId, data.slug);
       if (existing && existing.id !== id) {
         return c.json(
           {

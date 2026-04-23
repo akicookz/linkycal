@@ -79,7 +79,7 @@ interface ProjectInfo {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function PublicForm() {
-  const { formSlug } = useParams<{ formSlug: string }>();
+  const { projectSlug, formSlug } = useParams<{ projectSlug: string; formSlug: string }>();
   const [searchParams] = useSearchParams();
   const posthog = usePostHog();
   const isEmbedded = searchParams.get("embed") === "1";
@@ -110,16 +110,16 @@ export default function PublicForm() {
     isLoading,
     isError,
   } = useQuery<{ form: PublicFormData; project: ProjectInfo | null; canHideBranding?: boolean }>({
-    queryKey: ["public-form", formSlug],
+    queryKey: ["public-form", projectSlug, formSlug],
     queryFn: async () => {
-      const res = await fetch(`/api/public/forms/${formSlug}`);
+      const res = await fetch(`/api/public/forms/${projectSlug}/${formSlug}`);
       if (!res.ok) {
         if (res.status === 404) throw new Error("not_found");
         throw new Error("Failed to load form");
       }
       return res.json();
     },
-    enabled: !!formSlug,
+    enabled: !!projectSlug && !!formSlug,
   });
 
   const form = formData?.form;
@@ -335,7 +335,7 @@ export default function PublicForm() {
 
   async function ensureResponseId(): Promise<string> {
     if (responseId) return responseId;
-    const res = await fetch(`/api/public/forms/${formSlug}/responses`, {
+    const res = await fetch(`/api/public/forms/${projectSlug}/${formSlug}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ website: spamField, _token: formToken }),
@@ -362,7 +362,7 @@ export default function PublicForm() {
       }));
 
       const res = await fetch(
-        `/api/public/forms/${formSlug}/responses/${resId}/steps/${currentStepIndex}`,
+        `/api/public/forms/${projectSlug}/${formSlug}/responses/${resId}/steps/${currentStepIndex}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },

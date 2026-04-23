@@ -2356,7 +2356,7 @@ export default function Landing() {
                     {"  "}
                     <span className="text-[#7ec8a0]">action</span>=
                     <span className="text-[#a8d8b9]">
-                      &quot;https://linkycal.com/api/public/forms/contact/submit&quot;
+                      &quot;https://linkycal.com/api/public/forms/acme/contact/submit&quot;
                     </span>{"\n"}
                     {"  "}
                     <span className="text-[#7ec8a0]">method</span>=

@@ -1,0 +1,1 @@
+DROP INDEX `forms_slug_unique_idx`;

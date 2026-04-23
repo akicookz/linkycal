@@ -131,7 +131,7 @@ function App() {
       </Route>
 
       {/* Public form page */}
-      <Route path="/f/:formSlug" element={<PublicForm />} />
+      <Route path="/:projectSlug/f/:formSlug" element={<PublicForm />} />
 
       {/* Public booking page — must be last (catch-all 2-segment pattern) */}
       <Route path="/:projectSlug/:eventSlug" element={<PublicBooking />} />
