@@ -215,9 +215,12 @@ export default function PublicBooking() {
     availableDays: number[];
     canHideBranding?: boolean;
   }>({
-    queryKey: ["public-event-type", projectSlug, eventSlug],
+    queryKey: ["public-event-type", projectSlug, eventSlug, timezone],
     queryFn: async () => {
-      const res = await fetch(`/api/v1/event-types/${projectSlug}/${eventSlug}`);
+      const params = new URLSearchParams({ timezone });
+      const res = await fetch(
+        `/api/v1/event-types/${projectSlug}/${eventSlug}?${params.toString()}`,
+      );
       if (!res.ok) throw new Error("Not found");
       return res.json();
     },

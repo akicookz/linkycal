@@ -63,6 +63,7 @@ import { CalendarService } from "./services/calendar-service";
 import {
   formatDateInTimezone,
   getUtcRangeForLocalDate,
+  getViewerAvailableWeekdays,
 } from "./lib/timezone";
 import {
   parseBusyCalendars,
@@ -1675,14 +1676,44 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       }
     }
 
-    // Fetch available days-of-week from schedule rules
+    // Fetch available days-of-week from schedule rules.
+    // If the caller supplies ?timezone (booker's IANA TZ), project each weekly
+    // rule window through UTC and emit the weekdays the window covers *in the
+    // booker's timezone* — so a booker in Tokyo viewing an NY owner sees the
+    // days shifted by the UTC offset instead of a 1:1 weekday match.
     let availableDays: number[] = [];
     if (eventType.scheduleId) {
       const rules = await db
-        .select({ dayOfWeek: dbSchema.availabilityRules.dayOfWeek })
+        .select({
+          dayOfWeek: dbSchema.availabilityRules.dayOfWeek,
+          startTime: dbSchema.availabilityRules.startTime,
+          endTime: dbSchema.availabilityRules.endTime,
+        })
         .from(dbSchema.availabilityRules)
         .where(eq(dbSchema.availabilityRules.scheduleId, eventType.scheduleId));
-      availableDays = [...new Set(rules.map((r) => r.dayOfWeek))];
+
+      const viewerTz = c.req.query("timezone");
+      let projected: number[] | null = null;
+      if (viewerTz && rules.length > 0) {
+        const [scheduleRow] = await db
+          .select({ timezone: dbSchema.schedules.timezone })
+          .from(dbSchema.schedules)
+          .where(eq(dbSchema.schedules.id, eventType.scheduleId))
+          .limit(1);
+        if (scheduleRow) {
+          try {
+            projected = getViewerAvailableWeekdays(
+              rules,
+              scheduleRow.timezone,
+              viewerTz,
+            );
+          } catch {
+            projected = null;
+          }
+        }
+      }
+      availableDays =
+        projected ?? [...new Set(rules.map((r) => r.dayOfWeek))];
     }
 
     const subscription = await getSubscriptionRecordByUserId(db, project.userId);
