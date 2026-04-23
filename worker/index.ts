@@ -614,7 +614,13 @@ async function dispatchFormSubmittedTrigger(
           value: dbSchema.formFieldValues.value,
         })
         .from(dbSchema.formFieldValues)
-        .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+        .innerJoin(
+          dbSchema.formFields,
+          and(
+            eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+            eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+          ),
+        )
         .where(eq(dbSchema.formFieldValues.responseId, responseId));
 
       for (const row of allValues) {
@@ -725,7 +731,13 @@ async function notifyFormResponseCompleted(
         value: dbSchema.formFieldValues.value,
       })
       .from(dbSchema.formFieldValues)
-      .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+      .innerJoin(
+        dbSchema.formFields,
+        and(
+          eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+          eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+        ),
+      )
       .where(eq(dbSchema.formFieldValues.responseId, responseId));
 
     const notificationEmail =
@@ -759,7 +771,10 @@ async function getBookingSubmittedFields(
     .from(dbSchema.formFieldValues)
     .innerJoin(
       dbSchema.formFields,
-      eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+      and(
+        eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+        eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+      ),
     )
     .where(eq(dbSchema.formFieldValues.responseId, formResponseId));
 
@@ -2851,7 +2866,16 @@ app.get("/api/projects/:projectId/bookings/:id", async (c) => {
     if (booking.formResponseId) {
       const fieldValues = await db.select().from(dbSchema.formFieldValues).where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
       for (const fv of fieldValues) {
-        const [field] = await db.select().from(dbSchema.formFields).where(eq(dbSchema.formFields.id, fv.fieldId)).limit(1);
+        const [field] = await db
+          .select()
+          .from(dbSchema.formFields)
+          .where(
+            and(
+              eq(dbSchema.formFields.formId, fv.formId),
+              eq(dbSchema.formFields.id, fv.fieldId),
+            ),
+          )
+          .limit(1);
         formFields.push({ label: field?.label ?? "Unknown", type: field?.type ?? "text", value: fv.value ?? "" });
       }
     }
@@ -3047,7 +3071,12 @@ app.get("/api/projects/:projectId/bookings/:id/form-response", async (c) => {
       const [field] = await db
         .select()
         .from(dbSchema.formFields)
-        .where(eq(dbSchema.formFields.id, fv.fieldId))
+        .where(
+          and(
+            eq(dbSchema.formFields.formId, fv.formId),
+            eq(dbSchema.formFields.id, fv.fieldId),
+          ),
+        )
         .limit(1);
       if (field) {
         allFieldDefs.push({ id: field.id, label: field.label, type: field.type });
@@ -3529,6 +3558,10 @@ app.post("/api/projects/:projectId/forms/:formId/fields", async (c) => {
     const service = new FormService(db);
     const field = await service.createField(data);
 
+    if (!field) {
+      return c.json({ error: "Step not found" }, 404);
+    }
+
     return c.json({ field }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -3541,11 +3574,12 @@ app.post("/api/projects/:projectId/forms/:formId/fields", async (c) => {
 
 app.put("/api/projects/:projectId/forms/:formId/fields/reorder", async (c) => {
   try {
+    const formId = c.req.param("formId");
     const body = await c.req.json();
     const data = validate(reorderFieldsSchema, body);
     const db = c.get("db");
     const service = new FormService(db);
-    await service.reorderFields(data.stepId, data.fieldIds);
+    await service.reorderFields(formId, data.stepId, data.fieldIds);
     return c.json({ success: true });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -3558,13 +3592,14 @@ app.put("/api/projects/:projectId/forms/:formId/fields/reorder", async (c) => {
 
 app.put("/api/projects/:projectId/forms/:formId/fields/:id", async (c) => {
   try {
+    const formId = c.req.param("formId");
     const id = c.req.param("id");
     const body = await c.req.json();
     const data = validate(updateFormFieldSchema, body);
 
     const db = c.get("db");
     const service = new FormService(db);
-    const field = await service.updateField(id, data);
+    const field = await service.updateField(formId, id, data);
 
     if (!field) {
       return c.json({ error: "Field not found" }, 404);
@@ -3582,10 +3617,11 @@ app.put("/api/projects/:projectId/forms/:formId/fields/:id", async (c) => {
 
 app.delete("/api/projects/:projectId/forms/:formId/fields/:id", async (c) => {
   try {
+    const formId = c.req.param("formId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new FormService(db);
-    await service.deleteField(id);
+    await service.deleteField(formId, id);
     return c.json({ success: true });
   } catch (err) {
     console.error("Form field deletion error:", err);
@@ -4297,7 +4333,10 @@ app.post(
             .from(dbSchema.formFieldValues)
             .innerJoin(
               dbSchema.formFields,
-              eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+              and(
+                eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+                eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+              ),
             )
             .where(eq(dbSchema.formFieldValues.responseId, latestResponse.id));
 
@@ -4724,7 +4763,13 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
             contactMapping: dbSchema.formFields.contactMapping,
           })
           .from(dbSchema.formFieldValues)
-          .innerJoin(dbSchema.formFields, eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id))
+          .innerJoin(
+            dbSchema.formFields,
+            and(
+              eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+              eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+            ),
+          )
           .where(
             and(
               inArray(dbSchema.formFieldValues.responseId, responseIds),

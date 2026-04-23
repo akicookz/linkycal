@@ -175,7 +175,7 @@ export class FormService {
     );
   }
 
-  async renameFieldId(currentId: string, nextId: string) {
+  async renameFieldId(formId: string, currentId: string, nextId: string) {
     if (currentId === nextId) return;
 
     const db = this.db as typeof this.db & { $client: D1Database };
@@ -183,11 +183,13 @@ export class FormService {
     await db.$client.batch([
       db.$client.prepare("PRAGMA defer_foreign_keys = ON"),
       db.$client
-        .prepare("UPDATE form_fields SET id = ? WHERE id = ?")
-        .bind(nextId, currentId),
+        .prepare("UPDATE form_fields SET id = ? WHERE form_id = ? AND id = ?")
+        .bind(nextId, formId, currentId),
       db.$client
-        .prepare("UPDATE form_field_values SET field_id = ? WHERE field_id = ?")
-        .bind(nextId, currentId),
+        .prepare(
+          "UPDATE form_field_values SET field_id = ? WHERE form_id = ? AND field_id = ?",
+        )
+        .bind(nextId, formId, currentId),
     ]);
   }
 
@@ -421,24 +423,25 @@ export class FormService {
 
   // ─── Fields CRUD ─────────────────────────────────────────────────────────
 
-  async reorderFields(_stepId: string, fieldIds: string[]) {
+  async reorderFields(formId: string, _stepId: string, fieldIds: string[]) {
     for (let i = 0; i < fieldIds.length; i++) {
       await this.db
         .update(dbSchema.formFields)
         .set({ sortOrder: i })
-        .where(eq(dbSchema.formFields.id, fieldIds[i]));
+        .where(
+          and(
+            eq(dbSchema.formFields.formId, formId),
+            eq(dbSchema.formFields.id, fieldIds[i]),
+          ),
+        );
     }
   }
 
   async listFields(formId: string) {
-    const steps = await this.listSteps(formId);
-    if (steps.length === 0) return [];
-
-    const stepIds = steps.map((s) => s.id);
     const rows = await this.db
       .select()
       .from(dbSchema.formFields)
-      .where(inArray(dbSchema.formFields.stepId, stepIds))
+      .where(eq(dbSchema.formFields.formId, formId))
       .orderBy(
         asc(dbSchema.formFields.stepId),
         asc(dbSchema.formFields.sortOrder),
@@ -457,11 +460,16 @@ export class FormService {
     return rows.map(normalizeFieldRow);
   }
 
-  async getFieldById(id: string) {
+  async getFieldById(formId: string, id: string) {
     const rows = await this.db
       .select()
       .from(dbSchema.formFields)
-      .where(eq(dbSchema.formFields.id, id))
+      .where(
+        and(
+          eq(dbSchema.formFields.formId, formId),
+          eq(dbSchema.formFields.id, id),
+        ),
+      )
       .limit(1);
 
     return rows[0] ? normalizeFieldRow(rows[0]) : null;
@@ -480,17 +488,15 @@ export class FormService {
     visibility?: Record<string, unknown> | null;
     contactMapping?: "name" | "email" | null;
   }) {
-    // Get the form ID from the step to check for duplicate IDs across the whole form
     const [step] = await this.db
       .select()
       .from(dbSchema.formSteps)
       .where(eq(dbSchema.formSteps.id, data.stepId))
       .limit(1);
 
-    let id = "field";
-    if (step) {
-      id = await this.getUniqueFieldIdForForm(step.formId, data.label);
-    }
+    if (!step) return null;
+
+    const id = await this.getUniqueFieldIdForForm(step.formId, data.label);
 
     let sortOrder = data.sortOrder ?? 0;
     if (data.sortOrder === undefined) {
@@ -498,12 +504,12 @@ export class FormService {
       sortOrder = fields.length;
     }
 
-    // Auto-populate placeholder from field type if not provided
     const placeholder =
       data.placeholder ?? FIELD_TYPE_PLACEHOLDERS[data.type] ?? null;
 
     await this.db.insert(dbSchema.formFields).values({
       id,
+      formId: step.formId,
       stepId: data.stepId,
       sortOrder,
       type: data.type as any,
@@ -517,10 +523,11 @@ export class FormService {
       contactMapping: data.contactMapping ?? null,
     });
 
-    return this.getFieldById(id);
+    return this.getFieldById(step.formId, id);
   }
 
   async updateField(
+    formId: string,
     id: string,
     data: {
       stepId?: string;
@@ -536,16 +543,21 @@ export class FormService {
       visibility?: Record<string, unknown> | null;
     },
   ) {
-    let currentField = await this.getFieldById(id);
+    let currentField = await this.getFieldById(formId, id);
     if (!currentField) return null;
 
     const currentStep = await this.getStepById(currentField.stepId);
-    if (!currentStep) return null;
+    if (!currentStep || currentStep.formId !== formId) return null;
+
+    const fieldEq = (fieldId: string) =>
+      and(
+        eq(dbSchema.formFields.formId, formId),
+        eq(dbSchema.formFields.id, fieldId),
+      );
 
     const values: Record<string, unknown> = {};
     if (data.type !== undefined) {
       values.type = data.type;
-      // Auto-update placeholder when type changes (unless placeholder is explicitly provided)
       if (data.placeholder === undefined) {
         values.placeholder = FIELD_TYPE_PLACEHOLDERS[data.type] ?? null;
       }
@@ -568,32 +580,25 @@ export class FormService {
         : null;
 
     if (data.contactMapping) {
-      const step = await this.getStepById(currentField.stepId);
-      if (step) {
-        const allFields = await this.listFields(step.formId);
-        for (const f of allFields) {
-          if (f.id !== id && f.contactMapping === data.contactMapping) {
-            await this.db
-              .update(dbSchema.formFields)
-              .set({ contactMapping: null })
-              .where(eq(dbSchema.formFields.id, f.id));
-          }
+      const allFields = await this.listFields(formId);
+      for (const f of allFields) {
+        if (f.id !== id && f.contactMapping === data.contactMapping) {
+          await this.db
+            .update(dbSchema.formFields)
+            .set({ contactMapping: null })
+            .where(fieldEq(f.id));
         }
       }
     }
 
     let nextId = id;
     if (data.label !== undefined) {
-      nextId = await this.getUniqueFieldIdForForm(
-        currentStep.formId,
-        data.label,
-        id,
-      );
+      nextId = await this.getUniqueFieldIdForForm(formId, data.label, id);
     }
 
     if (nextId !== id) {
-      await this.renameFieldId(id, nextId);
-      currentField = await this.getFieldById(nextId);
+      await this.renameFieldId(formId, id, nextId);
+      currentField = await this.getFieldById(formId, nextId);
       if (!currentField) return null;
     }
 
@@ -635,10 +640,10 @@ export class FormService {
           await this.db
             .update(dbSchema.formFields)
             .set(nextValues)
-            .where(eq(dbSchema.formFields.id, sourceFieldIds[index]));
+            .where(fieldEq(sourceFieldIds[index]));
         }
 
-        return this.getFieldById(nextId);
+        return this.getFieldById(formId, nextId);
       }
 
       const targetFieldIds = (await this.listFieldsByStep(targetStepId)).map(
@@ -654,7 +659,7 @@ export class FormService {
         await this.db
           .update(dbSchema.formFields)
           .set({ sortOrder: index })
-          .where(eq(dbSchema.formFields.id, sourceFieldIds[index]));
+          .where(fieldEq(sourceFieldIds[index]));
       }
 
       for (let index = 0; index < targetFieldIds.length; index++) {
@@ -670,10 +675,10 @@ export class FormService {
         await this.db
           .update(dbSchema.formFields)
           .set(nextValues)
-          .where(eq(dbSchema.formFields.id, targetFieldIds[index]));
+          .where(fieldEq(targetFieldIds[index]));
       }
 
-      return this.getFieldById(nextId);
+      return this.getFieldById(formId, nextId);
     }
 
     if (Object.keys(values).length === 0) return currentField;
@@ -681,15 +686,20 @@ export class FormService {
     await this.db
       .update(dbSchema.formFields)
       .set(values)
-      .where(eq(dbSchema.formFields.id, nextId));
+      .where(fieldEq(nextId));
 
-    return this.getFieldById(nextId);
+    return this.getFieldById(formId, nextId);
   }
 
-  async deleteField(id: string) {
+  async deleteField(formId: string, id: string) {
     await this.db
       .delete(dbSchema.formFields)
-      .where(eq(dbSchema.formFields.id, id));
+      .where(
+        and(
+          eq(dbSchema.formFields.formId, formId),
+          eq(dbSchema.formFields.id, id),
+        ),
+      );
   }
 
   // ─── Responses ───────────────────────────────────────────────────────────
@@ -742,25 +752,29 @@ export class FormService {
     }>,
     options: { complete?: boolean } = {},
   ) {
-    // Save field values
+    const response = await this.getResponseById(responseId);
+    if (!response) return null;
+    if (!response.formId) return null;
+
+    const allSteps = await this.listSteps(response.formId);
+    const allFields = await this.listFields(response.formId);
+    // Drop unknown field IDs (stale clients, renamed fields) instead of failing
+    // the whole submission on the composite (form_id, field_id) FK.
+    const knownFieldIds = new Set(allFields.map((f) => f.id));
+
     for (const field of fields) {
+      if (!knownFieldIds.has(field.fieldId)) continue;
       const id = crypto.randomUUID();
       await this.db.insert(dbSchema.formFieldValues).values({
         id,
         responseId,
+        formId: response.formId,
         fieldId: field.fieldId,
         value: field.value ?? null,
         fileUrl: field.fileUrl ?? null,
       });
     }
 
-    // Get the form to check total steps
-    const response = await this.getResponseById(responseId);
-    if (!response) return null;
-
-    if (!response.formId) return null;
-    const allSteps = await this.listSteps(response.formId);
-    const allFields = await this.listFields(response.formId);
     // Exclude steps where every field is a completion field
     const steps = allSteps.filter((step) => {
       const stepFields = allFields.filter((f) => f.stepId === step.id);

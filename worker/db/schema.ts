@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -311,7 +312,10 @@ export type NewFormStepRow = typeof formSteps.$inferInsert;
 export const formFields = sqliteTable(
   "form_fields",
   {
-    id: text("id").primaryKey(),
+    id: text("id").notNull(),
+    formId: text("form_id")
+      .notNull()
+      .references(() => forms.id, { onDelete: "cascade" }),
     stepId: text("step_id")
       .notNull()
       .references(() => formSteps.id, { onDelete: "cascade" }),
@@ -350,7 +354,11 @@ export const formFields = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("form_fields_step_id_idx").on(t.stepId)],
+  (t) => [
+    primaryKey({ columns: [t.formId, t.id] }),
+    index("form_fields_step_id_idx").on(t.stepId),
+    index("form_fields_form_id_idx").on(t.formId),
+  ],
 );
 
 export type FormFieldRow = typeof formFields.$inferSelect;
@@ -398,13 +406,16 @@ export const formFieldValues = sqliteTable(
     responseId: text("response_id")
       .notNull()
       .references(() => formResponses.id, { onDelete: "cascade" }),
-    fieldId: text("field_id")
-      .notNull()
-      .references(() => formFields.id, { onDelete: "cascade" }),
+    formId: text("form_id").notNull(),
+    fieldId: text("field_id").notNull(),
     value: text("value"),
     fileUrl: text("file_url"),
   },
   (t) => [
+    foreignKey({
+      columns: [t.formId, t.fieldId],
+      foreignColumns: [formFields.formId, formFields.id],
+    }).onUpdate("no action").onDelete("cascade"),
     index("form_field_values_response_id_idx").on(t.responseId),
     index("form_field_values_field_id_idx").on(t.fieldId),
   ],
