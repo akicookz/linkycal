@@ -1908,7 +1908,7 @@ export default function FormBuilder() {
             size="sm"
             onClick={() => {
               if (!currentProject) return;
-              const url = `${window.location.origin}/${currentProject.slug}/f/${form.slug}`;
+              const url = `${window.location.origin}/${currentProject.slug}/${form.slug}`;
               navigator.clipboard.writeText(url);
               setLinkCopied(true);
               setTimeout(() => setLinkCopied(false), 2000);
@@ -1927,7 +1927,7 @@ export default function FormBuilder() {
             onClick={() => {
               if (!currentProject) return;
               window.open(
-                `${window.location.origin}/${currentProject.slug}/f/${form.slug}`,
+                `${window.location.origin}/${currentProject.slug}/${form.slug}`,
                 "_blank"
               );
             }}

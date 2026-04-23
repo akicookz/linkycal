@@ -127,9 +127,9 @@ function getGmtOffset(tz: string): string {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function PublicBooking() {
-  const { projectSlug, eventSlug } = useParams<{
+  const { projectSlug, slug: eventSlug } = useParams<{
     projectSlug: string;
-    eventSlug: string;
+    slug: string;
   }>();
   const [searchParams] = useSearchParams();
   const posthog = usePostHog();

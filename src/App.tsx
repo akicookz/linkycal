@@ -28,8 +28,7 @@ import Billing from "./pages/Billing";
 import AuthCallback from "./pages/AuthCallback";
 import CalendarCallback from "./pages/CalendarCallback";
 import Docs from "./pages/Docs";
-import PublicBooking from "./pages/PublicBooking";
-import PublicForm from "./pages/PublicForm";
+import PublicResolver from "./pages/PublicResolver";
 
 // ─── Redirect /app to first project's dashboard ──────────────────────────────
 
@@ -130,11 +129,8 @@ function App() {
         <Route path="projects/:projectId/api-keys" element={<ApiKeys />} />
       </Route>
 
-      {/* Public form page */}
-      <Route path="/:projectSlug/f/:formSlug" element={<PublicForm />} />
-
-      {/* Public booking page — must be last (catch-all 2-segment pattern) */}
-      <Route path="/:projectSlug/:eventSlug" element={<PublicBooking />} />
+      {/* Public resource — resolves to either a form or a booking. Must stay last. */}
+      <Route path="/:projectSlug/:slug" element={<PublicResolver />} />
     </Routes>
   );
 }

@@ -79,7 +79,7 @@ interface ProjectInfo {
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function PublicForm() {
-  const { projectSlug, formSlug } = useParams<{ projectSlug: string; formSlug: string }>();
+  const { projectSlug, slug: formSlug } = useParams<{ projectSlug: string; slug: string }>();
   const [searchParams] = useSearchParams();
   const posthog = usePostHog();
   const isEmbedded = searchParams.get("embed") === "1";
@@ -306,6 +306,22 @@ export default function PublicForm() {
     });
   }, [allFields, conditionInputs, values]);
 
+  // Completion redirect — hook must be declared before any early returns
+  // so the hook call order stays stable across loading/error/success renders.
+  const completionRedirectUrl =
+    completionField?.validation &&
+    typeof completionField.validation.redirectUrl === "string" &&
+    completionField.validation.redirectUrl.trim()
+      ? completionField.validation.redirectUrl.trim()
+      : null;
+  useEffect(() => {
+    if (!submitted || !completionRedirectUrl) return;
+    const timer = setTimeout(() => {
+      window.location.href = completionRedirectUrl;
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [submitted, completionRedirectUrl]);
+
   function setValue(fieldId: string, value: string) {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     setFieldErrors((prev) => {
@@ -422,21 +438,6 @@ export default function PublicForm() {
   const completionFallbackText = completionField
     ? null
     : "Your response has been submitted successfully.";
-  const completionRedirectUrl =
-    completionField?.validation &&
-    typeof completionField.validation.redirectUrl === "string" &&
-    completionField.validation.redirectUrl.trim()
-      ? completionField.validation.redirectUrl.trim()
-      : null;
-
-  // Redirect after 5 seconds if configured
-  useEffect(() => {
-    if (!submitted || !completionRedirectUrl) return;
-    const timer = setTimeout(() => {
-      window.location.href = completionRedirectUrl;
-    }, 5000);
-    return () => clearTimeout(timer);
-  }, [submitted, completionRedirectUrl]);
 
   if (submitted) {
     return (

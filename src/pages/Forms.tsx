@@ -238,7 +238,7 @@ export default function Forms() {
 
   function handleCopyLink(form: Form) {
     if (!currentProject) return;
-    const url = `${window.location.origin}/${currentProject.slug}/f/${form.slug}`;
+    const url = `${window.location.origin}/${currentProject.slug}/${form.slug}`;
     copyToClipboard(url);
     setCopiedId(`link-${form.id}`);
     setTimeout(() => setCopiedId(null), 2000);

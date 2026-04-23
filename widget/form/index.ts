@@ -48,7 +48,7 @@ function initFormWidget(options: FormWidgetOptions): void {
   }
 
   const base = getApiBase();
-  const url = new URL(`${base}/${projectSlug}/f/${formSlug}`);
+  const url = new URL(`${base}/${projectSlug}/${formSlug}`);
   // Forward host-page query params first so prefill inside the iframe can use
   // them. UTMs + explicit options below take precedence on conflict.
   for (const [k, v] of getHostPageParams()) {

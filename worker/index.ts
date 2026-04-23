@@ -1739,6 +1739,59 @@ app.get("/api/widget/form/:projectSlug/:formSlug/config", async (c) => {
   }
 });
 
+// Resolve a public slug within a project to either an event type or a form.
+// Lets the SPA share one URL shape (/:projectSlug/:slug) for both resources.
+app.get("/api/public/resolve/:projectSlug/:slug", async (c) => {
+  try {
+    const projectSlug = c.req.param("projectSlug");
+    const slug = c.req.param("slug");
+    const db = drizzle(c.env.DB, { schema });
+
+    const [project] = await db
+      .select({ id: dbSchema.projects.id })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.slug, projectSlug))
+      .limit(1);
+
+    if (!project) return c.json({ error: "Not found" }, 404);
+
+    const [eventRow] = await db
+      .select({ id: dbSchema.eventTypes.id, enabled: dbSchema.eventTypes.enabled })
+      .from(dbSchema.eventTypes)
+      .where(
+        and(
+          eq(dbSchema.eventTypes.projectId, project.id),
+          eq(dbSchema.eventTypes.slug, slug),
+        ),
+      )
+      .limit(1);
+
+    if (eventRow && eventRow.enabled) {
+      return c.json({ kind: "event" });
+    }
+
+    const [formRow] = await db
+      .select({ id: dbSchema.forms.id, status: dbSchema.forms.status })
+      .from(dbSchema.forms)
+      .where(
+        and(
+          eq(dbSchema.forms.projectId, project.id),
+          eq(dbSchema.forms.slug, slug),
+        ),
+      )
+      .limit(1);
+
+    if (formRow && formRow.status === "active") {
+      return c.json({ kind: "form" });
+    }
+
+    return c.json({ error: "Not found" }, 404);
+  } catch (err) {
+    console.error("Public resolve error:", err);
+    return c.json({ error: "Failed to resolve" }, 500);
+  }
+});
+
 // ─── Public Form Routes (shareable links) ────────────────────────────────────
 
 app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
