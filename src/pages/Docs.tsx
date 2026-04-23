@@ -450,7 +450,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               Create Response
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-2">
-              <IC>POST /api/v1/forms/:formSlug/responses?projectSlug=:projectSlug</IC>
+              <IC>POST /api/v1/forms/:projectSlug/:formSlug/responses</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Start a new form response. Returns the response object and full form config including
@@ -463,7 +463,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
                   name: "projectSlug",
                   type: "string",
                   required: true,
-                  description: "Your project's URL slug (query param)",
+                  description: "Your project's URL slug (path param)",
                 },
                 {
                   name: "formSlug",
@@ -475,7 +475,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             />
 
             <CodeBlock title="Request" language="bash">
-{`curl -X POST "https://linkycal.com/api/v1/forms/contact/responses?projectSlug=acme" \\
+{`curl -X POST "https://linkycal.com/api/v1/forms/acme/contact/responses" \\
   -H "Content-Type: application/json"`}
             </CodeBlock>
 
@@ -508,7 +508,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               Submit Step
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-2">
-              <IC>PATCH /api/v1/forms/:formSlug/responses/:responseId/steps/:stepIndex</IC>
+              <IC>PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Submit field values for a specific step. Steps must be submitted in order (0, 1, 2...).
@@ -527,7 +527,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             />
 
             <CodeBlock title="Request" language="bash">
-{`curl -X PATCH "https://linkycal.com/api/v1/forms/contact/responses/resp_a1b2c3d4/steps/0" \\
+{`curl -X PATCH "https://linkycal.com/api/v1/forms/acme/contact/responses/resp_a1b2c3d4/steps/0" \\
   -H "Content-Type: application/json" \\
   -d '{
     "fields": [

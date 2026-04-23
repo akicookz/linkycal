@@ -108,6 +108,7 @@ function renderFieldGuide(fields: FormFieldForPrompt[]): string {
 
 function renderStepApiExample(
   origin: string,
+  projectSlug: string,
   formSlug: string,
   stepIndex: number,
   fields: FormFieldForPrompt[],
@@ -121,7 +122,7 @@ function renderStepApiExample(
   );
 
   return `\`\`\`bash
-curl -X PATCH "${origin}/api/v1/forms/${formSlug}/responses/RESPONSE_ID/steps/${stepIndex}" \\
+curl -X PATCH "${origin}/api/v1/forms/${projectSlug}/${formSlug}/responses/RESPONSE_ID/steps/${stepIndex}" \\
   -H "Content-Type: application/json" \\
   -d '${requestBody}'
 \`\`\``;
@@ -407,7 +408,7 @@ ${stepDescription ? `${stepDescription}\n` : ""}Fields:
 ${renderFieldGuide(step.fields)}
 
 Example:
-${renderStepApiExample(origin, form.slug, index, step.fields)}`;
+${renderStepApiExample(origin, projectSlug, form.slug, index, step.fields)}`;
     })
     .join("\n\n");
 
@@ -440,7 +441,7 @@ Use one flow at a time:
 
 ## Start Response
 \`\`\`bash
-curl -X POST "${origin}/api/v1/forms/${form.slug}/responses?projectSlug=${projectSlug}" \\
+curl -X POST "${origin}/api/v1/forms/${projectSlug}/${form.slug}/responses" \\
   -H "Content-Type: application/json" \\
   -d '{}'
 \`\`\`

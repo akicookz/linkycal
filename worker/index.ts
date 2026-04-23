@@ -1460,8 +1460,9 @@ app.post("/api/v1/bookings", async (c) => {
 });
 
 // Start form response (public)
-app.post("/api/v1/forms/:slug/responses", async (c) => {
-  const slug = c.req.param("slug");
+app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
+  const projectSlug = c.req.param("projectSlug");
+  const formSlug = c.req.param("formSlug");
   const ip = c.req.header("cf-connecting-ip") ?? "unknown";
   if (!checkRateLimit(`form:${ip}`, 30, 60_000)) {
     return c.json({ error: "Rate limit exceeded" }, 429);
@@ -1471,8 +1472,6 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
     const db = drizzle(c.env.DB, { schema });
     const service = new FormService(db);
 
-    // Find the form by slug (need projectSlug from query or body)
-    const projectSlug = c.req.query("projectSlug") ?? "";
     const [project] = await db
       .select()
       .from(dbSchema.projects)
@@ -1483,7 +1482,7 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
       return c.json({ error: "Project not found" }, 404);
     }
 
-    const form = await service.getBySlug(project.id, slug);
+    const form = await service.getBySlug(project.id, formSlug);
     if (!form || form.status !== "active") {
       return c.json({ error: "Form not found or inactive" }, 404);
     }
@@ -1513,7 +1512,7 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
       writeAnalyticsEvent(c.env.ANALYTICS, {
         projectId: project.id,
         event: "form_started",
-        resourceSlug: slug,
+        resourceSlug: formSlug,
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
@@ -1528,7 +1527,7 @@ app.post("/api/v1/forms/:slug/responses", async (c) => {
 
 // Submit form step (public)
 app.patch(
-  "/api/v1/forms/:slug/responses/:responseId/steps/:stepIndex",
+  "/api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex",
   async (c) => {
     const responseId = c.req.param("responseId");
     const stepIndex = parseInt(c.req.param("stepIndex"), 10);
@@ -1567,14 +1566,14 @@ app.patch(
 
         // Track form_completed event
         try {
-          const slug = c.req.param("slug");
+          const formSlug = c.req.param("formSlug");
           const [form] = await db.select({ projectId: dbSchema.forms.projectId }).from(dbSchema.forms).where(eq(dbSchema.forms.id, response.formId)).limit(1);
           if (form) {
             const cf = c.req.raw.cf as Record<string, unknown> | undefined;
             writeAnalyticsEvent(c.env.ANALYTICS, {
               projectId: form.projectId,
               event: "form_completed",
-              resourceSlug: slug,
+              resourceSlug: formSlug,
               country: (cf?.country as string) ?? "",
               city: (cf?.city as string) ?? "",
             });
@@ -5253,8 +5252,8 @@ app.get("/llms.txt", (c) => {
 - GET /api/v1/availability/:projectSlug - Check available time slots
 - POST /api/v1/bookings - Create a booking
 - DELETE /api/v1/bookings/:id - Cancel a booking
-- POST /api/v1/forms/:slug/responses - Start a form response
-- PATCH /api/v1/forms/:slug/responses/:id/steps/:step - Submit form step
+- POST /api/v1/forms/:projectSlug/:formSlug/responses - Start a form response
+- PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:id/steps/:step - Submit form step
 - GET /api/v1/contacts - List contacts (coming soon)
 
 ## Auth
