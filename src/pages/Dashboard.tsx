@@ -297,14 +297,14 @@ export default function Dashboard() {
         title="Dashboard"
         description="Welcome back! Here's an overview of your project."
       >
-        <div className="flex items-center gap-2">
-          <Button asChild variant="outline" size="sm">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none">
             <Link to={`/app/projects/${projectId}/forms/new`}>
               <Plus className="h-4 w-4" />
               Create Form
             </Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild size="sm" className="flex-1 sm:flex-none">
             <Link to={`/app/projects/${projectId}/event-types`}>
               <Plus className="h-4 w-4" />
               Create Event Type

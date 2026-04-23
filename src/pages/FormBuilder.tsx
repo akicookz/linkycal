@@ -432,18 +432,6 @@ function updateFieldInSteps(
   }));
 }
 
-function replaceFieldInSteps(
-  steps: FormStep[],
-  currentFieldId: string,
-  nextField: FormField,
-): FormStep[] {
-  return steps.map((step) => ({
-    ...step,
-    fields: step.fields.map((field) =>
-      field.id === currentFieldId ? nextField : field,
-    ),
-  }));
-}
 
 function generateSlug(name: string): string {
   return name
@@ -742,11 +730,16 @@ export default function FormBuilder() {
     }
   }, [form, sortedSteps, activeStepId]);
 
-  // Sync editing name/slug when form loads
+  // Initialize editing name/slug the first time the form loads. Do NOT re-sync
+  // from `form` on every cache update — optimistic mutations change the
+  // reference, and re-syncing would overwrite characters the user has just
+  // typed into these inputs.
+  const hasInitializedEditingFields = useRef(false);
   useEffect(() => {
-    if (form) {
+    if (form && !hasInitializedEditingFields.current) {
       setEditingName(form.name);
       setEditingSlug(form.slug);
+      hasInitializedEditingFields.current = true;
     }
   }, [form]);
 
@@ -804,6 +797,44 @@ export default function FormBuilder() {
     queryClient.setQueryData<FullForm>(formQueryKey, snapshot);
   }
 
+  // ─── tempId → realId resolvers ───────────────────────────────────────────
+  // Optimistic creates hand the UI a `temp-*` id. The cache keeps that id for
+  // the lifetime of the page so React keys stay stable and in-progress user
+  // edits are never clobbered by a re-mount. Server calls resolve temp → real
+  // through the maps below; if a create is still in flight, updates await its
+  // resolution promise, so no PUT ever lands on a non-existent temp id.
+  const fieldIdMap = useRef<Map<string, string>>(new Map());
+  const pendingFieldCreates = useRef<Map<string, Promise<string>>>(new Map());
+  const stepIdMap = useRef<Map<string, string>>(new Map());
+  const pendingStepCreates = useRef<Map<string, Promise<string>>>(new Map());
+
+  async function resolveFieldId(clientId: string): Promise<string> {
+    const mapped = fieldIdMap.current.get(clientId);
+    if (mapped) return mapped;
+    const pending = pendingFieldCreates.current.get(clientId);
+    if (pending) return pending;
+    return clientId;
+  }
+
+  async function resolveStepId(clientId: string): Promise<string> {
+    const mapped = stepIdMap.current.get(clientId);
+    if (mapped) return mapped;
+    const pending = pendingStepCreates.current.get(clientId);
+    if (pending) return pending;
+    return clientId;
+  }
+
+  // Reverse: real id (or already-temp) → the id that currently lives in the
+  // cache. Needed when an internal call (e.g. moveFieldToNewStep) has the real
+  // id in hand but the optimistic cache still keys that step by its tempId.
+  function toCacheStepId(id: string): string {
+    if (stepIdMap.current.size === 0) return id;
+    for (const [tempId, realId] of stepIdMap.current) {
+      if (realId === id) return tempId;
+    }
+    return id;
+  }
+
   // ─── Form mutations ─────────────────────────────────────────────────────
 
   const updateFormMutation = useMutation({
@@ -836,7 +867,10 @@ export default function FormBuilder() {
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
+      // Only invalidate the forms list (used by other pages). We deliberately
+      // do NOT invalidate `formQueryKey` — the optimistic update already set
+      // the new value, and a background refetch would clobber any in-progress
+      // re-edit in the name/slug inputs.
       queryClient.invalidateQueries({
         queryKey: ["projects", projectId, "forms"],
       });
@@ -882,33 +916,36 @@ export default function FormBuilder() {
         ],
       }));
       setActiveStepId(tempId);
-      return { snapshot, tempId };
+
+      let resolveCreate!: (realId: string) => void;
+      let rejectCreate!: (err: unknown) => void;
+      const createPromise = new Promise<string>((res, rej) => {
+        resolveCreate = res;
+        rejectCreate = rej;
+      });
+      createPromise.catch(() => {});
+      pendingStepCreates.current.set(tempId, createPromise);
+
+      return { snapshot, tempId, resolveCreate, rejectCreate };
     },
-    onError: (_err, _vars, ctx) => {
+    onError: (err, _vars, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);
       setActiveStepId(ctx?.snapshot?.steps[0]?.id ?? null);
+      if (ctx?.tempId) {
+        ctx.rejectCreate(err);
+        pendingStepCreates.current.delete(ctx.tempId);
+      }
     },
     onSuccess: (data, _variables, ctx) => {
       const step = data?.step as FormStep | undefined;
-      if (!step) return;
+      const tempId = ctx?.tempId;
+      if (!step || !tempId) return;
 
-      const optimisticTempId = (ctx as { tempId?: string } | undefined)?.tempId;
-
-      optimisticSetForm((old) => ({
-        ...old,
-        steps: old.steps.some((existingStep) => existingStep.id === step.id)
-          ? old.steps
-          : optimisticTempId && old.steps.some((existingStep) => existingStep.id === optimisticTempId)
-            ? old.steps.map((existingStep) =>
-              existingStep.id === optimisticTempId ? step : existingStep,
-            )
-            : [...old.steps, step],
-      }));
-
-      setActiveStepId(step.id);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
+      // Record mapping; leave the cache alone so the tempId-keyed UI keeps
+      // its draft state intact.
+      stepIdMap.current.set(tempId, step.id);
+      ctx.resolveCreate(step.id);
+      pendingStepCreates.current.delete(tempId);
     },
   });
 
@@ -925,8 +962,9 @@ export default function FormBuilder() {
         visibility: FormCondition | null;
       }>;
     }) => {
+      const realStepId = await resolveStepId(stepId);
       const res = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/steps/${stepId}`,
+        `/api/projects/${projectId}/forms/${formId}/steps/${realStepId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -955,15 +993,13 @@ export default function FormBuilder() {
       setSaveStatusFor(vars.stepId, "error");
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
-    },
   });
 
   const deleteStepMutation = useMutation({
     mutationFn: async (stepId: string) => {
+      const realStepId = await resolveStepId(stepId);
       const res = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/steps/${stepId}`,
+        `/api/projects/${projectId}/forms/${formId}/steps/${realStepId}`,
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error("Failed to delete step");
@@ -984,9 +1020,6 @@ export default function FormBuilder() {
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
-    },
   });
 
   // ─── Field mutations ─────────────────────────────────────────────────────
@@ -1003,12 +1036,13 @@ export default function FormBuilder() {
       label: string;
       description?: string;
     }) => {
+      const realStepId = await resolveStepId(stepId);
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/fields`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stepId, type, label, ...(description ? { description } : {}) }),
+          body: JSON.stringify({ stepId: realStepId, type, label, ...(description ? { description } : {}) }),
         }
       );
       if (!res.ok) throw new Error("Failed to add field");
@@ -1047,70 +1081,57 @@ export default function FormBuilder() {
         ),
       }));
 
-      return { snapshot, tempId };
+      let resolveCreate!: (realId: string) => void;
+      let rejectCreate!: (err: unknown) => void;
+      const createPromise = new Promise<string>((res, rej) => {
+        resolveCreate = res;
+        rejectCreate = rej;
+      });
+      // Swallow unhandled-rejection warnings; awaiters handle errors themselves.
+      createPromise.catch(() => {});
+      pendingFieldCreates.current.set(tempId, createPromise);
+
+      return { snapshot, tempId, resolveCreate, rejectCreate };
     },
-    onSuccess: (data, variables, ctx) => {
+    onSuccess: (data, _variables, ctx) => {
       const field = data?.field as FormField | undefined;
-      if (!field) return;
-      const tempId = (ctx as { tempId?: string } | undefined)?.tempId;
+      const tempId = ctx?.tempId;
+      if (!field || !tempId) return;
 
-      optimisticSetForm((old) => ({
-        ...old,
-        steps: old.steps.map((step) =>
-          step.id === variables.stepId
-            ? {
-              ...step,
-              fields: step.fields.some((existingField) => existingField.id === field.id)
-                ? step.fields
-                : tempId && step.fields.some((existingField) => existingField.id === tempId)
-                  ? step.fields.map((existingField) =>
-                    existingField.id === tempId ? field : existingField,
-                  )
-                  : [...step.fields, field],
-            }
-            : step,
-        ),
-      }));
-
-      if (tempId) {
-        setFieldOptionsState((prev) => {
-          if (!prev[tempId]) return prev;
-
-          const next = { ...prev, [field.id]: prev[tempId] };
-          delete next[tempId];
-          return next;
-        });
-      }
+      // Record mapping so future updates/deletes on the temp id resolve to the
+      // real id. We intentionally do NOT swap `field.id` in the cache — that
+      // would re-key the React row and destroy any draft state the user is
+      // currently typing into.
+      fieldIdMap.current.set(tempId, field.id);
+      ctx.resolveCreate(field.id);
+      pendingFieldCreates.current.delete(tempId);
 
       if (isOptionFieldType(field.type)) {
         setFieldOptionsState((prev) =>
-          prev[field.id]
+          prev[tempId]
             ? prev
             : {
               ...prev,
-              [field.id]: toDraftFieldOptions(
+              [tempId]: toDraftFieldOptions(
                 parseStoredFieldOptions(field.options),
               ),
             },
         );
       }
     },
-    onError: (_err, _variables, ctx) => {
+    onError: (err, _variables, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);
-      const tempId = (ctx as { tempId?: string } | undefined)?.tempId;
-      if (tempId) {
+      if (ctx?.tempId) {
+        ctx.rejectCreate(err);
+        pendingFieldCreates.current.delete(ctx.tempId);
         setFieldOptionsState((prev) => {
-          if (!prev[tempId]) return prev;
-
+          if (!prev[ctx.tempId]) return prev;
           const next = { ...prev };
-          delete next[tempId];
+          delete next[ctx.tempId];
           return next;
         });
       }
       setAutoFocusLastField(false);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
     },
   });
 
@@ -1134,12 +1155,16 @@ export default function FormBuilder() {
         visibility: FormCondition | null;
       }>;
     }) => {
+      const realFieldId = await resolveFieldId(fieldId);
+      const payload = data.stepId
+        ? { ...data, stepId: await resolveStepId(data.stepId) }
+        : data;
       const res = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/fields/${fieldId}`,
+        `/api/projects/${projectId}/forms/${formId}/fields/${realFieldId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
+          body: JSON.stringify(payload),
         }
       );
       if (!res.ok) throw new Error("Failed to update field");
@@ -1155,48 +1180,24 @@ export default function FormBuilder() {
       }));
       return { snapshot };
     },
-    onSuccess: (data, variables) => {
-      const field = data?.field as FormField | undefined;
-      if (!field) {
-        setSaveStatusFor(variables.fieldId, "saved");
-        return;
-      }
-
-      optimisticSetForm((old) => ({
-        ...old,
-        steps: replaceFieldInSteps(old.steps, variables.fieldId, field),
-      }));
-
-      // Track status under the new ID if it changed
-      const trackId = field.id !== variables.fieldId ? field.id : variables.fieldId;
-      setSaveStatusFor(trackId, "saved");
-
-      if (field.id !== variables.fieldId) {
-        setFieldOptionsState((prev) => {
-          if (!prev[variables.fieldId]) return prev;
-
-          const next = {
-            ...prev,
-            [field.id]: prev[variables.fieldId],
-          };
-          delete next[variables.fieldId];
-          return next;
-        });
-      }
+    onSuccess: (_data, variables) => {
+      // The optimistic state set in onMutate is the source of truth. We
+      // deliberately don't overwrite the cache with the server's echo — the
+      // user may have typed newer characters between dispatch and response,
+      // and re-applying the server field would clobber them.
+      setSaveStatusFor(variables.fieldId, "saved");
     },
     onError: (_err, vars, ctx) => {
       setSaveStatusFor(vars.fieldId, "error");
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
-    },
   });
 
   const deleteFieldMutation = useMutation({
     mutationFn: async (fieldId: string) => {
+      const realFieldId = await resolveFieldId(fieldId);
       const res = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/fields/${fieldId}`,
+        `/api/projects/${projectId}/forms/${formId}/fields/${realFieldId}`,
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error("Failed to delete field");
@@ -1215,9 +1216,6 @@ export default function FormBuilder() {
     },
     onError: (_err, _vars, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
     },
   });
 
@@ -1390,11 +1388,14 @@ export default function FormBuilder() {
         throw new Error("Failed to create destination step");
       }
 
-      setActiveStepId(nextStep.id);
+      // addStepMutation.onMutate already set activeStepId to the tempId; that
+      // tempId is what the cache uses, so we leave it. For the optimistic
+      // move we need the same tempId so updateFieldInSteps can find the step.
+      const cacheStepId = toCacheStepId(nextStep.id);
       await updateFieldMutation.mutateAsync({
         fieldId,
         data: {
-          stepId: nextStep.id,
+          stepId: cacheStepId,
           sortOrder: 0,
         },
       });
@@ -1405,37 +1406,36 @@ export default function FormBuilder() {
 
   const reorderFieldsMutation = useMutation({
     mutationFn: async ({ stepId, fieldIds }: { stepId: string; fieldIds: string[] }) => {
+      const [realStepId, ...realFieldIds] = await Promise.all([
+        resolveStepId(stepId),
+        ...fieldIds.map((id) => resolveFieldId(id)),
+      ]);
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/fields/reorder`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stepId, fieldIds }),
+          body: JSON.stringify({ stepId: realStepId, fieldIds: realFieldIds }),
         },
       );
       if (!res.ok) throw new Error("Failed to reorder fields");
       return res.json();
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
-    },
   });
 
   const reorderStepsMutation = useMutation({
     mutationFn: async ({ stepIds }: { stepIds: string[] }) => {
+      const realStepIds = await Promise.all(stepIds.map((id) => resolveStepId(id)));
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/steps/reorder`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stepIds }),
+          body: JSON.stringify({ stepIds: realStepIds }),
         },
       );
       if (!res.ok) throw new Error("Failed to reorder steps");
       return res.json();
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
     },
   });
 
@@ -1591,10 +1591,14 @@ export default function FormBuilder() {
         },
       );
       if (!fieldRes.ok) throw new Error("Failed to create field");
+      const fieldJson = await fieldRes.json();
+      const newField = fieldJson?.field as FormField | undefined;
 
-      // Refresh from server
-      setActiveStepId(newStep.id);
-      queryClient.invalidateQueries({ queryKey: formQueryKey });
+      // Record tempId → realId mappings so future edits on this step/field
+      // resolve to the server ids. The cache keeps the tempIds so the row
+      // doesn't re-mount and any in-progress user typing stays put.
+      stepIdMap.current.set(tempStepId, newStep.id);
+      if (newField) fieldIdMap.current.set(tempFieldId, newField.id);
     } catch {
       // Rollback on any failure
       if (snapshot) rollback(snapshot);
@@ -2997,9 +3001,13 @@ function InlineEditableLabel({
 }) {
   const [localValue, setLocalValue] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isEditingRef = useRef(false);
 
   useEffect(() => {
-    setLocalValue(value);
+    // Only adopt an external value change when the user isn't actively editing.
+    // Otherwise a background cache update (e.g. the server response to a
+    // sibling mutation) would wipe the characters they're currently typing.
+    if (!isEditingRef.current) setLocalValue(value);
   }, [value]);
 
   // Auto-resize textarea to fit content
@@ -3020,7 +3028,11 @@ function InlineEditableLabel({
         value={localValue}
         placeholder={placeholder}
         onChange={(e) => setLocalValue(e.target.value)}
+        onFocus={() => {
+          isEditingRef.current = true;
+        }}
         onBlur={() => {
+          isEditingRef.current = false;
           if (localValue.trim() && localValue !== value) {
             onSave(localValue.trim());
           } else {

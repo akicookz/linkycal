@@ -524,8 +524,20 @@ export default function PublicBooking() {
     setBookingError(null);
   }
 
-  const primaryStyle = theme?.primaryBg
+  const primaryColorStyle: React.CSSProperties | undefined = theme?.primaryBg
     ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg }
+    : undefined;
+  const primaryStyle: React.CSSProperties | undefined = (primaryColorStyle || theme?.borderRadius != null)
+    ? {
+        ...(primaryColorStyle ?? {}),
+        ...(theme?.borderRadius != null ? { borderRadius: `${theme.borderRadius}px` } : {}),
+      }
+    : undefined;
+  const switcherContainerRadius = theme?.borderRadius != null
+    ? `${Math.max(6, Math.round(theme.borderRadius * 0.625))}px`
+    : undefined;
+  const switcherButtonRadius = theme?.borderRadius != null
+    ? `${Math.max(4, Math.round(theme.borderRadius * 0.5))}px`
     : undefined;
 
   // ─── Loading / Error ───────────────────────────────────────────────────
@@ -758,13 +770,13 @@ export default function PublicBooking() {
                               "lc-themed-hover aspect-square flex flex-col items-center justify-center text-[14px] font-medium transition-all relative border border-transparent",
                               day.disabled && "text-muted-foreground/30 cursor-not-allowed",
                               !day.disabled && !isSelected && "bg-muted/50 cursor-pointer",
-                              isSelected && !primaryStyle && "bg-primary text-primary-foreground shadow-sm",
-                              isSelected && primaryStyle && "shadow-sm",
+                              isSelected && !primaryColorStyle && "bg-primary text-primary-foreground shadow-sm",
+                              isSelected && primaryColorStyle && "shadow-sm",
                             )}
                             data-selected={isSelected || undefined}
                             style={{
                               borderRadius: !day.disabled || isSelected ? cellRadius : undefined,
-                              ...(isSelected && primaryStyle ? primaryStyle : {}),
+                              ...(isSelected && primaryColorStyle ? primaryColorStyle : {}),
                             }}
                           >
                             {day.day}
@@ -824,7 +836,10 @@ export default function PublicBooking() {
                           <p className="text-sm font-medium">
                             {formatDateShort(new Date(selectedDate + "T00:00:00"))}
                           </p>
-                          <div className="flex items-center bg-muted/50 rounded-[10px] p-1 text-xs font-medium">
+                          <div
+                            className="flex items-center bg-muted/50 rounded-[10px] p-1 text-xs font-medium"
+                            style={switcherContainerRadius ? { borderRadius: switcherContainerRadius } : undefined}
+                          >
                             <button
                               onClick={() => setTimeFormat("12h")}
                               className={cn(
@@ -834,7 +849,10 @@ export default function PublicBooking() {
                                   : "text-muted-foreground hover:text-foreground",
                               )}
                               data-selected={timeFormat === "12h" || undefined}
-                              style={timeFormat === "12h" && primaryStyle ? primaryStyle : undefined}
+                              style={{
+                                ...(switcherButtonRadius ? { borderRadius: switcherButtonRadius } : {}),
+                                ...(timeFormat === "12h" && primaryColorStyle ? primaryColorStyle : {}),
+                              }}
                             >
                               12h
                             </button>
@@ -847,7 +865,10 @@ export default function PublicBooking() {
                                   : "text-muted-foreground hover:text-foreground",
                               )}
                               data-selected={timeFormat === "24h" || undefined}
-                              style={timeFormat === "24h" && primaryStyle ? primaryStyle : undefined}
+                              style={{
+                                ...(switcherButtonRadius ? { borderRadius: switcherButtonRadius } : {}),
+                                ...(timeFormat === "24h" && primaryColorStyle ? primaryColorStyle : {}),
+                              }}
                             >
                               24h
                             </button>
@@ -862,11 +883,11 @@ export default function PublicBooking() {
                                 onClick={() => setSelectedSlot(slot)}
                                 className={cn(
                                   "lc-themed-button lc-themed-hover py-2.5 px-3 border border-transparent text-[13px] font-medium text-center transition-all",
-                                  isSelected && !primaryStyle && "bg-primary text-primary-foreground shadow-sm border-primary",
+                                  isSelected && !primaryColorStyle && "bg-primary text-primary-foreground shadow-sm border-primary",
                                   !isSelected && "bg-muted/50",
                                 )}
                                 data-selected={isSelected || undefined}
-                                style={isSelected && primaryStyle ? primaryStyle : undefined}
+                                style={isSelected && primaryColorStyle ? primaryColorStyle : undefined}
                               >
                                 {formatTime(slot.start, timezone, timeFormat)} - {formatTime(slot.end, timezone, timeFormat)}
                               </button>

@@ -70,7 +70,12 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
     let label: string;
     if (diffMin < 1) label = "in less than a minute";
     else if (diffMin < 60) label = `${timeStr} (in ${diffMin} min)`;
-    else if (diffHours < 24) label = `${timeStr} (in ${diffHours}h)`;
+    else if (diffHours < 24) {
+      const remMin = diffMin % 60;
+      label = remMin > 0
+        ? `${timeStr} (in ${diffHours}h ${remMin}m)`
+        : `${timeStr} (in ${diffHours}h)`;
+    }
     else if (diffDays === 1) label = `tomorrow, ${timeStr}`;
     else label = `${dateStr}, ${timeStr}`;
 
@@ -83,7 +88,12 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
 
   let label: string;
   if (diffMin < 60) label = `${timeStr} (${diffMin}m ago)`;
-  else label = `${timeStr} (${diffHours}h ago)`;
+  else {
+    const remMin = diffMin % 60;
+    label = remMin > 0
+      ? `${timeStr} (${diffHours}h ${remMin}m ago)`
+      : `${timeStr} (${diffHours}h ago)`;
+  }
 
   return { label, isHappening: false, isUpcoming: false, isPast: true };
 }

@@ -11,7 +11,7 @@ import {
   Save,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -295,53 +295,54 @@ export default function Settings() {
             <CardDescription>
               Basic project configuration.
             </CardDescription>
+            <CardAction>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleUpdateName}
+                disabled={
+                  loadingProject ||
+                  updateProjectMutation.isPending ||
+                  !projectName.trim() ||
+                  projectName === project?.name
+                }
+              >
+                {updateProjectMutation.isPending ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Update
+              </Button>
+            </CardAction>
           </CardHeader>
           <CardContent>
             <div className="space-y-6">
-              <div className="flex items-center justify-between gap-6">
+              <div className="flex items-center justify-between gap-6 flex-wrap">
                 <div className="shrink-0">
                   <p className="text-sm font-medium">Project Name</p>
                   <p className="text-xs text-muted-foreground">Display name for this project.</p>
                 </div>
                 {loadingProject ? (
-                  <Skeleton className="h-9 w-56" />
+                  <Skeleton className="h-9 w-64" />
                 ) : (
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={projectName}
-                      onChange={(e) => setProjectName(e.target.value)}
-                      placeholder="Project name"
-                      className="w-48"
-                    />
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleUpdateName}
-                      disabled={
-                        updateProjectMutation.isPending ||
-                        !projectName.trim() ||
-                        projectName === project?.name
-                      }
-                    >
-                      {updateProjectMutation.isPending ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      Update
-                    </Button>
-                  </div>
+                  <Input
+                    value={projectName}
+                    onChange={(e) => setProjectName(e.target.value)}
+                    placeholder="Project name"
+                    className="w-64"
+                  />
                 )}
               </div>
-              <div className="flex items-center justify-between gap-6">
+              <div className="flex items-center justify-between gap-6 flex-wrap">
                 <div className="shrink-0">
                   <p className="text-sm font-medium">Timezone</p>
                   <p className="text-xs text-muted-foreground">Default for bookings and availability.</p>
                 </div>
                 {loadingProject ? (
-                  <Skeleton className="h-9 w-52" />
+                  <Skeleton className="h-9 w-64" />
                 ) : (
                   <Select
                     value={projectTimezone}
                     onValueChange={handleUpdateTimezone}
                   >
-                    <SelectTrigger className="w-52">
+                    <SelectTrigger className="w-64">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -365,90 +366,123 @@ export default function Settings() {
             <CardDescription>
               Customize the look of your public booking page and embeddable widgets.
             </CardDescription>
+            <CardAction>
+              <Button
+                size="sm"
+                onClick={() => saveThemeMutation.mutate()}
+                disabled={saveThemeMutation.isPending}
+              >
+                {saveThemeMutation.isPending ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Save
+              </Button>
+            </CardAction>
           </CardHeader>
-          <CardContent className="space-y-5">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <CardContent>
+            <div className="space-y-6">
               {([
-                { label: "Primary BG", value: themePrimaryBg, onChange: setThemePrimaryBg },
-                { label: "Primary Text", value: themePrimaryText, onChange: setThemePrimaryText },
-                { label: "Background", value: themeBg, onChange: setThemeBg },
-                { label: "Text", value: themeText, onChange: setThemeText },
-              ] as const).map((field) => (
-                <div key={field.label}>
-                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{field.label}</label>
-                  <label className="flex items-center gap-2 cursor-pointer rounded-[12px] border border-border px-2.5 py-1.5 hover:bg-accent/50 transition-colors">
-                    <input
-                      type="color"
-                      value={field.value}
-                      onChange={(e) => field.onChange(e.target.value)}
-                      className="sr-only"
-                    />
-                    <span
-                      className="h-5 w-5 rounded-full border border-border shrink-0"
-                      style={{ backgroundColor: field.value }}
-                    />
-                    <span className="font-mono text-xs">{field.value}</span>
-                  </label>
+                {
+                  key: "brand",
+                  title: "Brand colors",
+                  desc: "Used for buttons and accents.",
+                  fields: [
+                    { label: "Button color", value: themePrimaryBg, onChange: setThemePrimaryBg },
+                    { label: "Button text", value: themePrimaryText, onChange: setThemePrimaryText },
+                  ],
+                },
+                {
+                  key: "page",
+                  title: "Page colors",
+                  desc: "Used for the page background and text.",
+                  fields: [
+                    { label: "Page background", value: themeBg, onChange: setThemeBg },
+                    { label: "Body text", value: themeText, onChange: setThemeText },
+                  ],
+                },
+              ] as const).map((group) => (
+                <div key={group.key} className="flex items-center justify-between gap-6 flex-wrap">
+                  <div className="shrink-0">
+                    <p className="text-sm font-medium">{group.title}</p>
+                    <p className="text-xs text-muted-foreground">{group.desc}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 w-64">
+                    {group.fields.map((field) => (
+                      <label
+                        key={field.label}
+                        className="flex items-center gap-2 cursor-pointer rounded-[12px] border border-border px-2.5 py-1.5 hover:bg-accent/50 transition-colors"
+                        title={field.label}
+                      >
+                        <input
+                          type="color"
+                          value={field.value}
+                          onChange={(e) => field.onChange(e.target.value)}
+                          className="sr-only"
+                        />
+                        <span
+                          className="h-5 w-5 rounded-full border border-border shrink-0"
+                          style={{ backgroundColor: field.value }}
+                        />
+                        <span className="font-mono text-xs truncate">{field.value}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               ))}
-            </div>
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Border Radius ({themeRadius}px)</label>
-              <input
-                type="range"
-                min={0}
-                max={32}
-                value={themeRadius}
-                onChange={(e) => setThemeRadius(Number(e.target.value))}
-                className="w-full accent-primary"
-              />
-              <div className="flex justify-between text-[11px] text-muted-foreground mt-0.5">
-                <span>Sharp</span>
-                <span>Round</span>
+              <div className="flex items-center justify-between gap-6 flex-wrap">
+                <div className="shrink-0">
+                  <p className="text-sm font-medium">Border Radius · {themeRadius}px</p>
+                  <p className="text-xs text-muted-foreground">Controls roundness of cards and buttons.</p>
+                </div>
+                <div className="w-64">
+                  <input
+                    type="range"
+                    min={0}
+                    max={32}
+                    value={themeRadius}
+                    onChange={(e) => setThemeRadius(Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                  <div className="flex justify-between text-[11px] text-muted-foreground mt-0.5">
+                    <span>Sharp</span>
+                    <span>Round</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-6 flex-wrap">
+                <div className="shrink-0">
+                  <p className="text-sm font-medium">Font</p>
+                  <p className="text-xs text-muted-foreground">Typography used on the public page.</p>
+                </div>
+                <Select value={themeFont} onValueChange={setThemeFont}>
+                  <SelectTrigger className="w-64" style={{ fontFamily: themeFont }}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FONT_OPTIONS.map((f) => (
+                      <SelectItem key={f.value} value={f.value}>
+                        {f.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <ImageUpload
+                  label="Background Image"
+                  value={themeBackgroundImage}
+                  onChange={setThemeBackgroundImage}
+                  uploadUrl={`/api/projects/${projectId}/uploads`}
+                />
+                <ImageUpload
+                  label="Banner Image"
+                  value={themeBannerImage}
+                  onChange={setThemeBannerImage}
+                  uploadUrl={`/api/projects/${projectId}/uploads`}
+                />
               </div>
             </div>
-
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Font</label>
-              <Select value={themeFont} onValueChange={setThemeFont}>
-                <SelectTrigger className="w-full max-w-xs" style={{ fontFamily: themeFont }}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FONT_OPTIONS.map((f) => (
-                    <SelectItem key={f.value} value={f.value}>
-                      {f.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <ImageUpload
-                label="Background Image"
-                value={themeBackgroundImage}
-                onChange={setThemeBackgroundImage}
-                uploadUrl={`/api/projects/${projectId}/uploads`}
-              />
-              <ImageUpload
-                label="Banner Image"
-                value={themeBannerImage}
-                onChange={setThemeBannerImage}
-                uploadUrl={`/api/projects/${projectId}/uploads`}
-              />
-            </div>
-
-            <Button
-              size="sm"
-              onClick={() => saveThemeMutation.mutate()}
-              disabled={saveThemeMutation.isPending}
-            >
-              {saveThemeMutation.isPending ? (
-                <><Loader className="h-4 w-4 animate-spin" /> Saving...</>
-              ) : "Save Appearance"}
-            </Button>
           </CardContent>
         </Card>
 

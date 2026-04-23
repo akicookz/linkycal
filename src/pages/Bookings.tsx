@@ -158,40 +158,59 @@ export default function Bookings() {
     return map;
   }, [eventTypes]);
 
-  // Sort bookings by start time descending
-  const sortedBookings = useMemo(() => {
-    if (!bookings) return [];
-    return [...bookings].sort(
-      (a, b) => new Date(b.startTime).getTime() - new Date(a.startTime).getTime(),
-    );
-  }, [bookings]);
-
-  // Pending count
   const pendingCount = useMemo(
-    () => sortedBookings.filter((b) => b.status === "pending").length,
-    [sortedBookings],
+    () => (bookings ?? []).filter((b) => b.status === "pending").length,
+    [bookings],
   );
 
-  // Filter by tab
-  const now = new Date();
+  // Per-tab sort: future buckets ascending (next-up first), past/cancelled descending (most-recent first).
   const filteredBookings = useMemo(() => {
+    const all = bookings ?? [];
+    const nowMs = Date.now();
+    const ascByStart = (a: Booking, b: Booking) =>
+      new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+    const descByStart = (a: Booking, b: Booking) =>
+      new Date(b.startTime).getTime() - new Date(a.startTime).getTime();
+
     switch (activeTab) {
       case "pending":
-        return sortedBookings.filter((b) => b.status === "pending");
+        return all.filter((b) => b.status === "pending").sort(ascByStart);
       case "upcoming":
-        return sortedBookings.filter(
-          (b) => new Date(b.startTime) >= now && b.status === "confirmed",
-        );
+        return all
+          .filter(
+            (b) => new Date(b.startTime).getTime() >= nowMs && b.status === "confirmed",
+          )
+          .sort(ascByStart);
       case "past":
-        return sortedBookings.filter(
-          (b) => new Date(b.startTime) < now && b.status !== "cancelled" && b.status !== "declined",
-        );
+        return all
+          .filter(
+            (b) =>
+              new Date(b.startTime).getTime() < nowMs &&
+              b.status !== "cancelled" &&
+              b.status !== "declined",
+          )
+          .sort(descByStart);
       case "cancelled":
-        return sortedBookings.filter((b) => b.status === "cancelled" || b.status === "declined");
-      default:
-        return sortedBookings;
+        return all
+          .filter((b) => b.status === "cancelled" || b.status === "declined")
+          .sort(descByStart);
+      default: {
+        const priority = (b: Booking) => {
+          const start = new Date(b.startTime).getTime();
+          if (b.status === "cancelled" || b.status === "declined") return 3;
+          if (b.status === "pending" && start >= nowMs) return 0;
+          if (start >= nowMs && b.status === "confirmed") return 1;
+          return 2;
+        };
+        return [...all].sort((a, b) => {
+          const pa = priority(a);
+          const pb = priority(b);
+          if (pa !== pb) return pa - pb;
+          return pa <= 1 ? ascByStart(a, b) : descByStart(a, b);
+        });
+      }
     }
-  }, [sortedBookings, activeTab]);
+  }, [bookings, activeTab]);
 
   function openCancelDialog(id: string) {
     setCancellingId(id);

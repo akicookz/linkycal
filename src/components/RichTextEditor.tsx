@@ -25,13 +25,19 @@ export function RichTextEditor({
   const [isFocused, setIsFocused] = useState(false);
 
   useEffect(() => {
+    // Don't adopt an external `value` change while the user is focused/typing.
+    // A background cache update (e.g. the server response to a sibling field
+    // save) would otherwise reset the contentEditable and blow away the
+    // draft — including collapsing the caret back to the start.
+    if (isFocused) return;
+
     const nextValue = sanitizeRichTextHtml(value) ?? "";
     setDraftValue(nextValue);
 
     if (editorRef.current && editorRef.current.innerHTML !== nextValue) {
       editorRef.current.innerHTML = nextValue;
     }
-  }, [value]);
+  }, [value, isFocused]);
 
   function syncDraftFromDom(): string {
     // Never re-assign innerHTML here: even identical-looking reassignment

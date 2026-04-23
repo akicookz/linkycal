@@ -131,6 +131,16 @@ export default function PublicForm() {
     return { ...(themeFromProject ?? {}), ...(themeOverride ?? {}) };
   }, [themeFromProject, themeOverride]);
 
+  const primaryStyle: React.CSSProperties | undefined = (theme?.primaryBg || theme?.borderRadius != null)
+    ? {
+        ...(theme?.primaryBg ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg } : {}),
+        ...(theme?.borderRadius != null ? { borderRadius: `${theme.borderRadius}px` } : {}),
+      }
+    : undefined;
+  const outlineStyle: React.CSSProperties | undefined = theme?.borderRadius != null
+    ? { borderRadius: `${theme.borderRadius}px` }
+    : undefined;
+
   // ─── Track page view ────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -543,6 +553,7 @@ export default function PublicForm() {
               variant="outline"
               onClick={() => setCurrentStepIndex((prev) => prev - 1)}
               disabled={submitting}
+              style={outlineStyle}
             >
               <ChevronLeft className="h-4 w-4" />
               Back
@@ -552,7 +563,7 @@ export default function PublicForm() {
             type="submit"
             disabled={submitting}
             className="min-w-[100px]"
-            style={theme?.primaryBg ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg } : undefined}
+            style={primaryStyle}
           >
             {submitting ? (
               <><Loader className="h-4 w-4 animate-spin" /> {isLastStep ? "Submitting..." : "Next"}</>

@@ -238,11 +238,11 @@ export default function Workflows() {
   return (
     <div>
       <PageHeader title="Workflows" description="Automate actions based on triggers">
-        <Button onClick={() => setTemplateDialogOpen(true)} variant="outline" size="sm">
+        <Button onClick={() => setTemplateDialogOpen(true)} variant="outline" size="sm" className="flex-1 sm:flex-none">
           <Zap className="h-4 w-4" />
           Use Template
         </Button>
-        <Button onClick={openCreateDialog} size="sm">
+        <Button onClick={openCreateDialog} size="sm" className="flex-1 sm:flex-none">
           <Plus className="h-4 w-4" />
           New Workflow
         </Button>

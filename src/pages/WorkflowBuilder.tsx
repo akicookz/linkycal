@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -393,14 +393,35 @@ export default function WorkflowBuilder() {
 
   // ─── Mutations ───────────────────────────────────────────────────────────
 
-  const invalidateWorkflow = () => {
-    queryClient.invalidateQueries({
-      queryKey: ["projects", projectId, "workflows", workflowId],
-    });
-    queryClient.invalidateQueries({
-      queryKey: ["projects", projectId, "workflows"],
-    });
-  };
+  const workflowQueryKey = ["projects", projectId, "workflows", workflowId];
+
+  function optimisticSetWorkflow(updater: (w: FullWorkflow) => FullWorkflow) {
+    queryClient.setQueryData<FullWorkflow>(workflowQueryKey, (old) =>
+      old ? updater(old) : old,
+    );
+  }
+
+  function snapshotWorkflow() {
+    return queryClient.getQueryData<FullWorkflow>(workflowQueryKey);
+  }
+
+  function rollbackWorkflow(snap: FullWorkflow | undefined) {
+    queryClient.setQueryData<FullWorkflow>(workflowQueryKey, snap);
+  }
+
+  // tempId → realId map for steps created optimistically. Cache keeps the
+  // tempId for the session so React keys stay stable; server calls resolve
+  // through this map (or await the pending create promise if still in flight).
+  const stepIdMap = useRef<Map<string, string>>(new Map());
+  const pendingStepCreates = useRef<Map<string, Promise<string>>>(new Map());
+
+  async function resolveStepId(clientId: string): Promise<string> {
+    const mapped = stepIdMap.current.get(clientId);
+    if (mapped) return mapped;
+    const pending = pendingStepCreates.current.get(clientId);
+    if (pending) return pending;
+    return clientId;
+  }
 
   const updateWorkflowMutation = useMutation({
     mutationFn: async (data: Partial<{ name: string; status: string; trigger: string }>) => {
@@ -415,7 +436,22 @@ export default function WorkflowBuilder() {
       if (!res.ok) throw new Error("Failed to update workflow");
       return res.json();
     },
-    onSuccess: invalidateWorkflow,
+    onMutate: async (data) => {
+      await queryClient.cancelQueries({ queryKey: workflowQueryKey });
+      const snapshot = snapshotWorkflow();
+      optimisticSetWorkflow((old) => ({ ...old, ...data } as FullWorkflow));
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) rollbackWorkflow(ctx.snapshot);
+    },
+    onSettled: () => {
+      // Keep the workflows LIST fresh (it shows name/status) but don't refetch
+      // the individual workflow — optimistic state is authoritative.
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "workflows"],
+      });
+    },
   });
 
   const addStepMutation = useMutation({
@@ -436,13 +472,63 @@ export default function WorkflowBuilder() {
       if (!res.ok) throw new Error("Failed to add step");
       return res.json();
     },
-    onSuccess: invalidateWorkflow,
+    onMutate: async (data) => {
+      await queryClient.cancelQueries({ queryKey: workflowQueryKey });
+      const snapshot = snapshotWorkflow();
+      const tempId = `temp-${crypto.randomUUID()}`;
+      const insertAt = data.sortOrder ?? (snapshot?.steps.length ?? 0);
+      optimisticSetWorkflow((old) => {
+        const newStep: WorkflowStep = {
+          id: tempId,
+          workflowId: old.id,
+          type: data.type,
+          sortOrder: insertAt,
+          config: data.config ?? null,
+          condition: data.condition ?? null,
+          createdAt: new Date().toISOString(),
+        };
+        const before = old.steps.filter((s) => s.sortOrder < insertAt);
+        const after = old.steps
+          .filter((s) => s.sortOrder >= insertAt)
+          .map((s) => ({ ...s, sortOrder: s.sortOrder + 1 }));
+        return { ...old, steps: [...before, newStep, ...after] };
+      });
+
+      let resolveCreate!: (realId: string) => void;
+      let rejectCreate!: (err: unknown) => void;
+      const createPromise = new Promise<string>((res, rej) => {
+        resolveCreate = res;
+        rejectCreate = rej;
+      });
+      createPromise.catch(() => {});
+      pendingStepCreates.current.set(tempId, createPromise);
+
+      return { snapshot, tempId, resolveCreate, rejectCreate };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.snapshot) rollbackWorkflow(ctx.snapshot);
+      if (ctx?.tempId) {
+        ctx.rejectCreate(err);
+        pendingStepCreates.current.delete(ctx.tempId);
+      }
+    },
+    onSuccess: (data, _vars, ctx) => {
+      const step = data?.step as WorkflowStep | undefined;
+      const tempId = ctx?.tempId;
+      if (!step || !tempId) return;
+      // Record mapping; do not touch the cache — the tempId stays so no
+      // row re-mounts mid-edit.
+      stepIdMap.current.set(tempId, step.id);
+      ctx.resolveCreate(step.id);
+      pendingStepCreates.current.delete(tempId);
+    },
   });
 
   const updateStepMutation = useMutation({
     mutationFn: async ({ stepId, data }: { stepId: string; data: Record<string, unknown> }) => {
+      const realStepId = await resolveStepId(stepId);
       const res = await fetch(
-        `/api/projects/${projectId}/workflows/${workflowId}/steps/${stepId}`,
+        `/api/projects/${projectId}/workflows/${workflowId}/steps/${realStepId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -452,7 +538,18 @@ export default function WorkflowBuilder() {
       if (!res.ok) throw new Error("Failed to update step");
       return res.json();
     },
-    onSuccess: invalidateWorkflow,
+    onMutate: async ({ stepId, data }) => {
+      await queryClient.cancelQueries({ queryKey: workflowQueryKey });
+      const snapshot = snapshotWorkflow();
+      optimisticSetWorkflow((old) => ({
+        ...old,
+        steps: old.steps.map((s) => (s.id === stepId ? { ...s, ...data } : s)),
+      }));
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) rollbackWorkflow(ctx.snapshot);
+    },
   });
 
   const deleteWorkflowMutation = useMutation({
@@ -473,14 +570,28 @@ export default function WorkflowBuilder() {
 
   const deleteStepMutation = useMutation({
     mutationFn: async (stepId: string) => {
+      const realStepId = await resolveStepId(stepId);
       const res = await fetch(
-        `/api/projects/${projectId}/workflows/${workflowId}/steps/${stepId}`,
+        `/api/projects/${projectId}/workflows/${workflowId}/steps/${realStepId}`,
         { method: "DELETE" },
       );
       if (!res.ok) throw new Error("Failed to delete step");
     },
+    onMutate: async (stepId) => {
+      await queryClient.cancelQueries({ queryKey: workflowQueryKey });
+      const snapshot = snapshotWorkflow();
+      optimisticSetWorkflow((old) => ({
+        ...old,
+        steps: old.steps
+          .filter((s) => s.id !== stepId)
+          .map((s, i) => ({ ...s, sortOrder: i })),
+      }));
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.snapshot) rollbackWorkflow(ctx.snapshot);
+    },
     onSuccess: () => {
-      invalidateWorkflow();
       setDeleteStepId(null);
     },
   });
