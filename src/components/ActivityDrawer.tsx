@@ -272,7 +272,7 @@ export function ActivityDrawer({
             <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto space-y-5">
+          <div className="flex-1 overflow-y-auto space-y-4">
             {/* Location */}
             {(country || city) && (
               <p className="text-sm text-muted-foreground">
@@ -306,11 +306,9 @@ export function ActivityDrawer({
                   <CopyableField label="Date" value={formatDrawerDate(detail.booking.startTime)} />
                   <CopyableField label="Time" value={`${formatDrawerTime(detail.booking.startTime)} – ${formatDrawerTime(detail.booking.endTime)}`} />
                   <CopyableField label="Timezone" value={detail.booking.timezone} />
-                  <div className="flex items-start justify-between gap-3 py-2.5">
-                    <div>
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Status</p>
-                      <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
-                    </div>
+                  <div className="py-1.5">
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                    <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
                   </div>
                   {detail.booking.notes && <CopyableField label="Notes" value={detail.booking.notes} />}
                 </>
@@ -318,11 +316,9 @@ export function ActivityDrawer({
                 <>
                   <CopyableField label="Event" value={item.title} />
                   {item.startTime && <CopyableField label="Date" value={formatVerboseDate(item.startTime, item.timezone)} />}
-                  <div className="flex items-start justify-between gap-3 py-2.5">
-                    <div>
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Status</p>
-                      <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
-                    </div>
+                  <div className="py-1.5">
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                    <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
                   </div>
                 </>
               ) : (
@@ -332,13 +328,11 @@ export function ActivityDrawer({
                     label="Submitted"
                     value={formatDrawerDateTime(formDetail?.createdAt ?? item.date)}
                   />
-                  <div className="flex items-start justify-between gap-3 py-2.5">
-                    <div>
-                      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-0.5">Status</p>
-                      <Badge variant={statusVariant(formDetail?.status ?? item.status)}>
-                        {formDetail ? formResponseStatusLabel(formDetail.status) : item.status}
-                      </Badge>
-                    </div>
+                  <div className="py-1.5">
+                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                    <Badge variant={statusVariant(formDetail?.status ?? item.status)}>
+                      {formDetail ? formResponseStatusLabel(formDetail.status) : item.status}
+                    </Badge>
                   </div>
                 </>
               )}
