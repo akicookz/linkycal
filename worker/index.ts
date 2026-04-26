@@ -5172,6 +5172,95 @@ app.post("/api/onboarding/complete", async (c) => {
   }
 });
 
+app.post("/api/onboarding/default-form", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { projectId } = body as { projectId: string };
+
+    if (!projectId) {
+      return c.json({ error: "projectId is required" }, 400);
+    }
+
+    const db = c.get("db");
+    const userId = c.get("effectiveUserId");
+
+    // Verify project belongs to user
+    const [project] = await db
+      .select()
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.id, projectId))
+      .limit(1);
+
+    if (!project || project.userId !== userId) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const formService = new FormService(db);
+
+    // Pick a free slug ("contact", "contact-2", "contact-3", ...)
+    const existing = await db
+      .select({ slug: dbSchema.forms.slug })
+      .from(dbSchema.forms)
+      .where(eq(dbSchema.forms.projectId, projectId));
+    const taken = new Set(existing.map((row) => row.slug));
+    let slug = "contact";
+    let suffix = 2;
+    while (taken.has(slug)) {
+      slug = `contact-${suffix++}`;
+    }
+
+    const form = await formService.create(projectId, {
+      name: "Contact form",
+      slug,
+      type: "single",
+    });
+
+    if (!form) {
+      return c.json({ error: "Failed to create form" }, 500);
+    }
+
+    const steps = await formService.listSteps(form.id);
+    const stepId = steps[0]?.id;
+    if (!stepId) {
+      return c.json({ error: "Failed to create form step" }, 500);
+    }
+
+    await formService.updateStep(stepId, { title: "Contact us" });
+
+    await formService.createField({
+      stepId,
+      type: "name",
+      label: "Name",
+      required: true,
+      contactMapping: "name",
+    });
+    await formService.createField({
+      stepId,
+      type: "email",
+      label: "Email",
+      required: true,
+      contactMapping: "email",
+    });
+    await formService.createField({
+      stepId,
+      type: "phone",
+      label: "Phone",
+      required: false,
+    });
+    await formService.createField({
+      stepId,
+      type: "textarea",
+      label: "Message",
+      required: true,
+    });
+
+    return c.json({ form }, 201);
+  } catch (err) {
+    console.error("Onboarding default-form error:", err);
+    return c.json({ error: "Failed to create default form" }, 500);
+  }
+});
+
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/analytics/filters", async (c) => {

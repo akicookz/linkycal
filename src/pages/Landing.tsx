@@ -2240,7 +2240,7 @@ export default function Landing() {
                 onClick={openAuth}
                 className="glow-surface rounded-full h-12 px-8 text-sm font-medium inline-flex items-center justify-center gap-2"
               >
-                Get Started Free
+                Create contact forms free
                 <ArrowRight className="w-4 h-4" />
               </button>
               <Link

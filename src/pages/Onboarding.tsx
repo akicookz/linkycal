@@ -2,7 +2,14 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
-import { Loader, Check, ArrowRight, ArrowLeft } from "lucide-react";
+import {
+  Loader,
+  Check,
+  ArrowRight,
+  ArrowLeft,
+  FileText,
+  CalendarDays,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,8 +23,14 @@ import {
 } from "@/components/ui/select";
 import { WeeklyAvailabilityEditor } from "@/components/WeeklyAvailabilityEditor";
 import { Logo } from "@/components/Logo";
-import { cn } from "@/lib/utils";
+import FormBuilder from "@/pages/FormBuilder";
+import CopyPromptButton from "@/components/CopyPromptButton";
+import { cn, copyToClipboard } from "@/lib/utils";
 import { getTimezones, getDetectedTimezone, FONT_OPTIONS, plans } from "@/lib/constants";
+import {
+  generateFormApiPrompt,
+  generateFormEmbedPrompt,
+} from "@/lib/prompts";
 import {
   dayConfigsToRules,
   defaultDayConfigs,
@@ -33,13 +46,37 @@ interface OnboardingProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const onboardingSteps = [
-  { label: "Project" },
-  { label: "Event Type" },
-  { label: "Availability" },
-  { label: "Branding" },
-  { label: "Plan" },
-];
+type StepId =
+  | "project"
+  | "intent"
+  | "form-template"
+  | "event-type"
+  | "availability"
+  | "branding"
+  | "plan";
+
+interface Intent {
+  forms: boolean;
+  scheduling: boolean;
+}
+
+const STEP_LABELS: Record<StepId, string> = {
+  project: "Project",
+  intent: "Setup",
+  "form-template": "Form",
+  "event-type": "Event Type",
+  availability: "Availability",
+  branding: "Branding",
+  plan: "Plan",
+};
+
+function buildFlow(intent: Intent): StepId[] {
+  const flow: StepId[] = ["project", "intent"];
+  if (intent.forms) flow.push("form-template");
+  if (intent.scheduling) flow.push("event-type", "availability", "branding");
+  flow.push("plan");
+  return flow;
+}
 
 const durations = [
   { value: "15", label: "15 minutes" },
@@ -59,10 +96,29 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
   const posthog = usePostHog();
 
   // ─── Step state ───────────────────────────────────────────────────────────
-  const [currentStep, setCurrentStep] = useState(0);
+  const [step, setStep] = useState<StepId>("project");
+  const [intent, setIntent] = useState<Intent>({ forms: false, scheduling: false });
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectSlug, setProjectSlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resumeChecked, setResumeChecked] = useState(mode === "new-project");
+  const [promptCopiedId, setPromptCopiedId] = useState<string | null>(null);
+  const [templateFormId, setTemplateFormId] = useState<string | null>(null);
+
+  const flow = useMemo(() => buildFlow(intent), [intent]);
+
+  function goNext(currentIntent?: Intent) {
+    const activeFlow = currentIntent ? buildFlow(currentIntent) : flow;
+    const idx = activeFlow.indexOf(step);
+    if (idx === -1 || idx === activeFlow.length - 1) return;
+    setStep(activeFlow[idx + 1]);
+  }
+
+  function goBack() {
+    const idx = flow.indexOf(step);
+    if (idx <= 0) return;
+    setStep(flow[idx - 1]);
+  }
 
   // ─── Handle Stripe return ─────────────────────────────────────────────────
   const completing = searchParams.get("completing") === "true";
@@ -82,36 +138,38 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
         if (!projRes.ok) { setResumeChecked(true); return; }
         const { projects } = await projRes.json() as { projects: { id: string; slug: string; name: string; onboarded: boolean; settings: string | null }[] };
         const incomplete = projects.find((p) => !p.onboarded);
-        if (!incomplete) { setResumeChecked(true); return; }
-
-        setProjectId(incomplete.id);
-
-        // 2. Check event types
-        const etRes = await fetch(`/api/projects/${incomplete.id}/event-types`);
-        const etData = etRes.ok ? await etRes.json() as { eventTypes: unknown[] } : { eventTypes: [] };
-        if (!etData.eventTypes?.length) {
-          setCurrentStep(1);
+        if (!incomplete) {
+          // If at least one project exists and they're all onboarded, this user
+          // is done — don't sit on this page. If there are no projects at all
+          // (fresh signup), stay on the project step.
+          if (projects.length > 0) {
+            navigate("/app", { replace: true });
+            return;
+          }
           setResumeChecked(true);
           return;
         }
 
-        // 3. Check schedules (availability was customized if rules exist)
-        // 3. Check branding (we can't easily distinguish customized availability
-        // from the default schedule, so we resume at step 2 unless branding is set)
+        setProjectId(incomplete.id);
+        setProjectSlug(incomplete.slug);
+
+        // 2. Check event types — if any exist, the user is on the scheduling path.
+        const etRes = await fetch(`/api/projects/${incomplete.id}/event-types`);
+        const etData = etRes.ok ? await etRes.json() as { eventTypes: unknown[] } : { eventTypes: [] };
+
         const parsedSettings = incomplete.settings ? JSON.parse(incomplete.settings) : null;
         const hasTheme = parsedSettings?.theme?.primaryBg;
 
-        if (hasTheme) {
-          // Steps 0-3 done, resume at plan selection
-          setCurrentStep(4);
+        if (etData.eventTypes?.length || hasTheme) {
+          // Scheduling flow was started. Pin scheduling intent and resume.
+          setIntent({ forms: false, scheduling: true });
+          setStep(hasTheme ? "plan" : "availability");
         } else {
-          // Event types exist but no branding — resume at availability (step 2)
-          // We skip to step 3 if schedule was already saved, but we can't easily detect that,
-          // so we conservatively start at step 2.
-          setCurrentStep(2);
+          // Project exists but no event-types/theme — let the user pick intent.
+          setStep("intent");
         }
       } catch {
-        // If anything fails, start fresh
+        // If anything fails, start fresh on intent step (project already exists)
       } finally {
         setResumeChecked(true);
       }
@@ -180,13 +238,14 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to create project");
       }
-      return res.json() as Promise<{ project: { id: string } }>;
+      return res.json() as Promise<{ project: { id: string; slug: string } }>;
     },
     onSuccess: (data) => {
       setError(null);
       queryClient.invalidateQueries({ queryKey: ["projects"] });
       const id = data.project.id;
       setProjectId(id);
+      setProjectSlug(data.project.slug);
       posthog?.capture("onboarding_project_created", { mode });
 
       if (mode === "new-project") {
@@ -200,7 +259,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
           navigate(`/app/projects/${id}`);
         });
       } else {
-        setCurrentStep(1);
+        setStep("intent");
       }
     },
     onError: (err: Error) => {
@@ -227,14 +286,14 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     },
     onSuccess: () => {
       setError(null);
-      setCurrentStep(2);
+      setStep("availability");
     },
     onError: (err: Error) => {
       setError(err.message);
     },
   });
 
-  // Fetch default schedule when entering step 2
+  // Fetch default schedule when entering availability step
   const { data: schedulesData } = useQuery({
     queryKey: ["onboarding-schedules", projectId],
     queryFn: async () => {
@@ -242,7 +301,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       if (!res.ok) throw new Error("Failed to fetch schedules");
       return res.json() as Promise<{ schedules: { id: string; name: string; timezone: string }[] }>;
     },
-    enabled: currentStep === 2 && !!projectId,
+    enabled: step === "availability" && !!projectId,
   });
 
   useEffect(() => {
@@ -265,7 +324,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       const data = await res.json();
       return data.rules ?? [];
     },
-    enabled: currentStep === 2 && !!projectId && !!scheduleId,
+    enabled: step === "availability" && !!projectId && !!scheduleId,
   });
 
   useEffect(() => {
@@ -291,7 +350,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     },
     onSuccess: () => {
       setError(null);
-      setCurrentStep(3);
+      setStep("branding");
     },
     onError: (err: Error) => {
       setError(err.message);
@@ -324,11 +383,80 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     },
     onSuccess: () => {
       setError(null);
-      setCurrentStep(4);
+      setStep("plan");
     },
     onError: (err: Error) => {
       setError(err.message);
     },
+  });
+
+  const createDefaultFormMutation = useMutation({
+    mutationFn: async (pid: string) => {
+      const res = await fetch("/api/onboarding/default-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: pid }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to create default form");
+      }
+      return res.json() as Promise<{ form: { id: string } }>;
+    },
+    onSuccess: (data) => {
+      setTemplateFormId(data.form.id);
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "forms"],
+      });
+    },
+    onError: (err: Error) => {
+      setError(err.message);
+    },
+  });
+
+  // Lazy-create the default contact form the first time the user lands on the form-template step.
+  useEffect(() => {
+    if (
+      step === "form-template" &&
+      projectId &&
+      !templateFormId &&
+      !createDefaultFormMutation.isPending
+    ) {
+      createDefaultFormMutation.mutate(projectId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, projectId, templateFormId]);
+
+  // Read the live form from React Query cache for prompt copying.
+  const { data: templateForm } = useQuery<{
+    id: string;
+    name: string;
+    slug: string;
+    type: "single" | "multi_step";
+    steps?: Array<{
+      title: string | null;
+      description: string | null;
+      richDescription?: string | null;
+      fields: Array<{
+        id: string;
+        label: string;
+        type: string;
+        required: boolean;
+        placeholder: string | null;
+        options: Array<{ label: string; value: string }> | null;
+      }>;
+    }>;
+  }>({
+    queryKey: ["projects", projectId, "forms", templateFormId],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/forms/${templateFormId}`,
+      );
+      if (!res.ok) throw new Error("Failed to fetch form");
+      const data = await res.json();
+      return data.form ?? data;
+    },
+    enabled: !!projectId && !!templateFormId,
   });
 
   const checkoutMutation = useMutation({
@@ -364,10 +492,17 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       if (!res.ok) throw new Error("Failed to complete onboarding");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_data, pid) => {
       posthog?.capture("onboarding_completed");
-      queryClient.invalidateQueries({ queryKey: ["projects"] });
+      // Optimistically mark this project onboarded so guards/redirects
+      // don't bounce us back to /app/onboarding before the refetch lands.
+      queryClient.setQueryData<Array<{ id: string; onboarded: boolean }>>(
+        ["projects"],
+        (old) =>
+          old?.map((p) => (p.id === pid ? { ...p, onboarded: true } : p)),
+      );
       navigate("/app");
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
   });
 
@@ -400,7 +535,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
-  const steps = mode === "new-project" ? [{ label: "Project" }] : onboardingSteps;
+  const visibleFlow: StepId[] = mode === "new-project" ? ["project"] : flow;
+  const stepIndex = visibleFlow.indexOf(step);
   const isLoading =
     createProjectMutation.isPending ||
     createEventTypeMutation.isPending ||
@@ -411,13 +547,21 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4 py-12">
-      <div className="w-full max-w-lg mb-10">
-        <Logo size="lg" />
-      </div>
-
-      <Card className={cn("w-full", currentStep === 4 ? "max-w-4xl" : "max-w-lg")}>
-        {/* ── Step 0: Project ──────────────────────────────────────────── */}
-        {currentStep === 0 && (
+      {(() => {
+        const widthClass =
+          step === "plan" || step === "form-template"
+            ? "max-w-4xl"
+            : step === "intent"
+              ? "max-w-2xl"
+              : "max-w-lg";
+        return (
+          <>
+            <div className={cn("w-full mb-10", widthClass)}>
+              <Logo size="lg" />
+            </div>
+            <Card className={cn("w-full", widthClass)}>
+        {/* ── Step: Project ────────────────────────────────────────────── */}
+        {step === "project" && (
           <>
             <CardHeader>
               <CardTitle className="text-xl">Create your project</CardTitle>
@@ -501,8 +645,210 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
           </>
         )}
 
-        {/* ── Step 1: Event Type ───────────────────────────────────────── */}
-        {currentStep === 1 && (
+        {/* ── Step: Intent ─────────────────────────────────────────────── */}
+        {step === "intent" && (
+          <>
+            <CardHeader>
+              <CardTitle className="text-xl">What are you here for?</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                Pick one or both. We'll tailor the rest of the setup.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {([
+                  {
+                    key: "forms" as const,
+                    icon: FileText,
+                    title: "Add contact forms to my website",
+                    description: "Embed forms that collect name, email, phone, and a message.",
+                  },
+                  {
+                    key: "scheduling" as const,
+                    icon: CalendarDays,
+                    title: "Scheduling and form links",
+                    description: "Bookable event types, availability, and shareable booking pages.",
+                  },
+                ]).map((card) => {
+                  const Icon = card.icon;
+                  const selected = intent[card.key];
+                  return (
+                    <button
+                      key={card.key}
+                      type="button"
+                      onClick={() =>
+                        setIntent((prev) => ({ ...prev, [card.key]: !prev[card.key] }))
+                      }
+                      className={cn(
+                        "text-left rounded-[16px] border p-4 transition-all flex flex-col gap-3 hover:border-primary/40",
+                        selected && "border-primary",
+                      )}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="h-9 w-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
+                          <Icon className="h-4 w-4 text-primary" />
+                        </div>
+                        <div
+                          className={cn(
+                            "h-5 w-5 rounded-full border flex items-center justify-center transition-colors",
+                            selected
+                              ? "bg-primary border-primary text-primary-foreground"
+                              : "border-border",
+                          )}
+                        >
+                          {selected && <Check className="h-3 w-3" />}
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold">{card.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {card.description}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {error && <p className="text-sm text-destructive">{error}</p>}
+
+              <div className="flex justify-between pt-2">
+                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
+                  <ArrowLeft className="h-4 w-4 mr-1.5" />
+                  Back
+                </Button>
+                <Button
+                  disabled={!intent.forms && !intent.scheduling}
+                  onClick={() => {
+                    setError(null);
+                    goNext(intent);
+                  }}
+                >
+                  Continue
+                  <ArrowRight className="h-4 w-4 ml-1.5" />
+                </Button>
+              </div>
+            </CardContent>
+          </>
+        )}
+
+        {/* ── Step: Form template (live FormBuilder) ───────────────────── */}
+        {step === "form-template" && (
+          <>
+            <CardHeader className="px-4 sm:px-6">
+              <CardTitle className="text-xl">Your contact form</CardTitle>
+              <p className="text-sm text-muted-foreground mt-1">
+                A starter form is ready. Edit it now or continue and refine later.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5 px-3 sm:px-6">
+              {error && <p className="text-sm text-destructive">{error}</p>}
+
+              {!templateFormId || !projectId ? (
+                <div className="flex items-center justify-center py-16 text-muted-foreground">
+                  <Loader className="h-5 w-5 animate-spin mr-2" />
+                  <span className="text-sm">Setting up your form...</span>
+                </div>
+              ) : (
+                <FormBuilder
+                  projectId={projectId}
+                  formId={templateFormId}
+                  mode="template"
+                  onboardingFooter={
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-4 border-t mt-2">
+                      <Button
+                        variant="ghost"
+                        className="w-full sm:w-auto order-2 sm:order-1 text-muted-foreground"
+                        onClick={() => {
+                          goBack();
+                          setError(null);
+                        }}
+                      >
+                        <ArrowLeft className="h-4 w-4 mr-1.5" />
+                        Back
+                      </Button>
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 order-1 sm:order-2">
+                        <CopyPromptButton
+                          align="end"
+                          buttonVariant="outline"
+                          buttonSize="default"
+                          buttonClassName="h-10 px-4 text-sm w-full sm:w-auto justify-center"
+                          items={[
+                            {
+                              id: "embed",
+                              label:
+                                promptCopiedId === "embed"
+                                  ? "Copied!"
+                                  : "Embed prompt",
+                              description:
+                                "Instructions for AI builders (Lovable, Cursor) to install the form.",
+                              copied: promptCopiedId === "embed",
+                              onClick: () => {
+                                if (!templateForm) return;
+                                const slug = projectSlug ?? "your-project";
+                                copyToClipboard(
+                                  generateFormEmbedPrompt(
+                                    templateForm,
+                                    slug,
+                                    window.location.origin,
+                                  ),
+                                );
+                                setPromptCopiedId("embed");
+                                setTimeout(
+                                  () => setPromptCopiedId(null),
+                                  2000,
+                                );
+                              },
+                            },
+                            {
+                              id: "api",
+                              label:
+                                promptCopiedId === "api"
+                                  ? "Copied!"
+                                  : "API prompt",
+                              description:
+                                "Wire the form up via API or native HTML action.",
+                              copied: promptCopiedId === "api",
+                              onClick: () => {
+                                if (!templateForm) return;
+                                const slug = projectSlug ?? "your-project";
+                                copyToClipboard(
+                                  generateFormApiPrompt(
+                                    templateForm,
+                                    slug,
+                                    window.location.origin,
+                                  ),
+                                );
+                                setPromptCopiedId("api");
+                                setTimeout(
+                                  () => setPromptCopiedId(null),
+                                  2000,
+                                );
+                              },
+                            },
+                          ]}
+                        />
+                        <Button
+                          className="w-full sm:w-auto"
+                          onClick={() => {
+                            setError(null);
+                            goNext();
+                          }}
+                        >
+                          Continue
+                          <ArrowRight className="h-4 w-4 ml-1.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  }
+                />
+              )}
+            </CardContent>
+          </>
+        )}
+
+        {/* ── Step: Event Type ─────────────────────────────────────────── */}
+        {step === "event-type" && (
           <>
             <CardHeader>
               <CardTitle className="text-xl">Create your first event type</CardTitle>
@@ -554,7 +900,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
               {error && <p className="text-sm text-destructive">{error}</p>}
 
               <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { setCurrentStep(0); setError(null); }}>
+                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
                   <ArrowLeft className="h-4 w-4 mr-1.5" />
                   Back
                 </Button>
@@ -590,8 +936,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
           </>
         )}
 
-        {/* ── Step 2: Availability ──────────────────────────────────────── */}
-        {currentStep === 2 && (
+        {/* ── Step: Availability ───────────────────────────────────────── */}
+        {step === "availability" && (
           <>
             <CardHeader>
               <CardTitle className="text-xl">Set your availability</CardTitle>
@@ -609,7 +955,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
               {error && <p className="text-sm text-destructive">{error}</p>}
 
               <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { setCurrentStep(1); setError(null); }}>
+                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
                   <ArrowLeft className="h-4 w-4 mr-1.5" />
                   Back
                 </Button>
@@ -642,8 +988,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
           </>
         )}
 
-        {/* ── Step 3: Branding ─────────────────────────────────────────── */}
-        {currentStep === 3 && (
+        {/* ── Step: Branding ───────────────────────────────────────────── */}
+        {step === "branding" && (
           <>
             <CardHeader>
               <CardTitle className="text-xl">Customize your pages</CardTitle>
@@ -717,7 +1063,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
               {error && <p className="text-sm text-destructive">{error}</p>}
 
               <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { setCurrentStep(2); setError(null); }}>
+                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
                   <ArrowLeft className="h-4 w-4 mr-1.5" />
                   Back
                 </Button>
@@ -742,8 +1088,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
           </>
         )}
 
-        {/* ── Step 4: Plan ─────────────────────────────────────────────── */}
-        {currentStep === 4 && (
+        {/* ── Step: Plan ───────────────────────────────────────────────── */}
+        {step === "plan" && (
           <>
             <CardHeader>
               <CardTitle className="text-xl">Choose your plan</CardTitle>
@@ -818,29 +1164,34 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                 ))}
               </div>
 
-              <div className="flex justify-start pt-5">
-                <Button variant="outline" onClick={() => { setCurrentStep(3); setError(null); }}>
-                  <ArrowLeft className="h-4 w-4 mr-1.5" />
-                  Back
-                </Button>
-              </div>
+              {flow.indexOf("plan") > 1 && (
+                <div className="flex justify-start pt-5">
+                  <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
+                    <ArrowLeft className="h-4 w-4 mr-1.5" />
+                    Back
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </>
         )}
-      </Card>
+            </Card>
+          </>
+        );
+      })()}
 
       {/* Step indicator dots */}
       {mode === "onboarding" && (
         <>
           <div className="flex items-center gap-2 mt-8">
-            {steps.map((step, i) => (
+            {visibleFlow.map((stepId, i) => (
               <div
-                key={step.label}
+                key={stepId}
                 className={cn(
                   "h-2 rounded-full transition-all duration-300",
-                  i === currentStep
+                  i === stepIndex
                     ? "w-6 bg-primary"
-                    : i < currentStep
+                    : i < stepIndex
                       ? "w-2 bg-primary/50"
                       : "w-2 bg-border",
                 )}
@@ -848,7 +1199,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
             ))}
           </div>
           <p className="text-xs text-muted-foreground mt-2">
-            Step {currentStep + 1} of {steps.length}: {steps[currentStep].label}
+            Step {stepIndex + 1} of {visibleFlow.length}: {STEP_LABELS[step]}
           </p>
         </>
       )}

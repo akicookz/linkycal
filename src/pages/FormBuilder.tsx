@@ -54,6 +54,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 import {
   Dialog,
@@ -442,11 +447,22 @@ function generateSlug(name: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function FormBuilder() {
-  const { projectId, formId } = useParams<{
+interface FormBuilderProps {
+  projectId?: string;
+  formId?: string;
+  mode?: "live" | "template";
+  onboardingFooter?: React.ReactNode;
+}
+
+export default function FormBuilder(props: FormBuilderProps = {}) {
+  const params = useParams<{
     projectId: string;
     formId: string;
   }>();
+  const projectId = props.projectId ?? params.projectId;
+  const formId = props.formId ?? params.formId;
+  const mode = props.mode ?? "live";
+  const isTemplateMode = mode === "template";
   const navigate = useNavigate();
   const { data: session } = useSession();
 
@@ -1808,6 +1824,14 @@ export default function FormBuilder() {
   // ─── Render: Loading ─────────────────────────────────────────────────────
 
   if (isLoading) {
+    if (isTemplateMode) {
+      return (
+        <div className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      );
+    }
     return (
       <div>
         <div className="flex items-center gap-3 mb-8">
@@ -1836,7 +1860,7 @@ export default function FormBuilder() {
   if (isError || !form) {
     return (
       <div>
-        <PageHeader title="Form Builder" />
+        {!isTemplateMode && <PageHeader title="Form Builder" />}
         <div className="flex flex-col items-center justify-center rounded-[20px] border border-dashed py-16">
           <AlertCircle className="h-10 w-10 text-destructive mb-4" />
           <p className="text-sm font-medium text-foreground mb-1">
@@ -1864,6 +1888,7 @@ export default function FormBuilder() {
   return (
     <div>
       {/* Top action bar */}
+      {!isTemplateMode && (
       <div className="flex items-center justify-between gap-4 mb-6">
         <div className="flex items-center gap-3 min-w-0">
           <Button
@@ -1953,9 +1978,11 @@ export default function FormBuilder() {
           </Button>
         </div>
       </div>
+      )}
 
-      <div className="grid grid-cols-[240px_1fr] gap-6">
+      <div className={isTemplateMode ? "" : "grid grid-cols-[240px_1fr] gap-6"}>
         {/* ─── Left Sidebar: Field Palette ─────────────────────────────── */}
+        {!isTemplateMode && (
         <div className="space-y-4">
           <Card>
             <CardContent className="space-y-1.5">
@@ -1992,6 +2019,7 @@ export default function FormBuilder() {
             </CardContent>
           </Card>
         </div>
+        )}
 
         {/* ─── Main Area ──────────────────────────────────────────────── */}
         <div className="space-y-4">
@@ -2033,13 +2061,52 @@ export default function FormBuilder() {
             <Button
               variant="outline"
               size="sm"
-              className="h-8 px-2.5 shrink-0"
+              className="h-9 px-3 shrink-0"
               onClick={() => addStepMutation.mutate({})}
               disabled={addStepMutation.isPending}
             >
               <Plus className="h-3.5 w-3.5" />
               Add Step
             </Button>
+            {isTemplateMode && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-9 px-3 shrink-0"
+                    disabled={sortedSteps.length === 0}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Field
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-56 p-1.5">
+                  {FIELD_TYPES.map((ft) => (
+                    <button
+                      key={ft.type}
+                      type="button"
+                      onClick={() => handleAddField(ft.type, ft.label)}
+                      disabled={activeFields.some((f) => f.type === "completion")}
+                      className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <ft.icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                      {ft.label}
+                    </button>
+                  ))}
+                  <div className="my-1 h-px bg-border" />
+                  <button
+                    type="button"
+                    onClick={handleAddCompletionPage}
+                    disabled={hasCompletionPage || addStepMutation.isPending}
+                    className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <PartyPopper className="h-4 w-4 text-muted-foreground shrink-0" />
+                    Completion Page
+                  </button>
+                </PopoverContent>
+              </Popover>
+            )}
           </div>
 
           {/* Active step content */}
@@ -2082,7 +2149,7 @@ export default function FormBuilder() {
                 isCrossStepMode={showStepDropTargets}
               >
                 <Card>
-                  <CardContent className="space-y-4">
+                  <CardContent className={cn("space-y-4", isTemplateMode && "px-3 sm:px-6")}>
                     {/* Step title & description — hidden for completion steps */}
                     {!activeFields.some((f) => f.type === "completion") && (
                     <div className="space-y-2">
@@ -2316,21 +2383,23 @@ export default function FormBuilder() {
                                       saveStatus[field.id] === "saving" && "opacity-50 pointer-events-none",
                                     )}>
                                    {/* Row 1: Handle + Label + Type + Required + Remove */}
-                                   <div className="flex items-start gap-3">
-                                     <GripVertical className="h-4 w-4 mt-1 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                                     <InlineEditableLabel
-                                       value={field.label}
-                                       autoFocus={shouldAutoFocus}
-                                       placeholder="Field label..."
-                                       saveStatus={saveStatus[field.id] ?? null}
-                                       onSave={(label) =>
-                                         updateFieldMutation.mutate({
-                                           fieldId: field.id,
-                                           data: { label },
-                                         })
-                                       }
-                                     />
-                                     <div className="flex items-center gap-3 ml-auto shrink-0">
+                                   <div className="flex flex-wrap items-start gap-3">
+                                     <div className="flex items-start gap-3 flex-1 basis-[200px] min-w-0">
+                                       <GripVertical className="h-4 w-4 mt-1 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
+                                       <InlineEditableLabel
+                                         value={field.label}
+                                         autoFocus={shouldAutoFocus}
+                                         placeholder="Field label..."
+                                         saveStatus={saveStatus[field.id] ?? null}
+                                         onSave={(label) =>
+                                           updateFieldMutation.mutate({
+                                             fieldId: field.id,
+                                             data: { label },
+                                           })
+                                         }
+                                       />
+                                     </div>
+                                     <div className="flex items-center gap-3 shrink-0 flex-wrap">
                                        <Select
                                          value={field.type}
                                          onValueChange={(val) => {
@@ -2619,10 +2688,13 @@ export default function FormBuilder() {
               </Button>
             </div>
           )}
+
+          {isTemplateMode && props.onboardingFooter}
         </div>
       </div>
 
       {/* ─── Settings Dialog ────────────────────────────────────────── */}
+      {!isTemplateMode && (
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
@@ -2742,6 +2814,7 @@ export default function FormBuilder() {
           </div>
         </DialogContent>
       </Dialog>
+      )}
 
     </div>
   );
