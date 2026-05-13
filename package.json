@@ -57,6 +57,7 @@
 		"radix-ui": "^1.4.3",
 		"react": "^19.1.0",
 		"react-dom": "^19.1.0",
+		"react-helmet-async": "^3.0.0",
 		"react-router-dom": "^7.6.0",
 		"recharts": "^3.8.1",
 		"resend": "^6.9.1",

@@ -1716,7 +1716,7 @@ const featureShowcaseItems: FeatureShowcaseItem[] = [
     id: "feature-scheduling",
     railLabel: "Scheduling",
     eyebrow: "Scheduling",
-    title: "Branded scheduling linksd and widgets.",
+    title: "Branded scheduling links and widgets.",
     description:
       "Share booking pages and widgets that stay in sync with your calendar, handle timezones correctly, and confirm every slot the moment it is reserved.",
     capabilities: [
@@ -1930,7 +1930,7 @@ function FeatureShowcasePanel({
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.92fr)] gap-8 xl:gap-10 items-start border-t border-brand/12 pt-8">
         <div className="space-y-7">
-          <h2 className="max-w-4xl text-[2.75rem] sm:text-[3.35rem] lg:text-[4.15rem] font-medium tracking-tight leading-[0.94] text-foreground">
+          <h2 className="font-heading max-w-4xl text-[2.75rem] sm:text-[3.35rem] lg:text-[4.15rem] font-medium tracking-tight leading-[0.94] text-foreground">
             {item.title}{" "}
             {item.highlightedTitle && (
               <span className="text-brand">{item.highlightedTitle}</span>
@@ -2211,7 +2211,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-6 relative pt-20">
           {/* Top: headline + description + CTAs */}
           <div className="max-w-4xl">
-            <h1 className="text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-medium tracking-tight leading-[1.06]">
+            <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-medium tracking-tight leading-[1.06]">
               Effortless forms and scheduling for <span className="text-brand">your website</span>
             </h1>
             <p className="text-lg text-brand font-semibold max-w-xl leading-relaxed mt-6 mb-10">
@@ -2279,7 +2279,7 @@ export default function Landing() {
             <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
               Features
             </div>
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight max-w-2xl">
+            <h2 className="font-heading text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight max-w-2xl">
               Headless and branded forms and scheduling infrastructure
             </h2>
           </div>
@@ -2648,7 +2648,7 @@ export default function Landing() {
               <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
                 How It Works
               </div>
-              <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
+              <h2 className="font-heading text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
                 Up and running in three steps
               </h2>
             </div>
@@ -2766,7 +2766,7 @@ export default function Landing() {
               <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
                 Pricing
               </div>
-              <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
+              <h2 className="font-heading text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
                 ... And it does not cost arm and a leg
               </h2>
             </div>
@@ -2781,7 +2781,7 @@ export default function Landing() {
               <div className="text-sm font-medium text-brand uppercase tracking-wider mb-3">
                 FAQ
               </div>
-              <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
+              <h2 className="font-heading text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight">
                 Frequently asked questions
               </h2>
             </div>
@@ -2796,7 +2796,7 @@ export default function Landing() {
         {/* ── 13. Final CTA ─────────────────────────────────────────────── */}
         <LandingSceneSection fullHeight={false} contentClassName="max-w-5xl">
           <div className="landing-scene-panel text-center px-6 py-10 sm:px-8 sm:py-12">
-            <h2 className="text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
+            <h2 className="font-heading text-3xl sm:text-[2.5rem] font-medium tracking-tight leading-tight mb-5">
               Ready to get started?
             </h2>
             <p className="text-base text-muted-foreground leading-relaxed mb-8 max-w-xl mx-auto">
