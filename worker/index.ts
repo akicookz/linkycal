@@ -5407,8 +5407,14 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
     console.log("[prerender] skip: non-GET", req.method, url);
     return null;
   }
-  if (!(req.headers.get("accept") || "").includes("text/html")) {
-    console.log("[prerender] skip: non-html accept", url);
+  // Treat missing/empty Accept and bare '*/*' as HTML so crawler tests
+  // (curl without -H, default fetch) still route through prerender. Asset
+  // requests from browsers send a specific Accept (e.g. 'text/css,*/*;q=0.1')
+  // so they won't match.
+  const accept = (req.headers.get("accept") || "").trim();
+  const isHtmlRequest = !accept || accept === "*/*" || accept.includes("text/html");
+  if (!isHtmlRequest) {
+    console.log("[prerender] skip: non-html accept", accept, url);
     return null;
   }
 
@@ -5425,7 +5431,7 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
   let r: Response;
   try {
     r = await fetch(
-      "https://lovablehtml.com/api/prerender/render?url=" + encodeURIComponent(url),
+      "https://encited.com/api/prerender/render?url=" + encodeURIComponent(url),
       { headers },
     );
   } catch (err) {
@@ -5435,6 +5441,17 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
   const ms = Date.now() - started;
   const ct = r.headers.get("content-type") || "";
 
+  // 301 = configured redirect rule matched — forward to client.
+  if (r.status === 301) {
+    const loc = r.headers.get("location");
+    if (loc) {
+      console.log("[prerender] 301 redirect", url, "->", loc, `${ms}ms`);
+      return new Response(null, {
+        status: 301,
+        headers: { location: loc, "cache-control": "no-store" },
+      });
+    }
+  }
   if (r.status === 304) {
     console.log("[prerender] 304 passthrough", url, `${ms}ms`);
     return null;
