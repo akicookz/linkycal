@@ -5,7 +5,6 @@ import {
   Plus,
   Users,
   Search,
-  Pencil,
   Trash2,
   Tags,
   Loader,
@@ -39,8 +38,16 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 import { TagPickerContent } from "@/components/TagPicker";
+import CopyContactButton from "@/components/CopyContactButton";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import ContactsKanban from "./ContactsKanban";
@@ -696,37 +703,44 @@ export default function Contacts() {
       <div className="space-y-1 px-6">
         {contacts.map((contact) => (
           <div key={contact.id}>
-            <div className="flex items-center gap-4 py-3">
+            <div
+              className="group/contact flex items-center gap-4 py-3 px-3 -mx-3 rounded-[14px] cursor-pointer hover:bg-muted/40 transition-colors"
+              onClick={() => navigateToContact(contact.id)}
+            >
               <div
-                className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0 cursor-pointer"
+                className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
                 style={{ backgroundColor: getAvatarColor(contact.name) }}
-                onClick={() => navigateToContact(contact.id)}
               >
                 {getInitial(contact.name)}
               </div>
 
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">
-                  <button
-                    type="button"
-                    className="hover:underline text-left"
-                    onClick={() => navigateToContact(contact.id)}
-                  >
-                    {contact.name}
-                  </button>
+                  {contact.name}
                 </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {[contact.email, contact.phone].filter(Boolean).join(" · ") ||
-                    `Added ${formatDate(contact.createdAt)}`}
-                </p>
+                <div className="flex items-center gap-1 min-w-0">
+                  <p className="text-xs text-muted-foreground truncate">
+                    {[contact.email, contact.phone].filter(Boolean).join(" · ") ||
+                      `Added ${formatDate(contact.createdAt)}`}
+                  </p>
+                  {contact.email && (
+                    <CopyContactButton
+                      name={contact.name}
+                      email={contact.email}
+                    />
+                  )}
+                </div>
               </div>
 
               {/* Tags — chips + attach right from the row */}
-              <div className="hidden sm:flex items-center gap-1 shrink-0 max-w-[280px] overflow-hidden">
+              <div
+                className="hidden sm:flex items-center gap-1.5 shrink-0 max-w-[340px] overflow-hidden"
+                onClick={(e) => e.stopPropagation()}
+              >
                 {contact.tags.slice(0, 3).map((tag) => (
                   <span
                     key={tag.id}
-                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap"
+                    className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap"
                     style={{
                       backgroundColor: `${tag.color ?? "#6366f1"}15`,
                       color: tag.color ?? "#6366f1",
@@ -736,7 +750,7 @@ export default function Contacts() {
                   </span>
                 ))}
                 {contact.tags.length > 3 && (
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
                     +{contact.tags.length - 3}
                   </span>
                 )}
@@ -744,10 +758,10 @@ export default function Contacts() {
                   <PopoverTrigger asChild>
                     <button
                       type="button"
-                      className="flex h-6 w-6 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                       aria-label={`Edit tags for ${contact.name}`}
                     >
-                      <Tags className="h-3.5 w-3.5" />
+                      <Tags className="h-4 w-4" />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent align="end" className="w-64 p-2">
@@ -773,14 +787,16 @@ export default function Contacts() {
                 </Popover>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div
+                className="flex items-center gap-1.5 shrink-0"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <Button
                   variant="outline"
                   size="sm"
                   className="h-7 px-2.5 text-xs"
                   onClick={() => openEditDialog(contact)}
                 >
-                  <Pencil className="h-3 w-3" />
                   Edit
                 </Button>
                 <Button
@@ -873,103 +889,27 @@ export default function Contacts() {
         </Button>
       </PageHeader>
 
-      {/* Toolbar: views + view-type tabs + filters */}
+      {/* Toolbar: search + filters left, view controls right */}
       <div className="flex items-center flex-wrap gap-2 mb-4">
-        {/* Saved views dropdown */}
-        <Popover open={viewsMenuOpen} onOpenChange={setViewsMenuOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="h-9">
-              <Bookmark className="h-4 w-4" />
-              {activeView ? activeView.name : "All contacts"}
-              {isDirty && activeView && (
-                <span className="ml-1 text-xs text-muted-foreground">·</span>
-              )}
-              <ChevronDown className="h-4 w-4 opacity-60" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 p-2">
-            <div className="space-y-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  applyView(null);
-                  setViewsMenuOpen(false);
-                }}
-                className={cn(
-                  "flex w-full items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-sm hover:bg-accent text-left",
-                  activeViewId === null && "bg-accent",
-                )}
-              >
-                <span className="flex items-center gap-2">
-                  <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                  All contacts
-                </span>
-                {activeViewId === null && <Check className="h-4 w-4" />}
-              </button>
-              {savedViews.length > 0 && (
-                <div className="my-1 h-px bg-border" />
-              )}
-              {savedViews.map((v) => (
-                <div
-                  key={v.id}
-                  className={cn(
-                    "group flex items-center gap-1 rounded-[10px] pr-1 hover:bg-accent",
-                    activeViewId === v.id && "bg-accent",
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      applyView(v);
-                      setViewsMenuOpen(false);
-                    }}
-                    className="flex flex-1 items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-sm text-left"
-                  >
-                    <span className="flex items-center gap-2 min-w-0">
-                      {v.type === "kanban" ? (
-                        <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      ) : (
-                        <ListIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                      )}
-                      <span className="truncate">{v.name}</span>
-                    </span>
-                    {activeViewId === v.id && (
-                      <Check className="h-4 w-4 shrink-0" />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteViewTarget(v);
-                      setViewsMenuOpen(false);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-muted-foreground hover:text-destructive transition-opacity"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
-
-        {/* View type tabs */}
-        <Tabs
-          value={viewType}
-          onValueChange={(v) => setViewType(v as ViewType)}
-        >
-          <TabsList className="h-9">
-            <TabsTrigger value="list" className="h-7 px-2.5">
-              <ListIcon className="h-3.5 w-3.5" />
-              List
-            </TabsTrigger>
-            <TabsTrigger value="kanban" className="h-7 px-2.5">
-              <LayoutGrid className="h-3.5 w-3.5" />
-              Kanban
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+        {/* Search */}
+        <div className="relative flex-1 min-w-[240px] max-w-xl">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search contacts by name, email, or phone..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            className="pl-9 h-9"
+          />
+          {searchInput && (
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setSearchInput("")}
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
 
         {/* Filters popover */}
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
@@ -991,27 +931,30 @@ export default function Contacts() {
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                   Activity
                 </Label>
-                <select
-                  value={config.activityType ?? ""}
-                  onChange={(e) =>
+                <Select
+                  value={config.activityType ?? "any"}
+                  onValueChange={(v) =>
                     setConfig((c) => ({
                       ...c,
-                      activityType: (e.target.value || undefined) as
-                        | ActivityType
-                        | undefined,
+                      activityType:
+                        v === "any" ? undefined : (v as ActivityType),
                     }))
                   }
-                  className="flex h-9 w-full rounded-[12px] border border-input bg-white px-3 py-1 text-sm shadow-xs"
                 >
-                  <option value="">Any activity type</option>
-                  {(Object.keys(ACTIVITY_TYPE_LABELS) as ActivityType[]).map(
-                    (t) => (
-                      <option key={t} value={t}>
-                        {ACTIVITY_TYPE_LABELS[t]}
-                      </option>
-                    ),
-                  )}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Any activity type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Any activity type</SelectItem>
+                    {(Object.keys(ACTIVITY_TYPE_LABELS) as ActivityType[]).map(
+                      (t) => (
+                        <SelectItem key={t} value={t}>
+                          {ACTIVITY_TYPE_LABELS[t]}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
 
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -1062,50 +1005,38 @@ export default function Contacts() {
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground">
                   Has booking with status
                 </Label>
-                <select
-                  value={config.bookingStatus ?? ""}
-                  onChange={(e) =>
+                <Select
+                  value={config.bookingStatus ?? "any"}
+                  onValueChange={(v) =>
                     setConfig((c) => ({
                       ...c,
-                      bookingStatus: (e.target.value || undefined) as
-                        | BookingStatus
-                        | undefined,
+                      bookingStatus:
+                        v === "any" ? undefined : (v as BookingStatus),
                     }))
                   }
-                  className="flex h-9 w-full rounded-[12px] border border-input bg-white px-3 py-1 text-sm shadow-xs"
                 >
-                  <option value="">Any</option>
-                  {(Object.keys(BOOKING_STATUS_LABELS) as BookingStatus[]).map(
-                    (s) => (
-                      <option key={s} value={s}>
-                        {BOOKING_STATUS_LABELS[s]}
-                      </option>
-                    ),
-                  )}
-                </select>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Any" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="any">Any</SelectItem>
+                    {(Object.keys(BOOKING_STATUS_LABELS) as BookingStatus[]).map(
+                      (s) => (
+                        <SelectItem key={s} value={s}>
+                          {BOOKING_STATUS_LABELS[s]}
+                        </SelectItem>
+                      ),
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Tags filter */}
               {tags.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                      Tags
-                    </Label>
-                    <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={!!config.matchAllTags}
-                        onChange={(e) =>
-                          setConfig((c) => ({
-                            ...c,
-                            matchAllTags: e.target.checked || undefined,
-                          }))
-                        }
-                      />
-                      Match all
-                    </label>
-                  </div>
+                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Tags
+                  </Label>
                   <div className="flex flex-wrap gap-1.5">
                     {tags.map((tag) => {
                       const active = config.tagIds?.includes(tag.id) ?? false;
@@ -1241,28 +1172,102 @@ export default function Contacts() {
               Save as new view
             </Button>
           )}
-        </div>
-      </div>
 
-      {/* Search bar */}
-      <div className="mb-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search contacts by name, email, or phone..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9"
-          />
-          {searchInput && (
-            <button
-              type="button"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              onClick={() => setSearchInput("")}
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
+          {/* Saved views dropdown */}
+          <Popover open={viewsMenuOpen} onOpenChange={setViewsMenuOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className="h-9">
+                <Bookmark className="h-4 w-4" />
+                {activeView ? activeView.name : "All contacts"}
+                {isDirty && activeView && (
+                  <span className="ml-1 text-xs text-muted-foreground">·</span>
+                )}
+                <ChevronDown className="h-4 w-4 opacity-60" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-72 p-2">
+              <div className="space-y-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    applyView(null);
+                    setViewsMenuOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-sm hover:bg-accent text-left",
+                    activeViewId === null && "bg-accent",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                    All contacts
+                  </span>
+                  {activeViewId === null && <Check className="h-4 w-4" />}
+                </button>
+                {savedViews.length > 0 && (
+                  <div className="my-1 h-px bg-border" />
+                )}
+                {savedViews.map((v) => (
+                  <div
+                    key={v.id}
+                    className={cn(
+                      "group flex items-center gap-1 rounded-[10px] pr-1 hover:bg-accent",
+                      activeViewId === v.id && "bg-accent",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        applyView(v);
+                        setViewsMenuOpen(false);
+                      }}
+                      className="flex flex-1 items-center justify-between gap-2 rounded-[10px] px-2.5 py-2 text-sm text-left"
+                    >
+                      <span className="flex items-center gap-2 min-w-0">
+                        {v.type === "kanban" ? (
+                          <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        ) : (
+                          <ListIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        )}
+                        <span className="truncate">{v.name}</span>
+                      </span>
+                      {activeViewId === v.id && (
+                        <Check className="h-4 w-4 shrink-0" />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteViewTarget(v);
+                        setViewsMenuOpen(false);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded-md text-muted-foreground hover:text-destructive transition-opacity"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* View type tabs */}
+          <Tabs
+            value={viewType}
+            onValueChange={(v) => setViewType(v as ViewType)}
+          >
+            <TabsList className="h-9">
+              <TabsTrigger value="list" className="h-7 px-2.5">
+                <ListIcon className="h-3.5 w-3.5" />
+                List
+              </TabsTrigger>
+              <TabsTrigger value="kanban" className="h-7 px-2.5">
+                <LayoutGrid className="h-3.5 w-3.5" />
+                Kanban
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
       </div>
 

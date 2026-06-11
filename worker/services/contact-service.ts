@@ -21,6 +21,18 @@ export interface ContactListOptions {
   bookingStatus?: "confirmed" | "cancelled" | "rescheduled" | "pending" | "declined";
 }
 
+// Drizzle's { mode: "json" } columns already stringify on write and parse on
+// read. Older rows were double-stringified by this service, so a read can
+// still yield a JSON string instead of the object — parse those through.
+function normalizeJsonColumn(value: unknown): unknown {
+  if (typeof value !== "string") return value ?? null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
 // ─── Contact Service ─────────────────────────────────────────────────────────
 
 export class ContactService {
@@ -29,11 +41,13 @@ export class ContactService {
   // ─── Contacts CRUD ───────────────────────────────────────────────────────
 
   async list(projectId: string, opts?: ContactListOptions) {
-    let rows = await this.db
-      .select()
-      .from(dbSchema.contacts)
-      .where(eq(dbSchema.contacts.projectId, projectId))
-      .orderBy(desc(dbSchema.contacts.createdAt));
+    let rows = (
+      await this.db
+        .select()
+        .from(dbSchema.contacts)
+        .where(eq(dbSchema.contacts.projectId, projectId))
+        .orderBy(desc(dbSchema.contacts.createdAt))
+    ).map((r) => ({ ...r, metadata: normalizeJsonColumn(r.metadata) }));
 
     // Client-side search filter (D1 doesn't support ILIKE well)
     if (opts?.search) {
@@ -146,7 +160,9 @@ export class ContactService {
       .from(dbSchema.contacts)
       .where(eq(dbSchema.contacts.id, id))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, metadata: normalizeJsonColumn(row.metadata) };
   }
 
   async getByEmail(projectId: string, email: string) {
@@ -160,7 +176,9 @@ export class ContactService {
         ),
       )
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, metadata: normalizeJsonColumn(row.metadata) };
   }
 
   async create(
@@ -181,9 +199,11 @@ export class ContactService {
       email: data.email ?? null,
       phone: data.phone ?? null,
       notes: data.notes ?? null,
-      metadata: data.metadata ? JSON.stringify(data.metadata) : null,
+      metadata: data.metadata ?? null,
     });
-    return this.getById(id);
+    const row = await this.getById(id);
+    if (!row) throw new Error("Contact not found after insert");
+    return row;
   }
 
   async update(
@@ -201,8 +221,7 @@ export class ContactService {
     if (data.email !== undefined) values.email = data.email;
     if (data.phone !== undefined) values.phone = data.phone;
     if (data.notes !== undefined) values.notes = data.notes;
-    if (data.metadata !== undefined)
-      values.metadata = data.metadata ? JSON.stringify(data.metadata) : null;
+    if (data.metadata !== undefined) values.metadata = data.metadata ?? null;
 
     if (Object.keys(values).length === 0) return this.getById(id);
 
@@ -276,7 +295,7 @@ export class ContactService {
   async getContactTags(contactId: string) {
     const rows = await this.db
       .select({
-        tagId: dbSchema.contactTags.tagId,
+        id: dbSchema.contactTags.tagId,
         name: dbSchema.tags.name,
         color: dbSchema.tags.color,
       })
@@ -350,12 +369,13 @@ export class ContactService {
   // ─── Activity ────────────────────────────────────────────────────────────
 
   async getActivity(contactId: string, limit = 50) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.contactActivity)
       .where(eq(dbSchema.contactActivity.contactId, contactId))
       .orderBy(desc(dbSchema.contactActivity.createdAt))
       .limit(limit);
+    return rows.map((r) => ({ ...r, metadata: normalizeJsonColumn(r.metadata) }));
   }
 
   private async getTagName(tagId: string): Promise<string | null> {
@@ -379,18 +399,19 @@ export class ContactService {
       contactId,
       type,
       referenceId: referenceId ?? null,
-      metadata: metadata ? JSON.stringify(metadata) : null,
+      metadata: metadata ?? null,
     });
   }
 
   // ─── Saved Views ─────────────────────────────────────────────────────────
 
   async listViews(projectId: string) {
-    return this.db
+    const rows = await this.db
       .select()
       .from(dbSchema.contactViews)
       .where(eq(dbSchema.contactViews.projectId, projectId))
       .orderBy(dbSchema.contactViews.sortOrder, dbSchema.contactViews.createdAt);
+    return rows.map((r) => ({ ...r, config: normalizeJsonColumn(r.config) }));
   }
 
   async getView(id: string) {
@@ -399,7 +420,9 @@ export class ContactService {
       .from(dbSchema.contactViews)
       .where(eq(dbSchema.contactViews.id, id))
       .limit(1);
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, config: normalizeJsonColumn(row.config) };
   }
 
   async createView(
@@ -417,7 +440,7 @@ export class ContactService {
       projectId,
       name: data.name,
       type: data.type,
-      config: data.config ? JSON.stringify(data.config) : null,
+      config: data.config ?? null,
       sortOrder: data.sortOrder ?? 0,
     });
     return this.getView(id);
@@ -436,8 +459,7 @@ export class ContactService {
     const values: Record<string, unknown> = {};
     if (data.name !== undefined) values.name = data.name;
     if (data.type !== undefined) values.type = data.type;
-    if (data.config !== undefined)
-      values.config = data.config ? JSON.stringify(data.config) : null;
+    if (data.config !== undefined) values.config = data.config ?? null;
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
 
     if (Object.keys(values).length === 0) return this.getView(id);
@@ -492,7 +514,7 @@ export class ContactService {
       if (changed) {
         await this.db
           .update(dbSchema.contactViews)
-          .set({ config: JSON.stringify(next) })
+          .set({ config: next })
           .where(eq(dbSchema.contactViews.id, v.id));
       }
     }

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Mail, Phone } from "lucide-react";
 import { Card } from "@/components/ui/card";
+import CopyContactButton from "@/components/CopyContactButton";
 
 interface ContactTag {
   id: string;
@@ -122,15 +123,14 @@ export default function ContactsKanban({
                 </p>
               )}
               {col.contacts.map((contact) => (
-                <button
+                <div
                   key={contact.id}
-                  type="button"
                   onClick={() =>
                     navigate(
                       `/app/projects/${projectId}/contacts/${contact.id}`,
                     )
                   }
-                  className="w-full text-left bg-card rounded-[12px] border border-border/60 p-3 hover:border-border hover:shadow-xs transition-all"
+                  className="group/contact w-full text-left bg-card rounded-[12px] border border-border/60 p-3 cursor-pointer hover:border-border hover:shadow-xs transition-all"
                 >
                   <div className="flex items-start gap-2.5">
                     <div
@@ -144,10 +144,16 @@ export default function ContactsKanban({
                         {contact.name}
                       </p>
                       {contact.email && (
-                        <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
-                          <Mail className="h-3 w-3 shrink-0" />
-                          {contact.email}
-                        </p>
+                        <div className="flex items-center gap-1 mt-0.5 min-w-0">
+                          <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
+                            <Mail className="h-3 w-3 shrink-0" />
+                            {contact.email}
+                          </p>
+                          <CopyContactButton
+                            name={contact.name}
+                            email={contact.email}
+                          />
+                        </div>
                       )}
                       {contact.phone && (
                         <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
@@ -176,7 +182,7 @@ export default function ContactsKanban({
                       )}
                     </div>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>

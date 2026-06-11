@@ -6,7 +6,6 @@ import {
   Plus,
   CalendarRange,
   Copy,
-  Pencil,
   Trash2,
   Loader,
   AlertCircle,
@@ -396,7 +395,6 @@ export default function EventTypes() {
                         className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
                         onClick={() => navigate(`/app/projects/${projectId}/event-types/${et.id}`)}
                       >
-                        <Pencil className="h-3.5 w-3.5" />
                         Edit
                       </button>
                       <button

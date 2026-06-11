@@ -89,7 +89,7 @@ function formatDateFull(date: Date): string {
 
 function formatDateShort(date: Date): string {
   return date.toLocaleDateString("en-US", {
-    weekday: "short",
+    weekday: "long",
     month: "short",
     day: "numeric",
   });
@@ -834,41 +834,24 @@ export default function PublicBooking() {
                             {formatDateShort(new Date(selectedDate + "T00:00:00"))}
                           </p>
                           <div
-                            className="flex items-center bg-muted/50 rounded-[10px] p-1 text-xs font-medium"
+                            className="flex items-center bg-muted rounded-[10px] p-1 text-xs font-medium"
                             style={switcherContainerRadius ? { borderRadius: switcherContainerRadius } : undefined}
                           >
-                            <button
-                              onClick={() => setTimeFormat("12h")}
-                              className={cn(
-                                "lc-themed-hover px-3 py-1 rounded-[8px] border border-transparent transition-all",
-                                timeFormat === "12h"
-                                  ? "bg-primary text-primary-foreground shadow-sm"
-                                  : "text-muted-foreground hover:text-foreground",
-                              )}
-                              data-selected={timeFormat === "12h" || undefined}
-                              style={{
-                                ...(switcherButtonRadius ? { borderRadius: switcherButtonRadius } : {}),
-                                ...(timeFormat === "12h" && primaryColorStyle ? primaryColorStyle : {}),
-                              }}
-                            >
-                              12h
-                            </button>
-                            <button
-                              onClick={() => setTimeFormat("24h")}
-                              className={cn(
-                                "lc-themed-hover px-3 py-1 rounded-[8px] border border-transparent transition-all",
-                                timeFormat === "24h"
-                                  ? "bg-primary text-primary-foreground shadow-sm"
-                                  : "text-muted-foreground hover:text-foreground",
-                              )}
-                              data-selected={timeFormat === "24h" || undefined}
-                              style={{
-                                ...(switcherButtonRadius ? { borderRadius: switcherButtonRadius } : {}),
-                                ...(timeFormat === "24h" && primaryColorStyle ? primaryColorStyle : {}),
-                              }}
-                            >
-                              24h
-                            </button>
+                            {(["12h", "24h"] as const).map((fmt) => (
+                              <button
+                                key={fmt}
+                                onClick={() => setTimeFormat(fmt)}
+                                className={cn(
+                                  "px-3 py-1 rounded-[8px] transition-all",
+                                  timeFormat === fmt
+                                    ? "bg-background text-foreground shadow-sm"
+                                    : "text-muted-foreground hover:text-foreground",
+                                )}
+                                style={switcherButtonRadius ? { borderRadius: switcherButtonRadius } : undefined}
+                              >
+                                {fmt}
+                              </button>
+                            ))}
                           </div>
                         </div>
                         <div className={cn("grid gap-1.5 max-h-[340px] overflow-y-auto pr-1", isMobile ? "grid-cols-1" : "grid-cols-2")}>
