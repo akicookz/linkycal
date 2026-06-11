@@ -2027,6 +2027,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     <Popover>
       <PopoverTrigger asChild>
         <Button
+          variant="outline"
           size="sm"
           className="h-8 px-2.5"
           disabled={contentSteps.length === 0}

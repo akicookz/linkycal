@@ -2212,35 +2212,19 @@ export default function Landing() {
           {/* Top: headline + description + CTAs */}
           <div className="max-w-4xl">
             <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-medium tracking-tight leading-[1.06]">
-              Effortless forms and scheduling for <span className="text-brand">your website</span>
+              Forms and scheduling for <span className="text-brand">any website</span>
             </h1>
-            <p className="text-lg text-brand font-semibold max-w-xl leading-relaxed mt-6 mb-10">
-              Set up contact forms, booking pages and inquiries on your website built with{" "}
-              <span className="inline-flex items-center gap-2 px-2">
-                <img
-                  src="/builder-logos/lovable.svg"
-                  alt="Lovable"
-                  className="inline-block shrink-0 object-contain w-[5.5rem]"
-                />{" "}
-                <img
-                  src="/builder-logos/base44.svg"
-                  alt="Base44"
-                  className="inline-block shrink-0 object-contain w-[5.5rem]"
-                />{" "}
-                <img
-                  src="/builder-logos/bolt.svg"
-                  alt="Bolt"
-                  className="inline-block shrink-0 h-10 w-10"
-                />
-              </span>
-              and other AI web builders
+            <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed mt-6 mb-10">
+              Contact forms, booking pages, quizzes, client intake, surveys —
+              drop in a ready-made widget, share a hosted link, or build your
+              own UI on the API. One backend for everything your site collects.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={openAuth}
                 className="glow-surface rounded-full h-12 px-8 text-sm font-medium inline-flex items-center justify-center gap-2"
               >
-                Create contact forms free
+                Start free
                 <ArrowRight className="w-4 h-4" />
               </button>
               <Link
@@ -2250,7 +2234,7 @@ export default function Landing() {
                 View Documentation
               </Link>
             </div>
-            <div className="flex items-center gap-6 mt-6 text-sm font-medium text-foreground">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-6 text-sm font-medium text-foreground">
               <span className="flex items-center gap-2">
                 <Check className="w-4 h-4 text-brand" />
                 Start for free
@@ -2259,6 +2243,31 @@ export default function Landing() {
                 <Check className="w-4 h-4 text-brand" />
                 Setup in minutes
               </span>
+              <span className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-brand" />
+                No code required — API if you want it
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-8 text-sm font-medium text-muted-foreground">
+              Plays perfectly with
+              <span className="inline-flex items-center gap-3">
+                <img
+                  src="/builder-logos/lovable.svg"
+                  alt="Lovable"
+                  className="inline-block shrink-0 object-contain w-[5rem]"
+                />
+                <img
+                  src="/builder-logos/base44.svg"
+                  alt="Base44"
+                  className="inline-block shrink-0 object-contain w-[5rem]"
+                />
+                <img
+                  src="/builder-logos/bolt.svg"
+                  alt="Bolt"
+                  className="inline-block shrink-0 h-8 w-8"
+                />
+              </span>
+              and any other site builder
             </div>
           </div>
 

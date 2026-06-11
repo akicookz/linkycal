@@ -251,14 +251,19 @@ export class FormService {
     });
 
     // This slug resolves to a live form now — retire any redirect history.
-    await this.db
-      .delete(dbSchema.formSlugHistory)
-      .where(
-        and(
-          eq(dbSchema.formSlugHistory.projectId, projectId),
-          eq(dbSchema.formSlugHistory.slug, data.slug),
-        ),
-      );
+    // Best-effort: history bookkeeping must never block form creation.
+    try {
+      await this.db
+        .delete(dbSchema.formSlugHistory)
+        .where(
+          and(
+            eq(dbSchema.formSlugHistory.projectId, projectId),
+            eq(dbSchema.formSlugHistory.slug, data.slug),
+          ),
+        );
+    } catch (err) {
+      console.error("Form slug history cleanup failed:", err);
+    }
 
     // Create a default first section, untitled — the builder labels sections
     // by position, and untitled sections never render an intro screen.
@@ -298,29 +303,34 @@ export class FormService {
     if (data.slug !== undefined) {
       const current = await this.getById(id);
       if (current && current.slug !== data.slug) {
-        await this.db
-          .insert(dbSchema.formSlugHistory)
-          .values({
-            id: crypto.randomUUID(),
-            projectId: current.projectId,
-            formId: id,
-            slug: current.slug,
-          })
-          .onConflictDoUpdate({
-            target: [
-              dbSchema.formSlugHistory.projectId,
-              dbSchema.formSlugHistory.slug,
-            ],
-            set: { formId: id, createdAt: new Date() },
-          });
-        await this.db
-          .delete(dbSchema.formSlugHistory)
-          .where(
-            and(
-              eq(dbSchema.formSlugHistory.projectId, current.projectId),
-              eq(dbSchema.formSlugHistory.slug, data.slug),
-            ),
-          );
+        // Best-effort: history bookkeeping must never block a rename.
+        try {
+          await this.db
+            .insert(dbSchema.formSlugHistory)
+            .values({
+              id: crypto.randomUUID(),
+              projectId: current.projectId,
+              formId: id,
+              slug: current.slug,
+            })
+            .onConflictDoUpdate({
+              target: [
+                dbSchema.formSlugHistory.projectId,
+                dbSchema.formSlugHistory.slug,
+              ],
+              set: { formId: id, createdAt: new Date() },
+            });
+          await this.db
+            .delete(dbSchema.formSlugHistory)
+            .where(
+              and(
+                eq(dbSchema.formSlugHistory.projectId, current.projectId),
+                eq(dbSchema.formSlugHistory.slug, data.slug),
+              ),
+            );
+        } catch (err) {
+          console.error("Form slug history recording failed:", err);
+        }
       }
     }
 
@@ -333,20 +343,26 @@ export class FormService {
   }
 
   // Resolve an old (renamed-away) slug to the live form it now points at.
+  // Best-effort: a missing history table degrades to "no redirect", not a 500.
   async getRedirectFormBySlug(projectId: string, slug: string) {
-    const [history] = await this.db
-      .select()
-      .from(dbSchema.formSlugHistory)
-      .where(
-        and(
-          eq(dbSchema.formSlugHistory.projectId, projectId),
-          eq(dbSchema.formSlugHistory.slug, slug),
-        ),
-      )
-      .limit(1);
+    try {
+      const [history] = await this.db
+        .select()
+        .from(dbSchema.formSlugHistory)
+        .where(
+          and(
+            eq(dbSchema.formSlugHistory.projectId, projectId),
+            eq(dbSchema.formSlugHistory.slug, slug),
+          ),
+        )
+        .limit(1);
 
-    if (!history) return null;
-    return this.getById(history.formId);
+      if (!history) return null;
+      return this.getById(history.formId);
+    } catch (err) {
+      console.error("Form slug history lookup failed:", err);
+      return null;
+    }
   }
 
   async delete(id: string) {
