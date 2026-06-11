@@ -115,6 +115,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     apiAccess: false,
     customWidgets: false,
     analytics: false,
+    slugRedirects: false,
   },
   pro: {
     maxProjects: 5,
@@ -127,6 +128,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     apiAccess: true,
     customWidgets: false,
     analytics: true,
+    slugRedirects: true,
   },
   business: {
     maxProjects: 20,
@@ -139,6 +141,7 @@ const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     apiAccess: true,
     customWidgets: true,
     analytics: true,
+    slugRedirects: true,
   },
 };
 
@@ -1778,7 +1781,7 @@ app.get("/api/public/resolve/:projectSlug/:slug", async (c) => {
     const db = drizzle(c.env.DB, { schema });
 
     const [project] = await db
-      .select({ id: dbSchema.projects.id })
+      .select({ id: dbSchema.projects.id, userId: dbSchema.projects.userId })
       .from(dbSchema.projects)
       .where(eq(dbSchema.projects.slug, projectSlug))
       .limit(1);
@@ -1813,6 +1816,33 @@ app.get("/api/public/resolve/:projectSlug/:slug", async (c) => {
 
     if (formRow && formRow.status === "active") {
       return c.json({ kind: "form" });
+    }
+
+    // Renamed form? Old slugs redirect to the current one on paid plans.
+    const formService = new FormService(db);
+    const redirectForm = await formService.getRedirectFormBySlug(
+      project.id,
+      slug,
+    );
+    if (
+      redirectForm &&
+      redirectForm.status === "active" &&
+      redirectForm.slug !== slug
+    ) {
+      const subscription = await getSubscriptionRecordByUserId(
+        db,
+        project.userId,
+      );
+      const plan: Plan =
+        subscription?.plan === "pro" || subscription?.plan === "business"
+          ? subscription.plan
+          : "free";
+      if (PLAN_LIMITS[plan].slugRedirects) {
+        return c.json({
+          kind: "form",
+          redirectTo: { slug: redirectForm.slug },
+        });
+      }
     }
 
     return c.json({ error: "Not found" }, 404);
@@ -2018,7 +2048,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
     const db = drizzle(c.env.DB, { schema });
 
     const [project] = await db
-      .select({ id: dbSchema.projects.id })
+      .select({ id: dbSchema.projects.id, userId: dbSchema.projects.userId })
       .from(dbSchema.projects)
       .where(eq(dbSchema.projects.slug, projectSlug))
       .limit(1);
@@ -2032,7 +2062,29 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
     }
 
     const service = new FormService(db);
-    const form = await service.getFullFormBySlug(project.id, formSlug);
+    let form = await service.getFullFormBySlug(project.id, formSlug);
+
+    // External sites hardcode this action URL — on paid plans, resolve old
+    // (renamed-away) slugs to the live form transparently.
+    if (!form) {
+      const redirectForm = await service.getRedirectFormBySlug(
+        project.id,
+        formSlug,
+      );
+      if (redirectForm) {
+        const subscription = await getSubscriptionRecordByUserId(
+          db,
+          project.userId,
+        );
+        const plan: Plan =
+          subscription?.plan === "pro" || subscription?.plan === "business"
+            ? subscription.plan
+            : "free";
+        if (PLAN_LIMITS[plan].slugRedirects) {
+          form = await service.getFullForm(redirectForm.id);
+        }
+      }
+    }
 
     if (!form || form.status !== "active") {
       return createHtmlPageResponse(
@@ -3349,8 +3401,9 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
             email: booking.email,
           });
 
-          // Log booking confirmed activity for the contact
-          await contactService.logActivity(contact.id, "booked", id);
+          // No activity log here — "booked" was already recorded when the
+          // booking was created; logging again on confirm duplicated the
+          // timeline entry.
 
           await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_confirmed", {
             projectId,

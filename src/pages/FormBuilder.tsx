@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  ArrowRight,
   Plus,
   Loader,
   AlertCircle,
@@ -20,6 +21,7 @@ import {
   Clock,
   Upload,
   Star,
+  Layers,
   X,
   Copy,
   ExternalLink,
@@ -37,12 +39,6 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -68,12 +64,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { FocusedFieldInput } from "@/components/FocusedFieldInput";
 import { useSession } from "@/lib/auth-client";
 import { queryClient } from "@/lib/query-client";
 import {
   generateFormApiPrompt,
   generateFormEmbedPrompt,
 } from "@/lib/prompts";
+import { sectionShowsFieldsTogether } from "@/lib/form-sections";
 import { getRenderableRichTextHtml, richTextToPlainText } from "@/lib/rich-text";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { normalizeToFieldId } from "@/lib/constants";
@@ -82,12 +80,10 @@ import {
   DragOverlay,
   closestCenter,
   PointerSensor,
-  pointerWithin,
   useSensor,
   useSensors,
   useDroppable,
   type CollisionDetection,
-  type DragCancelEvent,
   type DragOverEvent,
   type DragStartEvent,
   type DragEndEvent,
@@ -96,7 +92,6 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
-  horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -185,10 +180,11 @@ interface NotificationDestinationOption {
   label: string;
 }
 
+type BuilderSelection = { kind: "field" | "step"; id: string } | null;
+
 const DEFAULT_RESPONSE_NOTIFICATION_DESTINATION = "__owner__";
-const STEP_CANVAS_DROPPABLE_ID_PREFIX = "step-canvas:";
-const STEP_DROP_TARGET_ID_PREFIX = "step-drop-target:";
-const NEW_STEP_DROP_TARGET_ID = "step-drop-target:new";
+const STEP_SORTABLE_ID_PREFIX = "step:";
+const GROUP_DROPPABLE_ID_PREFIX = "group:";
 
 function isValidEmailAddress(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
@@ -197,22 +193,41 @@ function isValidEmailAddress(value: string): boolean {
 // ─── Field Type Definitions ──────────────────────────────────────────────────
 
 const FIELD_TYPES = [
-  { type: "name", label: "Name", icon: User },
-  { type: "text", label: "Text Input", icon: Type },
-  { type: "textarea", label: "Textarea", icon: AlignLeft },
-  { type: "email", label: "Email", icon: Mail },
-  { type: "phone", label: "Phone", icon: Phone },
-  { type: "url", label: "URL", icon: Link2 },
-  { type: "number", label: "Number", icon: Hash },
-  { type: "select", label: "Select", icon: ChevronDown },
-  { type: "multi_select", label: "Multi Select", icon: ListChecks },
-  { type: "checkbox", label: "Checkbox", icon: CheckSquare },
-  { type: "radio", label: "Radio", icon: Circle },
-  { type: "date", label: "Date", icon: Calendar },
-  { type: "time", label: "Time", icon: Clock },
-  { type: "file", label: "File Upload", icon: Upload },
-  { type: "rating", label: "Rating", icon: Star },
+  { type: "name", label: "Name", icon: User, chipClass: "bg-emerald-100 text-emerald-700" },
+  { type: "text", label: "Text Input", icon: Type, chipClass: "bg-sky-100 text-sky-700" },
+  { type: "textarea", label: "Textarea", icon: AlignLeft, chipClass: "bg-blue-100 text-blue-700" },
+  { type: "email", label: "Email", icon: Mail, chipClass: "bg-amber-100 text-amber-700" },
+  { type: "phone", label: "Phone", icon: Phone, chipClass: "bg-lime-100 text-lime-700" },
+  { type: "url", label: "URL", icon: Link2, chipClass: "bg-cyan-100 text-cyan-700" },
+  { type: "number", label: "Number", icon: Hash, chipClass: "bg-violet-100 text-violet-700" },
+  { type: "select", label: "Select", icon: ChevronDown, chipClass: "bg-rose-100 text-rose-700" },
+  { type: "multi_select", label: "Multi Select", icon: ListChecks, chipClass: "bg-pink-100 text-pink-700" },
+  { type: "checkbox", label: "Checkbox", icon: CheckSquare, chipClass: "bg-teal-100 text-teal-700" },
+  { type: "radio", label: "Radio", icon: Circle, chipClass: "bg-orange-100 text-orange-700" },
+  { type: "date", label: "Date", icon: Calendar, chipClass: "bg-indigo-100 text-indigo-700" },
+  { type: "time", label: "Time", icon: Clock, chipClass: "bg-fuchsia-100 text-fuchsia-700" },
+  { type: "file", label: "File Upload", icon: Upload, chipClass: "bg-stone-200 text-stone-700" },
+  { type: "rating", label: "Rating", icon: Star, chipClass: "bg-yellow-100 text-yellow-700" },
 ] as const;
+
+const COMPLETION_TYPE_META = {
+  type: "completion",
+  label: "Ending",
+  icon: PartyPopper,
+  chipClass: "bg-emerald-100 text-emerald-700",
+} as const;
+
+interface FieldTypeMeta {
+  type: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  chipClass: string;
+}
+
+function getFieldTypeMeta(type: string): FieldTypeMeta {
+  if (type === "completion") return COMPLETION_TYPE_META;
+  return FIELD_TYPES.find((ft) => ft.type === type) ?? FIELD_TYPES[1];
+}
 
 const OPTION_FIELD_TYPES = ["select", "multi_select", "radio", "checkbox"];
 
@@ -293,46 +308,18 @@ function toPersistedFieldOptions(options: DraftFieldOption[]): FieldOption[] {
     }));
 }
 
-function getFieldIcon(type: string) {
-  if (type === "completion") return PartyPopper;
-  const found = FIELD_TYPES.find((ft) => ft.type === type);
-  return found?.icon ?? Type;
-}
-
 function sortFields(fields: FormField[]): FormField[] {
   return [...fields].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-function normalizeFieldOrders(fields: FormField[]): FormField[] {
-  return fields.map((field, index) => ({
-    ...field,
-    sortOrder: index,
-  }));
-}
-
-function getStepCanvasDroppableId(stepId: string): string {
-  return `${STEP_CANVAS_DROPPABLE_ID_PREFIX}${stepId}`;
-}
-
-function getStepDropTargetId(stepId: string): string {
-  return `${STEP_DROP_TARGET_ID_PREFIX}${stepId}`;
+function isCompletionOnlyStep(step: FormStep): boolean {
+  const fields = step.fields ?? [];
+  return fields.length > 0 && fields.every((f) => f.type === "completion");
 }
 
 function getIdValue(id: string | number | null | undefined): string | null {
   if (id === null || id === undefined) return null;
   return String(id);
-}
-
-function isStepDropTargetId(id: string | null): boolean {
-  return id?.startsWith(STEP_DROP_TARGET_ID_PREFIX) ?? false;
-}
-
-function getStepIdFromDropTargetId(id: string): string | null {
-  if (!isStepDropTargetId(id) || id === NEW_STEP_DROP_TARGET_ID) {
-    return null;
-  }
-
-  return id.slice(STEP_DROP_TARGET_ID_PREFIX.length);
 }
 
 function moveFieldBetweenSteps(
@@ -346,7 +333,7 @@ function moveFieldBetweenSteps(
   let movingField: FormField | null = null;
 
   const stepsWithoutField = steps.map((step) => {
-    const sortedFields = sortFields(step.fields);
+    const sortedFields = sortFields(step.fields ?? []);
     const fieldIndex = sortedFields.findIndex((field) => field.id === fieldId);
     if (fieldIndex === -1) {
       return {
@@ -395,17 +382,17 @@ function moveFieldBetweenSteps(
     if (step.id === targetStepId) {
       return {
         ...step,
-        fields: normalizeFieldOrders(nextFields).map((field) =>
+        fields: nextFields.map((field, index) =>
           field.id === fieldId
-            ? { ...field, ...(updates ?? {}), stepId: targetStepId }
-            : field,
+            ? { ...field, ...(updates ?? {}), stepId: targetStepId, sortOrder: index }
+            : { ...field, sortOrder: index },
         ),
       };
     }
 
     return {
       ...step,
-      fields: normalizeFieldOrders(step.fields),
+      fields: step.fields.map((field, index) => ({ ...field, sortOrder: index })),
     };
   });
 }
@@ -437,7 +424,6 @@ function updateFieldInSteps(
   }));
 }
 
-
 function generateSlug(name: string): string {
   return name
     .toLowerCase()
@@ -466,20 +452,25 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const navigate = useNavigate();
   const { data: session } = useSession();
 
-  const [activeStepId, setActiveStepId] = useState<string | null>(null);
+  // What's selected in the content panel (drives preview + settings panel)
+  const [selection, setSelection] = useState<BuilderSelection>(null);
   // Local options state for auto-save (keyed by field ID)
   const [fieldOptionsState, setFieldOptionsState] = useState<
     Record<string, DraftFieldOption[]>
   >({});
-  const [autoFocusLastField, setAutoFocusLastField] = useState(false);
-  const [activeStepTabDragId, setActiveStepTabDragId] = useState<string | null>(
-    null,
+  const [autoFocusSelectedLabel, setAutoFocusSelectedLabel] = useState(false);
+  // Fields whose (empty) description editor was explicitly opened via
+  // "+ Add description" — cleared whenever the selection changes.
+  const [expandedFieldDesc, setExpandedFieldDesc] = useState<Set<string>>(
+    new Set(),
   );
-  const [draggingField, setDraggingField] = useState<FormField | null>(null);
-  const [showStepDropTargets, setShowStepDropTargets] = useState(false);
-  const [hoveredStepDropTargetId, setHoveredStepDropTargetId] = useState<
-    string | null
+  // Interactive answers typed into the live preview (never persisted)
+  const [previewValues, setPreviewValues] = useState<Record<string, string>>({});
+
+  const [dragging, setDragging] = useState<
+    { type: "step" | "field"; id: string } | null
   >(null);
+  const dragOriginStepIdRef = useRef<string | null>(null);
 
   const [linkCopied, setLinkCopied] = useState(false);
   const [promptCopiedId, setPromptCopiedId] = useState<string | null>(null);
@@ -508,18 +499,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     [],
   );
 
-  // Toggle state for optional title/description sections
-  const [expandedStepTitle, setExpandedStepTitle] = useState<Set<string>>(
-    new Set(),
-  );
-  const [expandedStepDesc, setExpandedStepDesc] = useState<Set<string>>(
-    new Set(),
-  );
-  const [expandedFieldDesc, setExpandedFieldDesc] = useState<Set<string>>(
-    new Set(),
-  );
-
-
   // Inline-editing state for form name/slug
   const [editingName, setEditingName] = useState<string>("");
   const [editingSlug, setEditingSlug] = useState<string>("");
@@ -532,7 +511,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const [createData, setCreateData] = useState({
     name: "",
     slug: "",
-    type: "single" as "single" | "multi_step",
+    type: "multi_step" as "single" | "multi_step",
   });
   const [createSlugManual, setCreateSlugManual] = useState(false);
 
@@ -616,9 +595,13 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const form = formData;
   const currentProject = projects?.find((project) => project.id === projectId);
 
-
   const steps = form?.steps ?? [];
   const sortedSteps = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
+  const contentSteps = sortedSteps.filter((step) => !isCompletionOnlyStep(step));
+  const completionSteps = sortedSteps.filter(isCompletionOnlyStep);
+  const completionField =
+    sortedSteps.flatMap((s) => sortFields(s.fields ?? [])).find((f) => f.type === "completion") ?? null;
+
   const formSettings =
     form?.settings && typeof form.settings === "object"
       ? (form.settings as FormSettings)
@@ -674,20 +657,47 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const hasFileFields = steps.some((step) =>
     (step.fields ?? []).some((field) => field.type === "file")
   );
-  const hasCompletionPage = steps.some((step) =>
-    (step.fields ?? []).some((field) => field.type === "completion")
-  );
+  const hasCompletionPage = !!completionField;
 
   const nativeActionUrl = form && currentProject
     ? `${window.location.origin}/api/public/forms/${currentProject.slug}/${form.slug}/submit`
     : "";
-  const activeStep = activeStepId
-    ? sortedSteps.find((step) => step.id === activeStepId) ?? null
-    : sortedSteps[0] ?? null;
-  const activeFields = activeStep ? sortFields(activeStep.fields ?? []) : [];
-  const activeStepCanvasDroppableId = activeStep
-    ? getStepCanvasDroppableId(activeStep.id)
-    : null;
+
+  // ─── Selection lookups ───────────────────────────────────────────────────
+
+  function findField(fieldId: string): { field: FormField; step: FormStep } | null {
+    for (const step of sortedSteps) {
+      const field = (step.fields ?? []).find((f) => f.id === fieldId);
+      if (field) return { field, step };
+    }
+    return null;
+  }
+
+  const selectedFieldEntry =
+    selection?.kind === "field" ? findField(selection.id) : null;
+  const selectedField = selectedFieldEntry?.field ?? null;
+  const selectedStep =
+    selection?.kind === "step"
+      ? sortedSteps.find((s) => s.id === selection.id) ?? null
+      : selectedFieldEntry?.step ?? null;
+
+  // Numbering across all non-completion fields, in step order
+  const questionNumberByFieldId = useMemo(() => {
+    const map: Record<string, number> = {};
+    let n = 0;
+    for (const step of sortedSteps) {
+      for (const field of sortFields(step.fields ?? [])) {
+        if (field.type === "completion") continue;
+        n += 1;
+        map[field.id] = n;
+      }
+    }
+    return map;
+  }, [sortedSteps]);
+  const totalQuestions = Object.keys(questionNumberByFieldId).length;
+  const orderedQuestionFields = sortedSteps.flatMap((step) =>
+    sortFields(step.fields ?? []).filter((f) => f.type !== "completion"),
+  );
 
   // ─── Condition source lookups ────────────────────────────────────────────
   //
@@ -696,7 +706,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   // For each step, "earlier fields" = all fields in steps with lower sortOrder.
   const { sourcesByFieldId, sourcesByStepId } = useMemo(() => {
     const stepTitleFor = (step: FormStep) =>
-      step.title?.trim() || `Step ${step.sortOrder + 1}`;
+      step.title?.trim() || `Section ${step.sortOrder + 1}`;
 
     const byStep: Record<string, ConditionSourceField[]> = {};
     for (const step of sortedSteps) {
@@ -736,15 +746,37 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
     return { sourcesByFieldId: byField, sourcesByStepId: byStep };
   }, [sortedSteps]);
-  const fieldDropTargetSteps = draggingField
-    ? sortedSteps.filter((step) => step.id !== draggingField.stepId)
-    : [];
-  // Sync active step when form loads
+
+  // Default selection: first question, else first step
   useEffect(() => {
-    if (form && sortedSteps.length > 0 && !activeStepId) {
-      setActiveStepId(sortedSteps[0].id);
+    if (!form || selection) return;
+    const firstField = orderedQuestionFields[0];
+    if (firstField) {
+      setSelection({ kind: "field", id: firstField.id });
+    } else if (sortedSteps.length > 0) {
+      setSelection({ kind: "step", id: sortedSteps[0].id });
     }
-  }, [form, sortedSteps, activeStepId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, selection]);
+
+  // Reset selection if the selected item disappeared (delete, visibility, ...)
+  useEffect(() => {
+    if (!form || !selection) return;
+    const exists =
+      selection.kind === "field"
+        ? !!findField(selection.id)
+        : sortedSteps.some((s) => s.id === selection.id);
+    if (!exists) setSelection(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, selection, sortedSteps.length]);
+
+  // Clear the autofocus flag once the newly added question's label mounted,
+  // and collapse any empty description editors left open on other questions.
+  useEffect(() => {
+    if (autoFocusSelectedLabel) setAutoFocusSelectedLabel(false);
+    setExpandedFieldDesc((prev) => (prev.size === 0 ? prev : new Set()));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection]);
 
   // Initialize editing name/slug the first time the form loads. Do NOT re-sync
   // from `form` on every cache update — optimistic mutations change the
@@ -840,17 +872,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     return clientId;
   }
 
-  // Reverse: real id (or already-temp) → the id that currently lives in the
-  // cache. Needed when an internal call (e.g. moveFieldToNewStep) has the real
-  // id in hand but the optimistic cache still keys that step by its tempId.
-  function toCacheStepId(id: string): string {
-    if (stepIdMap.current.size === 0) return id;
-    for (const [tempId, realId] of stepIdMap.current) {
-      if (realId === id) return tempId;
-    }
-    return id;
-  }
-
   // ─── Form mutations ─────────────────────────────────────────────────────
 
   const updateFormMutation = useMutation({
@@ -858,6 +879,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       data: Partial<{
         name: string;
         slug: string;
+        type: "multi_step" | "single";
         status: string;
         settings: FormSettings | null;
       }>
@@ -902,9 +924,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: vars?.title ?? `Step ${steps.length + 1}`,
-          }),
+          // No default title — sections are labeled "Section N" in the UI,
+          // and an untitled section never renders an intro screen.
+          body: JSON.stringify(vars?.title ? { title: vars.title } : {}),
         }
       );
       if (!res.ok) throw new Error("Failed to add step");
@@ -923,7 +945,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             id: tempId,
             formId: old.id,
             sortOrder: old.steps.length,
-            title: vars?.title ?? `Step ${old.steps.length + 1}`,
+            title: vars?.title ?? null,
             description: null,
             richDescription: null,
             settings: null,
@@ -931,7 +953,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           },
         ],
       }));
-      setActiveStepId(tempId);
+      setSelection({ kind: "step", id: tempId });
 
       let resolveCreate!: (realId: string) => void;
       let rejectCreate!: (err: unknown) => void;
@@ -946,7 +968,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     },
     onError: (err, _vars, ctx) => {
       if (ctx?.snapshot) rollback(ctx.snapshot);
-      setActiveStepId(ctx?.snapshot?.steps[0]?.id ?? null);
+      setSelection(null);
       if (ctx?.tempId) {
         ctx.rejectCreate(err);
         pendingStepCreates.current.delete(ctx.tempId);
@@ -975,6 +997,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         title: string;
         description: string | null;
         richDescription: string | null;
+        settings: Record<string, unknown> | null;
         visibility: FormCondition | null;
       }>;
     }) => {
@@ -1023,13 +1046,19 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     onMutate: async (stepId) => {
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
+      const removedFieldIds = new Set(
+        (sortedSteps.find((s) => s.id === stepId)?.fields ?? []).map((f) => f.id),
+      );
       optimisticSetForm((old) => ({
         ...old,
         steps: old.steps.filter((s) => s.id !== stepId),
       }));
-      if (activeStepId === stepId && sortedSteps.length > 1) {
-        const remaining = sortedSteps.filter((step) => step.id !== stepId);
-        setActiveStepId(remaining[0]?.id ?? null);
+      if (
+        selection &&
+        ((selection.kind === "step" && selection.id === stepId) ||
+          (selection.kind === "field" && removedFieldIds.has(selection.id)))
+      ) {
+        setSelection(null);
       }
       return { snapshot };
     },
@@ -1068,7 +1097,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       const tempId = `temp-${crypto.randomUUID()}`;
-      setAutoFocusLastField(true);
       optimisticSetForm((old) => ({
         ...old,
         steps: old.steps.map((step) =>
@@ -1096,6 +1124,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             : step,
         ),
       }));
+      setSelection({ kind: "field", id: tempId });
+      setAutoFocusSelectedLabel(true);
 
       let resolveCreate!: (realId: string) => void;
       let rejectCreate!: (err: unknown) => void;
@@ -1147,7 +1177,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           return next;
         });
       }
-      setAutoFocusLastField(false);
+      setAutoFocusSelectedLabel(false);
     },
   });
 
@@ -1228,6 +1258,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
            fields: (s.fields ?? []).filter((f) => f.id !== fieldId),
         })),
       }));
+      if (selection?.kind === "field" && selection.id === fieldId) {
+        setSelection(null);
+      }
       return { snapshot };
     },
     onError: (_err, _vars, ctx) => {
@@ -1307,118 +1340,11 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         }),
       });
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [updateFormMutation, formSettings],
   );
 
-  // ─── Drag and Drop ─────────────────────────────────────────────────────
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-  );
-  const fieldCollisionDetection = useCallback<CollisionDetection>(
-    (args) => {
-      const collisions = pointerWithin(args);
-      if (collisions.length === 0) {
-        return [];
-      }
-
-      if (!activeStepCanvasDroppableId) {
-        return collisions;
-      }
-
-      const focusedCollisions = collisions.filter(
-        (collision) => collision.id !== activeStepCanvasDroppableId,
-      );
-
-      return focusedCollisions.length > 0 ? focusedCollisions : collisions;
-    },
-    [activeStepCanvasDroppableId],
-  );
-
-  function clearFieldDragState() {
-    setDraggingField(null);
-    setShowStepDropTargets(false);
-    setHoveredStepDropTargetId(null);
-  }
-
-  function handleFieldDragStart(event: DragStartEvent) {
-    if (!activeStep) return;
-
-    const activeId = getIdValue(event.active.id);
-    if (!activeId) return;
-
-    const field = activeFields.find((candidate) => candidate.id === activeId);
-    if (!field) return;
-
-    setDraggingField(field);
-  }
-
-  function handleFieldDragOver(event: DragOverEvent) {
-    const overId = getIdValue(event.over?.id);
-    const isInsideActiveStep =
-      overId !== null &&
-      (overId === activeStepCanvasDroppableId || activeFields.some((field) => field.id === overId));
-
-    setShowStepDropTargets(Boolean(draggingField) && !isInsideActiveStep);
-
-    if (overId === NEW_STEP_DROP_TARGET_ID || isStepDropTargetId(overId)) {
-      setHoveredStepDropTargetId(overId);
-      return;
-    }
-
-    setHoveredStepDropTargetId(null);
-  }
-
-  function handleFieldDragCancel(_event: DragCancelEvent) {
-    clearFieldDragState();
-  }
-
-  async function moveFieldToStep(fieldId: string, targetStepId: string) {
-    const sourceStepId = draggingField?.stepId;
-    const targetStep = sortedSteps.find((step) => step.id === targetStepId);
-    if (!targetStep || !sourceStepId) return;
-
-    setActiveStepId(targetStepId);
-
-    try {
-      await updateFieldMutation.mutateAsync({
-        fieldId,
-        data: {
-          stepId: targetStepId,
-          sortOrder: targetStep.fields.length,
-        },
-      });
-    } catch {
-      setActiveStepId(sourceStepId);
-    }
-  }
-
-  async function moveFieldToNewStep(fieldId: string) {
-    const sourceStepId = draggingField?.stepId;
-    if (!sourceStepId) return;
-
-    try {
-      const response = await addStepMutation.mutateAsync({});
-      const nextStep = response?.step as FormStep | undefined;
-      if (!nextStep) {
-        throw new Error("Failed to create destination step");
-      }
-
-      // addStepMutation.onMutate already set activeStepId to the tempId; that
-      // tempId is what the cache uses, so we leave it. For the optimistic
-      // move we need the same tempId so updateFieldInSteps can find the step.
-      const cacheStepId = toCacheStepId(nextStep.id);
-      await updateFieldMutation.mutateAsync({
-        fieldId,
-        data: {
-          stepId: cacheStepId,
-          sortOrder: 0,
-        },
-      });
-    } catch {
-      setActiveStepId(sourceStepId);
-    }
-  }
+  // ─── Reorder mutations ───────────────────────────────────────────────────
 
   const reorderFieldsMutation = useMutation({
     mutationFn: async ({ stepId, fieldIds }: { stepId: string; fieldIds: string[] }) => {
@@ -1455,87 +1381,188 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     },
   });
 
-  async function handleFieldDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    const activeId = getIdValue(active.id);
-    const overId = getIdValue(over?.id);
+  // ─── Drag and Drop ─────────────────────────────────────────────────────
+  //
+  // One DndContext for the whole content list. Sortable ids are
+  // discriminated by prefix: `step:<id>` rows reorder steps, bare field ids
+  // reorder questions, and `group:<stepId>` droppables catch fields dropped
+  // into a (possibly empty) step.
 
-    clearFieldDragState();
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
-    if (!activeId || !activeStep) return;
+  const collisionDetection = useCallback<CollisionDetection>(
+    (args) => {
+      const activeId = getIdValue(args.active.id);
+      const isStepDrag = activeId?.startsWith(STEP_SORTABLE_ID_PREFIX) ?? false;
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter((container) => {
+          const id = String(container.id);
+          return isStepDrag
+            ? id.startsWith(STEP_SORTABLE_ID_PREFIX)
+            : !id.startsWith(STEP_SORTABLE_ID_PREFIX);
+        }),
+      });
+    },
+    [],
+  );
 
-    if (overId === NEW_STEP_DROP_TARGET_ID) {
-      await moveFieldToNewStep(activeId);
+  function handleDragStart(event: DragStartEvent) {
+    const activeId = getIdValue(event.active.id);
+    if (!activeId) return;
+    if (activeId.startsWith(STEP_SORTABLE_ID_PREFIX)) {
+      setDragging({ type: "step", id: activeId.slice(STEP_SORTABLE_ID_PREFIX.length) });
+      return;
+    }
+    const found = findField(activeId);
+    if (!found) return;
+    setDragging({ type: "field", id: activeId });
+    dragOriginStepIdRef.current = found.step.id;
+  }
+
+  function handleDragCancel() {
+    setDragging(null);
+    dragOriginStepIdRef.current = null;
+  }
+
+  function handleDragOver(event: DragOverEvent) {
+    if (dragging?.type !== "field") return;
+    const overId = getIdValue(event.over?.id);
+    if (!overId || overId === dragging.id) return;
+
+    const current = findField(dragging.id);
+    if (!current) return;
+
+    let targetStepId: string | null = null;
+    let targetIndex: number | undefined;
+
+    if (overId.startsWith(GROUP_DROPPABLE_ID_PREFIX)) {
+      targetStepId = overId.slice(GROUP_DROPPABLE_ID_PREFIX.length);
+    } else {
+      const overFound = findField(overId);
+      if (overFound) {
+        targetStepId = overFound.step.id;
+        targetIndex = sortFields(overFound.step.fields ?? []).findIndex(
+          (f) => f.id === overId,
+        );
+      }
+    }
+
+    if (!targetStepId || targetStepId === current.step.id) return;
+    const targetStep = sortedSteps.find((s) => s.id === targetStepId);
+    if (!targetStep || isCompletionOnlyStep(targetStep)) return;
+
+    const fieldId = dragging.id;
+    optimisticSetForm((old) => ({
+      ...old,
+      steps: moveFieldBetweenSteps(old.steps, fieldId, targetStepId, targetIndex),
+    }));
+  }
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const activeId = getIdValue(event.active.id);
+    const overId = getIdValue(event.over?.id);
+    const draggingInfo = dragging;
+    const originStepId = dragOriginStepIdRef.current;
+    setDragging(null);
+    dragOriginStepIdRef.current = null;
+    if (!activeId || !draggingInfo) return;
+
+    // Step reorder
+    if (draggingInfo.type === "step") {
+      if (!overId?.startsWith(STEP_SORTABLE_ID_PREFIX)) return;
+      const targetStepId = overId.slice(STEP_SORTABLE_ID_PREFIX.length);
+      if (targetStepId === draggingInfo.id) return;
+
+      const ids = contentSteps.map((s) => s.id);
+      const oldIndex = ids.indexOf(draggingInfo.id);
+      const newIndex = ids.indexOf(targetStepId);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = arrayMove(contentSteps, oldIndex, newIndex);
+      // Completion steps always stay at the end
+      const orderIds = [...reordered, ...completionSteps].map((s) => s.id);
+
+      optimisticSetForm((old) => ({
+        ...old,
+        steps: old.steps.map((s) => ({ ...s, sortOrder: orderIds.indexOf(s.id) })),
+      }));
+      reorderStepsMutation.mutate({ stepIds: orderIds });
       return;
     }
 
-    if (overId && isStepDropTargetId(overId)) {
-      const targetStepId = getStepIdFromDropTargetId(overId);
-      if (targetStepId && targetStepId !== activeStep.id) {
-        await moveFieldToStep(activeId, targetStepId);
+    // Field reorder / move
+    const current = findField(activeId);
+    if (!current) return;
+    const finalStepId = current.step.id;
+    let finalFields = sortFields(current.step.fields ?? []);
+    let orderChanged = false;
+
+    if (
+      overId &&
+      overId !== activeId &&
+      !overId.startsWith(GROUP_DROPPABLE_ID_PREFIX) &&
+      !overId.startsWith(STEP_SORTABLE_ID_PREFIX)
+    ) {
+      const overFound = findField(overId);
+      if (overFound && overFound.step.id === finalStepId) {
+        const oldIndex = finalFields.findIndex((f) => f.id === activeId);
+        const newIndex = finalFields.findIndex((f) => f.id === overId);
+        if (oldIndex !== -1 && newIndex !== -1 && oldIndex !== newIndex) {
+          finalFields = arrayMove(finalFields, oldIndex, newIndex);
+          orderChanged = true;
+          optimisticSetForm((old) => ({
+            ...old,
+            steps: old.steps.map((s) =>
+              s.id === finalStepId
+                ? { ...s, fields: finalFields.map((f, i) => ({ ...f, sortOrder: i })) }
+                : s,
+            ),
+          }));
+        }
+      }
+    }
+
+    const movedAcrossSteps = !!originStepId && originStepId !== finalStepId;
+    if (movedAcrossSteps) {
+      const sortOrder = Math.max(
+        finalFields.findIndex((f) => f.id === activeId),
+        0,
+      );
+      try {
+        await updateFieldMutation.mutateAsync({
+          fieldId: activeId,
+          data: { stepId: finalStepId, sortOrder },
+        });
+        reorderFieldsMutation.mutate({
+          stepId: finalStepId,
+          fieldIds: finalFields.map((f) => f.id),
+        });
+      } catch {
+        // updateFieldMutation.onError already rolled back the cache
       }
       return;
     }
 
-    if (!overId || activeId === overId) return;
-
-    const oldIndex = activeFields.findIndex((field) => field.id === activeId);
-    const newIndex = activeFields.findIndex((field) => field.id === overId);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordered = arrayMove(activeFields, oldIndex, newIndex);
-
-    optimisticSetForm((old) => ({
-      ...old,
-      steps: old.steps.map((s) =>
-        s.id === activeStep.id
-          ? { ...s, fields: reordered.map((f, i) => ({ ...f, sortOrder: i })) }
-          : s,
-      ),
-    }));
-
-    reorderFieldsMutation.mutate({
-      stepId: activeStep.id,
-      fieldIds: reordered.map((f) => f.id),
-    });
+    if (orderChanged) {
+      reorderFieldsMutation.mutate({
+        stepId: finalStepId,
+        fieldIds: finalFields.map((f) => f.id),
+      });
+    }
   }
 
-  function handleStepDragStart(event: DragStartEvent) {
-    const activeId = getIdValue(event.active.id);
-    setActiveStepTabDragId(activeId);
-  }
-
-  function handleStepDragCancel(_event: DragCancelEvent) {
-    setActiveStepTabDragId(null);
-  }
-
-  function handleStepDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    setActiveStepTabDragId(null);
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = sortedSteps.findIndex((step) => step.id === active.id);
-    const newIndex = sortedSteps.findIndex((step) => step.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
-
-    const reordered = arrayMove(sortedSteps, oldIndex, newIndex);
-
-    optimisticSetForm((old) => ({
-      ...old,
-      steps: reordered.map((s, i) => ({ ...s, sortOrder: i })),
-    }));
-
-    reorderStepsMutation.mutate({
-      stepIds: reordered.map((s) => s.id),
-    });
-  }
-
-  // ─── Add field from palette ──────────────────────────────────────────────
+  // ─── Add content ─────────────────────────────────────────────────────────
 
   function handleAddField(type: string, label: string) {
-    const targetStepId = activeStepId ?? sortedSteps[0]?.id;
-    if (!targetStepId) return;
-    addFieldMutation.mutate({ stepId: targetStepId, type, label });
+    const targetStep =
+      (selectedStep && !isCompletionOnlyStep(selectedStep) ? selectedStep : null) ??
+      contentSteps[contentSteps.length - 1] ??
+      null;
+    if (!targetStep) return;
+    addFieldMutation.mutate({ stepId: targetStep.id, type, label });
   }
 
   async function handleAddCompletionPage() {
@@ -1575,7 +1602,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         },
       ],
     }));
-    setActiveStepId(tempStepId);
+    setSelection({ kind: "field", id: tempFieldId });
 
     try {
       // Create the step on the server
@@ -1618,7 +1645,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     } catch {
       // Rollback on any failure
       if (snapshot) rollback(snapshot);
-      setActiveStepId(sortedSteps[0]?.id ?? null);
+      setSelection(null);
     }
   }
 
@@ -1708,6 +1735,116 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     setFieldOptions(fieldId, updated);
   }
 
+  function handleFieldTypeChange(field: FormField, val: string) {
+    const wasOptionType = isOptionFieldType(field.type);
+    const isOptionType = isOptionFieldType(val);
+    const updateData: Record<string, unknown> = { type: val };
+    if (wasOptionType && !isOptionType) {
+      updateData.options = null;
+      setFieldOptionsState((prev) => {
+        const next = { ...prev };
+        delete next[field.id];
+        return next;
+      });
+    }
+    if (!wasOptionType && isOptionType) {
+      const seedOptions = val === "multi_select"
+        ? toDraftFieldOptions([
+          { label: "Option 1", value: "option_1" },
+          { label: "Option 2", value: "option_2" },
+        ])
+        : toDraftFieldOptions([
+          { label: "Option 1", value: "option_1" },
+        ]);
+      updateData.options = toPersistedFieldOptions(seedOptions);
+      setFieldOptions(field.id, seedOptions);
+    }
+    if (wasOptionType && isOptionType && val === "multi_select") {
+      const currentOpts = getFieldOptions(field);
+      if (currentOpts.length < 2) {
+        const seedOptions = [
+          ...currentOpts,
+          createDraftFieldOption({
+            label: "Option 2",
+            value: "option_2",
+          }),
+        ];
+        updateData.options = toPersistedFieldOptions(seedOptions);
+        setFieldOptions(field.id, seedOptions);
+      }
+    }
+    updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
+  }
+
+  function handleContactMappingToggle(field: FormField) {
+    const newMapping = field.contactMapping
+      ? null
+      : field.type === "name" ? "name" : "email";
+    if (newMapping) {
+      optimisticSetForm((old) => ({
+        ...old,
+        steps: old.steps.map((s) => ({
+          ...s,
+          fields: s.fields.map((f) =>
+            f.id !== field.id && f.contactMapping === newMapping
+              ? { ...f, contactMapping: null }
+              : f,
+          ),
+        })),
+      }));
+    }
+    updateFieldMutation.mutate({
+      fieldId: field.id,
+      data: { contactMapping: newMapping },
+    });
+  }
+
+  // Canvas description editing: hidden until the question has one (or the
+  // user clicks "+ Add description"), Typeform-style.
+  function fieldDescriptionEditor(field: FormField) {
+    const hasDescription = !!field.description;
+    if (!hasDescription && !expandedFieldDesc.has(field.id)) {
+      return (
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() =>
+            setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
+          }
+        >
+          <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
+          Add description
+        </button>
+      );
+    }
+    return (
+      <RichTextEditor
+        key={`field-desc-${field.id}`}
+        value={field.description ?? ""}
+        placeholder="Add a description (optional)"
+        variant="compact"
+        autoFocus={!hasDescription}
+        onSave={(html) =>
+          updateFieldMutation.mutate({
+            fieldId: field.id,
+            data: { description: html },
+          })
+        }
+      />
+    );
+  }
+
+  function selectNextQuestion() {
+    if (!selectedField) return;
+    const index = orderedQuestionFields.findIndex((f) => f.id === selectedField.id);
+    const next = orderedQuestionFields[index + 1];
+    if (next) {
+      setSelection({ kind: "field", id: next.id });
+    } else if (completionField) {
+      setSelection({ kind: "field", id: completionField.id });
+    }
+  }
+
   // ─── Render: Create mode ─────────────────────────────────────────────────
 
   if (isCreateMode) {
@@ -1767,7 +1904,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="create-type">Type</Label>
+                <Label htmlFor="create-type">Experience</Label>
                 <Select
                   value={createData.type}
                   onValueChange={(val) =>
@@ -1781,8 +1918,12 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="single">Single Page</SelectItem>
-                    <SelectItem value="multi_step">Multi-Step</SelectItem>
+                    <SelectItem value="multi_step">
+                      Focused — one question at a time
+                    </SelectItem>
+                    <SelectItem value="single">
+                      Classic — all questions on one page
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1838,7 +1979,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           <Skeleton className="h-8 w-8" />
           <Skeleton className="h-7 w-48" />
         </div>
-        <div className="grid grid-cols-[240px_1fr] gap-6">
+        <div className="grid grid-cols-[280px_1fr] gap-6">
           <Card>
             <CardContent className="space-y-2 pt-4">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -1846,10 +1987,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               ))}
             </CardContent>
           </Card>
-          <div className="space-y-4">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
+          <Skeleton className="h-[540px] w-full rounded-[24px]" />
         </div>
       </div>
     );
@@ -1882,6 +2020,863 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       </div>
     );
   }
+
+  // ─── Render: Builder panels ──────────────────────────────────────────────
+
+  const addContentPopover = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          className="h-8 px-2.5"
+          disabled={contentSteps.length === 0}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-1.5 max-h-[420px] overflow-y-auto">
+        {FIELD_TYPES.map((ft) => (
+          <button
+            key={ft.type}
+            type="button"
+            onClick={() => handleAddField(ft.type, ft.label)}
+            className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-sm text-left hover:bg-muted/60 transition-colors"
+          >
+            <span
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
+                ft.chipClass,
+              )}
+            >
+              <ft.icon className="h-3.5 w-3.5" />
+            </span>
+            {ft.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={handleAddCompletionPage}
+          disabled={hasCompletionPage || addStepMutation.isPending}
+          className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-sm text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <span
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
+              COMPLETION_TYPE_META.chipClass,
+            )}
+          >
+            <PartyPopper className="h-3.5 w-3.5" />
+          </span>
+          Ending page
+        </button>
+      </PopoverContent>
+    </Popover>
+  );
+
+  const contentPanel = (
+    <Card className="h-fit">
+      <CardContent className="space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Content
+          </p>
+          {addContentPopover}
+        </div>
+
+        {contentSteps.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-[16px] border border-dashed py-8 text-center">
+            <p className="text-xs text-muted-foreground mb-3 px-3">
+              No sections yet. Add a section to start building your form.
+            </p>
+            <Button
+              size="sm"
+              onClick={() => addStepMutation.mutate({})}
+              disabled={addStepMutation.isPending}
+            >
+              <Plus className="h-4 w-4" />
+              Add Section
+            </Button>
+          </div>
+        ) : (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={collisionDetection}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragCancel={handleDragCancel}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={contentSteps.map((step) => `${STEP_SORTABLE_ID_PREFIX}${step.id}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <div className="space-y-4">
+                {contentSteps.map((step, stepIdx) => (
+                  <ContentStepGroup
+                    key={step.id}
+                    step={step}
+                    stepNumber={stepIdx + 1}
+                    isGrouped={sectionShowsFieldsTogether(step.settings)}
+                    isSelected={selection?.kind === "step" && selection.id === step.id}
+                    selectedFieldId={selection?.kind === "field" ? selection.id : null}
+                    questionNumberByFieldId={questionNumberByFieldId}
+                    onSelectStep={() => setSelection({ kind: "step", id: step.id })}
+                    onSelectField={(fieldId) => setSelection({ kind: "field", id: fieldId })}
+                    onDeleteStep={
+                      contentSteps.length > 1
+                        ? () => deleteStepMutation.mutate(step.id)
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+            </SortableContext>
+
+            <DragOverlay>
+              {dragging?.type === "field" ? (
+                (() => {
+                  const found = findField(dragging.id);
+                  return found ? <FieldDragPreview field={found.field} /> : null;
+                })()
+              ) : dragging?.type === "step" ? (
+                <div className="rounded-[12px] border bg-background px-3 py-2 shadow-lg text-sm font-medium">
+                  {sortedSteps.find((s) => s.id === dragging.id)?.title || "Section"}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+        )}
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => addStepMutation.mutate({})}
+          disabled={addStepMutation.isPending}
+        >
+          {addStepMutation.isPending ? (
+            <Loader className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Plus className="h-3.5 w-3.5" />
+          )}
+          Add Section
+        </Button>
+
+        {/* Ending */}
+        <div className="space-y-1.5">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            Ending
+          </p>
+          {completionField ? (
+            <button
+              type="button"
+              onClick={() => setSelection({ kind: "field", id: completionField.id })}
+              className={cn(
+                "flex w-full items-center gap-2.5 rounded-[12px] px-2 py-2 text-left text-sm transition-colors",
+                selection?.kind === "field" && selection.id === completionField.id
+                  ? "bg-primary/10 text-foreground"
+                  : "hover:bg-muted/60",
+              )}
+            >
+              <span
+                className={cn(
+                  "flex h-7 w-9 shrink-0 items-center justify-center rounded-[8px]",
+                  COMPLETION_TYPE_META.chipClass,
+                )}
+              >
+                <PartyPopper className="h-3.5 w-3.5" />
+              </span>
+              <span className="truncate font-medium">{completionField.label}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleAddCompletionPage}
+              disabled={addStepMutation.isPending}
+              className="flex w-full items-center gap-2.5 rounded-[12px] border border-dashed px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/40 transition-colors disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5 ml-1" />
+              Add ending page
+            </button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+
+  // ─── Render: Preview canvas ──────────────────────────────────────────────
+
+  const selectedQuestionNumber = selectedField
+    ? questionNumberByFieldId[selectedField.id] ?? null
+    : null;
+  const selectedSectionIsGrouped =
+    !!selectedField &&
+    selectedField.type !== "completion" &&
+    !!selectedStep &&
+    sectionShowsFieldsTogether(selectedStep.settings);
+  const selectedSectionFields =
+    selectedSectionIsGrouped && selectedStep
+      ? sortFields(selectedStep.fields ?? []).filter((f) => f.type !== "completion")
+      : [];
+  const progressPct =
+    selectedQuestionNumber && totalQuestions > 0
+      ? Math.round(((selectedQuestionNumber - 1) / totalQuestions) * 100)
+      : selectedField?.type === "completion"
+        ? 100
+        : 0;
+
+  const previewCanvas = (
+    <div className="rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] relative overflow-hidden min-h-[540px] flex flex-col">
+      {/* Progress bar */}
+      <div className="absolute top-0 left-0 right-0 h-1 bg-primary/10">
+        <div
+          className="h-full bg-primary transition-all duration-500 ease-out"
+          style={{ width: `${progressPct}%` }}
+        />
+      </div>
+
+      <div className="flex-1 flex items-center justify-center px-6 py-12 sm:px-12">
+        <div className="w-full max-w-xl mx-auto">
+          {selectedField && selectedField.type === "completion" ? (
+            <div key={selectedField.id} className="animate-focused-screen space-y-4 text-center flex flex-col items-center">
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                <PartyPopper className="h-7 w-7 text-primary" />
+              </div>
+              <InlineEditableLabel
+                key={`completion-label-${selectedField.id}`}
+                value={selectedField.label}
+                placeholder="Thank you!"
+                textClassName="text-2xl sm:text-3xl font-semibold text-center"
+                saveStatus={saveStatus[selectedField.id] ?? null}
+                onSave={(label) =>
+                  updateFieldMutation.mutate({
+                    fieldId: selectedField.id,
+                    data: { label },
+                  })
+                }
+              />
+              <div className="w-full max-w-md mx-auto text-left">
+                <RichTextEditor
+                  key={`completion-desc-${selectedField.id}`}
+                  value={selectedField.description ?? ""}
+                  variant="compact"
+                  placeholder="Write a thank-you message for your respondents."
+                  onSave={(html) =>
+                    updateFieldMutation.mutate({
+                      fieldId: selectedField.id,
+                      data: { description: html },
+                    })
+                  }
+                />
+              </div>
+            </div>
+          ) : selectedField && selectedSectionIsGrouped ? (
+            <div
+              key={`group-${selectedStep?.id}`}
+              className="animate-focused-screen space-y-6"
+            >
+              <div className="space-y-7">
+                {selectedSectionFields.map((field) => {
+                  const isSel = field.id === selectedField.id;
+                  return (
+                    <div
+                      key={field.id}
+                      onClick={() => {
+                        if (!isSel) setSelection({ kind: "field", id: field.id });
+                      }}
+                      className={cn(
+                        "-mx-3 space-y-2 rounded-[16px] px-3 py-2.5 transition-colors",
+                        isSel
+                          ? "bg-primary/[0.05] ring-1 ring-primary/15"
+                          : "cursor-pointer hover:bg-black/[0.025]",
+                      )}
+                    >
+                      {isSel ? (
+                        <>
+                          <div className="flex items-start gap-2">
+                            <span className="text-xl sm:text-2xl font-semibold leading-snug shrink-0">
+                              {questionNumberByFieldId[field.id]}.
+                            </span>
+                            <InlineEditableLabel
+                              key={`field-label-${field.id}`}
+                              value={field.label}
+                              autoFocus={autoFocusSelectedLabel}
+                              placeholder="Your question here..."
+                              textClassName="text-xl sm:text-2xl font-semibold leading-snug"
+                              saveStatus={saveStatus[field.id] ?? null}
+                              onSave={(label) =>
+                                updateFieldMutation.mutate({
+                                  fieldId: field.id,
+                                  data: { label },
+                                })
+                              }
+                            />
+                          </div>
+                          {fieldDescriptionEditor(field)}
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xl sm:text-2xl font-semibold leading-snug">
+                            {questionNumberByFieldId[field.id]}.{" "}
+                            {field.label || "Untitled question"}
+                            {field.required && (
+                              <span className="text-destructive ml-1">*</span>
+                            )}
+                          </p>
+                          {field.description && (
+                            <div
+                              className="text-base text-muted-foreground prose prose-sm max-w-none"
+                              dangerouslySetInnerHTML={{ __html: field.description }}
+                            />
+                          )}
+                        </>
+                      )}
+                      <FocusedFieldInput
+                        key={`preview-${field.id}`}
+                        field={{
+                          id: field.id,
+                          type: field.type,
+                          label: field.label,
+                          description: field.description,
+                          placeholder: field.placeholder,
+                          required: field.required,
+                          options: toPersistedFieldOptions(getFieldOptions(field)),
+                        }}
+                        value={previewValues[field.id] ?? ""}
+                        onChange={(val) =>
+                          setPreviewValues((prev) => ({ ...prev, [field.id]: val }))
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Button
+                  size="lg"
+                  className="px-7 text-base glow-surface"
+                  onClick={() => {
+                    const lastInSection =
+                      selectedSectionFields[selectedSectionFields.length - 1];
+                    const lastIndex = orderedQuestionFields.findIndex(
+                      (f) => f.id === lastInSection?.id,
+                    );
+                    const next = orderedQuestionFields[lastIndex + 1];
+                    if (next) {
+                      setSelection({ kind: "field", id: next.id });
+                    } else if (completionField) {
+                      setSelection({ kind: "field", id: completionField.id });
+                    }
+                  }}
+                >
+                  <Check className="h-4 w-4" />
+                  OK
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  press <span className="font-semibold">Enter ↵</span>
+                </span>
+              </div>
+            </div>
+          ) : selectedField ? (
+            <div key={selectedField.id} className="animate-focused-screen space-y-6">
+              <div className="space-y-2">
+                <div className="flex items-start gap-2">
+                  <span className="text-2xl sm:text-3xl font-semibold leading-snug shrink-0">
+                    {selectedQuestionNumber}.
+                  </span>
+                  <InlineEditableLabel
+                    key={`field-label-${selectedField.id}`}
+                    value={selectedField.label}
+                    autoFocus={autoFocusSelectedLabel}
+                    placeholder="Your question here..."
+                    textClassName="text-2xl sm:text-3xl font-semibold leading-snug"
+                    saveStatus={saveStatus[selectedField.id] ?? null}
+                    onSave={(label) =>
+                      updateFieldMutation.mutate({
+                        fieldId: selectedField.id,
+                        data: { label },
+                      })
+                    }
+                  />
+                </div>
+                {fieldDescriptionEditor(selectedField)}
+              </div>
+
+              <FocusedFieldInput
+                key={`preview-${selectedField.id}`}
+                field={{
+                  id: selectedField.id,
+                  type: selectedField.type,
+                  label: selectedField.label,
+                  description: selectedField.description,
+                  placeholder: selectedField.placeholder,
+                  required: selectedField.required,
+                  options: toPersistedFieldOptions(getFieldOptions(selectedField)),
+                }}
+                value={previewValues[selectedField.id] ?? ""}
+                onChange={(val) =>
+                  setPreviewValues((prev) => ({ ...prev, [selectedField.id]: val }))
+                }
+                onCommit={() => selectNextQuestion()}
+              />
+
+              <div className="flex items-center gap-3">
+                <Button
+                  size="lg"
+                  className="px-7 text-base glow-surface"
+                  onClick={selectNextQuestion}
+                >
+                  <Check className="h-4 w-4" />
+                  OK
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  press <span className="font-semibold">Enter ↵</span>
+                </span>
+              </div>
+            </div>
+          ) : selectedStep ? (
+            <div key={selectedStep.id} className="animate-focused-screen space-y-5">
+              <InlineEditableLabel
+                key={`step-title-${selectedStep.id}`}
+                value={selectedStep.title ?? ""}
+                placeholder="Section title (shown as an intro screen)..."
+                textClassName="text-2xl sm:text-3xl font-semibold leading-snug"
+                saveStatus={saveStatus[selectedStep.id] ?? null}
+                onSave={(title) =>
+                  updateStepMutation.mutate({
+                    stepId: selectedStep.id,
+                    data: { title },
+                  })
+                }
+              />
+              <RichTextEditor
+                key={`step-rich-desc-${selectedStep.id}`}
+                value={getRenderableRichTextHtml(
+                  selectedStep.richDescription,
+                  selectedStep.description,
+                )}
+                variant="compact"
+                placeholder="Add a short intro, context, or instructions for this section."
+                onSave={(richDescription) => {
+                  const currentValue = getRenderableRichTextHtml(
+                    selectedStep.richDescription,
+                    selectedStep.description,
+                  );
+                  const plainDescription =
+                    richTextToPlainText(richDescription) || null;
+                  if (
+                    richDescription !== currentValue ||
+                    plainDescription !== (selectedStep.description ?? null)
+                  ) {
+                    updateStepMutation.mutate({
+                      stepId: selectedStep.id,
+                      data: {
+                        description: plainDescription,
+                        richDescription,
+                      },
+                    });
+                  }
+                }}
+              />
+              <div className="flex items-center gap-3 pt-1">
+                <Button size="lg" className="px-7 text-base glow-surface" onClick={() => {
+                  const firstField = sortFields(selectedStep.fields ?? []).find((f) => f.type !== "completion");
+                  if (firstField) setSelection({ kind: "field", id: firstField.id });
+                }}>
+                  <ArrowRight className="h-4 w-4" />
+                  Continue
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  press <span className="font-semibold">Enter ↵</span>
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                The intro screen only shows to respondents when the section has
+                a title or description.
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center">
+              Select a question on the left to preview and edit it.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {form.type === "single" && (
+        <div className="px-6 pb-4">
+          <p className="text-[11px] text-muted-foreground text-center">
+            This form uses the classic one-page layout. The preview shows the
+            focused experience — switch to &quot;Focused&quot; in Settings to
+            present one question at a time.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+
+  // ─── Render: Settings panel ──────────────────────────────────────────────
+
+  const settingsPanel = (
+    <Card className="h-fit">
+      <CardContent className="space-y-4">
+        {selectedField && selectedField.type !== "completion" ? (
+          <>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Question Settings
+            </p>
+
+            {isTemplateMode && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Question</Label>
+                <InlineEditableLabel
+                  key={`settings-label-${selectedField.id}`}
+                  value={selectedField.label}
+                  autoFocus={autoFocusSelectedLabel}
+                  placeholder="Your question here..."
+                  saveStatus={saveStatus[selectedField.id] ?? null}
+                  onSave={(label) =>
+                    updateFieldMutation.mutate({
+                      fieldId: selectedField.id,
+                      data: { label },
+                    })
+                  }
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Type</Label>
+              <Select
+                value={selectedField.type}
+                onValueChange={(val) => handleFieldTypeChange(selectedField, val)}
+              >
+                <SelectTrigger className="h-9 w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {FIELD_TYPES.map((ft) => (
+                    <SelectItem key={ft.type} value={ft.type}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className={cn(
+                            "flex h-5 w-5 items-center justify-center rounded-[6px]",
+                            ft.chipClass,
+                          )}
+                        >
+                          <ft.icon className="h-3 w-3" />
+                        </span>
+                        {ft.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Required</p>
+                <p className="text-xs text-muted-foreground">
+                  Respondents must answer to continue
+                </p>
+              </div>
+              <Switch
+                checked={selectedField.required}
+                onCheckedChange={(checked) =>
+                  updateFieldMutation.mutate({
+                    fieldId: selectedField.id,
+                    data: { required: checked },
+                  })
+                }
+              />
+            </div>
+
+            {(selectedField.type === "name" || selectedField.type === "email") && (
+              <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">Save to contact</p>
+                  <p className="text-xs text-muted-foreground">
+                    Use as the contact&apos;s {selectedField.type}
+                  </p>
+                </div>
+                <Switch
+                  checked={!!selectedField.contactMapping}
+                  onCheckedChange={() => handleContactMappingToggle(selectedField)}
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                {isOptionFieldType(selectedField.type) ? "Hint text" : "Placeholder"}
+              </Label>
+              <Input
+                key={`placeholder-${selectedField.id}`}
+                defaultValue={selectedField.placeholder ?? ""}
+                placeholder={
+                  isOptionFieldType(selectedField.type)
+                    ? "Optional hint shown under the question"
+                    : "Type your answer here..."
+                }
+                className="h-9 text-sm"
+                onBlur={(e) => {
+                  const next = e.target.value.trim() || null;
+                  if (next !== (selectedField.placeholder ?? null)) {
+                    updateFieldMutation.mutate({
+                      fieldId: selectedField.id,
+                      data: { placeholder: next },
+                    });
+                  }
+                }}
+              />
+            </div>
+
+            {isOptionFieldType(selectedField.type) && selectedField.type !== "checkbox" && (() => {
+              const options = getFieldOptions(selectedField);
+              const minOptions = selectedField.type === "multi_select" ? 2 : 1;
+              return (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">Choices</Label>
+                  <div className="space-y-1.5">
+                    {options.map((opt, idx) => {
+                      const isLast = idx === options.length - 1;
+                      const canRemove = options.length > minOptions;
+                      return (
+                        <div key={opt.id} className="flex items-center gap-1.5">
+                          <Input
+                            placeholder={`Option ${idx + 1}`}
+                            value={opt.label}
+                            onChange={(e) =>
+                              updateFieldOption(selectedField.id, idx, e.target.value, selectedField)
+                            }
+                            onBlur={() => saveFieldOptions(selectedField.id)}
+                            className="h-8 text-xs"
+                          />
+                          {isLast && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 px-2 shrink-0 text-xs"
+                              onClick={() => addFieldOption(selectedField.id, selectedField)}
+                            >
+                              <Plus className="h-3 w-3" />
+                              Add
+                            </Button>
+                          )}
+                          {canRemove && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-1.5 shrink-0 rounded-[8px] bg-muted/70 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => removeFieldOption(selectedField.id, idx, selectedField)}
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {(sourcesByFieldId[selectedField.id] ?? []).length > 0 && (
+              <FormConditionEditor
+                title="Show this question when"
+                condition={selectedField.visibility ?? null}
+                sources={sourcesByFieldId[selectedField.id] ?? []}
+                onChange={(next) =>
+                  updateFieldMutation.mutate({
+                    fieldId: selectedField.id,
+                    data: { visibility: next },
+                  })
+                }
+              />
+            )}
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-destructive hover:text-destructive"
+              onClick={() => deleteFieldMutation.mutate(selectedField.id)}
+              disabled={
+                deleteFieldMutation.isPending &&
+                deleteFieldMutation.variables === selectedField.id
+              }
+            >
+              {deleteFieldMutation.isPending &&
+              deleteFieldMutation.variables === selectedField.id ? (
+                <Loader className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Delete question
+            </Button>
+          </>
+        ) : selectedField && selectedField.type === "completion" ? (
+          <>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Ending Settings
+            </p>
+
+            {isTemplateMode && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Title</Label>
+                <InlineEditableLabel
+                  key={`settings-completion-${selectedField.id}`}
+                  value={selectedField.label}
+                  placeholder="Thank you!"
+                  saveStatus={saveStatus[selectedField.id] ?? null}
+                  onSave={(label) =>
+                    updateFieldMutation.mutate({
+                      fieldId: selectedField.id,
+                      data: { label },
+                    })
+                  }
+                />
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Redirect URL (optional)
+              </Label>
+              <Input
+                type="url"
+                key={`completion-redirect-${selectedField.id}`}
+                defaultValue={
+                  selectedField.validation &&
+                  typeof selectedField.validation === "object" &&
+                  (selectedField.validation as Record<string, unknown>).redirectUrl
+                    ? String((selectedField.validation as Record<string, unknown>).redirectUrl)
+                    : ""
+                }
+                placeholder="https://your-site.com/thanks"
+                className="h-9 text-sm"
+                onBlur={(e) => {
+                  const url = e.target.value.trim();
+                  updateFieldMutation.mutate({
+                    fieldId: selectedField.id,
+                    data: {
+                      validation: url ? { redirectUrl: url } : null,
+                    },
+                  });
+                }}
+              />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Shows for 5 seconds before redirecting if a URL is set.
+              </p>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full text-destructive hover:text-destructive"
+              onClick={() => {
+                const step = findField(selectedField.id)?.step;
+                if (step) deleteStepMutation.mutate(step.id);
+              }}
+              disabled={deleteStepMutation.isPending}
+            >
+              {deleteStepMutation.isPending ? (
+                <Loader className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5" />
+              )}
+              Delete ending
+            </Button>
+          </>
+        ) : selectedStep ? (
+          <>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              Section Settings
+            </p>
+
+            {isTemplateMode && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Title</Label>
+                <InlineEditableLabel
+                  key={`settings-step-${selectedStep.id}`}
+                  value={selectedStep.title ?? ""}
+                  placeholder="Section title..."
+                  saveStatus={saveStatus[selectedStep.id] ?? null}
+                  onSave={(title) =>
+                    updateStepMutation.mutate({
+                      stepId: selectedStep.id,
+                      data: { title },
+                    })
+                  }
+                />
+              </div>
+            )}
+
+            <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">Show questions together</p>
+                <p className="text-xs text-muted-foreground">
+                  All questions on one screen
+                </p>
+              </div>
+              <Switch
+                checked={sectionShowsFieldsTogether(selectedStep.settings)}
+                onCheckedChange={(checked) => {
+                  const current =
+                    selectedStep.settings && typeof selectedStep.settings === "object"
+                      ? (selectedStep.settings as Record<string, unknown>)
+                      : {};
+                  updateStepMutation.mutate({
+                    stepId: selectedStep.id,
+                    data: { settings: { ...current, groupFields: checked } },
+                  });
+                }}
+              />
+            </div>
+
+            {(sourcesByStepId[selectedStep.id] ?? []).length > 0 && (
+              <FormConditionEditor
+                title="Show this section when"
+                condition={selectedStep.visibility ?? null}
+                sources={sourcesByStepId[selectedStep.id] ?? []}
+                onChange={(next) =>
+                  updateStepMutation.mutate({
+                    stepId: selectedStep.id,
+                    data: { visibility: next },
+                  })
+                }
+              />
+            )}
+
+            {contentSteps.length > 1 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full text-destructive hover:text-destructive"
+                onClick={() => deleteStepMutation.mutate(selectedStep.id)}
+                disabled={deleteStepMutation.isPending}
+              >
+                {deleteStepMutation.isPending ? (
+                  <Loader className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5" />
+                )}
+                Delete section
+              </Button>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-muted-foreground py-4 text-center">
+            Select a question to edit its settings.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 
   // ─── Render: Builder ─────────────────────────────────────────────────────
 
@@ -1980,718 +2975,21 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       </div>
       )}
 
-      <div className={isTemplateMode ? "" : "grid grid-cols-[240px_1fr] gap-6"}>
-        {/* ─── Left Sidebar: Field Palette ─────────────────────────────── */}
-        {!isTemplateMode && (
+      {isTemplateMode ? (
         <div className="space-y-4">
-          <Card>
-            <CardContent className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
-                Field Types
-              </p>
-              {FIELD_TYPES.map((ft) => (
-                <button
-                  key={ft.type}
-                  type="button"
-                  onClick={() => handleAddField(ft.type, ft.label)}
-                  disabled={sortedSteps.length === 0 || activeFields.some((f) => f.type === "completion")}
-                  className="flex w-full items-center gap-3 rounded-[16px] border px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ft.icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                  {ft.label}
-                </button>
-              ))}
-              {activeFields.some((f) => f.type === "completion") && (
-                <p className="text-[11px] text-muted-foreground px-1">
-                  Not available on completion page
-                </p>
-              )}
-
-              <button
-                type="button"
-                onClick={handleAddCompletionPage}
-                disabled={hasCompletionPage || addStepMutation.isPending}
-                className="flex w-full items-center gap-3 rounded-[16px] border px-3 py-2.5 text-sm text-left hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <PartyPopper className="h-4 w-4 text-muted-foreground shrink-0" />
-                Completion Page
-              </button>
-            </CardContent>
-          </Card>
-        </div>
-        )}
-
-        {/* ─── Main Area ──────────────────────────────────────────────── */}
-        <div className="space-y-4">
-          {/* Step tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleStepDragStart}
-              onDragCancel={handleStepDragCancel}
-              onDragEnd={handleStepDragEnd}
-            >
-              <SortableContext items={sortedSteps.map((step) => step.id)} strategy={horizontalListSortingStrategy}>
-                {sortedSteps.map((step, idx) => (
-                  <SortableStepTab
-                    key={step.id}
-                    step={step}
-                    idx={idx}
-                    isActive={step.id === activeStep?.id}
-                    showDelete={sortedSteps.length > 1}
-                    onSelect={() => setActiveStepId(step.id)}
-                    onDelete={() => deleteStepMutation.mutate(step.id)}
-                  />
-                ))}
-              </SortableContext>
-              <DragOverlay>
-                {activeStepTabDragId ? (
-                  <StepTabShell
-                    label={
-                      sortedSteps.find((step) => step.id === activeStepTabDragId)?.title ||
-                      `Step ${sortedSteps.findIndex((step) => step.id === activeStepTabDragId) + 1}`
-                    }
-                    isActive
-                    isOverlay
-                  />
-                ) : null}
-              </DragOverlay>
-            </DndContext>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 px-3 shrink-0"
-              onClick={() => addStepMutation.mutate({})}
-              disabled={addStepMutation.isPending}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Step
-            </Button>
-            {isTemplateMode && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="h-9 px-3 shrink-0"
-                    disabled={sortedSteps.length === 0}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Field
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-56 p-1.5">
-                  {FIELD_TYPES.map((ft) => (
-                    <button
-                      key={ft.type}
-                      type="button"
-                      onClick={() => handleAddField(ft.type, ft.label)}
-                      disabled={activeFields.some((f) => f.type === "completion")}
-                      className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <ft.icon className="h-4 w-4 text-muted-foreground shrink-0" />
-                      {ft.label}
-                    </button>
-                  ))}
-                  <div className="my-1 h-px bg-border" />
-                  <button
-                    type="button"
-                    onClick={handleAddCompletionPage}
-                    disabled={hasCompletionPage || addStepMutation.isPending}
-                    className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <PartyPopper className="h-4 w-4 text-muted-foreground shrink-0" />
-                    Completion Page
-                  </button>
-                </PopoverContent>
-              </Popover>
-            )}
+          <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
+            {contentPanel}
+            {settingsPanel}
           </div>
-
-          {/* Active step content */}
-          {activeStep ? (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={fieldCollisionDetection}
-              onDragStart={handleFieldDragStart}
-              onDragOver={handleFieldDragOver}
-              onDragCancel={handleFieldDragCancel}
-              onDragEnd={handleFieldDragEnd}
-            >
-              {showStepDropTargets && (
-                <div className="flex min-h-[136px] items-stretch gap-3 overflow-x-auto px-1 pt-1 pb-3">
-                  {fieldDropTargetSteps.map((step) => {
-                    const stepNumber = sortedSteps.findIndex((candidate) => candidate.id === step.id) + 1;
-                    return (
-                      <StepDropTarget
-                        key={step.id}
-                        id={getStepDropTargetId(step.id)}
-                        title={step.title || `Step ${stepNumber}`}
-                        description="Move question here"
-                        isHovered={hoveredStepDropTargetId === getStepDropTargetId(step.id)}
-                      />
-                    );
-                  })}
-                  <StepDropTarget
-                    id={NEW_STEP_DROP_TARGET_ID}
-                    title="New Step"
-                    description="Create and move here"
-                    isHovered={hoveredStepDropTargetId === NEW_STEP_DROP_TARGET_ID}
-                    isNew
-                  />
-                </div>
-              )}
-
-              <StepCanvasDropZone
-                id={activeStepCanvasDroppableId ?? getStepCanvasDroppableId(activeStep.id)}
-                isDraggingField={Boolean(draggingField)}
-                isCrossStepMode={showStepDropTargets}
-              >
-                <Card>
-                  <CardContent className={cn("space-y-4", isTemplateMode && "px-3 sm:px-6")}>
-                    {/* Step title & description — hidden for completion steps */}
-                    {!activeFields.some((f) => f.type === "completion") && (
-                    <div className="space-y-2">
-                      {/* Toggle buttons for adding title/description */}
-                      {!expandedStepTitle.has(activeStep.id) && !activeStep.title ? (
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={() =>
-                              setExpandedStepTitle((prev) => new Set(prev).add(activeStep.id))
-                            }
-                          >
-                            <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-                            Add title
-                          </button>
-                          {!expandedStepDesc.has(activeStep.id) && !activeStep.description && !activeStep.richDescription && (
-                            <button
-                              type="button"
-                              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                              onClick={() =>
-                                setExpandedStepDesc((prev) => new Set(prev).add(activeStep.id))
-                              }
-                            >
-                              <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-                              Add description
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <InlineEditableLabel
-                          key={`step-title-${activeStep.id}`}
-                          value={activeStep.title ?? ""}
-                          placeholder="Step title..."
-                          saveStatus={saveStatus[activeStep.id] ?? null}
-                          onSave={(title) =>
-                            updateStepMutation.mutate({
-                              stepId: activeStep.id,
-                              data: { title },
-                            })
-                          }
-                        />
-                      )}
-
-                      {/* Description: show button if title is visible but desc is not */}
-                      {(expandedStepTitle.has(activeStep.id) || !!activeStep.title) &&
-                       !expandedStepDesc.has(activeStep.id) &&
-                       !activeStep.description &&
-                       !activeStep.richDescription && (
-                        <button
-                          type="button"
-                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                          onClick={() =>
-                            setExpandedStepDesc((prev) => new Set(prev).add(activeStep.id))
-                          }
-                        >
-                          <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-                          Add description
-                        </button>
-                      )}
-
-                      {(expandedStepDesc.has(activeStep.id) || !!activeStep.description || !!activeStep.richDescription) && (
-                        <RichTextEditor
-                          key={`step-rich-desc-${activeStep.id}`}
-                          value={getRenderableRichTextHtml(
-                            activeStep.richDescription,
-                            activeStep.description,
-                          )}
-                          placeholder="Add a short intro, context, or instructions for this step."
-                          onSave={(richDescription) => {
-                            const currentValue = getRenderableRichTextHtml(
-                              activeStep.richDescription,
-                              activeStep.description,
-                            );
-                            const plainDescription =
-                              richTextToPlainText(richDescription) || null;
-                            if (
-                              richDescription !== currentValue ||
-                              plainDescription !== (activeStep.description ?? null)
-                            ) {
-                              updateStepMutation.mutate({
-                                stepId: activeStep.id,
-                                data: {
-                                  description: plainDescription,
-                                  richDescription,
-                                },
-                              });
-                            }
-                          }}
-                        />
-                      )}
-
-                      {/* Step-level conditional visibility */}
-                      <FormConditionEditor
-                        title="Show this step when"
-                        condition={activeStep.visibility ?? null}
-                        sources={sourcesByStepId[activeStep.id] ?? []}
-                        onChange={(next) =>
-                          updateStepMutation.mutate({
-                            stepId: activeStep.id,
-                            data: { visibility: next },
-                          })
-                        }
-                      />
-                    </div>
-                    )}
-
-                    {/* Fields list */}
-                    {activeFields.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <Type className="h-8 w-8 text-muted-foreground mb-3" />
-                        <p className="text-sm font-medium text-foreground mb-1">
-                          No fields yet
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Click a field type from the left panel to add it.
-                        </p>
-                      </div>
-                    ) : (
-                      <SortableContext items={activeFields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
-                        <div className="space-y-2">
-                          {activeFields.map((field, fieldIdx) => {
-                            const options = getFieldOptions(field);
-                            const hasOptions = OPTION_FIELD_TYPES.includes(field.type);
-                            const isLastField = fieldIdx === activeFields.length - 1;
-                            const shouldAutoFocus = autoFocusLastField && isLastField;
-                            return (
-                              <SortableFieldCard
-                                key={field.id}
-                                id={field.id}
-                                shouldAutoFocus={shouldAutoFocus}
-                                onAutoFocused={() => setAutoFocusLastField(false)}
-                              >
-                                {(dragHandleProps) => (<>
-                                  {field.type === "completion" ? (
-                                    <div className={cn(
-                                      "transition-opacity",
-                                      saveStatus[field.id] === "saving" && "opacity-50 pointer-events-none",
-                                    )}>
-                                       {/* Completion field editor */}
-                                       <div className="flex items-start gap-3">
-                                         <GripVertical className="h-4 w-4 mt-1 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                                         <PartyPopper className="h-4 w-4 mt-1 text-primary shrink-0" />
-                                         <InlineEditableLabel
-                                           value={field.label}
-                                           placeholder="Completion title..."
-                                           saveStatus={saveStatus[field.id] ?? null}
-                                           onSave={(label) =>
-                                             updateFieldMutation.mutate({
-                                               fieldId: field.id,
-                                               data: { label },
-                                             })
-                                           }
-                                         />
-                                         <div className="ml-auto shrink-0">
-                                           <Button
-                                             variant="ghost"
-                                             size="sm"
-                                             className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                             onClick={() => deleteFieldMutation.mutate(field.id)}
-                                             disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
-                                           >
-                                             {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
-                                               <Loader className="h-3.5 w-3.5 animate-spin" />
-                                             ) : (
-                                               <Trash2 className="h-3.5 w-3.5" />
-                                             )}
-                                           </Button>
-                                         </div>
-                                       </div>
-                                       <div className="pl-7 mt-2 space-y-3">
-                                         {/* Description — collapsible */}
-                                         {expandedFieldDesc.has(field.id) || field.description ? (
-                                           <RichTextEditor
-                                             key={`completion-desc-${field.id}`}
-                                             value={field.description ?? ""}
-                                             placeholder="Write a thank-you message for your respondents."
-                                             onSave={(html) =>
-                                               updateFieldMutation.mutate({
-                                                 fieldId: field.id,
-                                                 data: { description: html },
-                                               })
-                                             }
-                                           />
-                                         ) : (
-                                           <button
-                                             type="button"
-                                             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                             onClick={() =>
-                                               setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
-                                             }
-                                           >
-                                             <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-                                             Add description
-                                           </button>
-                                         )}
-                                         {/* Redirect URL */}
-                                         <div className="space-y-1.5">
-                                           <span className="text-xs text-muted-foreground">Redirect URL (optional)</span>
-                                           <Input
-                                             type="url"
-                                             defaultValue={
-                                               field.validation &&
-                                               typeof field.validation === "object" &&
-                                               (field.validation as Record<string, unknown>).redirectUrl
-                                                 ? String((field.validation as Record<string, unknown>).redirectUrl)
-                                                 : ""
-                                             }
-                                             key={`completion-redirect-${field.id}`}
-                                             placeholder="https://your-site.com/thanks"
-                                             className="h-8 text-xs"
-                                             onBlur={(e) => {
-                                               const url = e.target.value.trim();
-                                               updateFieldMutation.mutate({
-                                                 fieldId: field.id,
-                                                 data: {
-                                                   validation: url ? { redirectUrl: url } : null,
-                                                 },
-                                               });
-                                             }}
-                                           />
-                                           <p className="text-xs text-muted-foreground leading-relaxed">
-                                             Shows for 5 seconds before redirecting if a URL is set.
-                                           </p>
-                                         </div>
-                                       </div>
-                                     </div>
-                                   ) : (
-                                    <div className={cn(
-                                      "transition-opacity",
-                                      saveStatus[field.id] === "saving" && "opacity-50 pointer-events-none",
-                                    )}>
-                                   {/* Row 1: Handle + Label + Type + Required + Remove */}
-                                   <div className="flex flex-wrap items-start gap-3">
-                                     <div className="flex items-start gap-3 flex-1 basis-[200px] min-w-0">
-                                       <GripVertical className="h-4 w-4 mt-1 text-muted-foreground shrink-0 cursor-grab" {...dragHandleProps} />
-                                       <InlineEditableLabel
-                                         value={field.label}
-                                         autoFocus={shouldAutoFocus}
-                                         placeholder="Field label..."
-                                         saveStatus={saveStatus[field.id] ?? null}
-                                         onSave={(label) =>
-                                           updateFieldMutation.mutate({
-                                             fieldId: field.id,
-                                             data: { label },
-                                           })
-                                         }
-                                       />
-                                     </div>
-                                     <div className="flex items-center gap-3 shrink-0 flex-wrap">
-                                       <Select
-                                         value={field.type}
-                                         onValueChange={(val) => {
-                                           const wasOptionType = isOptionFieldType(field.type);
-                                           const isOptionType = isOptionFieldType(val);
-                                           const updateData: Record<string, unknown> = { type: val };
-                                           if (wasOptionType && !isOptionType) {
-                                             updateData.options = null;
-                                             setFieldOptionsState((prev) => {
-                                               const next = { ...prev };
-                                               delete next[field.id];
-                                               return next;
-                                             });
-                                           }
-                                           if (!wasOptionType && isOptionType) {
-                                             const seedOptions = val === "multi_select"
-                                               ? toDraftFieldOptions([
-                                                 { label: "Option 1", value: "option_1" },
-                                                 { label: "Option 2", value: "option_2" },
-                                               ])
-                                               : toDraftFieldOptions([
-                                                 { label: "Option 1", value: "option_1" },
-                                               ]);
-                                             updateData.options = toPersistedFieldOptions(seedOptions);
-                                             setFieldOptions(field.id, seedOptions);
-                                           }
-                                           if (wasOptionType && isOptionType && val === "multi_select") {
-                                             const currentOpts = getFieldOptions(field);
-                                             if (currentOpts.length < 2) {
-                                               const seedOptions = [
-                                                 ...currentOpts,
-                                                 createDraftFieldOption({
-                                                   label: "Option 2",
-                                                   value: "option_2",
-                                                 }),
-                                               ];
-                                               updateData.options = toPersistedFieldOptions(seedOptions);
-                                               setFieldOptions(field.id, seedOptions);
-                                             }
-                                           }
-                                           updateFieldMutation.mutate({ fieldId: field.id, data: updateData });
-                                         }}
-                                       >
-                                         <SelectTrigger className="h-6 w-auto text-[10px] px-2 rounded-full bg-secondary border-0 gap-1 shrink-0">
-                                           <SelectValue />
-                                         </SelectTrigger>
-                                         <SelectContent>
-                                           {FIELD_TYPES.map((ft) => (
-                                             <SelectItem key={ft.type} value={ft.type}>
-                                               {ft.label}
-                                             </SelectItem>
-                                           ))}
-                                         </SelectContent>
-                                       </Select>
-                                       {(field.type === "name" || field.type === "email") && (
-                                         <TooltipProvider delayDuration={200}>
-                                           <Tooltip>
-                                             <TooltipTrigger asChild>
-                                               <button
-                                                 type="button"
-                                                 className={cn(
-                                                   "h-6 w-6 rounded-md flex items-center justify-center transition-colors",
-                                                   field.contactMapping
-                                                     ? "bg-primary text-primary-foreground"
-                                                     : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                                                 )}
-                                                 onClick={() => {
-                                                   const newMapping = field.contactMapping
-                                                     ? null
-                                                     : field.type === "name" ? "name" : "email";
-                                                   if (newMapping) {
-                                                     optimisticSetForm((old) => ({
-                                                       ...old,
-                                                       steps: old.steps.map((s) => ({
-                                                         ...s,
-                                                         fields: s.fields.map((f) =>
-                                                           f.id !== field.id && f.contactMapping === newMapping
-                                                             ? { ...f, contactMapping: null }
-                                                             : f,
-                                                         ),
-                                                       })),
-                                                     }));
-                                                   }
-                                                   updateFieldMutation.mutate({
-                                                     fieldId: field.id,
-                                                     data: { contactMapping: newMapping },
-                                                   });
-                                                 }}
-                                               >
-                                                 <User className="h-3 w-3" />
-                                               </button>
-                                             </TooltipTrigger>
-                                             <TooltipContent side="bottom" className="max-w-56 text-xs">
-                                               {field.contactMapping
-                                                 ? `Saved as contact's ${field.type}. Click to unlink.`
-                                                 : `Save as contact's ${field.type} for bookings & contacts`}
-                                             </TooltipContent>
-                                           </Tooltip>
-                                         </TooltipProvider>
-                                       )}
-                                       <div className="flex items-center gap-1">
-                                         <span className="text-[11px] text-muted-foreground">
-                                           Required
-                                         </span>
-                                         <Switch
-                                           checked={field.required}
-                                           onCheckedChange={(checked) =>
-                                             updateFieldMutation.mutate({
-                                               fieldId: field.id,
-                                               data: { required: checked },
-                                             })
-                                           }
-                                           className="scale-75"
-                                         />
-                                       </div>
-                                       <Button
-                                         variant="ghost"
-                                         size="sm"
-                                         className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                                         onClick={() =>
-                                           deleteFieldMutation.mutate(field.id)
-                                         }
-                                         disabled={deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id}
-                                       >
-                                         {deleteFieldMutation.isPending && deleteFieldMutation.variables === field.id ? (
-                                           <Loader className="h-3.5 w-3.5 animate-spin" />
-                                         ) : (
-                                           <Trash2 className="h-3.5 w-3.5" />
-                                         )}
-                                       </Button>
-                                     </div>
-                                   </div>
-
-                                   {/* Conditional visibility card when rules exist */}
-                                   {field.visibility && (field.visibility.rules?.length ?? 0) > 0 && (
-                                     <div className="pl-7 mt-3">
-                                       <FormConditionEditor
-                                         title="Show this field when"
-                                         condition={field.visibility}
-                                         sources={sourcesByFieldId[field.id] ?? []}
-                                         onChange={(next) =>
-                                           updateFieldMutation.mutate({
-                                             fieldId: field.id,
-                                             data: { visibility: next },
-                                           })
-                                         }
-                                       />
-                                     </div>
-                                   )}
-
-                                   {/* Description + "Show this field when" inline row */}
-                                   <div className="pl-7 mt-2">
-                                     {expandedFieldDesc.has(field.id) || field.description ? (
-                                       <div className="space-y-2">
-                                         <RichTextEditor
-                                           key={`field-desc-${field.id}`}
-                                           value={field.description ?? ""}
-                                           placeholder="Add a description or helper text"
-                                           className="text-xs"
-                                           onSave={(html) =>
-                                             updateFieldMutation.mutate({
-                                               fieldId: field.id,
-                                               data: { description: html },
-                                             })
-                                           }
-                                         />
-                                         {(!field.visibility || (field.visibility.rules?.length ?? 0) === 0) && (
-                                           <FormConditionEditor
-                                             title="Show this field when"
-                                             condition={null}
-                                             sources={sourcesByFieldId[field.id] ?? []}
-                                             onChange={(next) =>
-                                               updateFieldMutation.mutate({
-                                                 fieldId: field.id,
-                                                 data: { visibility: next },
-                                               })
-                                             }
-                                           />
-                                         )}
-                                       </div>
-                                     ) : (
-                                       <div className="flex items-center gap-4 flex-wrap">
-                                         {(!field.visibility || (field.visibility.rules?.length ?? 0) === 0) && (
-                                           <FormConditionEditor
-                                             title="Show this field when"
-                                             condition={null}
-                                             sources={sourcesByFieldId[field.id] ?? []}
-                                             onChange={(next) =>
-                                               updateFieldMutation.mutate({
-                                                 fieldId: field.id,
-                                                 data: { visibility: next },
-                                               })
-                                             }
-                                           />
-                                         )}
-                                         <button
-                                           type="button"
-                                           className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-                                           onClick={() =>
-                                             setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
-                                           }
-                                         >
-                                           <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-                                           Add description
-                                         </button>
-                                       </div>
-                                     )}
-                                   </div>
-
-                                   {hasOptions && Array.isArray(options) && options.length > 0 && (() => {
-                                     const minOptions = field.type === "multi_select" ? 2 : 1;
-                                     return (
-                                       <div className="pl-7 mt-4 space-y-1.5 max-w-sm">
-                                         {options.map((opt, idx) => {
-                                           const isLast = idx === options.length - 1;
-                                           const canRemove = options.length > minOptions;
-                                           return (
-                                             <div key={opt.id} className="flex items-center gap-1.5">
-                                               <Input
-                                                 placeholder={`Option ${idx + 1}`}
-                                                 value={opt.label}
-                                                 onChange={(e) =>
-                                                   updateFieldOption(field.id, idx, e.target.value, field)
-                                                 }
-                                                 onBlur={() => saveFieldOptions(field.id)}
-                                                 className="h-7 text-xs"
-                                               />
-                                               {isLast && (
-                                                 <Button
-                                                   type="button"
-                                                   variant="outline"
-                                                   size="sm"
-                                                   className="h-7 px-2 shrink-0 text-xs"
-                                                   onClick={() => addFieldOption(field.id, field)}
-                                                 >
-                                                   <Plus className="h-3 w-3" />
-                                                   Add
-                                                 </Button>
-                                               )}
-                                               {canRemove && (
-                                                 <Button
-                                                   type="button"
-                                                   variant="ghost"
-                                                   size="sm"
-                                                   className="h-7 px-1.5 shrink-0 text-xs text-destructive hover:text-destructive"
-                                                   onClick={() => removeFieldOption(field.id, idx, field)}
-                                                 >
-                                                   <X className="h-3 w-3" />
-                                                 </Button>
-                                               )}
-                                             </div>
-                                           );
-                                         })}
-                                       </div>
-                                     );
-                                   })()}
-                                     </div>
-                                   )}
-                                </>)}
-                              </SortableFieldCard>
-                            );
-                          })}
-                        </div>
-                      </SortableContext>
-                    )}
-                  </CardContent>
-                </Card>
-              </StepCanvasDropZone>
-
-              <DragOverlay>
-                {draggingField ? <FieldDragPreview field={draggingField} /> : null}
-              </DragOverlay>
-            </DndContext>
-          ) : (
-            <div className="flex flex-col items-center justify-center rounded-[20px] border border-dashed min-h-[400px]">
-              <p className="text-sm text-muted-foreground mb-3">
-                No steps yet. Add a step to start building your form.
-              </p>
-              <Button
-                size="sm"
-                onClick={() => addStepMutation.mutate({})}
-                disabled={addStepMutation.isPending}
-              >
-                <Plus className="h-4 w-4" />
-                Add Step
-              </Button>
-            </div>
-          )}
-
-          {isTemplateMode && props.onboardingFooter}
+          {props.onboardingFooter}
         </div>
-      </div>
+      ) : (
+        <div className="grid gap-5 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+          {contentPanel}
+          {previewCanvas}
+          {settingsPanel}
+        </div>
+      )}
 
       {/* ─── Settings Dialog ────────────────────────────────────────── */}
       {!isTemplateMode && (
@@ -2724,6 +3022,37 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 onBlur={handleSlugBlur}
                 className="h-9"
               />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Changing the slug changes the form&apos;s public link. On Pro and
+                Business plans, old links automatically redirect to the new one.
+              </p>
+            </div>
+
+            {/* Experience */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Experience</Label>
+              <Select
+                value={form.type}
+                onValueChange={(val) =>
+                  updateFormMutation.mutate({ type: val as "multi_step" | "single" })
+                }
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="multi_step">
+                    Focused — one question at a time
+                  </SelectItem>
+                  <SelectItem value="single">
+                    Classic — all questions on one page
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Focused presents questions one at a time, Typeform-style, with
+                keyboard navigation and smooth transitions.
+              </p>
             </div>
 
             {/* Status */}
@@ -2820,18 +3149,28 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   );
 }
 
-// ─── Sortable Field Card ─────────────────────────────────────────────────────
+// ─── Content Step Group ──────────────────────────────────────────────────────
 
-function SortableFieldCard({
-  id,
-  shouldAutoFocus,
-  onAutoFocused,
-  children,
+function ContentStepGroup({
+  step,
+  stepNumber,
+  isGrouped,
+  isSelected,
+  selectedFieldId,
+  questionNumberByFieldId,
+  onSelectStep,
+  onSelectField,
+  onDeleteStep,
 }: {
-  id: string;
-  shouldAutoFocus: boolean;
-  onAutoFocused: () => void;
-  children: (dragHandleProps: Record<string, unknown>) => React.ReactNode;
+  step: FormStep;
+  stepNumber: number;
+  isGrouped: boolean;
+  isSelected: boolean;
+  selectedFieldId: string | null;
+  questionNumberByFieldId: Record<string, number>;
+  onSelectStep: () => void;
+  onSelectField: (fieldId: string) => void;
+  onDeleteStep?: () => void;
 }) {
   const {
     attributes,
@@ -2840,219 +3179,211 @@ function SortableFieldCard({
     transform,
     transition,
     isDragging,
-  } = useSortable({ id });
+  } = useSortable({ id: `${STEP_SORTABLE_ID_PREFIX}${step.id}` });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.15 : 1,
+    opacity: isDragging ? 0.4 : 1,
   };
 
+  const fields = sortFields(step.fields ?? []).filter(
+    (f) => f.type !== "completion",
+  );
+
   return (
-    <div
-      ref={(node) => {
-        setNodeRef(node);
-        if (shouldAutoFocus && node) onAutoFocused();
-      }}
-      style={style}
-      className="rounded-[16px] border px-3 py-2.5 hover:border-primary/30 transition-colors bg-background"
-    >
-      {children({ ...listeners, ...attributes })}
+    <div ref={setNodeRef} style={style} className="space-y-1">
+      <div
+        className={cn(
+          "group/steprow flex items-center gap-1 rounded-[10px] px-1 py-1 transition-colors",
+          isSelected ? "bg-primary/10" : "hover:bg-muted/50",
+        )}
+      >
+        <span
+          className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+          {...listeners}
+          {...attributes}
+        >
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+        <button
+          type="button"
+          onClick={onSelectStep}
+          className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
+        >
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
+            Section {stepNumber}
+          </span>
+          {step.title?.trim() && (
+            <span className="truncate text-xs font-medium text-foreground">
+              {step.title}
+            </span>
+          )}
+          {isGrouped && (
+            <Layers className="h-3 w-3 shrink-0 self-center text-muted-foreground/70" />
+          )}
+        </button>
+        {onDeleteStep && (
+          <button
+            type="button"
+            onClick={onDeleteStep}
+            className="rounded-full bg-muted p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            aria-label={`Delete section ${stepNumber}`}
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+
+      <StepFieldList
+        stepId={step.id}
+        fields={fields}
+        selectedFieldId={selectedFieldId}
+        questionNumberByFieldId={questionNumberByFieldId}
+        onSelectField={onSelectField}
+      />
     </div>
   );
 }
 
-function StepCanvasDropZone({
-  id,
-  isDraggingField,
-  isCrossStepMode,
-  children,
+function StepFieldList({
+  stepId,
+  fields,
+  selectedFieldId,
+  questionNumberByFieldId,
+  onSelectField,
 }: {
-  id: string;
-  isDraggingField: boolean;
-  isCrossStepMode: boolean;
-  children: React.ReactNode;
+  stepId: string;
+  fields: FormField[];
+  selectedFieldId: string | null;
+  questionNumberByFieldId: Record<string, number>;
+  onSelectField: (fieldId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
-    id,
+    id: `${GROUP_DROPPABLE_ID_PREFIX}${stepId}`,
   });
 
   return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "rounded-[24px] transition-all",
-        isDraggingField && !isCrossStepMode && "ring-2 ring-primary/15 ring-offset-4 ring-offset-background",
-        isOver && !isCrossStepMode && "ring-primary/25",
-      )}
+    <SortableContext
+      items={fields.map((f) => f.id)}
+      strategy={verticalListSortingStrategy}
     >
-      {children}
-    </div>
+      <div
+        ref={setNodeRef}
+        className={cn(
+          "space-y-0.5 rounded-[12px] transition-colors",
+          isOver && "bg-primary/5",
+          fields.length === 0 && "border border-dashed px-2 py-3",
+        )}
+      >
+        {fields.length === 0 ? (
+          <p className="text-[11px] text-muted-foreground text-center">
+            Drop a question here
+          </p>
+        ) : (
+          fields.map((field) => (
+            <ContentFieldRow
+              key={field.id}
+              field={field}
+              questionNumber={questionNumberByFieldId[field.id]}
+              isSelected={selectedFieldId === field.id}
+              onSelect={() => onSelectField(field.id)}
+            />
+          ))
+        )}
+      </div>
+    </SortableContext>
   );
 }
 
-function StepDropTarget({
-  id,
-  title,
-  description,
-  isHovered,
-  isNew = false,
+function ContentFieldRow({
+  field,
+  questionNumber,
+  isSelected,
+  onSelect,
 }: {
-  id: string;
-  title: string;
-  description: string;
-  isHovered: boolean;
-  isNew?: boolean;
+  field: FormField;
+  questionNumber: number | undefined;
+  isSelected: boolean;
+  onSelect: () => void;
 }) {
-  const { setNodeRef } = useDroppable({ id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: field.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.25 : 1,
+  };
+
+  const meta = getFieldTypeMeta(field.type);
+  const Icon = meta.icon;
 
   return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        "flex h-[124px] w-[124px] shrink-0 flex-col justify-between rounded-[22px] border border-dashed bg-muted/40 p-3.5 text-left transition-all",
-        isHovered
-          ? "border-primary bg-primary/8 shadow-sm scale-[1.02]"
-          : "border-border/70",
-      )}
-    >
-      <div className="flex items-start justify-between gap-2">
-        <Badge variant={isHovered ? "default" : "secondary"} className="rounded-full px-2 py-0.5 text-[10px]">
-          {isNew ? "New Step" : "Step"}
-        </Badge>
-        {isNew && <Plus className="h-4 w-4 text-muted-foreground" />}
-      </div>
-      <div className="space-y-1">
-        <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground">
-          {title}
-        </p>
-        <p className="text-[11px] leading-relaxed text-muted-foreground">
-          {description}
-        </p>
-      </div>
+    <div ref={setNodeRef} style={style} className="group/fieldrow flex items-center gap-1">
+      <button
+        type="button"
+        onClick={onSelect}
+        className={cn(
+          "flex min-w-0 flex-1 items-center gap-2.5 rounded-[12px] px-2 py-2 text-left text-sm transition-colors",
+          isSelected ? "bg-primary/10" : "hover:bg-muted/60",
+        )}
+      >
+        <span
+          className={cn(
+            "flex h-7 w-10 shrink-0 items-center justify-center gap-0.5 rounded-[8px]",
+            meta.chipClass,
+          )}
+        >
+          <Icon className="h-3 w-3" />
+          {questionNumber != null && (
+            <span className="text-[10px] font-semibold">{questionNumber}</span>
+          )}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+          {field.label || "Untitled question"}
+          {field.required && <span className="text-destructive ml-0.5">*</span>}
+        </span>
+      </button>
+      <span
+        className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/0 transition-colors group-hover/fieldrow:text-muted-foreground/60 active:cursor-grabbing"
+        {...listeners}
+        {...attributes}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </span>
     </div>
   );
 }
 
 function FieldDragPreview({ field }: { field: FormField }) {
-  const FieldIcon = getFieldIcon(field.type);
+  const meta = getFieldTypeMeta(field.type);
+  const Icon = meta.icon;
 
   return (
-    <div className="w-[min(520px,calc(100vw-3rem))] rounded-[16px] border bg-background px-3 py-2.5 shadow-lg">
-      <div className="flex items-center gap-3">
-        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <FieldIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+    <div className="w-[min(260px,calc(100vw-3rem))] rounded-[12px] border bg-background px-2.5 py-2 shadow-lg">
+      <div className="flex items-center gap-2.5">
+        <span
+          className={cn(
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
+            meta.chipClass,
+          )}
+        >
+          <Icon className="h-3.5 w-3.5" />
+        </span>
         <p className="truncate text-sm font-medium text-foreground">
           {field.label}
         </p>
         <Badge variant="secondary" className="ml-auto rounded-full px-2 py-0.5 text-[10px]">
-          {FIELD_TYPES.find((entry) => entry.type === field.type)?.label ?? field.type}
+          {meta.label}
         </Badge>
       </div>
-    </div>
-  );
-}
-
-// ─── Sortable Step Tab ───────────────────────────────────────────────────────
-
-function StepTabShell({
-  label,
-  isActive,
-  onSelect,
-  onDelete,
-  showDelete = false,
-  dragHandleProps,
-  isOverlay = false,
-}: {
-  label: string;
-  isActive: boolean;
-  onSelect?: () => void;
-  onDelete?: () => void;
-  showDelete?: boolean;
-  dragHandleProps?: Record<string, unknown>;
-  isOverlay?: boolean;
-}) {
-  return (
-    <div
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 rounded-[14px] border px-2 py-1.5 shadow-sm transition-colors",
-        isActive
-          ? "border-primary/30 bg-primary/8 text-primary"
-          : "border-border bg-background text-foreground",
-        isOverlay && "shadow-lg",
-      )}
-    >
-      <span
-        className="flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground cursor-grab active:cursor-grabbing hover:bg-black/5"
-        onClick={(event) => event.stopPropagation()}
-        {...dragHandleProps}
-      >
-        <GripVertical className="h-3.5 w-3.5" />
-      </span>
-      <button
-        type="button"
-        onClick={onSelect}
-        className="whitespace-nowrap text-sm font-medium"
-      >
-        {label}
-      </button>
-      {showDelete && onDelete && (
-        <button
-          type="button"
-          onClick={onDelete}
-          className="rounded-full p-1 text-muted-foreground transition-colors hover:bg-black/5 hover:text-foreground"
-          aria-label={`Delete ${label}`}
-        >
-          <X className="h-3 w-3" />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function SortableStepTab({
-  step,
-  idx,
-  isActive,
-  showDelete,
-  onSelect,
-  onDelete,
-}: {
-  step: { id: string; title: string | null };
-  idx: number;
-  isActive: boolean;
-  showDelete: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: step.id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.15 : 1,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-    >
-      <StepTabShell
-        label={step.title || `Step ${idx + 1}`}
-        isActive={isActive}
-        onSelect={onSelect}
-        onDelete={onDelete}
-        showDelete={showDelete}
-        dragHandleProps={{ ...listeners, ...attributes }}
-      />
     </div>
   );
 }
@@ -3065,12 +3396,14 @@ function InlineEditableLabel({
   autoFocus = false,
   placeholder = "Untitled",
   saveStatus,
+  textClassName,
 }: {
   value: string;
   onSave: (value: string) => void;
   autoFocus?: boolean;
   placeholder?: string;
   saveStatus?: "saving" | "saved" | "error" | null;
+  textClassName?: string;
 }) {
   const [localValue, setLocalValue] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -3118,7 +3451,10 @@ function InlineEditableLabel({
             e.currentTarget.blur();
           }
         }}
-        className="text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-muted-foreground/30 focus:border-solid focus:border-primary outline-none min-w-0 pb-0.5 w-full transition-colors resize-none overflow-hidden block"
+        className={cn(
+          "text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-transparent hover:border-muted-foreground/30 focus:border-solid focus:border-primary outline-none min-w-0 pb-0.5 w-full transition-colors resize-none overflow-hidden block",
+          textClassName,
+        )}
       />
       {saveStatus && (
         <div

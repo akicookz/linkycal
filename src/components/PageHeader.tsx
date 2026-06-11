@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { SidebarTrigger, useMaybeSidebar } from "@/components/ui/sidebar";
 
 interface PageHeaderProps {
   title: string;
@@ -9,10 +9,14 @@ interface PageHeaderProps {
 }
 
 function PageHeader({ title, description, children, className }: PageHeaderProps) {
+  // Some layouts (e.g. /app/account) have no sidebar — only render the
+  // mobile trigger when a SidebarProvider is actually present.
+  const sidebar = useMaybeSidebar();
+
   return (
     <div className={cn("flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8", className)}>
       <div className="flex items-start gap-2 min-w-0">
-        <SidebarTrigger className="mt-1 -ml-1 shrink-0 md:hidden" />
+        {sidebar && <SidebarTrigger className="mt-1 -ml-1 shrink-0 md:hidden" />}
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-foreground tracking-tight truncate">
             {title}

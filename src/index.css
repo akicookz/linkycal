@@ -317,6 +317,23 @@
   animation: mobileSlideIn 0.25s ease-out both;
 }
 
+/* ─── Focused Form (one question per screen) Transitions ─────────────────── */
+
+@keyframes focusedScreenIn {
+  from {
+    opacity: 0;
+    transform: translateY(var(--screen-from, 40px));
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-focused-screen {
+  animation: focusedScreenIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 /* ─── Feature Pill ────────────────────────────────────────────────────────── */
 
 .feature-pill {

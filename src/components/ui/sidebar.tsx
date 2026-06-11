@@ -53,6 +53,12 @@ function useSidebar() {
   return context
 }
 
+// Like useSidebar, but returns null outside a SidebarProvider — for shared
+// components (e.g. PageHeader) that render in layouts without a sidebar.
+function useMaybeSidebar() {
+  return React.useContext(SidebarContext)
+}
+
 function SidebarProvider({
   defaultOpen = true,
   open: openProp,
@@ -722,5 +728,6 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
+  useMaybeSidebar,
   useSidebar,
 }

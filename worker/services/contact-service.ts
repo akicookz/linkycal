@@ -303,8 +303,9 @@ export class ContactService {
 
     await this.db.insert(dbSchema.contactTags).values({ contactId, tagId });
 
-    // Log activity
-    await this.logActivity(contactId, "tag_added", tagId);
+    // Log activity with the tag name so the timeline can render it
+    const tagName = await this.getTagName(tagId);
+    await this.logActivity(contactId, "tag_added", tagId, tagName ? { tagName } : undefined);
   }
 
   async removeTag(contactId: string, tagId: string) {
@@ -317,7 +318,8 @@ export class ContactService {
         ),
       );
 
-    await this.logActivity(contactId, "tag_removed", tagId);
+    const tagName = await this.getTagName(tagId);
+    await this.logActivity(contactId, "tag_removed", tagId, tagName ? { tagName } : undefined);
   }
 
   // Get all contacts with their tags in one go (for list view)
@@ -354,6 +356,15 @@ export class ContactService {
       .where(eq(dbSchema.contactActivity.contactId, contactId))
       .orderBy(desc(dbSchema.contactActivity.createdAt))
       .limit(limit);
+  }
+
+  private async getTagName(tagId: string): Promise<string | null> {
+    const [tag] = await this.db
+      .select({ name: dbSchema.tags.name })
+      .from(dbSchema.tags)
+      .where(eq(dbSchema.tags.id, tagId))
+      .limit(1);
+    return tag?.name ?? null;
   }
 
   async logActivity(

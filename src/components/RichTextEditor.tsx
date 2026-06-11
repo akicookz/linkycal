@@ -9,6 +9,10 @@ interface RichTextEditorProps {
   value: string | null | undefined;
   placeholder?: string;
   className?: string;
+  // "compact" renders seamless inline text (no border, no fixed height) and
+  // only shows the formatting toolbar while editing — for in-canvas editing.
+  variant?: "default" | "compact";
+  autoFocus?: boolean;
   onSave: (value: string | null) => void;
 }
 
@@ -16,6 +20,8 @@ export function RichTextEditor({
   value,
   placeholder = "Write something...",
   className,
+  variant = "default",
+  autoFocus = false,
   onSave,
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -23,6 +29,12 @@ export function RichTextEditor({
     () => sanitizeRichTextHtml(value) ?? "",
   );
   const [isFocused, setIsFocused] = useState(false);
+  const isCompact = variant === "compact";
+
+  useEffect(() => {
+    if (autoFocus) editorRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Don't adopt an external `value` change while the user is focused/typing.
@@ -80,47 +92,67 @@ export function RichTextEditor({
     }
   }
 
+  const toolbarButton = isCompact
+    ? "h-6 px-2 text-[11px]"
+    : "h-8 px-2.5 text-xs";
+  const toolbar = (
+    <div className={cn("flex flex-wrap", isCompact ? "gap-1" : "gap-2")}>
+      <Button
+        type="button"
+        variant={isCompact ? "ghost" : "outline"}
+        size="sm"
+        className={toolbarButton}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => handleCommand("bold")}
+      >
+        <Bold className="h-3.5 w-3.5" />
+        Bold
+      </Button>
+      <Button
+        type="button"
+        variant={isCompact ? "ghost" : "outline"}
+        size="sm"
+        className={toolbarButton}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={() => handleCommand("italic")}
+      >
+        <Italic className="h-3.5 w-3.5" />
+        Italic
+      </Button>
+      <Button
+        type="button"
+        variant={isCompact ? "ghost" : "outline"}
+        size="sm"
+        className={toolbarButton}
+        onMouseDown={(event) => event.preventDefault()}
+        onClick={handleLink}
+      >
+        <Link2 className="h-3.5 w-3.5" />
+        Link
+      </Button>
+    </div>
+  );
+
   return (
-    <div className={cn("space-y-2", className)}>
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-2.5 text-xs"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => handleCommand("bold")}
-        >
-          <Bold className="h-3.5 w-3.5" />
-          Bold
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-2.5 text-xs"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={() => handleCommand("italic")}
-        >
-          <Italic className="h-3.5 w-3.5" />
-          Italic
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-8 px-2.5 text-xs"
-          onMouseDown={(event) => event.preventDefault()}
-          onClick={handleLink}
-        >
-          <Link2 className="h-3.5 w-3.5" />
-          Link
-        </Button>
-      </div>
+    <div className={cn(!isCompact && "space-y-2", className)}>
+      {!isCompact && toolbar}
 
       <div className="relative">
+        {/* Floating formatting bubble while editing (compact mode) */}
+        {isCompact && isFocused && (
+          <div className="absolute -top-1.5 left-0 z-20 -translate-y-full rounded-[10px] border bg-background p-0.5 shadow-md">
+            {toolbar}
+          </div>
+        )}
         {!isFocused && isRichTextEmpty(draftValue) && (
-          <span className="pointer-events-none absolute left-3 top-3 text-sm text-muted-foreground">
+          <span
+            className={cn(
+              "pointer-events-none absolute text-muted-foreground",
+              isCompact
+                ? "left-0 top-0.5 text-base text-muted-foreground/60"
+                : "left-3 top-3 text-sm",
+            )}
+          >
             {placeholder}
           </span>
         )}
@@ -139,7 +171,14 @@ export function RichTextEditor({
             document.execCommand("insertText", false, text);
             syncDraftFromDom();
           }}
-          className="min-h-[132px] rounded-[16px] border bg-background px-3 py-3 text-sm leading-relaxed outline-none transition-colors focus:border-primary/40 [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_em]:italic [&_p:not(:last-child)]:mb-2 [&_strong]:font-semibold"
+          className={cn(
+            "leading-relaxed outline-none transition-colors [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_em]:italic [&_p:not(:last-child)]:mb-2 [&_strong]:font-semibold",
+            isCompact
+              ? // Mirror InlineEditableLabel's affordance so title and
+                // description feel like one editing surface.
+                "min-h-[1.75rem] border-0 border-b border-dashed border-transparent bg-transparent py-0.5 text-base text-muted-foreground hover:border-muted-foreground/30 focus:border-solid focus:border-primary"
+              : "min-h-[132px] rounded-[16px] border bg-background px-3 py-3 text-sm focus:border-primary/40",
+          )}
         />
       </div>
     </div>

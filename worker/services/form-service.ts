@@ -250,13 +250,23 @@ export class FormService {
       settings: data.settings ? JSON.stringify(data.settings) : null,
     });
 
-    // Create a default first step
+    // This slug resolves to a live form now — retire any redirect history.
+    await this.db
+      .delete(dbSchema.formSlugHistory)
+      .where(
+        and(
+          eq(dbSchema.formSlugHistory.projectId, projectId),
+          eq(dbSchema.formSlugHistory.slug, data.slug),
+        ),
+      );
+
+    // Create a default first section, untitled — the builder labels sections
+    // by position, and untitled sections never render an intro screen.
     const stepId = crypto.randomUUID();
     await this.db.insert(dbSchema.formSteps).values({
       id: stepId,
       formId: id,
       sortOrder: 0,
-      title: "Step 1",
     });
 
     return this.getById(id);
@@ -282,12 +292,61 @@ export class FormService {
 
     if (Object.keys(values).length === 0) return this.getById(id);
 
+    // On slug rename, remember the old slug so existing public links can
+    // redirect (paid plans), and retire any history entry for the new slug —
+    // it resolves to a live form again.
+    if (data.slug !== undefined) {
+      const current = await this.getById(id);
+      if (current && current.slug !== data.slug) {
+        await this.db
+          .insert(dbSchema.formSlugHistory)
+          .values({
+            id: crypto.randomUUID(),
+            projectId: current.projectId,
+            formId: id,
+            slug: current.slug,
+          })
+          .onConflictDoUpdate({
+            target: [
+              dbSchema.formSlugHistory.projectId,
+              dbSchema.formSlugHistory.slug,
+            ],
+            set: { formId: id, createdAt: new Date() },
+          });
+        await this.db
+          .delete(dbSchema.formSlugHistory)
+          .where(
+            and(
+              eq(dbSchema.formSlugHistory.projectId, current.projectId),
+              eq(dbSchema.formSlugHistory.slug, data.slug),
+            ),
+          );
+      }
+    }
+
     await this.db
       .update(dbSchema.forms)
       .set(values)
       .where(eq(dbSchema.forms.id, id));
 
     return this.getById(id);
+  }
+
+  // Resolve an old (renamed-away) slug to the live form it now points at.
+  async getRedirectFormBySlug(projectId: string, slug: string) {
+    const [history] = await this.db
+      .select()
+      .from(dbSchema.formSlugHistory)
+      .where(
+        and(
+          eq(dbSchema.formSlugHistory.projectId, projectId),
+          eq(dbSchema.formSlugHistory.slug, slug),
+        ),
+      )
+      .limit(1);
+
+    if (!history) return null;
+    return this.getById(history.formId);
   }
 
   async delete(id: string) {

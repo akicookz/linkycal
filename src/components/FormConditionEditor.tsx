@@ -176,11 +176,11 @@ export function FormConditionEditor({
     return (
       <button
         type="button"
-        className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+        className="flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/40 hover:text-foreground"
         onClick={addRule}
       >
-        <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-        {title}
+        <Plus className="h-3.5 w-3.5" />
+        Add logic
       </button>
     );
   }
@@ -294,7 +294,7 @@ export function FormConditionEditor({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 px-1.5 text-destructive hover:text-destructive"
+                className="h-7 px-1.5 rounded-[8px] bg-muted/70 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => removeRule(idx)}
               >
                 <X className="h-3 w-3" />

@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/popover";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { TagPickerContent } from "@/components/TagPicker";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import ContactsKanban from "./ContactsKanban";
@@ -387,6 +388,35 @@ export default function Contacts() {
     },
   });
 
+  const rowAddTagMutation = useMutation({
+    mutationFn: async ({ contactId, tagId }: { contactId: string; tagId: string }) => {
+      const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}/tags`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tagId }),
+      });
+      if (!res.ok) throw new Error("Failed to add tag");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+    },
+  });
+
+  const rowRemoveTagMutation = useMutation({
+    mutationFn: async ({ contactId, tagId }: { contactId: string; tagId: string }) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/contacts/${contactId}/tags/${tagId}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error("Failed to remove tag");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+    },
+  });
+
   const createTagMutation = useMutation({
     mutationFn: async (data: { name: string; color?: string }) => {
       const res = await fetch(`/api/projects/${projectId}/tags`, {
@@ -684,33 +714,63 @@ export default function Contacts() {
                   >
                     {contact.name}
                   </button>
-                  {contact.email && (
-                    <span className="font-normal text-muted-foreground ml-1.5 text-xs">{contact.email}</span>
-                  )}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {contact.phone ? `${contact.phone} · ` : ""}
-                  Added {formatDate(contact.createdAt)}
-                  {contact.tags.length > 0 && (
-                    <span className="ml-2 inline-flex gap-1">
-                      {contact.tags.slice(0, 3).map((tag) => (
-                        <span
-                          key={tag.id}
-                          className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                          style={{
-                            backgroundColor: `${tag.color ?? "#6366f1"}15`,
-                            color: tag.color ?? "#6366f1",
-                          }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                      {contact.tags.length > 3 && (
-                        <span className="text-[10px] text-muted-foreground">+{contact.tags.length - 3}</span>
-                      )}
-                    </span>
-                  )}
+                  {[contact.email, contact.phone].filter(Boolean).join(" · ") ||
+                    `Added ${formatDate(contact.createdAt)}`}
                 </p>
+              </div>
+
+              {/* Tags — chips + attach right from the row */}
+              <div className="hidden sm:flex items-center gap-1 shrink-0 max-w-[280px] overflow-hidden">
+                {contact.tags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium whitespace-nowrap"
+                    style={{
+                      backgroundColor: `${tag.color ?? "#6366f1"}15`,
+                      color: tag.color ?? "#6366f1",
+                    }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {contact.tags.length > 3 && (
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                    +{contact.tags.length - 3}
+                  </span>
+                )}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      aria-label={`Edit tags for ${contact.name}`}
+                    >
+                      <Tags className="h-3.5 w-3.5" />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-64 p-2">
+                    <TagPickerContent
+                      projectId={projectId!}
+                      assignedTagIds={contact.tags.map((t) => t.id)}
+                      pendingTagId={
+                        rowAddTagMutation.isPending &&
+                        rowAddTagMutation.variables?.contactId === contact.id
+                          ? rowAddTagMutation.variables.tagId
+                          : rowRemoveTagMutation.isPending &&
+                              rowRemoveTagMutation.variables?.contactId === contact.id
+                            ? rowRemoveTagMutation.variables.tagId
+                            : null
+                      }
+                      onToggle={(tag, assigned) =>
+                        assigned
+                          ? rowRemoveTagMutation.mutate({ contactId: contact.id, tagId: tag.id })
+                          : rowAddTagMutation.mutate({ contactId: contact.id, tagId: tag.id })
+                      }
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
@@ -1489,38 +1549,38 @@ export default function Contacts() {
             ))}
           </div>
 
-          <form onSubmit={handleCreateTag} className="mt-4 pt-4">
-            <p className="text-sm font-medium mb-3">Create new tag</p>
-            <div className="flex items-end gap-3">
-              <div className="flex-1 space-y-2">
-                <Label htmlFor="tag-name">Name</Label>
-                <Input
-                  id="tag-name"
-                  placeholder="e.g. VIP, Lead, Customer"
-                  value={newTagName}
-                  onChange={(e) => setNewTagName(e.target.value)}
+          <form onSubmit={handleCreateTag} className="mt-4 pt-4 space-y-2">
+            <p className="text-sm font-medium">Create new tag</p>
+            <div className="flex items-center gap-2">
+              <label
+                className="h-10 w-10 shrink-0 cursor-pointer rounded-[12px] border transition-transform hover:scale-105"
+                style={{ backgroundColor: newTagColor }}
+                title="Pick a color"
+              >
+                <input
+                  type="color"
+                  value={
+                    /^#[0-9a-fA-F]{6}$/.test(newTagColor)
+                      ? newTagColor
+                      : "#6366f1"
+                  }
+                  onChange={(e) => setNewTagColor(e.target.value)}
+                  className="h-0 w-0 opacity-0"
+                  aria-label="Tag color"
                 />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="tag-color">Color</Label>
-                <div className="flex items-center gap-2">
-                  <div
-                    className="h-10 w-10 rounded-[12px] border shrink-0"
-                    style={{ backgroundColor: newTagColor }}
-                  />
-                  <Input
-                    id="tag-color"
-                    placeholder="#6366f1"
-                    value={newTagColor}
-                    onChange={(e) => setNewTagColor(e.target.value)}
-                    className="w-24"
-                  />
-                </div>
-              </div>
+              </label>
+              <Input
+                id="tag-name"
+                placeholder="e.g. VIP, Lead, Customer"
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                className="flex-1"
+              />
               <Button
                 type="submit"
                 size="sm"
-                className="shrink-0"
+                className="h-10 w-10 shrink-0 p-0"
+                aria-label="Add tag"
                 disabled={createTagMutation.isPending || !newTagName.trim()}
               >
                 {createTagMutation.isPending ? (
@@ -1528,7 +1588,6 @@ export default function Contacts() {
                 ) : (
                   <Plus className="h-4 w-4" />
                 )}
-                Add
               </Button>
             </div>
           </form>

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -6,37 +6,29 @@ import {
   Mail,
   Phone,
   StickyNote,
-  Pencil,
   CalendarCheck,
   X as XIcon,
   FileText,
   Tag,
   Plus,
+  Check,
   Loader,
   AlertCircle,
   Clock,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
+import { TagPickerContent } from "@/components/TagPicker";
 import { queryClient } from "@/lib/query-client";
+import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -67,21 +59,6 @@ interface ContactDetail {
   updatedAt: string;
   tags: ContactTag[];
   activity: ContactActivity[];
-}
-
-interface TagEntity {
-  id: string;
-  projectId: string;
-  name: string;
-  color: string | null;
-  createdAt: string;
-}
-
-interface EditFormData {
-  name: string;
-  email: string;
-  phone: string;
-  notes: string;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -186,9 +163,9 @@ export default function ContactDetailPage() {
   const { projectId, contactId } = useParams<{ projectId: string; contactId: string }>();
   const navigate = useNavigate();
 
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editForm, setEditForm] = useState<EditFormData>({ name: "", email: "", phone: "", notes: "" });
   const [addTagOpen, setAddTagOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "error" | null>(null);
+  const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── Queries ───
 
@@ -207,26 +184,7 @@ export default function ContactDetailPage() {
     enabled: !!projectId && !!contactId,
   });
 
-  const { data: allTags = [] } = useQuery<TagEntity[]>({
-    queryKey: ["projects", projectId, "tags"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/tags`);
-      if (!res.ok) throw new Error("Failed to fetch tags");
-      const data = await res.json();
-      return data.tags ?? [];
-    },
-    enabled: !!projectId,
-  });
-
   const contact = contactData;
-  // allTags is directly available from the query above
-
-  // Tags not yet assigned to this contact
-  const availableTags = useMemo(() => {
-    if (!contact) return allTags;
-    const assignedIds = new Set(contact.tags.map((t) => t.id));
-    return allTags.filter((t) => !assignedIds.has(t.id));
-  }, [allTags, contact]);
 
   // Quick stats from activity
   const stats = useMemo(() => {
@@ -239,25 +197,37 @@ export default function ContactDetailPage() {
 
   // ─── Mutations ───
 
-  const editMutation = useMutation({
-    mutationFn: async (data: EditFormData) => {
+  const updateMutation = useMutation({
+    mutationFn: async (
+      data: Partial<{
+        name: string;
+        email: string | null;
+        phone: string | null;
+        notes: string | null;
+      }>,
+    ) => {
       const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: data.name,
-          email: data.email || null,
-          phone: data.phone || null,
-          notes: data.notes || null,
-        }),
+        body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to update contact");
       return res.json();
     },
+    onMutate: () => {
+      if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+      setSaveStatus("saving");
+    },
     onSuccess: () => {
+      setSaveStatus("saved");
+      saveStatusTimer.current = setTimeout(() => setSaveStatus(null), 2000);
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
-      setEditDialogOpen(false);
+    },
+    onError: () => {
+      setSaveStatus("error");
+      // Refetch to revert the field to its saved value
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
     },
   });
 
@@ -274,7 +244,6 @@ export default function ContactDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
-      setAddTagOpen(false);
     },
   });
 
@@ -293,23 +262,6 @@ export default function ContactDetailPage() {
   });
 
   // ─── Handlers ───
-
-  function openEditDialog() {
-    if (!contact) return;
-    setEditForm({
-      name: contact.name,
-      email: contact.email ?? "",
-      phone: contact.phone ?? "",
-      notes: contact.notes ?? "",
-    });
-    setEditDialogOpen(true);
-  }
-
-  function handleEditSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editForm.name.trim()) return;
-    editMutation.mutate(editForm);
-  }
 
   function goBack() {
     navigate(`/app/projects/${projectId}/contacts`);
@@ -442,10 +394,6 @@ export default function ContactDetailPage() {
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
-        <Button variant="outline" onClick={openEditDialog}>
-          <Pencil className="h-4 w-4" />
-          Edit
-        </Button>
       </PageHeader>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
@@ -454,10 +402,41 @@ export default function ContactDetailPage() {
           {/* Contact Info Card */}
           <Card>
             <CardHeader>
-              <CardTitle>Contact Information</CardTitle>
+              <CardTitle className="flex items-center justify-between">
+                <span>Contact Information</span>
+                {saveStatus && (
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 text-[11px] font-normal",
+                      saveStatus === "saving" && "text-muted-foreground",
+                      saveStatus === "saved" && "text-emerald-600",
+                      saveStatus === "error" && "text-destructive",
+                    )}
+                  >
+                    {saveStatus === "saving" && (
+                      <>
+                        <Loader className="h-3 w-3 animate-spin" />
+                        Saving...
+                      </>
+                    )}
+                    {saveStatus === "saved" && (
+                      <>
+                        <Check className="h-3 w-3" />
+                        Saved
+                      </>
+                    )}
+                    {saveStatus === "error" && (
+                      <>
+                        <AlertCircle className="h-3 w-3" />
+                        Failed to save
+                      </>
+                    )}
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
-              {/* Avatar & Name */}
+              {/* Avatar & Name (click name to edit) */}
               <div className="flex items-center gap-4">
                 <div
                   className="h-14 w-14 rounded-full flex items-center justify-center text-white text-xl font-semibold shrink-0"
@@ -465,54 +444,49 @@ export default function ContactDetailPage() {
                 >
                   {getInitial(contact.name)}
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">{contact.name}</h2>
-                  {contact.email && (
-                    <p className="text-sm text-muted-foreground">{contact.email}</p>
-                  )}
-                </div>
+                <InlineField
+                  key={`name-${contact.id}`}
+                  value={contact.name}
+                  placeholder="Contact name"
+                  required
+                  className="text-lg font-semibold text-foreground"
+                  onSave={(v) => updateMutation.mutate({ name: v ?? "" })}
+                />
               </div>
 
-              {/* Details */}
+              {/* Details — edit in place, saved on blur */}
               <div className="space-y-3">
-                {/* Email */}
                 <div className="flex items-center gap-3 text-sm">
                   <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                  {contact.email ? (
-                    <a
-                      href={`mailto:${contact.email}`}
-                      className="text-foreground hover:underline"
-                    >
-                      {contact.email}
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">No email provided</span>
-                  )}
+                  <InlineField
+                    key={`email-${contact.id}`}
+                    value={contact.email}
+                    type="email"
+                    placeholder="Add email..."
+                    onSave={(v) => updateMutation.mutate({ email: v })}
+                  />
                 </div>
 
-                {/* Phone */}
                 <div className="flex items-center gap-3 text-sm">
                   <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                  {contact.phone ? (
-                    <a
-                      href={`tel:${contact.phone}`}
-                      className="text-foreground hover:underline"
-                    >
-                      {contact.phone}
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">No phone provided</span>
-                  )}
+                  <InlineField
+                    key={`phone-${contact.id}`}
+                    value={contact.phone}
+                    type="tel"
+                    placeholder="Add phone..."
+                    onSave={(v) => updateMutation.mutate({ phone: v })}
+                  />
                 </div>
 
-                {/* Notes */}
                 <div className="flex items-start gap-3 text-sm">
-                  <StickyNote className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                  {contact.notes ? (
-                    <p className="text-foreground whitespace-pre-wrap">{contact.notes}</p>
-                  ) : (
-                    <span className="text-muted-foreground">No notes</span>
-                  )}
+                  <StickyNote className="h-4 w-4 text-muted-foreground shrink-0 mt-1" />
+                  <InlineField
+                    key={`notes-${contact.id}`}
+                    value={contact.notes}
+                    multiline
+                    placeholder="Add notes..."
+                    onSave={(v) => updateMutation.mutate({ notes: v })}
+                  />
                 </div>
               </div>
             </CardContent>
@@ -577,38 +551,23 @@ export default function ContactDetailPage() {
                       Add Tag
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent align="end" className="w-56 p-2">
-                    <p className="text-xs font-medium text-muted-foreground px-2 py-1.5 mb-1">
-                      Available Tags
-                    </p>
-                    {availableTags.length === 0 ? (
-                      <p className="text-xs text-muted-foreground px-2 py-3 text-center">
-                        {allTags.length === 0
-                          ? "No tags created yet. Create tags from the Contacts page."
-                          : "All tags are already assigned."}
-                      </p>
-                    ) : (
-                      <div className="space-y-0.5 max-h-48 overflow-y-auto">
-                        {availableTags.map((tag) => (
-                          <button
-                            key={tag.id}
-                            type="button"
-                            className="flex items-center gap-2 w-full px-2 py-1.5 rounded-[8px] text-sm hover:bg-accent transition-colors text-left"
-                            onClick={() => addTagMutation.mutate(tag.id)}
-                            disabled={addTagMutation.isPending}
-                          >
-                            <span
-                              className="h-2.5 w-2.5 rounded-full shrink-0"
-                              style={{ backgroundColor: tag.color ?? "#94a3b8" }}
-                            />
-                            <span className="truncate">{tag.name}</span>
-                            {addTagMutation.isPending && addTagMutation.variables === tag.id && (
-                              <Loader className="h-3 w-3 animate-spin ml-auto" />
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                  <PopoverContent align="end" className="w-64 p-2">
+                    <TagPickerContent
+                      projectId={projectId!}
+                      assignedTagIds={contact.tags.map((t) => t.id)}
+                      pendingTagId={
+                        addTagMutation.isPending
+                          ? addTagMutation.variables
+                          : removeTagMutation.isPending
+                            ? removeTagMutation.variables
+                            : null
+                      }
+                      onToggle={(tag, assigned) =>
+                        assigned
+                          ? removeTagMutation.mutate(tag.id)
+                          : addTagMutation.mutate(tag.id)
+                      }
+                    />
                   </PopoverContent>
                 </Popover>
               </CardTitle>
@@ -716,83 +675,104 @@ export default function ContactDetailPage() {
           </Card>
         </div>
       </div>
-
-      {/* ─── Edit Dialog ─── */}
-      <Dialog
-        open={editDialogOpen}
-        onOpenChange={(open) => {
-          setEditDialogOpen(open);
-          if (!open) {
-            setEditForm({ name: "", email: "", phone: "", notes: "" });
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Contact</DialogTitle>
-            <DialogDescription>Update the contact information.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleEditSubmit}>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="edit-name">Name *</Label>
-                <Input
-                  id="edit-name"
-                  placeholder="John Doe"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-email">Email</Label>
-                <Input
-                  id="edit-email"
-                  type="email"
-                  placeholder="john@example.com"
-                  value={editForm.email}
-                  onChange={(e) => setEditForm((f) => ({ ...f, email: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-phone">Phone</Label>
-                <Input
-                  id="edit-phone"
-                  type="tel"
-                  placeholder="+1 (555) 123-4567"
-                  value={editForm.phone}
-                  onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="edit-notes">Notes</Label>
-                <textarea
-                  id="edit-notes"
-                  placeholder="Any additional notes..."
-                  value={editForm.notes}
-                  onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
-                  rows={3}
-                  className="flex w-full rounded-[12px] border border-border bg-white px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-                />
-              </div>
-            </div>
-            <DialogFooter className="mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setEditDialogOpen(false)}
-                disabled={editMutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button type="submit" disabled={editMutation.isPending || !editForm.name.trim()}>
-                {editMutation.isPending && <Loader className="h-4 w-4 animate-spin" />}
-                Save Changes
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
     </div>
+  );
+}
+
+// ─── Inline Field ────────────────────────────────────────────────────────────
+//
+// Seamless edit-in-place input: invisible until hover (dashed underline),
+// saves on blur. Passing `null` to onSave clears the field.
+
+function InlineField({
+  value,
+  placeholder,
+  type = "text",
+  multiline = false,
+  required = false,
+  className,
+  onSave,
+}: {
+  value: string | null;
+  placeholder: string;
+  type?: string;
+  multiline?: boolean;
+  required?: boolean;
+  className?: string;
+  onSave: (value: string | null) => void;
+}) {
+  const [local, setLocal] = useState(value ?? "");
+  const editingRef = useRef(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    // Don't clobber in-progress typing with background refetches.
+    if (!editingRef.current) setLocal(value ?? "");
+  }, [value]);
+
+  // Auto-resize the notes textarea
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    }
+  }, [local, multiline]);
+
+  function commit() {
+    editingRef.current = false;
+    const next = local.trim();
+    if (required && !next) {
+      setLocal(value ?? "");
+      return;
+    }
+    if (next !== (value ?? "")) {
+      onSave(next || null);
+    } else {
+      setLocal(value ?? "");
+    }
+  }
+
+  const sharedClasses = cn(
+    "w-full min-w-0 bg-transparent outline-none border-0 border-b border-dashed border-transparent hover:border-muted-foreground/30 focus:border-solid focus:border-primary transition-colors placeholder:text-muted-foreground",
+    className,
+  );
+
+  if (multiline) {
+    return (
+      <textarea
+        ref={textareaRef}
+        rows={1}
+        value={local}
+        placeholder={placeholder}
+        onChange={(e) => setLocal(e.target.value)}
+        onFocus={() => {
+          editingRef.current = true;
+        }}
+        onBlur={commit}
+        className={cn(sharedClasses, "resize-none overflow-hidden leading-relaxed")}
+      />
+    );
+  }
+
+  return (
+    <input
+      type={type}
+      value={local}
+      placeholder={placeholder}
+      onChange={(e) => setLocal(e.target.value)}
+      onFocus={() => {
+        editingRef.current = true;
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setLocal(value ?? "");
+          e.currentTarget.blur();
+        }
+      }}
+      className={sharedClasses}
+    />
   );
 }

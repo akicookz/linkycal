@@ -1,14 +1,20 @@
-import { useParams } from "react-router-dom";
+import { useParams, useLocation, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Loader } from "lucide-react";
 
 import PublicBooking from "./PublicBooking";
 import PublicForm from "./PublicForm";
 
-type ResolveResult = { kind: "event" | "form" };
+type ResolveResult = {
+  kind: "event" | "form";
+  // Present when the slug was renamed and the owner's plan includes
+  // old-link redirects — navigate to the form's current slug.
+  redirectTo?: { slug: string };
+};
 
 export default function PublicResolver() {
   const { projectSlug, slug } = useParams<{ projectSlug: string; slug: string }>();
+  const location = useLocation();
 
   const { data, isLoading, isError } = useQuery<ResolveResult>({
     queryKey: ["public-resolve", projectSlug, slug],
@@ -38,6 +44,15 @@ export default function PublicResolver() {
           This link may have been removed or is not currently active.
         </p>
       </div>
+    );
+  }
+
+  if (data.redirectTo && data.redirectTo.slug !== slug) {
+    return (
+      <Navigate
+        to={`/${projectSlug}/${data.redirectTo.slug}${location.search}`}
+        replace
+      />
     );
   }
 

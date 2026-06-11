@@ -90,7 +90,7 @@ function statusVariant(status: Form["status"]) {
 }
 
 function typeLabel(type: Form["type"]) {
-  return type === "multi_step" ? "Multi-Step" : "Single Page";
+  return type === "multi_step" ? "Focused" : "Classic";
 }
 
 function formatDate(dateStr: string): string {
@@ -104,7 +104,7 @@ function formatDate(dateStr: string): string {
 const defaultFormData: CreateFormData = {
   name: "",
   slug: "",
-  type: "single",
+  type: "multi_step",
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -524,7 +524,7 @@ export default function Forms() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="form-type">Type</Label>
+              <Label htmlFor="form-type">Experience</Label>
               <Select
                 value={formData.type}
                 onValueChange={(val) =>
@@ -538,8 +538,12 @@ export default function Forms() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="single">Single Page</SelectItem>
-                  <SelectItem value="multi_step">Multi-Step</SelectItem>
+                  <SelectItem value="multi_step">
+                    Focused — one question at a time
+                  </SelectItem>
+                  <SelectItem value="single">
+                    Classic — all questions on one page
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
