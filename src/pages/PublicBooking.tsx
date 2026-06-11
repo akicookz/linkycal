@@ -657,9 +657,6 @@ export default function PublicBooking() {
           {/* ─── Event Header (step 1 only) ─── */}
           {step === 1 && (
             <div className="mb-6">
-              {owner && (
-                <p className="text-sm font-medium text-muted-foreground mb-1">{owner.name}</p>
-              )}
               <h1 className="text-xl font-semibold tracking-tight">{eventType.name}</h1>
 
               {desc && (
