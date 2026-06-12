@@ -46,6 +46,20 @@
       "dataset": "linkycal_analytics",
     },
   ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MCP_OBJECT",
+        "class_name": "LinkyCalMcp",
+      },
+    ],
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["LinkyCalMcp"],
+    },
+  ],
   "triggers": {
     "crons": ["*/5 * * * *"],
   },

@@ -31,6 +31,92 @@ import { signIn, emailOtp, useSession } from "@/lib/auth-client";
 import { cn } from "@/lib/utils";
 import { usePostHog } from "@posthog/react";
 
+/* ─── Hero: Product Screenshot Carousel ──────────────────────────────────── */
+
+const HERO_SLIDES = [
+  {
+    src: "/screenshots/booking.webp",
+    label: "Hosted booking pages",
+    alt: "LinkyCal hosted booking page with date and time slot picker",
+  },
+  {
+    src: "/screenshots/form-builder.webp",
+    label: "Visual form builder",
+    alt: "LinkyCal form builder editing a multi-step quote form",
+  },
+  {
+    src: "/screenshots/workflows.webp",
+    label: "Workflow automations",
+    alt: "LinkyCal workflow templates triggered by forms and bookings",
+  },
+  {
+    src: "/screenshots/contacts.webp",
+    label: "Built-in contacts CRM",
+    alt: "LinkyCal contacts list inside the dashboard",
+  },
+];
+
+const HERO_SLIDE_INTERVAL = 4000;
+
+function HeroCarousel() {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+
+  useEffect(() => {
+    if (paused) return;
+    const id = setInterval(
+      () => setIndex((i) => (i + 1) % HERO_SLIDES.length),
+      HERO_SLIDE_INTERVAL,
+    );
+    return () => clearInterval(id);
+  }, [paused]);
+
+  return (
+    <div
+      className="card-glow-primary p-3 w-full"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <div className="relative aspect-[4/3] rounded-2xl overflow-hidden bg-white border border-border/40">
+        {HERO_SLIDES.map((slide, i) => (
+          <img
+            key={slide.src}
+            src={slide.src}
+            alt={slide.alt}
+            loading={i === 0 ? "eager" : "lazy"}
+            className={cn(
+              "absolute inset-0 w-full h-full object-cover object-left-top transition-opacity duration-700",
+              i === index ? "opacity-100" : "opacity-0",
+            )}
+          />
+        ))}
+      </div>
+      <div className="flex items-center justify-between px-2 pt-3 pb-1">
+        <span
+          key={index}
+          className="text-sm font-medium text-foreground animate-[fadeSlideIn_0.4s_ease-out]"
+        >
+          {HERO_SLIDES[index].label}
+        </span>
+        <div className="flex items-center gap-1.5">
+          {HERO_SLIDES.map((slide, i) => (
+            <button
+              key={slide.src}
+              type="button"
+              aria-label={`Show ${slide.label}`}
+              onClick={() => setIndex(i)}
+              className={cn(
+                "h-1.5 rounded-full transition-all duration-300",
+                i === index ? "w-5 bg-brand" : "w-1.5 bg-brand/25 hover:bg-brand/45",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Hero: Website Card (Calendar → Form → Confirmation) ────────────────── */
 
 // March 2026 starts on Sunday (day 0). 31 days.
@@ -82,7 +168,7 @@ function HeroWebsiteCard() {
             For Your Website
           </h3>
         </div>
-        <p className="text-sm text-brand font-medium text-shadow-md leading-relaxed">
+        <p className="text-sm text-brand font-medium leading-relaxed">
           Embed contact forms and booking pages into your site no-code.
         </p>
       </div>
@@ -384,7 +470,7 @@ function HeroAgentChat() {
             For Your Agents
           </h3>
         </div>
-        <p className="text-sm text-brand font-medium text-shadow-md leading-relaxed">
+        <p className="text-sm text-brand font-medium leading-relaxed">
           Let your agent take care of scheduling and inquiries.
         </p>
       </div>
@@ -2182,39 +2268,42 @@ export default function Landing() {
       </header>
 
       {/* ── 2. Hero ─────────────────────────────────────────────────────── */}
-      <section
-        className="relative isolate pt-28 pb-20 overflow-hidden"
-        style={{
-          backgroundImage: "url('/bg-image.webp')",
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
-      >
+      <section className="relative isolate pt-28 pb-20 overflow-hidden">
+        {/* Soft brand wash */}
         <div
           aria-hidden="true"
           className="absolute inset-0 pointer-events-none"
           style={{
             background:
-              "linear-gradient(135deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.34) 48%, rgba(255,255,255,0) 100%)",
-            backdropFilter: "blur(18px)",
-            WebkitBackdropFilter: "blur(18px)",
+              "linear-gradient(180deg, rgba(255,255,255,0) 0%, rgba(45,106,79,0.04) 55%, rgba(45,106,79,0.07) 100%), radial-gradient(110% 70% at 18% 0%, rgba(45,106,79,0.09), transparent 55%)",
+          }}
+        />
+        {/* Dot grid texture, faded toward the edges */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            backgroundImage:
+              "radial-gradient(rgba(27,67,50,0.13) 1px, transparent 1px)",
+            backgroundSize: "26px 26px",
             maskImage:
-              "linear-gradient(135deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.94) 18%, rgba(0,0,0,0.74) 40%, rgba(0,0,0,0.38) 64%, rgba(0,0,0,0.12) 82%, transparent 100%)",
+              "radial-gradient(85% 70% at 50% 30%, rgba(0,0,0,0.5), transparent 100%)",
             WebkitMaskImage:
-              "linear-gradient(135deg, rgba(0,0,0,1) 0%, rgba(0,0,0,0.94) 18%, rgba(0,0,0,0.74) 40%, rgba(0,0,0,0.38) 64%, rgba(0,0,0,0.12) 82%, transparent 100%)",
+              "radial-gradient(85% 70% at 50% 30%, rgba(0,0,0,0.5), transparent 100%)",
           }}
         />
         {/* Background glow orbs */}
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-brand/[0.04] rounded-full blur-[120px] animate-[glowPulse_6s_ease-in-out_infinite] pointer-events-none" />
-        <div className="absolute -bottom-20 -right-20 w-[400px] h-[400px] bg-brand-dark/[0.03] rounded-full blur-[100px] animate-[glowPulse_8s_ease-in-out_infinite_2s] pointer-events-none" />
+        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] bg-brand/[0.07] rounded-full blur-[120px] animate-[glowPulse_6s_ease-in-out_infinite] pointer-events-none" />
+        <div className="absolute -bottom-20 -right-20 w-[400px] h-[400px] bg-brand-dark/[0.06] rounded-full blur-[100px] animate-[glowPulse_8s_ease-in-out_infinite_2s] pointer-events-none" />
 
-        <div className="max-w-7xl mx-auto px-6 relative pt-20">
-          {/* Top: headline + description + CTAs */}
-          <div className="max-w-4xl">
-            <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[4.5rem] font-medium tracking-tight leading-[1.06]">
+        <div className="max-w-7xl mx-auto px-6 relative pt-10">
+          {/* Top: headline + description + CTAs, carousel on the right */}
+          <div className="flex flex-col lg:flex-row lg:items-center gap-12 xl:gap-16">
+          <div className="max-w-4xl lg:flex-1 lg:min-w-0">
+            <h1 className="font-heading text-[2.75rem] sm:text-[3.5rem] lg:text-[3.5rem] xl:text-[4rem] font-medium tracking-tight leading-[1.06] text-balance">
               Forms and scheduling for <span className="text-brand">any website</span>
             </h1>
-            <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed mt-6 mb-10">
+            <p className="text-lg text-muted-foreground max-w-2xl leading-relaxed mt-5 mb-8">
               Contact forms, booking pages, quizzes, client intake, surveys —
               drop in a ready-made widget, share a hosted link, or build your
               own UI on the API. One backend for everything your site collects.
@@ -2248,31 +2337,16 @@ export default function Landing() {
                 No code required — API if you want it
               </span>
             </div>
-            <div className="flex flex-wrap items-center gap-3 mt-8 text-sm font-medium text-muted-foreground">
-              Plays perfectly with
-              <span className="inline-flex items-center gap-3">
-                <img
-                  src="/builder-logos/lovable.svg"
-                  alt="Lovable"
-                  className="inline-block shrink-0 object-contain w-[5rem]"
-                />
-                <img
-                  src="/builder-logos/base44.svg"
-                  alt="Base44"
-                  className="inline-block shrink-0 object-contain w-[5rem]"
-                />
-                <img
-                  src="/builder-logos/bolt.svg"
-                  alt="Bolt"
-                  className="inline-block shrink-0 h-8 w-8"
-                />
-              </span>
-              and any other site builder
-            </div>
+          </div>
+
+          {/* Product screenshot carousel */}
+          <div className="hidden lg:block w-[26rem] xl:w-[30rem] shrink-0">
+            <HeroCarousel />
+          </div>
           </div>
 
           {/* Two hero cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-14 max-w-5xl mr-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-12">
             <HeroWebsiteCard />
             <HeroAgentChat />
           </div>

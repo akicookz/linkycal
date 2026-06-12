@@ -71,6 +71,7 @@ export interface AppEnv {
   CACHE: KVNamespace;
   WORKFLOW_QUEUE: Queue;
   ANALYTICS: AnalyticsEngineDataset;
+  MCP_OBJECT: DurableObjectNamespace;
 
   // Analytics queries
   CF_ACCOUNT_ID: string;

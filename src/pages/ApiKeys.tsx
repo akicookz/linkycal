@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader } from "lucide-react";
+import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader, Bot } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -58,6 +58,30 @@ function formatDate(dateStr: string): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+// ─── Copyable Code Block ──────────────────────────────────────────────────────
+
+function CodeBlock({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <div className="flex items-start gap-2">
+      <pre className="flex-1 rounded-[16px] bg-background border p-4 font-mono text-xs leading-relaxed overflow-x-auto whitespace-pre-wrap break-all">
+        {text}
+      </pre>
+      <Button variant="outline" size="sm" onClick={handleCopy} className="shrink-0 mt-1">
+        {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+        {copied ? "Copied" : "Copy"}
+      </Button>
+    </div>
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -254,6 +278,46 @@ export default function ApiKeys() {
           <br />
           {"  "}
           <span className="text-foreground">https://linkycal.com/api/v1/availability/your-project?date=2025-01-15&timezone=UTC&eventTypeSlug=consultation</span>
+        </div>
+      </div>
+
+      {/* MCP section */}
+      <div className="rounded-[20px] border bg-muted/30 p-5 mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Bot className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold text-foreground">Connect an AI agent (MCP)</h3>
+        </div>
+        <p className="text-sm text-muted-foreground mb-3">
+          LinkyCal exposes an MCP server so AI agents can manage bookings, contacts, event
+          types, forms, and workflows in this project. Authenticate with an API key — the
+          agent only sees this project. Works with Claude Code, Cursor, and the Claude API
+          (the claude.ai web Connectors UI requires OAuth and isn't supported yet).
+        </p>
+        <div className="space-y-3">
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1.5">Claude Code</p>
+            <CodeBlock
+              text={`claude mcp add --transport http linkycal ${window.location.origin}/api/mcp --header "Authorization: Bearer YOUR_API_KEY"`}
+            />
+          </div>
+          <div>
+            <p className="text-xs font-medium text-muted-foreground mb-1.5">
+              Other MCP clients (JSON config)
+            </p>
+            <CodeBlock
+              text={JSON.stringify(
+                {
+                  linkycal: {
+                    type: "http",
+                    url: `${window.location.origin}/api/mcp`,
+                    headers: { Authorization: "Bearer YOUR_API_KEY" },
+                  },
+                },
+                null,
+                2,
+              )}
+            />
+          </div>
         </div>
       </div>
 

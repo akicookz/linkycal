@@ -9,7 +9,7 @@ import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
-import type { AppEnv, HonoAppContext, Plan, PlanLimits } from "./types";
+import type { AppEnv, HonoAppContext, Plan } from "./types";
 
 const { schema } = dbSchema;
 type AppDatabase = DrizzleD1Database<typeof schema>;
@@ -55,13 +55,26 @@ import {
   getPriceId,
   getPlanFromPriceId,
 } from "./lib/stripe";
+import { PLAN_LIMITS } from "./lib/plan-limits";
+import {
+  createBookingAction,
+  cancelBookingAction,
+  confirmBookingAction,
+  declineBookingAction,
+  parseProjectTheme,
+} from "./lib/booking-actions";
+import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
+import { LinkyCalMcp } from "./mcp/agent";
+import type { McpProps } from "./mcp/agent";
+
+// The Durable Object class must be exported from the worker entry module.
+export { LinkyCalMcp };
 import { EventTypeService } from "./services/event-type-service";
 import { ScheduleService } from "./services/schedule-service";
 import { BookingService } from "./services/booking-service";
 import { AvailabilityService } from "./services/availability-service";
 import { CalendarService } from "./services/calendar-service";
 import {
-  formatDateInTimezone,
   getUtcRangeForLocalDate,
   getViewerAvailableWeekdays,
 } from "./lib/timezone";
@@ -72,7 +85,6 @@ import {
   serializeInviteConnectionIds,
 } from "./lib/calendar-refs";
 import { EmailService } from "./services/email-service";
-import type { EmailTheme } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
 import { WorkflowService } from "./services/workflow-service";
@@ -87,64 +99,6 @@ import {
   queryForms,
   queryFilterOptions,
 } from "./services/analytics-service";
-
-// ─── Theme Helper ────────────────────────────────────────────────────────────
-
-function parseProjectTheme(
-  settings: string | null | undefined,
-): EmailTheme | undefined {
-  if (!settings) return undefined;
-  try {
-    const parsed = JSON.parse(settings) as { theme?: EmailTheme };
-    return parsed.theme;
-  } catch {
-    return undefined;
-  }
-}
-
-// ─── Plan Limits ─────────────────────────────────────────────────────────────
-
-const PLAN_LIMITS: Record<Plan, PlanLimits> = {
-  free: {
-    maxProjects: 1,
-    maxFormsPerProject: 3,
-    maxEventTypes: 3,
-    maxContactsPerProject: 100,
-    maxWorkflows: 1,
-    calendarSync: true,
-    maxCalendarConnections: 1,
-    apiAccess: false,
-    customWidgets: false,
-    analytics: false,
-    slugRedirects: false,
-  },
-  pro: {
-    maxProjects: 5,
-    maxFormsPerProject: 20,
-    maxEventTypes: 20,
-    maxContactsPerProject: 5000,
-    maxWorkflows: 10,
-    calendarSync: true,
-    maxCalendarConnections: -1,
-    apiAccess: true,
-    customWidgets: false,
-    analytics: true,
-    slugRedirects: true,
-  },
-  business: {
-    maxProjects: 20,
-    maxFormsPerProject: -1,
-    maxEventTypes: -1,
-    maxContactsPerProject: -1,
-    maxWorkflows: -1,
-    calendarSync: true,
-    maxCalendarConnections: -1,
-    apiAccess: true,
-    customWidgets: true,
-    analytics: true,
-    slugRedirects: true,
-  },
-};
 
 // ─── Subscription Helpers ────────────────────────────────────────────────────
 
@@ -554,21 +508,6 @@ function parseNativeFormFieldValue(
   };
 }
 
-// ─── Workflow Trigger Dispatch ───────────────────────────────────────────────
-// Called from HTTP request handlers via waitUntil(). The queue consumer NEVER
-// calls this function — this is the loop prevention contract.
-
-async function dispatchWorkflowTrigger(
-  db: DrizzleD1Database<Record<string, unknown>>,
-  env: AppEnv,
-  projectId: string,
-  trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added",
-  context: TriggerContext,
-) {
-  const executionService = new WorkflowExecutionService(db);
-  await executionService.dispatchTrigger(projectId, trigger, context, env);
-}
-
 function slugifyFormFieldKey(label: string | null | undefined): string {
   return (label ?? "")
     .trim()
@@ -759,81 +698,6 @@ async function notifyFormResponseCompleted(
   } catch (err) {
     console.error("Form response notification email failed:", err);
   }
-}
-
-async function getBookingSubmittedFields(
-  db: DrizzleD1Database<Record<string, unknown>>,
-  formResponseId: string | null | undefined,
-): Promise<Array<{ label: string; value: string }>> {
-  if (!formResponseId) return [];
-
-  const fieldValues = await db
-    .select({
-      label: dbSchema.formFields.label,
-      value: dbSchema.formFieldValues.value,
-      fileUrl: dbSchema.formFieldValues.fileUrl,
-    })
-    .from(dbSchema.formFieldValues)
-    .innerJoin(
-      dbSchema.formFields,
-      and(
-        eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
-        eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
-      ),
-    )
-    .where(eq(dbSchema.formFieldValues.responseId, formResponseId));
-
-  return fieldValues.map((fieldValue) => ({
-    label: fieldValue.label,
-    value: fieldValue.value ?? fieldValue.fileUrl ?? "",
-  }));
-}
-
-async function resolveOrganizerEmail(
-  db: AppDatabase,
-  eventType: { destinationConnectionId: string | null },
-  ownerUserId: string,
-): Promise<string | null> {
-  if (eventType.destinationConnectionId) {
-    const [conn] = await db
-      .select({ email: dbSchema.calendarConnections.email })
-      .from(dbSchema.calendarConnections)
-      .where(eq(dbSchema.calendarConnections.id, eventType.destinationConnectionId))
-      .limit(1);
-    if (conn?.email) return conn.email;
-  }
-  const [conn] = await db
-    .select({ email: dbSchema.calendarConnections.email })
-    .from(dbSchema.calendarConnections)
-    .where(eq(dbSchema.calendarConnections.userId, ownerUserId))
-    .limit(1);
-  return conn?.email ?? null;
-}
-
-async function resolveInviteAttendees(
-  db: DrizzleD1Database<Record<string, unknown>>,
-  eventType: { inviteConnectionIds: string | null },
-  destinationConnectionId: string,
-  guestEmail: string,
-): Promise<string[]> {
-  const inviteIds = parseInviteConnectionIds(eventType.inviteConnectionIds).filter(
-    (id) => id !== destinationConnectionId,
-  );
-
-  const emails = new Set<string>();
-  if (guestEmail) emails.add(guestEmail.toLowerCase());
-
-  if (inviteIds.length > 0) {
-    const rows = await db
-      .select({ id: dbSchema.calendarConnections.id, email: dbSchema.calendarConnections.email })
-      .from(dbSchema.calendarConnections)
-      .where(inArray(dbSchema.calendarConnections.id, inviteIds));
-    for (const row of rows) {
-      if (row.email) emails.add(row.email.toLowerCase());
-    }
-  }
-
-  return Array.from(emails);
 }
 
 // ─── Timestamp Normalization ─────────────────────────────────────────────────
@@ -1122,331 +986,23 @@ app.post("/api/v1/bookings", async (c) => {
 
     const db = drizzle(c.env.DB, { schema });
 
-    // 1. Look up project by slug
-    const [project] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.slug, data.projectSlug))
-      .limit(1);
-
-    if (!project) {
-      return c.json({ error: "Project not found" }, 404);
-    }
-
-    // 2. Look up event type by slug within the project
-    const [eventType] = await db
-      .select()
-      .from(dbSchema.eventTypes)
-      .where(
-        and(
-          eq(dbSchema.eventTypes.projectId, project.id),
-          eq(dbSchema.eventTypes.slug, data.eventTypeSlug),
-        ),
-      )
-      .limit(1);
-
-    if (!eventType) {
-      return c.json({ error: "Event type not found" }, 404);
-    }
-
-    if (!eventType.enabled) {
-      return c.json({ error: "Event type is not available" }, 400);
-    }
-
-    // 3. Parse startTime, calculate endTime from duration
-    const startTime = new Date(data.startTime);
-    const endTime = new Date(
-      startTime.getTime() + eventType.duration * 60 * 1000,
+    const result = await createBookingAction(
+      {
+        db,
+        env: c.env,
+        waitUntil: (p) => c.executionCtx.waitUntil(p),
+      },
+      { ...data, geo: { ip: geoIp, country: geoCountry, city: geoCity } },
     );
 
-    // 4. Check availability — verify the slot is still open
-    const availabilityService = new AvailabilityService(db);
-    const dateStr = formatDateInTimezone(startTime, data.timezone);
-    const slots = await availabilityService.getAvailableSlots({
-      projectSlug: data.projectSlug,
-      eventTypeSlug: data.eventTypeSlug,
-      date: dateStr,
-      timezone: data.timezone,
-    });
-
-    const slotAvailable = slots.some(
-      (slot) => slot.start === startTime.toISOString(),
-    );
-
-    if (!slotAvailable) {
-      return c.json(
-        { error: "Selected time slot is no longer available" },
-        409,
-      );
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status);
     }
-
-    // 5. Determine if booking requires confirmation
-    const isPending = eventType.requiresConfirmation;
-
-    // For pending bookings, calculate expiry: min(now + 24h, startTime - 1h)
-    let expiresAt: Date | undefined;
-    if (isPending) {
-      const twentyFourHoursLater = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      const oneHourBefore = new Date(startTime.getTime() - 60 * 60 * 1000);
-
-      if (oneHourBefore <= new Date()) {
-        return c.json(
-          { error: "This event type requires confirmation. Bookings must be made at least 1 hour in advance." },
-          400,
-        );
-      }
-
-      expiresAt = twentyFourHoursLater < oneHourBefore ? twentyFourHoursLater : oneHourBefore;
-    }
-
-    // 6. Create form response if event type has a booking form
-    let formResponseId: string | undefined;
-    if (eventType.bookingFormId && data.formFields && Object.keys(data.formFields).length > 0) {
-      const formService = new FormService(db);
-      const formResponse = await formService.createResponse(eventType.bookingFormId);
-      if (formResponse) {
-        formResponseId = formResponse.id;
-        // Insert all field values
-        const fields = Object.entries(data.formFields).map(([fieldId, value]) => ({
-          fieldId,
-          value,
-        }));
-        // Submit as a single step (all fields at once)
-        await formService.submitStep(formResponse.id, 0, fields);
-        // Mark as completed
-        await db
-          .update(dbSchema.formResponses)
-          .set({ status: "completed", respondentEmail: data.email })
-          .where(eq(dbSchema.formResponses.id, formResponse.id));
-      }
-    }
-
-    // 7. Create the booking
-    const bookingService = new BookingService(db);
-    const booking = await bookingService.create({
-      eventTypeId: eventType.id,
-      name: data.name,
-      email: data.email,
-      notes: data.notes,
-      startTime,
-      endTime,
-      timezone: data.timezone,
-      metadata: data.metadata,
-      status: isPending ? "pending" : "confirmed",
-      expiresAt,
-      formResponseId,
-      ipAddress: geoIp,
-      country: geoCountry,
-      city: geoCity,
-    });
-
-    // 7. Look up project owner for calendar invite + email notification
-    const ownerRows = await db
-      .select()
-      .from(dbSchema.schema.users)
-      .where(eq(dbSchema.schema.users.id, project.userId))
-      .limit(1);
-    const owner = ownerRows[0];
-    const submittedFields = await getBookingSubmittedFields(db, formResponseId);
-    const projectTheme = parseProjectTheme(project.settings);
-
-    if (isPending) {
-      // 8. Pending booking: send request emails, skip calendar event
-      c.executionCtx.waitUntil(
-        (async () => {
-          try {
-            const emailService = new EmailService(c.env.RESEND_API_KEY);
-
-            // Send "request received" email to guest
-            await emailService.sendBookingRequestReceived({
-              to: data.email,
-              guestName: data.name,
-              eventTypeName: eventType.name,
-              startTime,
-              endTime,
-              timezone: data.timezone,
-              theme: projectTheme,
-            });
-
-            // Send "action needed" email to owner/organizer
-            if (owner) {
-              const dashboardUrl = `${c.env.BETTER_AUTH_URL}/app/projects/${project.id}/bookings?tab=pending`;
-              const organizerEmail = await resolveOrganizerEmail(db, eventType, project.userId);
-              const to = organizerEmail ?? owner.email;
-              const cc = organizerEmail && organizerEmail.toLowerCase() !== owner.email.toLowerCase()
-                ? [owner.email]
-                : undefined;
-              await emailService.sendBookingRequestNotification({
-                to,
-                cc,
-                ownerName: owner.name,
-                guestName: data.name,
-                guestEmail: data.email,
-                eventTypeName: eventType.name,
-                startTime,
-                endTime,
-                dashboardUrl,
-                submittedFields,
-                theme: projectTheme,
-              });
-            }
-          } catch (err) {
-            console.error("Pending booking email failed:", err);
-          }
-        })(),
-      );
-    } else {
-      // 8. Confirmed booking: create calendar event + send confirmation emails
-      const calendarService = new CalendarService(db, {
-        GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-        GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-      });
-
-      c.executionCtx.waitUntil(
-        (async () => {
-          let meetingUrl: string | undefined;
-
-          try {
-            let calConnection;
-            let destinationCalendarId = "primary";
-
-            if (eventType.destinationConnectionId) {
-              const [conn] = await db
-                .select()
-                .from(dbSchema.calendarConnections)
-                .where(eq(dbSchema.calendarConnections.id, eventType.destinationConnectionId))
-                .limit(1);
-              calConnection = conn;
-              if (eventType.destinationCalendarId) {
-                destinationCalendarId = eventType.destinationCalendarId;
-              }
-            } else {
-              const [conn] = await db
-                .select()
-                .from(dbSchema.calendarConnections)
-                .where(eq(dbSchema.calendarConnections.userId, project.userId))
-                .limit(1);
-              calConnection = conn;
-            }
-
-            if (calConnection) {
-              const accessToken = await calendarService.refreshAccessToken(
-                calConnection.refreshToken,
-              );
-
-              const attendeeEmails = await resolveInviteAttendees(
-                db,
-                eventType,
-                calConnection.id,
-                data.email,
-              );
-
-              const gcalResult = await calendarService.createEvent(
-                accessToken,
-                destinationCalendarId,
-                {
-                  summary: `${eventType.name} with ${data.name}`,
-                  start: startTime.toISOString(),
-                  end: endTime.toISOString(),
-                  description: data.notes,
-                  attendees: attendeeEmails,
-                  guestName: data.name,
-                },
-              );
-
-              meetingUrl = gcalResult.meetingUrl ?? undefined;
-
-              await db
-                .update(dbSchema.bookings)
-                .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
-                .where(eq(dbSchema.bookings.id, booking.id));
-            }
-          } catch (err) {
-            console.error("Google Calendar event creation failed:", err);
-          }
-
-          try {
-            const emailService = new EmailService(c.env.RESEND_API_KEY);
-
-            await emailService.sendBookingConfirmation({
-              to: data.email,
-              guestName: data.name,
-              eventTypeName: eventType.name,
-              startTime,
-              endTime,
-              timezone: data.timezone,
-              location: eventType.location ?? undefined,
-              notes: data.notes,
-              meetingUrl,
-              theme: projectTheme,
-            });
-
-            if (owner) {
-              const organizerEmail = await resolveOrganizerEmail(db, eventType, project.userId);
-              const to = organizerEmail ?? owner.email;
-              const cc = organizerEmail && organizerEmail.toLowerCase() !== owner.email.toLowerCase()
-                ? [owner.email]
-                : undefined;
-              await emailService.sendBookingNotification({
-                to,
-                cc,
-                ownerName: owner.name,
-                guestName: data.name,
-                guestEmail: data.email,
-                eventTypeName: eventType.name,
-                startTime,
-                endTime,
-                submittedFields,
-                theme: projectTheme,
-              });
-            }
-          } catch (err) {
-            console.error("Email sending failed:", err);
-          }
-        })(),
-      );
-    }
-
-    // Dispatch workflow triggers for booking creation
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const contactService = new ContactService(db);
-          const contact = await contactService.findOrCreate(project.id, {
-            name: data.name,
-            email: data.email,
-          });
-
-          // Link contact to the booking row
-          await db
-            .update(dbSchema.bookings)
-            .set({ contactId: contact.id })
-            .where(eq(dbSchema.bookings.id, booking.id));
-
-          // Log booking activity for the contact
-          await contactService.logActivity(contact.id, "booked", booking.id);
-
-          const bookingContext: TriggerContext = {
-            projectId: project.id,
-            bookingId: booking.id,
-            contactId: contact.id,
-            contactEmail: data.email,
-            contactName: data.name,
-          };
-          await dispatchWorkflowTrigger(db, c.env as AppEnv, project.id, "booking_created", bookingContext);
-          if (isPending) {
-            await dispatchWorkflowTrigger(db, c.env as AppEnv, project.id, "booking_pending", bookingContext);
-          }
-        } catch (err) {
-          console.error("Booking workflow dispatch failed:", err);
-        }
-      })(),
-    );
 
     // Track booking_created event
     try {
       writeAnalyticsEvent(c.env.ANALYTICS, {
-        projectId: project.id,
+        projectId: result.projectId,
         event: "booking_created",
         resourceSlug: data.eventTypeSlug,
         country: geoCountry ?? "",
@@ -1454,7 +1010,7 @@ app.post("/api/v1/bookings", async (c) => {
       });
     } catch { /* tracking should never fail the request */ }
 
-    return c.json({ booking }, 201);
+    return c.json({ booking: result.booking }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -2362,6 +1918,35 @@ app.post("/api/subscription/webhook", async (c) => {
   return c.json({ received: true });
 });
 
+// ─── MCP Server ──────────────────────────────────────────────────────────────
+// Streamable HTTP endpoint for AI clients (Claude Code, Cursor, etc.).
+// Auth is a project-scoped API key; the validated projectId rides into the
+// LinkyCalMcp Durable Object via ctx.props and scopes every tool call.
+
+const mcpHandler = LinkyCalMcp.serve("/api/mcp", { binding: "MCP_OBJECT" });
+
+app.all("/api/mcp", async (c) => {
+  const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+  if (!key || !key.startsWith("lc_live_")) {
+    return c.json(
+      { error: "Missing API key. Pass Authorization: Bearer lc_live_..." },
+      401,
+    );
+  }
+
+  const db = drizzle(c.env.DB, { schema });
+  const projectId = await new ApiKeyService(db).validate(key); // also bumps lastUsedAt
+  if (!projectId) {
+    return c.json({ error: "Invalid API key" }, 401);
+  }
+
+  const ctx = c.executionCtx as ExecutionContext & {
+    props?: Record<string, unknown>;
+  };
+  ctx.props = { projectId } satisfies McpProps;
+  return mcpHandler.fetch(c.req.raw, c.env, ctx);
+});
+
 // ─── Session Middleware ──────────────────────────────────────────────────────
 
 app.use("/api/*", async (c, next) => {
@@ -2373,6 +1958,7 @@ app.use("/api/*", async (c, next) => {
     path.startsWith("/api/widget/") ||
     path.startsWith("/api/public/") ||
     path.startsWith("/api/uploads/") ||
+    path === "/api/mcp" ||
     path === "/api/subscription/webhook"
   ) {
     return next();
@@ -3058,145 +2644,20 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
     const data = validate(cancelBookingSchema, body);
 
     const db = c.get("db");
-    const bookingService = new BookingService(db);
-    const booking = await bookingService.cancel(id, data.reason);
-
-    if (!booking) {
-      return c.json({ error: "Booking not found" }, 404);
-    }
-
-    // If the booking had a Google Calendar event, try to delete it in the background
-    if (booking.gcalEventId) {
-      c.executionCtx.waitUntil(
-        (async () => {
-          try {
-            // Look up the project owner via event type
-            const [eventType] = await db
-              .select()
-              .from(dbSchema.eventTypes)
-              .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-              .limit(1);
-
-            if (!eventType) return;
-
-            const [project] = await db
-              .select()
-              .from(dbSchema.projects)
-              .where(eq(dbSchema.projects.id, eventType.projectId))
-              .limit(1);
-
-            if (!project) return;
-
-            // Use per-event-type destination calendar if set, else fall back
-            let calConnection;
-            let destinationCalendarId = "primary";
-
-            if (eventType.destinationConnectionId) {
-              const [conn] = await db
-                .select()
-                .from(dbSchema.calendarConnections)
-                .where(eq(dbSchema.calendarConnections.id, eventType.destinationConnectionId))
-                .limit(1);
-              calConnection = conn;
-              if (eventType.destinationCalendarId) {
-                destinationCalendarId = eventType.destinationCalendarId;
-              }
-            } else {
-              const [conn] = await db
-                .select()
-                .from(dbSchema.calendarConnections)
-                .where(eq(dbSchema.calendarConnections.userId, project.userId))
-                .limit(1);
-              calConnection = conn;
-            }
-
-            if (!calConnection) return;
-
-            const calendarService = new CalendarService(db, {
-              GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-              GOOGLE_CALENDAR_CLIENT_SECRET:
-                c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-            });
-
-            const accessToken = await calendarService.refreshAccessToken(
-              calConnection.refreshToken,
-            );
-
-            await calendarService.deleteEvent(
-              accessToken,
-              destinationCalendarId,
-              booking.gcalEventId!,
-            );
-          } catch (err) {
-            console.error("Google Calendar event deletion failed:", err);
-          }
-        })(),
-      );
-    }
-
-    // Send cancellation email in background
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const [eventType] = await db
-            .select({ projectId: dbSchema.eventTypes.projectId })
-            .from(dbSchema.eventTypes)
-            .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-            .limit(1);
-          let theme: EmailTheme | undefined;
-          if (eventType) {
-            const [project] = await db
-              .select({ settings: dbSchema.projects.settings })
-              .from(dbSchema.projects)
-              .where(eq(dbSchema.projects.id, eventType.projectId))
-              .limit(1);
-            theme = parseProjectTheme(project?.settings);
-          }
-
-          const emailService = new EmailService(c.env.RESEND_API_KEY);
-          await emailService.sendBookingCancellation({
-            to: booking.email,
-            guestName: booking.name,
-            eventTypeName: booking.eventTypeId, // fallback
-            startTime: new Date(booking.startTime),
-            endTime: new Date(booking.endTime),
-            reason: data.reason,
-            theme,
-          });
-        } catch (err) {
-          console.error("Cancellation email failed:", err);
-        }
-      })(),
-    );
-
-    // Dispatch booking_cancelled workflow trigger
     const projectId = c.req.param("projectId");
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const contactService = new ContactService(db);
-          const contact = await contactService.findOrCreate(projectId, {
-            name: booking.name,
-            email: booking.email,
-          });
 
-          // Log cancellation activity for the contact
-          await contactService.logActivity(contact.id, "cancelled", id);
-
-          await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_cancelled", {
-            projectId,
-            bookingId: id,
-            contactId: contact.id,
-            contactEmail: booking.email,
-            contactName: booking.name,
-          });
-        } catch (err) {
-          console.error("Booking cancel workflow dispatch failed:", err);
-        }
-      })(),
+    const result = await cancelBookingAction(
+      { db, env: c.env, waitUntil: (p) => c.executionCtx.waitUntil(p) },
+      projectId,
+      id,
+      data.reason,
     );
 
-    return c.json({ booking });
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status);
+    }
+
+    return c.json({ booking: result.booking });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -3268,158 +2729,20 @@ app.get("/api/projects/:projectId/bookings/:id/form-response", async (c) => {
 app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
   try {
     const id = c.req.param("id");
+    const projectId = c.req.param("projectId");
     const db = c.get("db");
 
-    const bookingService = new BookingService(db);
-    const booking = await bookingService.confirm(id);
-
-    if (!booking) {
-      return c.json({ error: "Booking not found or not pending" }, 404);
-    }
-
-    // Check if the event time has already passed
-    if (new Date(booking.startTime) <= new Date()) {
-      return c.json({ error: "Cannot confirm a booking whose time has already passed" }, 400);
-    }
-
-    // Look up event type and project for calendar + email
-    const [eventType] = await db
-      .select()
-      .from(dbSchema.eventTypes)
-      .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-      .limit(1);
-
-    if (!eventType) {
-      return c.json({ booking });
-    }
-
-    const [project] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, eventType.projectId))
-      .limit(1);
-
-    // Create Google Calendar event now
-    const calendarService = new CalendarService(db, {
-      GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-      GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-    });
-
-    const projectTheme = parseProjectTheme(project?.settings);
-
-    c.executionCtx.waitUntil(
-      (async () => {
-        let meetingUrl: string | undefined;
-
-        try {
-          let calConnection;
-          let destinationCalendarId = "primary";
-
-          if (eventType.destinationConnectionId) {
-            const [conn] = await db
-              .select()
-              .from(dbSchema.calendarConnections)
-              .where(eq(dbSchema.calendarConnections.id, eventType.destinationConnectionId))
-              .limit(1);
-            calConnection = conn;
-            if (eventType.destinationCalendarId) {
-              destinationCalendarId = eventType.destinationCalendarId;
-            }
-          } else if (project) {
-            const [conn] = await db
-              .select()
-              .from(dbSchema.calendarConnections)
-              .where(eq(dbSchema.calendarConnections.userId, project.userId))
-              .limit(1);
-            calConnection = conn;
-          }
-
-          if (calConnection) {
-            const accessToken = await calendarService.refreshAccessToken(
-              calConnection.refreshToken,
-            );
-
-            const attendeeEmails = await resolveInviteAttendees(
-              db,
-              eventType,
-              calConnection.id,
-              booking.email,
-            );
-
-            const gcalResult = await calendarService.createEvent(
-              accessToken,
-              destinationCalendarId,
-              {
-                summary: `${eventType.name} with ${booking.name}`,
-                start: new Date(booking.startTime).toISOString(),
-                end: new Date(booking.endTime).toISOString(),
-                description: booking.notes ?? undefined,
-                attendees: attendeeEmails,
-                guestName: booking.name,
-              },
-            );
-
-            meetingUrl = gcalResult.meetingUrl ?? undefined;
-
-            await db
-              .update(dbSchema.bookings)
-              .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
-              .where(eq(dbSchema.bookings.id, booking.id));
-          }
-        } catch (err) {
-          console.error("Calendar event creation on confirm failed:", err);
-        }
-
-        try {
-          const emailService = new EmailService(c.env.RESEND_API_KEY);
-
-          await emailService.sendBookingConfirmation({
-            to: booking.email,
-            guestName: booking.name,
-            eventTypeName: eventType.name,
-            startTime: new Date(booking.startTime),
-            endTime: new Date(booking.endTime),
-            timezone: booking.timezone,
-            location: eventType.location ?? undefined,
-            notes: booking.notes ?? undefined,
-            meetingUrl,
-            theme: projectTheme,
-          });
-        } catch (err) {
-          console.error("Confirmation email failed:", err);
-        }
-      })(),
+    const result = await confirmBookingAction(
+      { db, env: c.env, waitUntil: (p) => c.executionCtx.waitUntil(p) },
+      projectId,
+      id,
     );
 
-    // Dispatch booking_confirmed workflow trigger
-    const projectId = c.req.param("projectId");
-    c.executionCtx.waitUntil(
-      (async () => {
-        try {
-          const contactService = new ContactService(db);
-          const contact = await contactService.findOrCreate(projectId, {
-            name: booking.name,
-            email: booking.email,
-          });
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status);
+    }
 
-          // No activity log here — "booked" was already recorded when the
-          // booking was created; logging again on confirm duplicated the
-          // timeline entry.
-
-          await dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "booking_confirmed", {
-            projectId,
-            bookingId: id,
-            contactId: contact.id,
-            contactEmail: booking.email,
-            contactName: booking.name,
-          });
-        } catch (err) {
-          console.error("Booking confirm workflow dispatch failed:", err);
-        }
-      })(),
-    );
-
-    return c.json({ booking });
+    return c.json({ booking: result.booking });
   } catch (err) {
     console.error("Booking confirm error:", err);
     return c.json({ error: "Failed to confirm booking" }, 500);
@@ -3436,64 +2759,17 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
     const body = await c.req.json().catch(() => ({}));
     const { reason, notify } = validate(declineBookingSchema, body);
 
-    const bookingService = new BookingService(db);
-    const booking = await bookingService.decline(id);
+    const result = await declineBookingAction(
+      { db, env: c.env, waitUntil: (p) => c.executionCtx.waitUntil(p) },
+      id,
+      { reason, notify },
+    );
 
-    if (!booking) {
-      return c.json({ error: "Booking not found or not pending" }, 404);
+    if (!result.ok) {
+      return c.json({ error: result.error }, result.status);
     }
 
-    // Send decline email to guest (unless silent)
-    if (notify) {
-      // Look up event type and owner for email
-      const [eventType] = await db
-        .select()
-        .from(dbSchema.eventTypes)
-        .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-        .limit(1);
-
-      let ownerName = "the host";
-      let declineTheme: EmailTheme | undefined;
-      if (eventType) {
-        const [project] = await db
-          .select()
-          .from(dbSchema.projects)
-          .where(eq(dbSchema.projects.id, eventType.projectId))
-          .limit(1);
-        if (project) {
-          declineTheme = parseProjectTheme(project.settings);
-          const [owner] = await db
-            .select()
-            .from(dbSchema.schema.users)
-            .where(eq(dbSchema.schema.users.id, project.userId))
-            .limit(1);
-          if (owner?.name) ownerName = owner.name;
-        }
-      }
-
-      c.executionCtx.waitUntil(
-        (async () => {
-          try {
-            const emailService = new EmailService(c.env.RESEND_API_KEY);
-            await emailService.sendBookingDeclined({
-              to: booking.email,
-              guestName: booking.name,
-              hostName: ownerName,
-              eventTypeName: eventType?.name ?? "Meeting",
-              startTime: new Date(booking.startTime),
-              endTime: new Date(booking.endTime),
-              timezone: booking.timezone,
-              reason,
-              theme: declineTheme,
-            });
-          } catch (err) {
-            console.error("Decline email failed:", err);
-          }
-        })(),
-      );
-    }
-
-    return c.json({ booking });
+    return c.json({ booking: result.booking });
   } catch (err) {
     console.error("Booking decline error:", err);
     return c.json({ error: "Failed to decline booking" }, 500);

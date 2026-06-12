@@ -174,6 +174,7 @@ bun run deploy:full      # Full deploy (app + widgets + migrations)
 5. **Public API** - REST API with API key auth for all operations
 6. **Workflows** - Trigger-based automation (form submitted, booking created, etc.)
 7. **AI-friendly docs** - OpenAPI spec, llms.txt, markdown docs
+8. **MCP server** - `/api/mcp` Streamable HTTP endpoint (`worker/mcp/`) exposing bookings, availability, contacts, event types, forms, and workflows as MCP tools; authenticated by project-scoped API keys
 
 ## Plan Limits
 
