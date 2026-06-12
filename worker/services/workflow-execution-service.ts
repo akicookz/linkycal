@@ -1,12 +1,19 @@
-import { eq, and } from "drizzle-orm";
+import { eq, and, lte, isNotNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 import {
+  computeNextRunAt,
+  parseWorkflowTriggerConfig,
+  type WorkflowContactFilter,
+} from "../lib/workflow-schedule";
+import {
+  formatContactsInputValue,
   interpolateWorkflowTemplate,
   mergeWorkflowResearchMetadata,
   normalizeRecipientList,
   resolveStepInputs,
   resolveWorkflowValue,
+  workflowStepInputSchema,
   type WorkflowTriggerContext,
 } from "../lib/workflow-runtime";
 import {
@@ -27,14 +34,7 @@ interface StepSnapshot {
   output: Record<string, unknown>;
 }
 
-type WorkflowTrigger =
-  | "form_submitted"
-  | "booking_created"
-  | "booking_cancelled"
-  | "booking_pending"
-  | "booking_confirmed"
-  | "tag_added"
-  | "manual";
+type WorkflowTrigger = dbSchema.WorkflowRow["trigger"];
 
 const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_ADDRESS = "LinkyCal <noreply@updates.linkycal.com>";
@@ -103,37 +103,94 @@ export class WorkflowExecutionService {
         const steps = await this.workflowService.listSteps(workflow.id);
         if (steps.length === 0) continue;
 
-        // Create a run and enqueue the first step
-        const run = await this.workflowService.createRun(
-          workflow.id,
-          context.formResponseId ?? context.bookingId ?? context.contactId ?? undefined,
-          JSON.stringify(context),
-        );
-
-        if (run) {
-          // Init pending step logs
-          const pendingLogs: StepLog[] = steps.map((s, i) => ({
-            stepIndex: i,
-            stepType: s.type,
-            stepLabel: STEP_LABELS[s.type] ?? s.type,
-            status: "pending",
-            input: null,
-            output: null,
-            error: null,
-            startedAt: null,
-            completedAt: null,
-          }));
-          await this.workflowService.updateStepLogs(run.id, pendingLogs);
-
-          await env.WORKFLOW_QUEUE.send({
-            workflowRunId: run.id,
-            stepIndex: 0,
-          });
-        }
+        await this.startRun(workflow.id, steps, context, env);
       }
     } catch (err) {
       console.error(`Workflow dispatch failed for trigger ${trigger}:`, err);
     }
+  }
+
+  // ─── Scheduled Dispatch ────────────────────────────────────────────────
+  // Called from the cron handler. Fires every active scheduled workflow whose
+  // nextRunAt has elapsed, fanning out to its configured contact audience.
+
+  async dispatchScheduledWorkflows(env: AppEnv): Promise<number> {
+    const now = new Date();
+    const due = await this.db
+      .select()
+      .from(dbSchema.workflows)
+      .where(
+        and(
+          eq(dbSchema.workflows.trigger, "scheduled"),
+          eq(dbSchema.workflows.status, "active"),
+          isNotNull(dbSchema.workflows.nextRunAt),
+          lte(dbSchema.workflows.nextRunAt, now),
+        ),
+      );
+
+    let started = 0;
+    for (const workflow of due) {
+      const config = parseWorkflowTriggerConfig(workflow.triggerConfig);
+
+      // Advance the clock before dispatching so an overlapping cron
+      // invocation can't fire the same occurrence twice.
+      await this.db
+        .update(dbSchema.workflows)
+        .set({ nextRunAt: computeNextRunAt(config?.schedule ?? null, now) })
+        .where(eq(dbSchema.workflows.id, workflow.id));
+
+      try {
+        started += await this.dispatchToFilteredContacts(
+          workflow.id,
+          workflow.projectId,
+          config?.contactFilter ?? null,
+          env,
+        );
+      } catch (err) {
+        console.error(`Scheduled workflow ${workflow.id} dispatch failed:`, err);
+      }
+    }
+    return started;
+  }
+
+  // ─── Contact Fan-Out ───────────────────────────────────────────────────
+  // Starts one run per contact matching the filter. A null filter means a
+  // single run with no contact context; empty tagIds means all contacts.
+
+  async dispatchToFilteredContacts(
+    workflowId: string,
+    projectId: string,
+    filter: WorkflowContactFilter | null,
+    env: AppEnv,
+  ): Promise<number> {
+    const steps = await this.workflowService.listSteps(workflowId);
+    if (steps.length === 0) return 0;
+
+    if (!filter) {
+      const runId = await this.startRun(workflowId, steps, { projectId }, env);
+      return runId ? 1 : 0;
+    }
+
+    const tagIds = filter.tagIds.filter(Boolean);
+    const contacts = await this.contactService.list(
+      projectId,
+      tagIds.length > 0
+        ? { tagIds, matchAllTags: filter.matchAllTags }
+        : undefined,
+    );
+
+    let started = 0;
+    for (const contact of contacts) {
+      const context: TriggerContext = {
+        projectId,
+        contactId: contact.id,
+        contactEmail: contact.email ?? undefined,
+        contactName: contact.name ?? undefined,
+      };
+      const runId = await this.startRun(workflowId, steps, context, env);
+      if (runId) started++;
+    }
+    return started;
   }
 
   // ─── Test Run (specific workflow, no status/trigger filter) ─────────────
@@ -146,34 +203,43 @@ export class WorkflowExecutionService {
     const steps = await this.workflowService.listSteps(workflowId);
     if (steps.length === 0) return null;
 
+    return this.startRun(workflowId, steps, context, env);
+  }
+
+  // ─── Run Bootstrap ─────────────────────────────────────────────────────
+  // Creates a run with pending step logs and enqueues its first step.
+
+  private async startRun(
+    workflowId: string,
+    steps: dbSchema.WorkflowStepRow[],
+    context: TriggerContext,
+    env: AppEnv,
+  ): Promise<string | null> {
     const run = await this.workflowService.createRun(
       workflowId,
-      context.contactId ?? undefined,
+      context.formResponseId ?? context.bookingId ?? context.contactId ?? undefined,
       JSON.stringify(context),
     );
+    if (!run) return null;
 
-    if (run) {
-      // Init pending step logs
-      const pendingLogs: StepLog[] = steps.map((s, i) => ({
-        stepIndex: i,
-        stepType: s.type,
-        stepLabel: STEP_LABELS[s.type] ?? s.type,
-        status: "pending",
-        input: null,
-        output: null,
-        error: null,
-        startedAt: null,
-        completedAt: null,
-      }));
-      await this.workflowService.updateStepLogs(run.id, pendingLogs);
+    const pendingLogs: StepLog[] = steps.map((s, i) => ({
+      stepIndex: i,
+      stepType: s.type,
+      stepLabel: STEP_LABELS[s.type] ?? s.type,
+      status: "pending",
+      input: null,
+      output: null,
+      error: null,
+      startedAt: null,
+      completedAt: null,
+    }));
+    await this.workflowService.updateStepLogs(run.id, pendingLogs);
 
-      await env.WORKFLOW_QUEUE.send({
-        workflowRunId: run.id,
-        stepIndex: 0,
-      });
-      return run.id;
-    }
-    return null;
+    await env.WORKFLOW_QUEUE.send({
+      workflowRunId: run.id,
+      stepIndex: 0,
+    });
+    return run.id;
   }
 
   // ─── Step Execution ────────────────────────────────────────────────────
@@ -227,6 +293,7 @@ export class WorkflowExecutionService {
     // reference them via {{input.<key>}}. Each run of executeStep gets a
     // fresh resolution so step outputs accumulated in context propagate.
     context.stepInputs = resolveStepInputs(config.inputs, context);
+    await this.resolveContactQueryInputs(config.inputs, context);
 
     // ── Per-step condition gate ──
     // Distinct from the "condition" step type which halts the run. If this
@@ -435,6 +502,37 @@ export class WorkflowExecutionService {
     }
   }
 
+  // ─── Contact-Query Inputs ──────────────────────────────────────────────
+  // Inputs with source kind "contacts" resolve to a live tag-filtered contact
+  // list (empty tagIds = all contacts in the project). Resolved here rather
+  // than in resolveStepInputs because they need DB access.
+
+  private async resolveContactQueryInputs(
+    inputs: unknown,
+    context: TriggerContext,
+  ): Promise<void> {
+    if (!Array.isArray(inputs)) return;
+
+    for (const raw of inputs) {
+      const parsed = workflowStepInputSchema.safeParse(raw);
+      if (!parsed.success || parsed.data.source.kind !== "contacts") continue;
+      const { key, source } = parsed.data;
+
+      const tagIds = source.tagIds.filter(Boolean);
+      const contacts = await this.contactService.list(
+        context.projectId,
+        tagIds.length > 0
+          ? { tagIds, matchAllTags: source.matchAllTags }
+          : undefined,
+      );
+
+      context.stepInputs = {
+        ...context.stepInputs,
+        [key]: formatContactsInputValue(contacts, source.format),
+      };
+    }
+  }
+
   // ─── Step Action Executors ─────────────────────────────────────────────
 
   /**
@@ -510,6 +608,12 @@ export class WorkflowExecutionService {
     }
     if (!subject) throw new Error("send_email: missing 'subject'");
 
+    // The body is sent as HTML; plain-text bodies (no tags) would otherwise
+    // collapse their line breaks.
+    const htmlBody = /<[a-z][\s\S]*>/i.test(body)
+      ? body
+      : body.replace(/\n/g, "<br>");
+
     const response = await fetch(RESEND_API_URL, {
       method: "POST",
       headers: {
@@ -520,7 +624,7 @@ export class WorkflowExecutionService {
         from: FROM_ADDRESS,
         to: recipients,
         subject,
-        html: body || "",
+        html: htmlBody || "",
       }),
     });
 

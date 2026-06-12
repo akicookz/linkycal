@@ -5,7 +5,8 @@ export type WorkflowTriggerType =
   | "booking_pending"
   | "booking_confirmed"
   | "tag_added"
-  | "manual";
+  | "manual"
+  | "scheduled";
 
 export type WorkflowStepType =
   | "send_email"

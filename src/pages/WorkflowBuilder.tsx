@@ -22,6 +22,7 @@ import {
   CalendarCheck,
   CalendarX,
   Play,
+  AlarmClock,
   Settings2,
   CheckCircle2,
   XCircle,
@@ -81,6 +82,13 @@ import {
   type WorkflowStepInput,
 } from "@/components/WorkflowInputsEditor";
 import { WorkflowStepLog } from "@/components/WorkflowStepLog";
+import {
+  WorkflowTriggerConfigEditor,
+  defaultSchedule,
+  describeSchedule,
+  describeContactFilter,
+  type WorkflowTriggerConfig,
+} from "@/components/WorkflowTriggerConfigEditor";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -91,7 +99,8 @@ type TriggerType =
   | "booking_confirmed"
   | "booking_cancelled"
   | "tag_added"
-  | "manual";
+  | "manual"
+  | "scheduled";
 type StepType =
   | "send_email"
   | "ai_research"
@@ -142,6 +151,7 @@ interface FullWorkflow {
   projectId: string;
   name: string;
   trigger: TriggerType;
+  triggerConfig: WorkflowTriggerConfig | null;
   status: "active" | "draft";
   createdAt: string;
   updatedAt: string;
@@ -175,6 +185,7 @@ const TRIGGER_META: Record<TriggerType, { label: string; icon: typeof Zap }> = {
   booking_cancelled: { label: "Booking Cancelled", icon: CalendarX },
   tag_added: { label: "Tag Added", icon: Tag },
   manual: { label: "Manual", icon: Play },
+  scheduled: { label: "Scheduled", icon: AlarmClock },
 };
 
 function getStepMeta(type: StepType) {
@@ -293,6 +304,8 @@ export default function WorkflowBuilder() {
   const [deleteStepId, setDeleteStepId] = useState<string | null>(null);
   const [insertIndex, setInsertIndex] = useState<number | null>(null);
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [triggerSheetOpen, setTriggerSheetOpen] = useState(false);
+  const [triggerConfigDraft, setTriggerConfigDraft] = useState<WorkflowTriggerConfig>({});
   const [deleteWorkflowDialogOpen, setDeleteWorkflowDialogOpen] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedStepIndices, setExpandedStepIndices] = useState<Set<string>>(new Set());
@@ -424,7 +437,14 @@ export default function WorkflowBuilder() {
   }
 
   const updateWorkflowMutation = useMutation({
-    mutationFn: async (data: Partial<{ name: string; status: string; trigger: string }>) => {
+    mutationFn: async (
+      data: Partial<{
+        name: string;
+        status: string;
+        trigger: string;
+        triggerConfig: WorkflowTriggerConfig | null;
+      }>,
+    ) => {
       const res = await fetch(
         `/api/projects/${projectId}/workflows/${workflowId}`,
         {
@@ -650,6 +670,26 @@ export default function WorkflowBuilder() {
     setAddStepDialogOpen(true);
   }
 
+  function openTriggerSheet() {
+    if (!workflow) return;
+    const existing = (parseConfig(workflow.triggerConfig) ?? {}) as WorkflowTriggerConfig;
+    setTriggerConfigDraft({
+      schedule:
+        workflow.trigger === "scheduled"
+          ? existing.schedule ?? defaultSchedule()
+          : existing.schedule ?? null,
+      contactFilter: existing.contactFilter ?? null,
+    });
+    setTriggerSheetOpen(true);
+  }
+
+  function handleSaveTriggerConfig() {
+    updateWorkflowMutation.mutate(
+      { triggerConfig: triggerConfigDraft },
+      { onSuccess: () => setTriggerSheetOpen(false) },
+    );
+  }
+
   function closeStepDialog() {
     setAddStepDialogOpen(false);
     setSelectedStepType(null);
@@ -738,6 +778,18 @@ export default function WorkflowBuilder() {
 
   const triggerMeta = TRIGGER_META[workflow.trigger];
   const TriggerIcon = triggerMeta.icon;
+  const hasTriggerSettings =
+    workflow.trigger === "scheduled" || workflow.trigger === "manual";
+  const workflowTriggerConfig = (parseConfig(workflow.triggerConfig) ??
+    {}) as WorkflowTriggerConfig;
+  const triggerSummary = [
+    workflow.trigger === "scheduled"
+      ? describeSchedule(workflowTriggerConfig.schedule)
+      : null,
+    describeContactFilter(workflowTriggerConfig.contactFilter ?? null, tags),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   // ─── Render: Builder ────────────────────────────────────────────────────
 
@@ -815,8 +867,28 @@ export default function WorkflowBuilder() {
           <div className="max-w-2xl mx-auto py-8 px-4">
             {/* Trigger node */}
             <div className="flex flex-col items-center py-4">
-              <TriggerIcon className="h-6 w-6 text-muted-foreground mb-1" />
-              <p className="text-xs text-muted-foreground">{triggerMeta.label}</p>
+              {hasTriggerSettings ? (
+                <button
+                  type="button"
+                  onClick={openTriggerSheet}
+                  className="group/trigger flex flex-col items-center rounded-[16px] px-4 py-2 hover:bg-accent transition-colors"
+                >
+                  <TriggerIcon className="h-6 w-6 text-muted-foreground mb-1" />
+                  <p className="text-xs text-muted-foreground">{triggerMeta.label}</p>
+                  <p className="text-[11px] text-muted-foreground/70 mt-0.5">
+                    {triggerSummary}
+                  </p>
+                  <span className="mt-1 flex items-center gap-1 text-[11px] text-primary opacity-0 group-hover/trigger:opacity-100 transition-opacity">
+                    <Settings2 className="h-3 w-3" />
+                    Configure
+                  </span>
+                </button>
+              ) : (
+                <>
+                  <TriggerIcon className="h-6 w-6 text-muted-foreground mb-1" />
+                  <p className="text-xs text-muted-foreground">{triggerMeta.label}</p>
+                </>
+              )}
             </div>
 
             {/* Connector + Add Step button */}
@@ -1079,6 +1151,58 @@ export default function WorkflowBuilder() {
         />
       )}
 
+      {/* Trigger Settings Sidebar */}
+      <Sheet open={triggerSheetOpen} onOpenChange={(open) => !open && setTriggerSheetOpen(false)}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Trigger Settings</SheetTitle>
+            <SheetDescription>
+              {workflow.trigger === "scheduled"
+                ? "Choose when this workflow runs and which contacts it runs for."
+                : "Choose which contacts this workflow runs for when triggered."}
+            </SheetDescription>
+          </SheetHeader>
+
+          <div className="space-y-4">
+            <WorkflowTriggerConfigEditor
+              trigger={workflow.trigger}
+              config={triggerConfigDraft}
+              onChange={setTriggerConfigDraft}
+              tags={tags}
+            />
+
+            {updateWorkflowMutation.isError && (
+              <p className="text-sm text-destructive">
+                Failed to save trigger settings. Please try again.
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setTriggerSheetOpen(false)}
+                disabled={updateWorkflowMutation.isPending}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleSaveTriggerConfig}
+                disabled={updateWorkflowMutation.isPending}
+              >
+                {updateWorkflowMutation.isPending ? (
+                  <Loader className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Save Settings
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {/* Add/Edit Step Sidebar */}
       <Sheet open={addStepDialogOpen} onOpenChange={(open) => !open && closeStepDialog()}>
         <SheetContent>
@@ -1320,6 +1444,7 @@ function StepConfigForm({
         trigger={trigger}
         formFields={formFields}
         priorSteps={priorSteps}
+        tags={tags}
       />
     </div>
   );

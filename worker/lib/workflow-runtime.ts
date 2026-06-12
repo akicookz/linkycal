@@ -12,15 +12,54 @@ export interface WorkflowTriggerContext {
   stepInputs?: Record<string, unknown>;
 }
 
+export const workflowContactsInputFormatSchema = z.enum([
+  "list",
+  "emails",
+  "count",
+]);
+
+export type WorkflowContactsInputFormat = z.infer<
+  typeof workflowContactsInputFormatSchema
+>;
+
 export const workflowStepInputSchema = z.object({
   key: z.string().min(1).max(64),
   source: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("path"), path: z.string().min(1).max(512) }),
     z.object({ kind: z.literal("literal"), value: z.string() }),
+    // A live contact query: resolves to the project's contacts matching the
+    // tag filter at run time (empty tagIds = all contacts). Resolved by the
+    // execution service, which has DB access — resolveStepInputs skips it.
+    z.object({
+      kind: z.literal("contacts"),
+      tagIds: z.array(z.string()).max(20).default([]),
+      matchAllTags: z.boolean().optional(),
+      format: workflowContactsInputFormatSchema.default("list"),
+    }),
   ]),
 });
 
 export type WorkflowStepInput = z.infer<typeof workflowStepInputSchema>;
+
+export function formatContactsInputValue(
+  contacts: Array<{ name: string; email: string | null }>,
+  format: WorkflowContactsInputFormat,
+): string {
+  switch (format) {
+    case "count":
+      return String(contacts.length);
+    case "emails":
+      return contacts
+        .map((c) => c.email?.trim())
+        .filter((email): email is string => !!email)
+        .join(", ");
+    case "list":
+    default:
+      return contacts
+        .map((c) => `- ${c.name}${c.email ? ` (${c.email})` : ""}`)
+        .join("\n");
+  }
+}
 
 export const workflowResearchProviderSchema = z.enum(["chatgpt", "gemini"]);
 
@@ -133,6 +172,10 @@ export function resolveStepInputs(
       continue;
     }
 
+    // Contact-query inputs need DB access; the execution service resolves
+    // them after this synchronous pass.
+    if (input.source.kind === "contacts") continue;
+
     const value = resolveWorkflowValue(context, input.source.path);
     resolved[input.key] = stringifyWorkflowValue(value);
   }
@@ -175,8 +218,13 @@ export function normalizeRecipientList(
       ? value.split(/[\n,;]+/g)
       : [];
 
+  // Re-split after interpolation: a single variable (e.g. a contacts input
+  // with the "emails" format) can expand into a comma-separated list.
   const recipients = rawValues
-    .map((entry) => interpolateWorkflowTemplate(entry.trim(), context).trim())
+    .flatMap((entry) =>
+      interpolateWorkflowTemplate(entry.trim(), context).split(/[\n,;]+/g),
+    )
+    .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
 
   return Array.from(new Set(recipients));

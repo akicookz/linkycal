@@ -169,6 +169,13 @@
       "when": 1781209841916,
       "tag": "0023_mushy_enchantress",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1781255131729,
+      "tag": "0024_living_exiles",
+      "breakpoints": true
     }
   ]
 }

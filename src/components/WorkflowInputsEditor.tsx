@@ -13,14 +13,29 @@ import { buildWorkflowVariableGroups, type FormFieldSource, type PriorStepSource
 
 const VISIBLE_ROW_LIMIT = 3;
 
+export type WorkflowContactsInputFormat = "list" | "emails" | "count";
+
 export type WorkflowStepInput = {
   key: string;
   source:
     | { kind: "path"; path: string }
-    | { kind: "literal"; value: string };
+    | { kind: "literal"; value: string }
+    | {
+        kind: "contacts";
+        tagIds: string[];
+        matchAllTags?: boolean;
+        format: WorkflowContactsInputFormat;
+      };
 };
 
+export interface InputsTagItem {
+  id: string;
+  name: string;
+  color: string;
+}
+
 const LITERAL_VALUE = "__literal__";
+const CONTACTS_VALUE = "__contacts__";
 
 function slugifyInputKey(raw: string): string {
   return raw
@@ -43,6 +58,7 @@ export function WorkflowInputsEditor({
   formFields,
   priorSteps,
   sampleValues,
+  tags = [],
 }: {
   inputs: WorkflowStepInput[];
   onChange: (next: WorkflowStepInput[]) => void;
@@ -50,6 +66,7 @@ export function WorkflowInputsEditor({
   formFields?: FormFieldSource[];
   priorSteps?: PriorStepSource[];
   sampleValues?: Record<string, string>;
+  tags?: InputsTagItem[];
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -76,6 +93,9 @@ export function WorkflowInputsEditor({
     if (nextSource.kind === "path" && (!row.key || row.key === "value")) {
       next.key = defaultKeyForPath(nextSource.path);
     }
+    if (nextSource.kind === "contacts" && (!row.key || row.key === "value")) {
+      next.key = "contacts";
+    }
     onChange(inputs.map((r, i) => (i === index ? next : r)));
   }
 
@@ -96,7 +116,18 @@ export function WorkflowInputsEditor({
 
   function sampleFor(row: WorkflowStepInput): string | undefined {
     if (row.source.kind === "literal") return row.source.value;
+    if (row.source.kind === "contacts") return undefined;
     return sampleValues?.[row.source.path];
+  }
+
+  function toggleRowTag(index: number, tagId: string) {
+    const row = inputs[index];
+    if (!row || row.source.kind !== "contacts") return;
+    const current = row.source.tagIds;
+    const next = current.includes(tagId)
+      ? current.filter((id) => id !== tagId)
+      : [...current, tagId];
+    updateRowSource(index, { ...row.source, tagIds: next });
   }
 
   return (
@@ -116,7 +147,11 @@ export function WorkflowInputsEditor({
           {inputs.slice(0, visibleCount).map((row, idx) => {
             const sample = sampleFor(row);
             const selectValue =
-              row.source.kind === "literal" ? LITERAL_VALUE : row.source.path;
+              row.source.kind === "literal"
+                ? LITERAL_VALUE
+                : row.source.kind === "contacts"
+                  ? CONTACTS_VALUE
+                  : row.source.path;
             return (
               <div key={idx} className="space-y-1">
                 <div className="flex items-center gap-1.5">
@@ -134,6 +169,12 @@ export function WorkflowInputsEditor({
                     onValueChange={(v) => {
                       if (v === LITERAL_VALUE) {
                         updateRowSource(idx, { kind: "literal", value: "" });
+                      } else if (v === CONTACTS_VALUE) {
+                        updateRowSource(idx, {
+                          kind: "contacts",
+                          tagIds: [],
+                          format: "list",
+                        });
                       } else {
                         updateRowSource(idx, { kind: "path", path: v });
                       }
@@ -147,6 +188,12 @@ export function WorkflowInputsEditor({
                         Fixed value
                       </div>
                       <SelectItem value={LITERAL_VALUE}>Literal text…</SelectItem>
+                      <div className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                        Live query
+                      </div>
+                      <SelectItem value={CONTACTS_VALUE}>
+                        Contact list (by tag)…
+                      </SelectItem>
                       {groups.map((group) => (
                         <div key={group.group}>
                           <div className="px-2 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -180,6 +227,79 @@ export function WorkflowInputsEditor({
                       updateRowSource(idx, { kind: "literal", value: e.target.value })
                     }
                   />
+                ) : row.source.kind === "contacts" ? (
+                  <div className="space-y-1.5 rounded-[10px] border bg-background p-2">
+                    <div className="flex flex-wrap gap-1">
+                      {tags.length === 0 && (
+                        <span className="text-[11px] text-muted-foreground">
+                          No tags yet — matches all contacts.
+                        </span>
+                      )}
+                      {tags.map((tag) => {
+                        const selected = row.source.kind === "contacts" &&
+                          row.source.tagIds.includes(tag.id);
+                        return (
+                          <button
+                            key={tag.id}
+                            type="button"
+                            onClick={() => toggleRowTag(idx, tag.id)}
+                            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
+                              selected
+                                ? "border-primary/40 bg-primary/10 text-foreground"
+                                : "text-muted-foreground hover:bg-accent"
+                            }`}
+                          >
+                            <span
+                              className="h-1.5 w-1.5 rounded-full"
+                              style={{ backgroundColor: tag.color }}
+                            />
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={row.source.format}
+                        onValueChange={(v) => {
+                          if (row.source.kind !== "contacts") return;
+                          updateRowSource(idx, {
+                            ...row.source,
+                            format: v as WorkflowContactsInputFormat,
+                          });
+                        }}
+                      >
+                        <SelectTrigger className="h-7 text-[11px] px-2 flex-1 bg-background">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="list">Bulleted list (name + email)</SelectItem>
+                          <SelectItem value="emails">Email addresses</SelectItem>
+                          <SelectItem value="count">Count</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {row.source.tagIds.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (row.source.kind !== "contacts") return;
+                            updateRowSource(idx, {
+                              ...row.source,
+                              matchAllTags: !row.source.matchAllTags,
+                            });
+                          }}
+                          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
+                        >
+                          {row.source.matchAllTags ? "Match: all tags" : "Match: any tag"}
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      {row.source.tagIds.length === 0
+                        ? "All contacts in this project, fetched when the step runs."
+                        : "Contacts matching the selected tags, fetched when the step runs."}
+                    </p>
+                  </div>
                 ) : (
                   sample !== undefined && sample !== "" && (
                     <div className="pl-[138px] text-[11px] text-muted-foreground truncate">

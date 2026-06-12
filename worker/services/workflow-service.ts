@@ -1,6 +1,13 @@
 import { eq, and, asc, desc } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
+import {
+  computeNextRunAt,
+  parseWorkflowTriggerConfig,
+  type WorkflowTriggerConfig,
+} from "../lib/workflow-schedule";
+
+type WorkflowTrigger = dbSchema.WorkflowRow["trigger"];
 
 // ─── Step Log Type ───────────────────────────────────────────────────────────
 
@@ -44,7 +51,8 @@ export class WorkflowService {
     projectId: string,
     data: {
       name: string;
-      trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added" | "manual";
+      trigger: WorkflowTrigger;
+      triggerConfig?: WorkflowTriggerConfig | null;
     },
   ) {
     const id = crypto.randomUUID();
@@ -53,6 +61,8 @@ export class WorkflowService {
       projectId,
       name: data.name,
       trigger: data.trigger,
+      triggerConfig: data.triggerConfig ?? null,
+      nextRunAt: this.resolveNextRunAt(data.trigger, data.triggerConfig ?? null),
       status: "draft",
     });
     return this.getById(id);
@@ -62,16 +72,29 @@ export class WorkflowService {
     id: string,
     data: {
       name?: string;
-      trigger?: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added" | "manual";
+      trigger?: WorkflowTrigger;
+      triggerConfig?: WorkflowTriggerConfig | null;
       status?: "active" | "draft";
     },
   ) {
     const values: Record<string, unknown> = {};
     if (data.name !== undefined) values.name = data.name;
     if (data.trigger !== undefined) values.trigger = data.trigger;
+    if (data.triggerConfig !== undefined)
+      values.triggerConfig = data.triggerConfig ?? null;
     if (data.status !== undefined) values.status = data.status;
 
     if (Object.keys(values).length === 0) return this.getById(id);
+
+    // Recompute the scheduled-trigger clock whenever trigger or config change.
+    if (data.trigger !== undefined || data.triggerConfig !== undefined) {
+      const current = await this.getById(id);
+      if (!current) return null;
+      const trigger = data.trigger ?? current.trigger;
+      const triggerConfig =
+        data.triggerConfig !== undefined ? data.triggerConfig : current.triggerConfig;
+      values.nextRunAt = this.resolveNextRunAt(trigger, triggerConfig);
+    }
 
     await this.db
       .update(dbSchema.workflows)
@@ -79,6 +102,15 @@ export class WorkflowService {
       .where(eq(dbSchema.workflows.id, id));
 
     return this.getById(id);
+  }
+
+  private resolveNextRunAt(
+    trigger: WorkflowTrigger,
+    triggerConfig: unknown,
+  ): Date | null {
+    if (trigger !== "scheduled") return null;
+    const config = parseWorkflowTriggerConfig(triggerConfig);
+    return computeNextRunAt(config?.schedule ?? null);
   }
 
   async delete(id: string) {

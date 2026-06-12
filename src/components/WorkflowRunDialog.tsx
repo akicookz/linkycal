@@ -28,7 +28,10 @@ type TriggerType =
   | "booking_confirmed"
   | "booking_cancelled"
   | "tag_added"
-  | "manual";
+  | "manual"
+  | "scheduled";
+
+type RunMode = "test" | "audience";
 
 interface ContactItem {
   id: string;
@@ -65,6 +68,10 @@ export function WorkflowRunDialog({
 }: WorkflowRunDialogProps) {
   const [contactId, setContactId] = useState("");
   const [tagId, setTagId] = useState("");
+  const [runMode, setRunMode] = useState<RunMode>("test");
+
+  // Manual and scheduled workflows can fan out to their saved contact filter.
+  const supportsAudienceRun = trigger === "manual" || trigger === "scheduled";
 
   const { data: contacts = [] } = useQuery<ContactItem[]>({
     queryKey: ["projects", projectId, "contacts", "workflow-runner"],
@@ -90,6 +97,18 @@ export function WorkflowRunDialog({
 
   const runMutation = useMutation({
     mutationFn: async () => {
+      if (runMode === "audience") {
+        const res = await fetch(
+          `/api/projects/${projectId}/workflows/${workflowId}/trigger`,
+          { method: "POST", headers: { "Content-Type": "application/json" } },
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || "Failed to run workflow");
+        }
+        return res.json();
+      }
+
       const body: Record<string, string> = { contactId };
       if (trigger === "tag_added" && tagId) {
         body.tagId = tagId;
@@ -113,11 +132,14 @@ export function WorkflowRunDialog({
       onOpenChange(false);
       setContactId("");
       setTagId("");
+      setRunMode("test");
     },
   });
 
   const canSubmit =
-    !!contactId && (trigger !== "tag_added" || !!tagId) && !runMutation.isPending;
+    (runMode === "audience" ||
+      (!!contactId && (trigger !== "tag_added" || !!tagId))) &&
+    !runMutation.isPending;
 
   return (
     <Dialog
@@ -126,6 +148,7 @@ export function WorkflowRunDialog({
         if (!val) {
           setContactId("");
           setTagId("");
+          setRunMode("test");
           runMutation.reset();
         }
         onOpenChange(val);
@@ -141,6 +164,31 @@ export function WorkflowRunDialog({
         </DialogHeader>
 
         <div className="space-y-4">
+          {supportsAudienceRun && (
+            <div className="space-y-2">
+              <Label htmlFor="run-mode">Run Mode</Label>
+              <Select
+                value={runMode}
+                onValueChange={(val) => setRunMode(val as RunMode)}
+              >
+                <SelectTrigger id="run-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="test">Test with one contact</SelectItem>
+                  <SelectItem value="audience">Run for all matching contacts</SelectItem>
+                </SelectContent>
+              </Select>
+              {runMode === "audience" && (
+                <p className="text-[11px] text-muted-foreground">
+                  Starts one run per contact matching this workflow's contact
+                  filter (set in Trigger Settings). The workflow must be active.
+                </p>
+              )}
+            </div>
+          )}
+
+          {runMode === "test" && (
           <div className="space-y-2">
             <Label htmlFor="run-contact">Contact</Label>
             <Select value={contactId} onValueChange={setContactId}>
@@ -165,8 +213,9 @@ export function WorkflowRunDialog({
               The workflow will run using this contact's data as context.
             </p>
           </div>
+          )}
 
-          {trigger === "tag_added" && (
+          {runMode === "test" && trigger === "tag_added" && (
             <div className="space-y-2">
               <Label htmlFor="run-tag">Tag</Label>
               <Select value={tagId} onValueChange={setTagId}>

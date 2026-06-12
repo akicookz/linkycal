@@ -13,6 +13,7 @@ import {
   CalendarCheck,
   Tag,
   Play,
+  AlarmClock,
 } from "lucide-react";
 import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
 import PageHeader from "@/components/PageHeader";
@@ -72,6 +73,7 @@ const TRIGGER_OPTIONS = [
   { value: "booking_cancelled", label: "Booking Cancelled", icon: CalendarX },
   { value: "tag_added", label: "Tag Added", icon: Tag },
   { value: "manual", label: "Manual", icon: Play },
+  { value: "scheduled", label: "Scheduled", icon: AlarmClock },
 ] as const;
 
 function getTriggerMeta(trigger: Workflow["trigger"]) {

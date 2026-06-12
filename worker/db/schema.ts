@@ -596,8 +596,11 @@ export const workflows = sqliteTable(
         "booking_confirmed",
         "tag_added",
         "manual",
+        "scheduled",
       ],
     }).notNull(),
+    triggerConfig: text("trigger_config", { mode: "json" }),
+    nextRunAt: integer("next_run_at", { mode: "timestamp" }),
     status: text("status", { enum: ["active", "draft"] })
       .notNull()
       .default("draft"),

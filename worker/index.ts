@@ -78,6 +78,7 @@ import { ContactService } from "./services/contact-service";
 import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
 import type { TriggerContext } from "./services/workflow-execution-service";
+import { parseWorkflowTriggerConfig } from "./lib/workflow-schedule";
 import { ApiKeyService } from "./services/api-key-service";
 import {
   writeAnalyticsEvent,
@@ -4399,8 +4400,8 @@ app.post(
         return c.json({ error: "Workflow not found" }, 404);
       }
 
-      if (workflow.trigger !== "manual") {
-        return c.json({ error: "Only manual-trigger workflows can be triggered via this endpoint" }, 400);
+      if (workflow.trigger !== "manual" && workflow.trigger !== "scheduled") {
+        return c.json({ error: "Only manual or scheduled workflows can be triggered via this endpoint" }, 400);
       }
 
       if (workflow.status !== "active") {
@@ -4416,11 +4417,40 @@ app.post(
         // No body is fine
       }
 
-      const context: TriggerContext = { projectId, contactId };
       const executionService = new WorkflowExecutionService(db);
-      await executionService.dispatchTrigger(projectId, "manual", context, c.env as AppEnv);
 
-      return c.json({ success: true }, 201);
+      // With an explicit contact, run once for it; otherwise fan out to the
+      // workflow's configured contact filter (null filter = one contactless run).
+      let started: number;
+      if (contactId) {
+        const contactService = new ContactService(db);
+        const contact = await contactService.getById(contactId);
+        if (!contact) {
+          return c.json({ error: "Contact not found" }, 404);
+        }
+        const context: TriggerContext = {
+          projectId,
+          contactId: contact.id,
+          contactEmail: contact.email ?? undefined,
+          contactName: contact.name ?? undefined,
+        };
+        const runId = await executionService.dispatchTestRun(workflowId, context, c.env as AppEnv);
+        started = runId ? 1 : 0;
+      } else {
+        const config = parseWorkflowTriggerConfig(workflow.triggerConfig);
+        started = await executionService.dispatchToFilteredContacts(
+          workflowId,
+          projectId,
+          config?.contactFilter ?? null,
+          c.env as AppEnv,
+        );
+      }
+
+      if (started === 0) {
+        return c.json({ error: "No runs started — the workflow has no steps or no contacts match the filter" }, 400);
+      }
+
+      return c.json({ success: true, started }, 201);
     } catch (err) {
       console.error("Manual workflow trigger error:", err);
       return c.json({ error: "Failed to trigger workflow" }, 500);
@@ -5557,6 +5587,18 @@ export default {
       }
     } catch (err) {
       console.error("Cron: expire pending bookings failed:", err);
+    }
+
+    try {
+      const db = drizzle(env.DB, { schema });
+      const executionService = new WorkflowExecutionService(db);
+      const started = await executionService.dispatchScheduledWorkflows(env);
+
+      if (started > 0) {
+        console.log(`Cron: started ${started} scheduled workflow run(s)`);
+      }
+    } catch (err) {
+      console.error("Cron: scheduled workflow dispatch failed:", err);
     }
   },
 

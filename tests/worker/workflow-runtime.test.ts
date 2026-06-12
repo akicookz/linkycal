@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  formatContactsInputValue,
   interpolateWorkflowTemplate,
   mergeWorkflowResearchMetadata,
   normalizeRecipientList,
   resolveStepInputs,
   resolveWorkflowValue,
+  workflowStepInputSchema,
   type WorkflowResearchRecord,
   type WorkflowTriggerContext,
 } from "../../worker/lib/workflow-runtime";
@@ -134,5 +136,64 @@ describe("workflow runtime helpers", () => {
     expect(
       interpolateWorkflowTemplate("Role: {{form.fields.role}}", context),
     ).toBe("Role: CTO");
+  });
+});
+
+describe("contact-query inputs", () => {
+  test("formatContactsInputValue renders a bulleted list", () => {
+    const contacts = [
+      { name: "Ava", email: "ava@example.com" },
+      { name: "Ben", email: null },
+    ];
+    expect(formatContactsInputValue(contacts, "list")).toBe(
+      "- Ava (ava@example.com)\n- Ben",
+    );
+  });
+
+  test("formatContactsInputValue renders emails and count", () => {
+    const contacts = [
+      { name: "Ava", email: "ava@example.com" },
+      { name: "Ben", email: null },
+      { name: "Cy", email: "cy@example.com" },
+    ];
+    expect(formatContactsInputValue(contacts, "emails")).toBe(
+      "ava@example.com, cy@example.com",
+    );
+    expect(formatContactsInputValue(contacts, "count")).toBe("3");
+  });
+
+  test("workflowStepInputSchema accepts the contacts source kind", () => {
+    const parsed = workflowStepInputSchema.safeParse({
+      key: "followups",
+      source: { kind: "contacts", tagIds: ["t1"], matchAllTags: true },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success && parsed.data.source.kind === "contacts") {
+      expect(parsed.data.source.format).toBe("list");
+    }
+  });
+
+  test("resolveStepInputs skips contacts inputs (resolved by the service)", () => {
+    const context = buildContext();
+    const resolved = resolveStepInputs(
+      [
+        { key: "name", source: { kind: "path", path: "contact.name" } },
+        { key: "followups", source: { kind: "contacts", tagIds: [] } },
+      ],
+      context,
+    );
+    expect(resolved.name).toBe("Ava");
+    expect("followups" in resolved).toBe(false);
+  });
+
+  test("normalizeRecipientList splits variables that expand to lists", () => {
+    const context: WorkflowTriggerContext = {
+      ...buildContext(),
+      stepInputs: { emails: "a@x.com, b@y.com" },
+    };
+    expect(normalizeRecipientList(["{{input.emails}}"], context)).toEqual([
+      "a@x.com",
+      "b@y.com",
+    ]);
   });
 });

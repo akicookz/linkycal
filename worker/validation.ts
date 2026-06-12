@@ -443,32 +443,48 @@ export const updateContactViewSchema = z.object({
 
 // ─── Workflows ───────────────────────────────────────────────────────────────
 
+const workflowTriggerEnum = z.enum([
+  "form_submitted",
+  "booking_created",
+  "booking_cancelled",
+  "booking_pending",
+  "booking_confirmed",
+  "tag_added",
+  "manual",
+  "scheduled",
+]);
+
+const workflowScheduleSchema = z.object({
+  frequency: z.enum(["hourly", "daily", "weekly", "monthly"]),
+  time: z
+    .string()
+    .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+    .optional(),
+  dayOfWeek: z.number().int().min(0).max(6).optional(),
+  dayOfMonth: z.number().int().min(1).max(28).optional(),
+  timezone: z.string().max(64).optional(),
+});
+
+const workflowContactFilterSchema = z.object({
+  tagIds: z.array(z.string().min(1)).max(20).default([]),
+  matchAllTags: z.boolean().optional(),
+});
+
+export const workflowTriggerConfigSchema = z.object({
+  schedule: workflowScheduleSchema.nullable().optional(),
+  contactFilter: workflowContactFilterSchema.nullable().optional(),
+});
+
 export const createWorkflowSchema = z.object({
   name: z.string().min(1).max(100),
-  trigger: z.enum([
-    "form_submitted",
-    "booking_created",
-    "booking_cancelled",
-    "booking_pending",
-    "booking_confirmed",
-    "tag_added",
-    "manual",
-  ]),
+  trigger: workflowTriggerEnum,
+  triggerConfig: workflowTriggerConfigSchema.nullable().optional(),
 });
 
 export const updateWorkflowSchema = z.object({
   name: z.string().min(1).max(100).optional(),
-  trigger: z
-    .enum([
-      "form_submitted",
-      "booking_created",
-      "booking_cancelled",
-      "booking_pending",
-      "booking_confirmed",
-      "tag_added",
-      "manual",
-    ])
-    .optional(),
+  trigger: workflowTriggerEnum.optional(),
+  triggerConfig: workflowTriggerConfigSchema.nullable().optional(),
   status: z.enum(["active", "draft"]).optional(),
 });
 
