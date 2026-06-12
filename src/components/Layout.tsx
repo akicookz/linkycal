@@ -112,7 +112,7 @@ function LayoutInner() {
   const toolsNav: NavItem[] = currentProject
     ? [
         { label: "Workflows", href: `/app/projects/${currentProject.id}/workflows`, icon: Workflow },
-        { label: "API Keys", href: `/app/projects/${currentProject.id}/api-keys`, icon: Key },
+        { label: "MCP & APIs", href: `/app/projects/${currentProject.id}/api-keys`, icon: Key },
         { label: "Settings", href: `/app/projects/${currentProject.id}/settings`, icon: Settings },
       ]
     : [];

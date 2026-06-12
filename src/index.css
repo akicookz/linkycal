@@ -253,6 +253,71 @@
   z-index: 1;
 }
 
+/* ─── Marketing Surfaces ──────────────────────────────────────────────────── */
+
+.marketing-card {
+  background: #ffffff;
+  border-radius: 28px;
+  border: 1px solid rgba(15, 26, 20, 0.06);
+  box-shadow: 0 30px 60px -45px rgba(15, 26, 20, 0.45);
+}
+
+.marketing-panel {
+  background: #f3f6f4;
+  border-radius: 36px;
+}
+
+.marketing-pill-cta {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  color: #ffffff;
+  background: linear-gradient(180deg, #2d6a4f 0%, #1b4332 75%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 20px 45px -18px rgba(27, 67, 50, 0.65);
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+.marketing-pill-cta:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 24px 55px -18px rgba(27, 67, 50, 0.75);
+}
+
+.marketing-pill-dark {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9999px;
+  color: #ffffff;
+  background: #0f1a14;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  transition: background-color 0.2s ease;
+}
+.marketing-pill-dark:hover {
+  background: #1b4332;
+}
+
+.marketing-hero-gradient {
+  background: linear-gradient(
+    180deg,
+    #d7ecdf 0%,
+    #e7f3ec 52%,
+    #ffffff 100%
+  );
+}
+
+.marketing-cta-gradient {
+  background: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #e3f0e9 38%,
+    #d3eadd 100%
+  );
+}
+
 /* ─── Landing Page Keyframes ──────────────────────────────────────────────── */
 
 @keyframes messageIn {

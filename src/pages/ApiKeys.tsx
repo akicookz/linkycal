@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader, Bot } from "lucide-react";
+import { Plus, KeyRound, Copy, Check, Trash2, AlertTriangle, Loader } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -164,7 +164,7 @@ export default function ApiKeys() {
 
   return (
     <div>
-      <PageHeader title="API Keys" description="Manage API keys for programmatic access">
+      <PageHeader title="MCP & APIs" description="Manage API keys for MCP and programmatic access">
         <Dialog open={createOpen} onOpenChange={(open) => {
           if (!open) handleCloseCreate();
           else setCreateOpen(true);
@@ -283,15 +283,12 @@ export default function ApiKeys() {
 
       {/* MCP section */}
       <div className="rounded-[20px] border bg-muted/30 p-5 mb-6">
-        <div className="flex items-center gap-2 mb-2">
-          <Bot className="h-4 w-4 text-primary" />
+        <div className="mb-2">
           <h3 className="text-sm font-semibold text-foreground">Connect an AI agent (MCP)</h3>
         </div>
         <p className="text-sm text-muted-foreground mb-3">
           LinkyCal exposes an MCP server so AI agents can manage bookings, contacts, event
-          types, forms, and workflows in this project. Authenticate with an API key — the
-          agent only sees this project. Works with Claude Code, Cursor, and the Claude API
-          (the claude.ai web Connectors UI requires OAuth and isn't supported yet).
+          types, forms, and workflows in this project.
         </p>
         <div className="space-y-3">
           <div>

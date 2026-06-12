@@ -28,6 +28,7 @@ import Billing from "./pages/Billing";
 import AuthCallback from "./pages/AuthCallback";
 import CalendarCallback from "./pages/CalendarCallback";
 import Docs from "./pages/Docs";
+import FeaturePage from "./pages/FeaturePage";
 import PublicResolver from "./pages/PublicResolver";
 
 // ─── Redirect /app to first project's dashboard ──────────────────────────────
@@ -57,6 +58,7 @@ function App() {
     <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/docs" element={<Docs />} />
+      <Route path="/features/:slug" element={<FeaturePage />} />
 
       <Route
         path="/api/auth/callback/:provider"

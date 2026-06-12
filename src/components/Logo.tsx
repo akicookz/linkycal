@@ -1,9 +1,10 @@
 interface LogoProps {
   size?: "sm" | "md" | "lg";
   iconOnly?: boolean;
+  variant?: "dark" | "light";
 }
 
-function Logo({ size = "md", iconOnly = false }: LogoProps) {
+function Logo({ size = "md", iconOnly = false, variant = "dark" }: LogoProps) {
   const heightPx = { sm: 28, md: 40, lg: 52 }[size];
 
   const badge = (
@@ -62,7 +63,7 @@ function Logo({ size = "md", iconOnly = false }: LogoProps) {
         fontFamily="Satoshi, -apple-system, BlinkMacSystemFont, sans-serif"
         fontSize="40"
         fontWeight={800}
-        fill="#1A1A1A"
+        fill={variant === "light" ? "#FFFFFF" : "#1A1A1A"}
         letterSpacing="-1.2"
       >
         LinkyCal
