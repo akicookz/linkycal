@@ -6,10 +6,9 @@ import PublicBooking from "./PublicBooking";
 import PublicForm from "./PublicForm";
 
 type ResolveResult = {
-  kind: "event" | "form";
-  // Present when the slug was renamed and the owner's plan includes
-  // old-link redirects — navigate to the form's current slug.
-  redirectTo?: { slug: string };
+  kind?: "event" | "form";
+  // `projectSlug` redirects a renamed workspace; `slug` a renamed form/event.
+  redirectTo?: { slug?: string; projectSlug?: string };
 };
 
 export default function PublicResolver() {
@@ -47,7 +46,16 @@ export default function PublicResolver() {
     );
   }
 
-  if (data.redirectTo && data.redirectTo.slug !== slug) {
+  if (data.redirectTo?.projectSlug && data.redirectTo.projectSlug !== projectSlug) {
+    return (
+      <Navigate
+        to={`/${data.redirectTo.projectSlug}/${slug}${location.search}`}
+        replace
+      />
+    );
+  }
+
+  if (data.redirectTo?.slug && data.redirectTo.slug !== slug) {
     return (
       <Navigate
         to={`/${projectSlug}/${data.redirectTo.slug}${location.search}`}

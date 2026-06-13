@@ -176,6 +176,13 @@
       "when": 1781255131729,
       "tag": "0024_living_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1781354190661,
+      "tag": "0025_colossal_sasquatch",
+      "breakpoints": true
     }
   ]
 }

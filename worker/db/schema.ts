@@ -312,6 +312,31 @@ export const formSlugHistory = sqliteTable(
 export type FormSlugHistoryRow = typeof formSlugHistory.$inferSelect;
 export type NewFormSlugHistoryRow = typeof formSlugHistory.$inferInsert;
 
+// ─── Project Slug History ──────────────────────────────────────────────────────
+// Records a project's previous slugs after a workspace rename so old public
+// links redirect to the current slug. Slugs are globally unique, so it's keyed by slug.
+
+export const projectSlugHistory = sqliteTable(
+  "project_slug_history",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    slug: text("slug").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [
+    uniqueIndex("project_slug_history_slug_idx").on(t.slug),
+    index("project_slug_history_project_id_idx").on(t.projectId),
+  ],
+);
+
+export type ProjectSlugHistoryRow = typeof projectSlugHistory.$inferSelect;
+export type NewProjectSlugHistoryRow = typeof projectSlugHistory.$inferInsert;
+
 // ─── Form Steps ──────────────────────────────────────────────────────────────
 
 export const formSteps = sqliteTable(

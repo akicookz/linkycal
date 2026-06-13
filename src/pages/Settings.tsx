@@ -87,12 +87,23 @@ const COMMON_TIMEZONES = [
 
 import { FONT_OPTIONS } from "@/lib/constants";
 
+function slugifyProjectName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 50);
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Settings() {
   const { projectId } = useParams<{ projectId: string }>();
 
   const [projectName, setProjectName] = useState("");
+  const [projectSlug, setProjectSlug] = useState("");
+  const [slugEdited, setSlugEdited] = useState(false);
   const [projectTimezone, setProjectTimezone] = useState("America/New_York");
   const [nameInitialized, setNameInitialized] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -125,6 +136,7 @@ export default function Settings() {
       // Initialize form state on first load
       if (!nameInitialized) {
         setProjectName(project.name);
+        setProjectSlug(project.slug);
         setProjectTimezone(project.timezone);
         setNameInitialized(true);
       }
@@ -162,13 +174,16 @@ export default function Settings() {
 
   // Update project mutation
   const updateProjectMutation = useMutation({
-    mutationFn: async (data: { name?: string; timezone?: string }) => {
+    mutationFn: async (data: { name?: string; slug?: string; timezone?: string }) => {
       const res = await fetch(`/api/projects/${projectId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed to update project");
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(err.error || "Failed to update project");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -264,10 +279,12 @@ export default function Settings() {
     },
   });
 
-  function handleUpdateName() {
-    if (projectName.trim() && projectName !== project?.name) {
-      updateProjectMutation.mutate({ name: projectName.trim() });
-    }
+  function handleUpdateGeneral() {
+    const name = projectName.trim();
+    const slug = projectSlug.trim();
+    if (!name || !slug) return;
+    if (name === project?.name && slug === project?.slug) return;
+    updateProjectMutation.mutate({ name, slug });
   }
 
   function handleUpdateTimezone(tz: string) {
@@ -299,12 +316,13 @@ export default function Settings() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleUpdateName}
+                onClick={handleUpdateGeneral}
                 disabled={
                   loadingProject ||
                   updateProjectMutation.isPending ||
                   !projectName.trim() ||
-                  projectName === project?.name
+                  !projectSlug.trim() ||
+                  (projectName === project?.name && projectSlug === project?.slug)
                 }
               >
                 {updateProjectMutation.isPending ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
@@ -324,12 +342,41 @@ export default function Settings() {
                 ) : (
                   <Input
                     value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setProjectName(value);
+                      if (!slugEdited) setProjectSlug(slugifyProjectName(value));
+                    }}
                     placeholder="Project name"
                     className="w-64"
                   />
                 )}
               </div>
+              <div className="flex items-center justify-between gap-6 flex-wrap">
+                <div className="shrink-0">
+                  <p className="text-sm font-medium">URL Slug</p>
+                  <p className="text-xs text-muted-foreground">Used in public booking & form links. Changing it breaks existing links.</p>
+                </div>
+                {loadingProject ? (
+                  <Skeleton className="h-9 w-64" />
+                ) : (
+                  <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-9 w-64">
+                    <span className="text-sm text-muted-foreground shrink-0">linkycal.com/</span>
+                    <input
+                      value={projectSlug}
+                      onChange={(e) => {
+                        setProjectSlug(slugifyProjectName(e.target.value));
+                        setSlugEdited(true);
+                      }}
+                      placeholder="your-project"
+                      className="flex-1 min-w-0 bg-transparent text-sm font-medium text-foreground outline-none"
+                    />
+                  </div>
+                )}
+              </div>
+              {updateProjectMutation.isError && (
+                <p className="text-sm text-destructive">{(updateProjectMutation.error as Error).message}</p>
+              )}
               <div className="flex items-center justify-between gap-6 flex-wrap">
                 <div className="shrink-0">
                   <p className="text-sm font-medium">Timezone</p>

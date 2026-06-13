@@ -4,7 +4,7 @@ import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, or, desc, like, sql, gte, inArray } from "drizzle-orm";
+import { eq, ne, and, or, desc, like, sql, gte, inArray } from "drizzle-orm";
 import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
@@ -1343,7 +1343,23 @@ app.get("/api/public/resolve/:projectSlug/:slug", async (c) => {
       .where(eq(dbSchema.projects.slug, projectSlug))
       .limit(1);
 
-    if (!project) return c.json({ error: "Not found" }, 404);
+    if (!project) {
+      // Renamed workspace: redirect the old slug to the project's current slug.
+      const [moved] = await db
+        .select({ currentSlug: dbSchema.projects.slug })
+        .from(dbSchema.projectSlugHistory)
+        .innerJoin(
+          dbSchema.projects,
+          eq(dbSchema.projects.id, dbSchema.projectSlugHistory.projectId),
+        )
+        .where(eq(dbSchema.projectSlugHistory.slug, projectSlug))
+        .limit(1);
+
+      if (moved && moved.currentSlug !== projectSlug) {
+        return c.json({ redirectTo: { projectSlug: moved.currentSlug } });
+      }
+      return c.json({ error: "Not found" }, 404);
+    }
 
     const [eventRow] = await db
       .select({ id: dbSchema.eventTypes.id, enabled: dbSchema.eventTypes.enabled })
@@ -2146,8 +2162,38 @@ app.put("/api/projects/:projectId", async (c) => {
     const db = c.get("db");
 
     const values: Record<string, unknown> = {};
+    let renamedFromSlug: string | null = null;
     if (body.name !== undefined) values.name = body.name;
-    if (body.slug !== undefined) values.slug = body.slug;
+    if (body.slug !== undefined) {
+      const slug = String(body.slug).trim();
+      if (slug.length < 1 || slug.length > 80 || !/^[a-z0-9-]+$/.test(slug)) {
+        return c.json(
+          { error: "Slug must be lowercase alphanumeric with hyphens" },
+          400,
+        );
+      }
+      // Slugs are globally unique; reject if another project already owns it.
+      const [clash] = await db
+        .select()
+        .from(dbSchema.projects)
+        .where(
+          and(
+            eq(dbSchema.projects.slug, slug),
+            ne(dbSchema.projects.id, projectId),
+          ),
+        )
+        .limit(1);
+      if (clash) {
+        return c.json({ error: "Slug is already taken" }, 409);
+      }
+      const [current] = await db
+        .select({ slug: dbSchema.projects.slug })
+        .from(dbSchema.projects)
+        .where(eq(dbSchema.projects.id, projectId))
+        .limit(1);
+      if (current && current.slug !== slug) renamedFromSlug = current.slug;
+      values.slug = slug;
+    }
     if (body.timezone !== undefined) values.timezone = body.timezone;
     if (body.settings !== undefined)
       values.settings = JSON.stringify(body.settings);
@@ -2160,6 +2206,29 @@ app.put("/api/projects/:projectId", async (c) => {
       .update(dbSchema.projects)
       .set(values)
       .where(eq(dbSchema.projects.id, projectId));
+
+    // On rename, record the old slug for redirects and retire any history row
+    // for the new slug. Best-effort: never block a rename.
+    if (renamedFromSlug) {
+      try {
+        await db
+          .insert(dbSchema.projectSlugHistory)
+          .values({
+            id: crypto.randomUUID(),
+            projectId,
+            slug: renamedFromSlug,
+          })
+          .onConflictDoUpdate({
+            target: dbSchema.projectSlugHistory.slug,
+            set: { projectId, createdAt: new Date() },
+          });
+        await db
+          .delete(dbSchema.projectSlugHistory)
+          .where(eq(dbSchema.projectSlugHistory.slug, values.slug as string));
+      } catch (err) {
+        console.error("Project slug history recording failed:", err);
+      }
+    }
 
     const [updated] = await db
       .select()
