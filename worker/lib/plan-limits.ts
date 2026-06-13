@@ -14,7 +14,6 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     apiAccess: false,
     customWidgets: false,
     analytics: false,
-    slugRedirects: false,
   },
   pro: {
     maxProjects: 5,
@@ -27,7 +26,6 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     apiAccess: true,
     customWidgets: false,
     analytics: true,
-    slugRedirects: true,
   },
   business: {
     maxProjects: 20,
@@ -40,6 +38,5 @@ export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
     apiAccess: true,
     customWidgets: true,
     analytics: true,
-    slugRedirects: true,
   },
 };

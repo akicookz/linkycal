@@ -15,7 +15,6 @@ export interface PlanLimits {
   apiAccess: boolean;
   customWidgets: boolean;
   analytics: boolean;
-  slugRedirects: boolean;
 }
 
 // ─── Worker Env ──────────────────────────────────────────────────────────────

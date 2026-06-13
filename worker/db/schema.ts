@@ -284,34 +284,6 @@ export const forms = sqliteTable(
 export type FormRow = typeof forms.$inferSelect;
 export type NewFormRow = typeof forms.$inferInsert;
 
-// ─── Form Slug History ───────────────────────────────────────────────────────
-// Records a form's previous slugs after a rename so old public links can
-// redirect to the current slug (paid plans only — gated at resolve time).
-
-export const formSlugHistory = sqliteTable(
-  "form_slug_history",
-  {
-    id: text("id").primaryKey(),
-    projectId: text("project_id")
-      .notNull()
-      .references(() => projects.id, { onDelete: "cascade" }),
-    formId: text("form_id")
-      .notNull()
-      .references(() => forms.id, { onDelete: "cascade" }),
-    slug: text("slug").notNull(),
-    createdAt: integer("created_at", { mode: "timestamp" })
-      .notNull()
-      .default(sql`(unixepoch())`),
-  },
-  (t) => [
-    uniqueIndex("form_slug_history_project_slug_idx").on(t.projectId, t.slug),
-    index("form_slug_history_form_id_idx").on(t.formId),
-  ],
-);
-
-export type FormSlugHistoryRow = typeof formSlugHistory.$inferSelect;
-export type NewFormSlugHistoryRow = typeof formSlugHistory.$inferInsert;
-
 // ─── Project Slug History ──────────────────────────────────────────────────────
 // Records a project's previous slugs after a workspace rename so old public
 // links redirect to the current slug. Slugs are globally unique, so it's keyed by slug.

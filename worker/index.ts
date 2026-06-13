@@ -1391,33 +1391,6 @@ app.get("/api/public/resolve/:projectSlug/:slug", async (c) => {
       return c.json({ kind: "form" });
     }
 
-    // Renamed form? Old slugs redirect to the current one on paid plans.
-    const formService = new FormService(db);
-    const redirectForm = await formService.getRedirectFormBySlug(
-      project.id,
-      slug,
-    );
-    if (
-      redirectForm &&
-      redirectForm.status === "active" &&
-      redirectForm.slug !== slug
-    ) {
-      const subscription = await getSubscriptionRecordByUserId(
-        db,
-        project.userId,
-      );
-      const plan: Plan =
-        subscription?.plan === "pro" || subscription?.plan === "business"
-          ? subscription.plan
-          : "free";
-      if (PLAN_LIMITS[plan].slugRedirects) {
-        return c.json({
-          kind: "form",
-          redirectTo: { slug: redirectForm.slug },
-        });
-      }
-    }
-
     return c.json({ error: "Not found" }, 404);
   } catch (err) {
     console.error("Public resolve error:", err);
@@ -1635,29 +1608,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
     }
 
     const service = new FormService(db);
-    let form = await service.getFullFormBySlug(project.id, formSlug);
-
-    // External sites hardcode this action URL — on paid plans, resolve old
-    // (renamed-away) slugs to the live form transparently.
-    if (!form) {
-      const redirectForm = await service.getRedirectFormBySlug(
-        project.id,
-        formSlug,
-      );
-      if (redirectForm) {
-        const subscription = await getSubscriptionRecordByUserId(
-          db,
-          project.userId,
-        );
-        const plan: Plan =
-          subscription?.plan === "pro" || subscription?.plan === "business"
-            ? subscription.plan
-            : "free";
-        if (PLAN_LIMITS[plan].slugRedirects) {
-          form = await service.getFullForm(redirectForm.id);
-        }
-      }
-    }
+    const form = await service.getFullFormBySlug(project.id, formSlug);
 
     if (!form || form.status !== "active") {
       return createHtmlPageResponse(

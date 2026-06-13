@@ -7,8 +7,8 @@ import PublicForm from "./PublicForm";
 
 type ResolveResult = {
   kind?: "event" | "form";
-  // `projectSlug` redirects a renamed workspace; `slug` a renamed form/event.
-  redirectTo?: { slug?: string; projectSlug?: string };
+  // `projectSlug` redirects a renamed workspace to its current slug.
+  redirectTo?: { projectSlug?: string };
 };
 
 export default function PublicResolver() {
@@ -50,15 +50,6 @@ export default function PublicResolver() {
     return (
       <Navigate
         to={`/${data.redirectTo.projectSlug}/${slug}${location.search}`}
-        replace
-      />
-    );
-  }
-
-  if (data.redirectTo?.slug && data.redirectTo.slug !== slug) {
-    return (
-      <Navigate
-        to={`/${projectSlug}/${data.redirectTo.slug}${location.search}`}
         replace
       />
     );
