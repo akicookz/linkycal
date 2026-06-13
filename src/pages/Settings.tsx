@@ -355,7 +355,7 @@ export default function Settings() {
               <div className="flex items-center justify-between gap-6 flex-wrap">
                 <div className="shrink-0">
                   <p className="text-sm font-medium">URL Slug</p>
-                  <p className="text-xs text-muted-foreground">Used in public booking & form links. Changing it breaks existing links.</p>
+                  <p className="text-xs text-muted-foreground">Used in your public booking & form links. Old links redirect to the new slug.</p>
                 </div>
                 {loadingProject ? (
                   <Skeleton className="h-9 w-64" />
