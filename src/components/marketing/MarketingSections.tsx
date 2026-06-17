@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import {
   ArrowRight,
   BookOpen,
+  Braces,
   CalendarCheck,
   Check,
   ChevronDown,
@@ -12,6 +13,7 @@ import {
   Mail,
   MousePointer2,
   Send,
+  Shield,
   Sparkles,
   Tag,
   Users,
@@ -519,6 +521,198 @@ export function IntegrationsSection() {
   );
 }
 
+/* ─── Headless / Developers ───────────────────────────────────────────────── */
+
+const HEADLESS_HTML_SNIPPET = `<!-- Native HTML, no JavaScript, no server -->
+<form
+  action="https://linkycal.com/api/public/forms/acme/contact/submit"
+  method="post">
+  <input name="full_name" placeholder="Your name" />
+  <input name="email" type="email" placeholder="Email" />
+  <button type="submit">Send</button>
+</form>`;
+
+const HEADLESS_JS_SNIPPET = `// Submit from React, Vue, or vanilla JS
+const form = document.querySelector("form")
+
+await fetch(
+  "https://linkycal.com/api/public/forms/acme/contact/submit",
+  { method: "POST", body: new FormData(form) }
+)
+// stored, spam-checked & piped to your workflows`;
+
+const HEADLESS_SCHED_SNIPPET = `# Check open slots, no UI required
+curl "https://linkycal.com/api/v1/availability/acme\\
+?eventTypeSlug=intro-call&date=2026-07-01&timezone=UTC"
+
+# Book one
+curl -X POST https://linkycal.com/api/v1/bookings \\
+  -d '{ "projectSlug":"acme","eventTypeSlug":"intro-call",
+        "name":"Sarah Chen","email":"sarah@acme.com",
+        "startTime":"2026-07-01T14:00:00Z" }'`;
+
+interface HeadlessMode {
+  id: string;
+  label: string;
+  file: string;
+  Icon: LucideIcon;
+  blurb: string;
+  code: string;
+}
+
+const headlessModes: HeadlessMode[] = [
+  {
+    id: "html",
+    label: "Native HTML forms",
+    file: "contact-form.html",
+    Icon: Code2,
+    blurb:
+      "Point a plain <form action> at your endpoint and POST. No JavaScript, no server code.",
+    code: HEADLESS_HTML_SNIPPET,
+  },
+  {
+    id: "js",
+    label: "JavaScript & frameworks",
+    file: "submit.js",
+    Icon: Braces,
+    blurb:
+      "Submit with one fetch from React, Vue, or vanilla JS and keep your own UI and validation.",
+    code: HEADLESS_JS_SNIPPET,
+  },
+  {
+    id: "scheduling",
+    label: "Headless scheduling",
+    file: "schedule.sh",
+    Icon: CalendarCheck,
+    blurb:
+      "Check availability and create bookings over REST, then build a fully custom booking flow.",
+    code: HEADLESS_SCHED_SNIPPET,
+  },
+];
+
+const headlessHandled: { label: string; Icon: LucideIcon }[] = [
+  { label: "Spam filtering", Icon: Shield },
+  { label: "Email notifications", Icon: Mail },
+  { label: "Calendar sync", Icon: CalendarCheck },
+  { label: "Workflows", Icon: Zap },
+  { label: "CSV / JSON export", Icon: FileText },
+];
+
+export function HeadlessSection() {
+  const [active, setActive] = useState(headlessModes[0].id);
+  const current =
+    headlessModes.find((mode) => mode.id === active) ?? headlessModes[0];
+
+  return (
+    <section
+      id="developers"
+      className="relative scroll-mt-24 py-24 sm:py-28 px-6"
+    >
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+        {/* Copy + mode selectors */}
+        <div>
+          <SectionHeading
+            align="left"
+            title="Bring your own frontend"
+            subtitle="Headless forms and scheduling infrastructure. POST from plain HTML, fetch from any framework, or drive bookings over REST. LinkyCal handles storage, spam, email, and calendar sync."
+          />
+
+          <div className="mt-9 space-y-3">
+            {headlessModes.map((mode) => {
+              const isActive = mode.id === active;
+              return (
+                <button
+                  key={mode.id}
+                  type="button"
+                  onClick={() => setActive(mode.id)}
+                  aria-pressed={isActive}
+                  className={cn(
+                    "w-full text-left flex items-start gap-4 rounded-[18px] px-5 py-4 transition-colors",
+                    isActive
+                      ? "bg-white ring-1 ring-brand/15 shadow-[0_14px_30px_-18px_rgba(15,26,20,0.45)]"
+                      : "bg-[#F3F6F4] hover:bg-white/70",
+                  )}
+                >
+                  <div
+                    className={cn(
+                      "w-10 h-10 rounded-[12px] flex items-center justify-center shrink-0 transition-colors",
+                      isActive
+                        ? "bg-[#0F1A14] text-white"
+                        : "bg-white text-foreground/70",
+                    )}
+                  >
+                    <mode.Icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-[15px] font-semibold text-foreground">
+                      {mode.label}
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed mt-1">
+                      {mode.blurb}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* What LinkyCal handles for you */}
+          <div className="flex flex-wrap items-center gap-2 mt-8">
+            {headlessHandled.map((item) => (
+              <span
+                key={item.label}
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#F3F6F4] px-3.5 py-1.5 text-xs font-medium text-foreground/80"
+              >
+                <item.Icon className="w-3.5 h-3.5 text-brand" />
+                {item.label}
+              </span>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 mt-9">
+            <Link
+              to="/features/api"
+              className="marketing-pill-dark h-12 px-7 gap-2 text-sm font-medium"
+            >
+              <Code2 className="w-4 h-4" />
+              Explore the API
+            </Link>
+            <Link
+              to="/docs"
+              className="inline-flex items-center gap-2 h-12 px-2 text-sm font-medium text-brand hover:text-foreground transition-colors"
+            >
+              <BookOpen className="w-4 h-4" />
+              Read the docs
+            </Link>
+          </div>
+        </div>
+
+        {/* Live code panel */}
+        <div className="marketing-panel p-5 sm:p-7">
+          <div className="rounded-2xl bg-[#0f1a14] p-5">
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="flex items-center gap-[5px]">
+                <div className="w-[9px] h-[9px] rounded-full bg-[#EC6A5E]/70" />
+                <div className="w-[9px] h-[9px] rounded-full bg-[#F5BF4F]/70" />
+                <div className="w-[9px] h-[9px] rounded-full bg-[#61C554]/70" />
+              </div>
+              <span className="ml-1.5 font-mono text-[11px] text-[#7fa890]">
+                {current.file}
+              </span>
+            </div>
+            <pre className="font-mono text-[12px] leading-6 text-[#d4e8dc] whitespace-pre-wrap break-words min-h-[232px]">
+              {current.code}
+            </pre>
+          </div>
+          <p className="text-center text-xs text-muted-foreground mt-4">
+            Real endpoints. Copy, paste, ship.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ─── Testimonial ─────────────────────────────────────────────────────────── */
 
 const testimonialAvatars = [
@@ -785,7 +979,7 @@ const faqItems: FaqItemData[] = [
   {
     question: "Is there an API?",
     answer:
-      "Every feature in LinkyCal is available through our REST API. Authenticate with an API key, then check availability, create bookings, submit form responses, manage contacts, and more — all programmatically. Full OpenAPI documentation is included.",
+      "Yes, LinkyCal is headless-friendly. Post forms straight from plain HTML or fetch from any framework, and check availability and create bookings over REST. Use a project-scoped API key for contacts and management, plus an MCP server so AI agents can book on your behalf. Full OpenAPI docs and llms.txt are included.",
   },
   {
     question: "What's included in the free plan?",

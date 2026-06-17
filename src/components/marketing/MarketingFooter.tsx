@@ -14,14 +14,24 @@ const featureLinks = [
   { label: "Forms", to: "/features/forms" },
   { label: "Contacts", to: "/features/contacts" },
   { label: "Workflows", to: "/features/workflows" },
-  { label: "API & MCP", to: "/features/api", isNew: true },
+  { label: "Headless & API", to: "/features/api", isNew: true },
+];
+
+const compareLinks = [
+  { label: "vs Formspree", to: "/alternatives/formspree" },
+  { label: "vs Typeform", to: "/alternatives/typeform" },
+  { label: "vs Tally", to: "/alternatives/tally" },
+  { label: "vs Calendly", to: "/alternatives/calendly" },
+  { label: "vs Jotform", to: "/alternatives/jotform" },
+  { label: "vs Cal.com", to: "/alternatives/cal-com" },
+  { label: "vs Google Forms", to: "/alternatives/google-forms" },
 ];
 
 export function MarketingFooter() {
   return (
     <footer className="relative bg-[#0C1410] text-white px-6 pt-16 pb-10">
       <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-1 md:grid-cols-[1.6fr_1fr_1fr_1fr] gap-10">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[1.6fr_1fr_1fr_1fr_1fr] gap-10">
           {/* Brand */}
           <div>
             <Logo size="md" variant="light" />
@@ -93,6 +103,23 @@ export function MarketingFooter() {
                         New
                       </span>
                     )}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Compare */}
+          <div>
+            <h4 className="text-sm font-semibold text-white mb-4">Compare</h4>
+            <ul className="space-y-2.5">
+              {compareLinks.map((item) => (
+                <li key={item.label}>
+                  <Link
+                    to={item.to}
+                    className="text-sm text-white/55 hover:text-white transition-colors"
+                  >
+                    {item.label}
                   </Link>
                 </li>
               ))}

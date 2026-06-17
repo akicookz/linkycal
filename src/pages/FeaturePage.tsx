@@ -789,32 +789,63 @@ const FEATURES: Record<string, FeaturePageData> = {
 
   api: {
     slug: "api",
-    seoTitle: "Public API & MCP Server",
+    seoTitle: "Headless Forms & Scheduling API",
     seoDescription:
-      "Every LinkyCal feature over REST with API-key auth, OpenAPI docs and llms.txt — plus an MCP server so AI agents can book meetings, submit forms, and manage contacts.",
-    eyebrow: "API & MCP",
-    headline: "The whole platform,",
-    highlightedHeadline: "programmable.",
+      "POST forms straight from HTML or any framework, check availability and create bookings over REST, and connect AI agents through the built-in MCP server, with OpenAPI docs and llms.txt.",
+    eyebrow: "Headless & API",
+    headline: "Forms and scheduling,",
+    highlightedHeadline: "headless.",
     subcopy:
-      "Check availability, create bookings, submit forms, and manage contacts over REST — or hand a project-scoped API key to an AI agent through the built-in MCP server.",
+      "POST forms from plain HTML, fetch from any framework, and drive the full booking flow over REST. Or hand a project-scoped API key to an AI agent through the built-in MCP server.",
     checkmarks: [
-      "REST API for every feature",
-      "OpenAPI spec + llms.txt docs",
+      "Native HTML & JavaScript forms",
+      "Headless availability & booking API",
       "MCP server for AI agents",
     ],
     HeroVisual: MockApiUI,
     deepDives: [
       {
-        eyebrow: "REST",
-        title: "One API for",
-        highlightedTitle: "everything.",
+        eyebrow: "Forms",
+        title: "Post forms from",
+        highlightedTitle: "plain HTML.",
         description:
-          "Everything the dashboard does, your code can do: list open slots, book them, push form responses, read and update contacts. Keys are scoped to a single project.",
+          "Point a <form action> at your endpoint and submissions land in LinkyCal, validated, spam-checked, and piped to your workflows. No JavaScript required, or fetch from any framework when you want your own UI.",
+        points: [
+          {
+            title: "Native HTML, zero JS",
+            description:
+              "Set the form's action to your LinkyCal endpoint and POST. That is the entire integration.",
+          },
+          {
+            title: "Or fetch from anywhere",
+            description:
+              "Submit with one fetch from React, Vue, or vanilla JS and keep your own markup and validation.",
+          },
+          {
+            title: "Spam & workflows built in",
+            description:
+              "Honeypot and timing checks block bots, and every submission can trigger emails, tags, and webhooks.",
+          },
+        ],
+        Visual: () => (
+          <CodeCard
+            title="Native HTML form"
+            caption="No JavaScript, no server code"
+            code={NATIVE_FORM_SNIPPET}
+          />
+        ),
+      },
+      {
+        eyebrow: "Scheduling",
+        title: "Booking without",
+        highlightedTitle: "our UI.",
+        description:
+          "Check open slots and create bookings over REST, then render the whole flow in your own frontend. Project-scoped keys keep each integration sandboxed to a single project.",
         points: [
           {
             title: "Project-scoped keys",
             description:
-              "Create keys per environment or integration — each one sees exactly one project.",
+              "Create keys per environment or integration, and each one sees exactly one project.",
           },
           {
             title: "Build your own UI",
@@ -824,7 +855,7 @@ const FEATURES: Record<string, FeaturePageData> = {
           {
             title: "One header to auth",
             description:
-              "A single Authorization: Bearer header — no OAuth dance for your own integrations.",
+              "A single Authorization: Bearer header, with no OAuth dance for your own integrations.",
           },
         ],
         Visual: () => (
@@ -840,12 +871,12 @@ const FEATURES: Record<string, FeaturePageData> = {
         title: "Built for",
         highlightedTitle: "AI agents.",
         description:
-          "LinkyCal ships an MCP server at /api/mcp. Connect Claude, Cursor, or any MCP client with an API key and your agent can check availability, book meetings, manage contacts, and read form responses — scoped to one project.",
+          "LinkyCal ships an MCP server at /api/mcp. Connect Claude, Cursor, or any MCP client with an API key and your agent can check availability, book meetings, manage contacts, and read form responses, all scoped to one project.",
         points: [
           {
             title: "30 tools out of the box",
             description:
-              "Bookings, availability, contacts, event types, forms, and workflows — read and write.",
+              "Bookings, availability, contacts, event types, forms, and workflows, read and write.",
           },
           {
             title: "Same rules as the dashboard",
@@ -861,7 +892,7 @@ const FEATURES: Record<string, FeaturePageData> = {
         Visual: () => (
           <CodeCard
             title="Connect an agent"
-            caption="MCP client config — works with Claude Code & Cursor"
+            caption="MCP client config, works with Claude Code & Cursor"
             code={MCP_SNIPPET}
           />
         ),
@@ -871,7 +902,7 @@ const FEATURES: Record<string, FeaturePageData> = {
         title: "Docs your tools",
         highlightedTitle: "can read.",
         description:
-          "Human-readable docs, an OpenAPI spec, and llms.txt for AI assistants — so the integration your team (or their copilot) writes is right the first time.",
+          "Human-readable docs, an OpenAPI spec, and llms.txt for AI assistants, so the integration your team (or their copilot) writes is right the first time.",
         points: [
           {
             title: "OpenAPI spec",

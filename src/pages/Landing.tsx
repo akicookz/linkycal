@@ -17,6 +17,7 @@ import {
   ToolkitSection,
   HowItWorksSection,
   IntegrationsSection,
+  HeadlessSection,
   TestimonialSection,
   PricingSection,
   FaqSection,
@@ -284,7 +285,10 @@ export default function Landing() {
       {/* ── 5. Integrations ─────────────────────────────────────────────── */}
       <IntegrationsSection />
 
-      {/* ── 6. Testimonial ──────────────────────────────────────────────── */}
+      {/* ── 6. Headless / Developers ────────────────────────────────────── */}
+      <HeadlessSection />
+
+      {/* ── 7. Testimonial ──────────────────────────────────────────────── */}
       <TestimonialSection />
 
       {/* ── 7. Pricing ──────────────────────────────────────────────────── */}

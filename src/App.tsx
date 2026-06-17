@@ -29,6 +29,8 @@ import AuthCallback from "./pages/AuthCallback";
 import CalendarCallback from "./pages/CalendarCallback";
 import Docs from "./pages/Docs";
 import FeaturePage from "./pages/FeaturePage";
+import AlternativePage from "./pages/AlternativePage";
+import LegalPage from "./pages/LegalPage";
 import PublicResolver from "./pages/PublicResolver";
 
 // ─── Redirect /app to first project's dashboard ──────────────────────────────
@@ -59,6 +61,9 @@ function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/docs" element={<Docs />} />
       <Route path="/features/:slug" element={<FeaturePage />} />
+      <Route path="/alternatives/:slug" element={<AlternativePage />} />
+      <Route path="/privacy" element={<LegalPage kind="privacy" />} />
+      <Route path="/terms" element={<LegalPage kind="terms" />} />
 
       <Route
         path="/api/auth/callback/:provider"
