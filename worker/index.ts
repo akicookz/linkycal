@@ -31,6 +31,7 @@ import {
   updateFormFieldSchema,
   submitFormStepSchema,
   createContactSchema,
+  importContactsSchema,
   updateContactSchema,
   createTagSchema,
   createContactViewSchema,
@@ -3612,6 +3613,63 @@ app.delete(
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
 
+const CONTACT_IMPORT_ERROR_LIMIT = 20;
+
+interface ContactImportError {
+  row: number;
+  reason: string;
+}
+
+function getContactImportCell(
+  row: Record<string, string>,
+  column: string | undefined,
+): string {
+  if (!column) return "";
+  return (row[column] ?? "").trim();
+}
+
+function normalizeContactImportText(
+  value: string,
+  maxLength: number,
+): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return trimmed.slice(0, maxLength);
+}
+
+function normalizeContactImportEmail(value: string): string | undefined {
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || undefined;
+}
+
+function getContactImportName(
+  mappedName: string,
+  email: string | undefined,
+): string | undefined {
+  const name = normalizeContactImportText(mappedName, 200);
+  if (name) return name;
+  if (!email) return undefined;
+  return email.split("@")[0]?.slice(0, 200) || undefined;
+}
+
+function addContactImportError(
+  errors: ContactImportError[],
+  row: number,
+  reason: string,
+) {
+  if (errors.length >= CONTACT_IMPORT_ERROR_LIMIT) return;
+  errors.push({ row, reason });
+}
+
+function getContactImportValidationErrorReason(data: {
+  name: string | undefined;
+  email: string | undefined;
+}): string {
+  if (!data.name) return "Name or email is required";
+  if (data.email) return "Invalid email address";
+  return "Invalid contact data";
+}
+
 app.get("/api/projects/:projectId/contacts", async (c) => {
   const projectId = c.req.param("projectId");
   const url = new URL(c.req.url);
@@ -3774,6 +3832,105 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
     }
     console.error("Contact creation error:", err);
     return c.json({ error: "Failed to create contact" }, 500);
+  }
+});
+
+app.post("/api/projects/:projectId/contacts/import", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const body = await c.req.json();
+    const data = validate(importContactsSchema, body);
+
+    const db = c.get("db");
+    const planLimits = c.get("planLimits");
+    const service = new ContactService(db);
+    const existing = await service.list(projectId);
+    const existingEmails = new Set(
+      existing
+        .map((contact) => contact.email?.toLowerCase())
+        .filter((email): email is string => !!email),
+    );
+
+    let remainingCapacity =
+      planLimits.maxContactsPerProject === -1
+        ? Number.POSITIVE_INFINITY
+        : Math.max(0, planLimits.maxContactsPerProject - existing.length);
+    let imported = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: ContactImportError[] = [];
+
+    for (const [index, row] of data.rows.entries()) {
+      const rowNumber = index + 2;
+      if (remainingCapacity <= 0) {
+        skipped += 1;
+        addContactImportError(errors, rowNumber, "Plan contact limit reached");
+        continue;
+      }
+
+      const email = normalizeContactImportEmail(
+        getContactImportCell(row, data.mapping.email),
+      );
+      const contactData = {
+        name: getContactImportName(
+          getContactImportCell(row, data.mapping.name),
+          email,
+        ),
+        email,
+        phone: normalizeContactImportText(
+          getContactImportCell(row, data.mapping.phone),
+          30,
+        ),
+        notes: normalizeContactImportText(
+          getContactImportCell(row, data.mapping.notes),
+          5000,
+        ),
+      };
+
+      const parsedContact = createContactSchema.safeParse(contactData);
+      if (!parsedContact.success) {
+        failed += 1;
+        addContactImportError(
+          errors,
+          rowNumber,
+          getContactImportValidationErrorReason(contactData),
+        );
+        continue;
+      }
+
+      if (email && existingEmails.has(email)) {
+        skipped += 1;
+        addContactImportError(errors, rowNumber, "Email already exists");
+        continue;
+      }
+
+      try {
+        await service.create(projectId, parsedContact.data);
+        imported += 1;
+        remainingCapacity -= 1;
+        if (email) existingEmails.add(email);
+      } catch (err) {
+        failed += 1;
+        console.error("Contact import row error:", err);
+        addContactImportError(errors, rowNumber, "Failed to create contact");
+      }
+    }
+
+    return c.json({
+      total: data.rows.length,
+      imported,
+      skipped,
+      failed,
+      remainingCapacity:
+        planLimits.maxContactsPerProject === -1 ? null : remainingCapacity,
+      errors,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Contact import error:", err);
+    return c.json({ error: "Failed to import contacts" }, 500);
   }
 });
 

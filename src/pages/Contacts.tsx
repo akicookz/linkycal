@@ -17,6 +17,9 @@ import {
   Save,
   ChevronDown,
   Check,
+  Upload,
+  FileText,
+  ArrowRight,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -128,6 +131,28 @@ interface SavedView {
   updatedAt: string;
 }
 
+type CsvContactField = "name" | "email" | "phone" | "notes";
+type CsvContactMapping = Record<CsvContactField, string>;
+
+interface CsvParseResult {
+  headers: string[];
+  rows: Record<string, string>[];
+}
+
+interface ContactImportError {
+  row: number;
+  reason: string;
+}
+
+interface ContactImportResult {
+  total: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  remainingCapacity: number | null;
+  errors: ContactImportError[];
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function getAvatarColor(name: string): string {
@@ -163,6 +188,39 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const EMPTY_FORM: ContactFormData = { name: "", email: "", phone: "", notes: "" };
 const EMPTY_CONFIG: ViewConfig = {};
+const UNMAPPED_CSV_COLUMN = "__linkycal_unmapped__";
+const EMPTY_CSV_MAPPING: CsvContactMapping = {
+  name: UNMAPPED_CSV_COLUMN,
+  email: UNMAPPED_CSV_COLUMN,
+  phone: UNMAPPED_CSV_COLUMN,
+  notes: UNMAPPED_CSV_COLUMN,
+};
+const CSV_CONTACT_FIELDS: Array<{
+  field: CsvContactField;
+  label: string;
+  description: string;
+}> = [
+  {
+    field: "name",
+    label: "Name",
+    description: "Required unless email is mapped",
+  },
+  {
+    field: "email",
+    label: "Email",
+    description: "Used to skip duplicate contacts",
+  },
+  {
+    field: "phone",
+    label: "Phone",
+    description: "Optional phone number",
+  },
+  {
+    field: "notes",
+    label: "Notes",
+    description: "Optional internal notes",
+  },
+];
 
 const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   form_submitted: "Submitted a form",
@@ -213,6 +271,171 @@ function activeFilterCount(c: ViewConfig): number {
   return n;
 }
 
+function pushCsvCell(row: string[], value: string) {
+  row.push(value);
+}
+
+function pushCsvRow(rows: string[][], row: string[], value: string) {
+  pushCsvCell(row, value);
+  rows.push(row);
+}
+
+function makeUniqueCsvHeaders(headerRow: string[]): string[] {
+  const counts = new Map<string, number>();
+  return headerRow.map((header, index) => {
+    const base = header.trim() || `Column ${index + 1}`;
+    const count = counts.get(base) ?? 0;
+    counts.set(base, count + 1);
+    return count === 0 ? base : `${base} (${count + 1})`;
+  });
+}
+
+function parseCsv(text: string): CsvParseResult {
+  const source = text.replace(/^\uFEFF/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let value = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < source.length; i += 1) {
+    const char = source[i];
+
+    if (inQuotes) {
+      if (char === '"' && source[i + 1] === '"') {
+        value += '"';
+        i += 1;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        value += char;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = true;
+    } else if (char === ",") {
+      pushCsvCell(row, value);
+      value = "";
+    } else if (char === "\n") {
+      pushCsvRow(rows, row, value);
+      row = [];
+      value = "";
+    } else if (char === "\r") {
+      pushCsvRow(rows, row, value);
+      row = [];
+      value = "";
+      if (source[i + 1] === "\n") i += 1;
+    } else {
+      value += char;
+    }
+  }
+
+  if (inQuotes) {
+    throw new Error("CSV has an unclosed quoted value.");
+  }
+
+  if (value.length > 0 || row.length > 0) {
+    pushCsvRow(rows, row, value);
+  }
+
+  const nonEmptyRows = rows.filter((cells) =>
+    cells.some((cell) => cell.trim().length > 0),
+  );
+  if (nonEmptyRows.length < 2) {
+    throw new Error("CSV must include a header row and at least one contact row.");
+  }
+
+  const headers = makeUniqueCsvHeaders(nonEmptyRows[0]);
+  const dataRows = nonEmptyRows.slice(1).map((cells) => {
+    const record: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      record[header] = (cells[index] ?? "").trim();
+    });
+    return record;
+  }).filter((record) =>
+    Object.values(record).some((cell) => cell.trim().length > 0),
+  );
+
+  if (dataRows.length === 0) {
+    throw new Error("CSV does not contain any contact rows.");
+  }
+
+  return { headers, rows: dataRows };
+}
+
+function normalizeCsvHeaderForGuess(header: string): string {
+  return header.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function guessCsvColumn(
+  headers: string[],
+  candidates: string[],
+): string | undefined {
+  const normalized = headers.map((header) => ({
+    header,
+    normalized: normalizeCsvHeaderForGuess(header),
+  }));
+
+  const exact = normalized.find((item) => candidates.includes(item.normalized));
+  if (exact) return exact.header;
+
+  const partial = normalized.find((item) =>
+    candidates.some((candidate) => item.normalized.includes(candidate)),
+  );
+  return partial?.header;
+}
+
+function guessCsvContactMapping(headers: string[]): CsvContactMapping {
+  return {
+    name: guessCsvColumn(headers, [
+      "name",
+      "full name",
+      "contact name",
+      "first name",
+    ]) ?? UNMAPPED_CSV_COLUMN,
+    email: guessCsvColumn(headers, [
+      "email",
+      "email address",
+      "e mail",
+    ]) ?? UNMAPPED_CSV_COLUMN,
+    phone: guessCsvColumn(headers, [
+      "phone",
+      "phone number",
+      "mobile",
+      "mobile phone",
+      "telephone",
+    ]) ?? UNMAPPED_CSV_COLUMN,
+    notes: guessCsvColumn(headers, [
+      "notes",
+      "note",
+      "description",
+      "comments",
+    ]) ?? UNMAPPED_CSV_COLUMN,
+  };
+}
+
+function getCsvMappedValue(
+  row: Record<string, string>,
+  mapping: CsvContactMapping,
+  field: CsvContactField,
+): string {
+  const column = mapping[field];
+  if (column === UNMAPPED_CSV_COLUMN) return "";
+  return row[column] ?? "";
+}
+
+function getImportMappingPayload(mapping: CsvContactMapping) {
+  const payload: Partial<Record<CsvContactField, string>> = {};
+  for (const field of CSV_CONTACT_FIELDS.map((item) => item.field)) {
+    const column = mapping[field];
+    if (column !== UNMAPPED_CSV_COLUMN) {
+      payload[field] = column;
+    }
+  }
+  return payload;
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function Contacts() {
@@ -240,6 +463,15 @@ export default function Contacts() {
   const [manageTagsOpen, setManageTagsOpen] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState("#6366f1");
+
+  // ─── Import dialog ───
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [csvFileName, setCsvFileName] = useState("");
+  const [csvHeaders, setCsvHeaders] = useState<string[]>([]);
+  const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
+  const [csvMapping, setCsvMapping] = useState<CsvContactMapping>(EMPTY_CSV_MAPPING);
+  const [csvError, setCsvError] = useState("");
+  const [importResult, setImportResult] = useState<ContactImportResult | null>(null);
 
   // ─── View dialogs ───
   const [saveViewOpen, setSaveViewOpen] = useState(false);
@@ -318,6 +550,14 @@ export default function Contacts() {
     [savedViews, activeViewId],
   );
 
+  const canImportCsv = useMemo(
+    () =>
+      csvRows.length > 0 &&
+      (csvMapping.name !== UNMAPPED_CSV_COLUMN ||
+        csvMapping.email !== UNMAPPED_CSV_COLUMN),
+    [csvRows.length, csvMapping],
+  );
+
   const isDirty = useMemo(() => {
     const liveConfig: ViewConfig = { ...config, search: searchInput || undefined };
     if (!activeView) {
@@ -354,6 +594,28 @@ export default function Contacts() {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
       setCreateDialogOpen(false);
       setCreateForm(EMPTY_FORM);
+    },
+  });
+
+  const importContactsMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/contacts/import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mapping: getImportMappingPayload(csvMapping),
+          rows: csvRows,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to import contacts");
+      }
+      return (await res.json()) as ContactImportResult;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+      setImportResult(data);
     },
   });
 
@@ -561,6 +823,51 @@ export default function Contacts() {
     setDeletingContact(contact);
     setDeleteDialogOpen(true);
   }, []);
+
+  function resetContactImportState() {
+    setCsvFileName("");
+    setCsvHeaders([]);
+    setCsvRows([]);
+    setCsvMapping(EMPTY_CSV_MAPPING);
+    setCsvError("");
+    setImportResult(null);
+    importContactsMutation.reset();
+  }
+
+  async function handleCsvFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    setCsvError("");
+    setImportResult(null);
+    importContactsMutation.reset();
+
+    if (!file) {
+      resetContactImportState();
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const parsed = parseCsv(text);
+      if (parsed.rows.length > 1000) {
+        throw new Error("Import up to 1,000 contacts at a time.");
+      }
+      setCsvFileName(file.name);
+      setCsvHeaders(parsed.headers);
+      setCsvRows(parsed.rows);
+      setCsvMapping(guessCsvContactMapping(parsed.headers));
+    } catch (err) {
+      setCsvFileName(file.name);
+      setCsvHeaders([]);
+      setCsvRows([]);
+      setCsvMapping(EMPTY_CSV_MAPPING);
+      setCsvError(err instanceof Error ? err.message : "Failed to read CSV.");
+    }
+  }
+
+  function handleImportContacts() {
+    if (!canImportCsv || importContactsMutation.isPending) return;
+    importContactsMutation.mutate();
+  }
 
   function handleCreateSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -867,6 +1174,145 @@ export default function Contacts() {
     );
   }
 
+  function renderImportMapper() {
+    if (csvRows.length === 0) return null;
+
+    const previewRows = csvRows.slice(0, 5);
+
+    return (
+      <div className="space-y-4">
+        <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-white text-muted-foreground">
+              <FileText className="h-5 w-5" />
+            </div>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{csvFileName}</p>
+              <p className="text-xs text-muted-foreground">
+                {csvRows.length} row{csvRows.length !== 1 ? "s" : ""} found
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-3">
+          {CSV_CONTACT_FIELDS.map((item) => (
+            <div
+              key={item.field}
+              className="grid gap-3 rounded-[16px] bg-muted/50 px-4 py-3 sm:grid-cols-[1fr_auto_1.3fr] sm:items-center"
+            >
+              <div>
+                <p className="text-sm font-medium">{item.label}</p>
+                <p className="text-xs text-muted-foreground">{item.description}</p>
+              </div>
+              <ArrowRight className="hidden h-4 w-4 text-muted-foreground sm:block" />
+              <Select
+                value={csvMapping[item.field]}
+                onValueChange={(value) =>
+                  setCsvMapping((mapping) => ({
+                    ...mapping,
+                    [item.field]: value,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Choose a CSV column" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNMAPPED_CSV_COLUMN}>Do not import</SelectItem>
+                  {csvHeaders.map((header) => (
+                    <SelectItem key={header} value={header}>
+                      {header}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+
+        {!canImportCsv && (
+          <div className="flex items-start gap-3 rounded-[16px] bg-amber-500/10 px-4 py-3 text-sm text-amber-900">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>Map at least a name or email column before importing.</p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <p className="text-sm font-medium">Preview</p>
+          <div className="space-y-2">
+            {previewRows.map((row, index) => {
+              const email = getCsvMappedValue(row, csvMapping, "email");
+              const name =
+                getCsvMappedValue(row, csvMapping, "name") ||
+                (email ? email.split("@")[0] : "Unnamed contact");
+              const phone = getCsvMappedValue(row, csvMapping, "phone");
+              const notes = getCsvMappedValue(row, csvMapping, "notes");
+
+              return (
+                <div
+                  key={index}
+                  className="flex items-center gap-3 rounded-[16px] bg-muted/50 px-4 py-3"
+                >
+                  <div
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white"
+                    style={{ backgroundColor: getAvatarColor(name) }}
+                  >
+                    {getInitial(name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{name}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {[email, phone, notes].filter(Boolean).join(" · ") ||
+                        "No optional fields mapped"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderImportResult() {
+    if (!importResult) return null;
+
+    return (
+      <div className="space-y-3 rounded-[16px] bg-muted/50 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
+            <Check className="h-3.5 w-3.5" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">Import complete</p>
+            <p className="text-xs text-muted-foreground">
+              {importResult.imported} imported, {importResult.skipped} skipped,{" "}
+              {importResult.failed} failed from {importResult.total} rows.
+            </p>
+          </div>
+        </div>
+
+        {importResult.errors.length > 0 && (
+          <div className="space-y-1">
+            {importResult.errors.slice(0, 5).map((error) => (
+              <p key={`${error.row}-${error.reason}`} className="text-xs text-muted-foreground">
+                Row {error.row}: {error.reason}
+              </p>
+            ))}
+            {importResult.errors.length > 5 && (
+              <p className="text-xs text-muted-foreground">
+                {importResult.errors.length - 5} more issue
+                {importResult.errors.length - 5 !== 1 ? "s" : ""} not shown.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   // ─── Render ───
 
   const filterCount = activeFilterCount(config);
@@ -882,6 +1328,10 @@ export default function Contacts() {
         <Button variant="outline" onClick={() => setManageTagsOpen(true)}>
           <Tags className="h-4 w-4" />
           Manage Tags
+        </Button>
+        <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
+          <Upload className="h-4 w-4" />
+          Import CSV
         </Button>
         <Button onClick={() => setCreateDialogOpen(true)}>
           <Plus className="h-4 w-4" />
@@ -1296,6 +1746,84 @@ export default function Contacts() {
           showUntagged={!!config.showUntagged}
         />
       )}
+
+      {/* ─── Import Contacts Dialog ─── */}
+      <Dialog
+        open={importDialogOpen}
+        onOpenChange={(open) => {
+          setImportDialogOpen(open);
+          if (!open) resetContactImportState();
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Import CSV</DialogTitle>
+            <DialogDescription>
+              Upload a CSV, map its columns, and import contacts into this project.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="contact-csv-file">CSV file</Label>
+              <Input
+                id="contact-csv-file"
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleCsvFileChange}
+              />
+            </div>
+
+            {csvError && (
+              <div className="flex items-start gap-3 rounded-[16px] bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{csvError}</p>
+              </div>
+            )}
+
+            {renderImportMapper()}
+            {renderImportResult()}
+            {importContactsMutation.isError && (
+              <div className="flex items-start gap-3 rounded-[16px] bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>
+                  {importContactsMutation.error instanceof Error
+                    ? importContactsMutation.error.message
+                    : "Failed to import contacts"}
+                </p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setImportDialogOpen(false)}
+              disabled={importContactsMutation.isPending}
+            >
+              <X className="h-4 w-4" />
+              Close
+            </Button>
+            <Button
+              type="button"
+              onClick={handleImportContacts}
+              disabled={
+                !canImportCsv ||
+                importContactsMutation.isPending ||
+                !!importResult
+              }
+            >
+              {importContactsMutation.isPending ? (
+                <Loader className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              Import Contacts
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Create Contact Dialog ─── */}
       <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>

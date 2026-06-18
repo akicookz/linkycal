@@ -4,19 +4,22 @@ import {
   ArrowRight,
   BookOpen,
   Braces,
+  Briefcase,
+  Building2,
   CalendarCheck,
   Check,
   ChevronDown,
   Code2,
+  Database,
   FileText,
   Globe,
   Mail,
-  MousePointer2,
   Send,
   Shield,
   Sparkles,
   Tag,
   Users,
+  X,
   Zap,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -66,88 +69,94 @@ function SectionHeading({
   );
 }
 
-/* ─── Toolkit: Three Feature Cards ────────────────────────────────────────── */
+/* ─── Backend value: Three Feature Cards ────────────────────────────────────────── */
 
-function ToolkitFormsIllustration() {
+function StoredIllustration() {
   return (
-    <div className="relative h-64 rounded-[20px] overflow-hidden bg-[linear-gradient(160deg,#E3F1E8_0%,#F2F8F4_60%,#FBF4E6_100%)]">
-      {/* Floating field-type toolbar */}
-      <div className="absolute top-6 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-white rounded-[14px] px-2.5 py-2 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.4)]">
-        {[FileText, Mail, ChevronDown, Tag].map((Icon, i) => (
-          <div
-            key={i}
-            className={cn(
-              "w-8 h-8 rounded-[10px] flex items-center justify-center",
-              i === 1 ? "bg-[#0F1A14] text-white" : "text-foreground/60",
-            )}
-          >
-            <Icon className="w-4 h-4" />
+    <div className="relative h-64 rounded-[20px] overflow-hidden bg-[linear-gradient(160deg,#E3F1E8_0%,#F1F7F3_55%,#EAF3EE_100%)]">
+      {/* Inbound payload record */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[210px] bg-white rounded-[16px] p-4 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.4)]">
+        <div className="flex items-center gap-2 mb-3.5">
+          <div className="w-7 h-7 rounded-[9px] bg-brand/10 flex items-center justify-center shrink-0">
+            <Database className="w-3.5 h-3.5 text-brand" />
           </div>
-        ))}
-      </div>
-      {/* Mini form card */}
-      <div className="absolute bottom-[-12px] left-1/2 -translate-x-1/2 w-[200px] bg-white rounded-t-[16px] px-4 pt-4 pb-6 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.4)]">
-        <div className="flex gap-1 mb-3">
-          <div className="h-[3px] flex-1 rounded-full bg-brand" />
-          <div className="h-[3px] flex-1 rounded-full bg-brand/30" />
-          <div className="h-[3px] flex-1 rounded-full bg-[#E5EBE8]" />
+          <div className="h-[5px] w-20 rounded-full bg-[#D8E2DC]" />
         </div>
-        <div className="h-[5px] w-20 rounded-full bg-[#D8E2DC] mb-3" />
-        <div className="h-[26px] rounded-full border border-brand/30 px-3 flex items-center mb-2">
-          <span className="text-[10px] text-foreground">sarah@acme.com</span>
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div className="h-[5px] w-10 rounded-full bg-[#E5EBE8]" />
+            <div className="h-[5px] w-16 rounded-full bg-[#D8E2DC]" />
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="h-[5px] w-12 rounded-full bg-[#E5EBE8]" />
+            <span className="text-[9px] text-foreground">sarah@acme.com</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <div className="h-[5px] w-8 rounded-full bg-[#E5EBE8]" />
+            <div className="h-[5px] w-14 rounded-full bg-[#D8E2DC]" />
+          </div>
         </div>
-        <div className="h-[26px] rounded-full border border-[#E5EBE8]" />
       </div>
-      {/* Cursor */}
-      <MousePointer2 className="absolute bottom-16 right-12 w-5 h-5 text-foreground fill-white drop-shadow" />
+      {/* Spam blocked chip */}
+      <div className="absolute top-5 right-5 flex items-center gap-1.5 bg-white rounded-full pl-1.5 pr-3 py-1.5 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.45)]">
+        <div className="w-5 h-5 rounded-full bg-[#0F1A14] flex items-center justify-center">
+          <Shield className="w-3 h-3 text-white" />
+        </div>
+        <span className="text-[10px] font-medium text-foreground">
+          Spam blocked
+        </span>
+      </div>
+      {/* Saved chip */}
+      <div className="absolute bottom-5 left-5 flex items-center gap-1.5 bg-white rounded-full pl-1.5 pr-3 py-1.5 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.45)]">
+        <div className="w-5 h-5 rounded-full bg-brand flex items-center justify-center">
+          <Check className="w-3 h-3 text-white" />
+        </div>
+        <span className="text-[10px] font-medium text-foreground">Saved</span>
+      </div>
     </div>
   );
 }
 
-function ToolkitBookingIllustration() {
+function EnrichIllustration() {
   return (
-    <div className="relative h-64 rounded-[20px] overflow-hidden bg-[linear-gradient(160deg,#F8F1E0_0%,#FBF7EC_55%,#EDF5F0_100%)]">
-      {/* Mini calendar card */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[210px] bg-white rounded-[18px] p-4 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.4)]">
-        <div className="flex items-center justify-between mb-2.5">
-          <div className="h-[5px] w-16 rounded-full bg-[#D8E2DC]" />
-          <div className="flex gap-1">
-            <div className="w-3 h-3 rounded-full bg-[#F0F3F1]" />
-            <div className="w-3 h-3 rounded-full bg-[#F0F3F1]" />
+    <div className="relative h-64 rounded-[20px] overflow-hidden bg-[linear-gradient(160deg,#EFEAF8_0%,#F5F2FB_55%,#EAF3EE_100%)]">
+      {/* Contact record */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[220px] bg-white rounded-[18px] p-4 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.4)]">
+        <div className="flex items-center gap-2.5 mb-3.5">
+          <div className="w-9 h-9 rounded-full bg-brand/10 flex items-center justify-center shrink-0">
+            <Users className="w-4 h-4 text-brand" />
+          </div>
+          <div>
+            <div className="text-[11px] font-semibold text-foreground leading-tight">
+              Sarah Chen
+            </div>
+            <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
+              sarah@acme.com
+            </div>
           </div>
         </div>
-        <div className="grid grid-cols-7 gap-[3px]">
-          {Array.from({ length: 28 }, (_, i) => (
-            <div
-              key={i}
-              className={cn(
-                "aspect-square rounded-full flex items-center justify-center text-[8px]",
-                i === 16
-                  ? "bg-brand text-white font-semibold"
-                  : i < 9
-                    ? "text-foreground/20"
-                    : "text-foreground/60",
-              )}
-            >
-              {i + 1}
+        <div className="space-y-2">
+          {[
+            { Icon: Building2, value: "Acme Inc" },
+            { Icon: Briefcase, value: "Head of Ops" },
+            { Icon: Globe, value: "@sarahchen" },
+          ].map((row) => (
+            <div key={row.value} className="flex items-center gap-2">
+              <row.Icon className="w-3 h-3 text-foreground/40 shrink-0" />
+              <span className="text-[9.5px] text-foreground">{row.value}</span>
+              <span className="ml-auto text-[8px] font-medium text-brand">
+                added
+              </span>
             </div>
           ))}
         </div>
-        <div className="flex gap-1.5 mt-2.5">
-          <div className="h-[22px] flex-1 rounded-full border border-[#E5EBE8] flex items-center justify-center text-[8px] text-muted-foreground">
-            10:00
-          </div>
-          <div className="h-[22px] flex-1 rounded-full border border-brand bg-brand/8 flex items-center justify-center text-[8px] font-semibold text-brand">
-            2:00 PM
-          </div>
-        </div>
       </div>
-      {/* Confirmation chip */}
-      <div className="absolute bottom-5 right-5 flex items-center gap-1.5 bg-white rounded-full pl-1.5 pr-3 py-1.5 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.45)]">
+      {/* Enriched chip */}
+      <div className="absolute top-5 right-5 flex items-center gap-1.5 bg-white rounded-full pl-1.5 pr-3 py-1.5 shadow-[0_12px_30px_-18px_rgba(15,26,20,0.45)]">
         <div className="w-5 h-5 rounded-full bg-brand flex items-center justify-center">
-          <Check className="w-3 h-3 text-white" />
+          <Sparkles className="w-3 h-3 text-white" />
         </div>
-        <span className="text-[10px] font-medium text-foreground">Booked</span>
+        <span className="text-[10px] font-medium text-foreground">Enriched</span>
       </div>
     </div>
   );
@@ -198,21 +207,21 @@ function ToolkitWorkflowIllustration() {
 
 const toolkitCards = [
   {
-    title: "Multi-step form builder",
+    title: "Stored & spam-filtered",
     description:
-      "Build adaptive forms with conditional logic, 12+ field types, and real-time validation — no code required.",
-    Illustration: ToolkitFormsIllustration,
+      "Every POST is validated, spam-checked, and saved. Nothing lost, no duplicates.",
+    Illustration: StoredIllustration,
   },
   {
-    title: "Hosted booking pages",
+    title: "Enriched into a contact",
     description:
-      "Share a booking link or embed it on your site. Availability stays in sync with Google Calendar, timezone-aware.",
-    Illustration: ToolkitBookingIllustration,
+      "Each submission becomes a contact, auto-filled with company, role, and social profiles.",
+    Illustration: EnrichIllustration,
   },
   {
-    title: "Workflow automation",
+    title: "Piped to your workflows",
     description:
-      "Trigger emails, tags, and webhooks the moment a form is submitted or a booking lands.",
+      "Emails, tags, and webhooks fire the moment a form is submitted or a booking lands.",
     Illustration: ToolkitWorkflowIllustration,
   },
 ];
@@ -222,8 +231,8 @@ export function ToolkitSection() {
     <section id="features" className="relative scroll-mt-24 py-24 sm:py-28 px-6">
       <div className="max-w-7xl mx-auto">
         <SectionHeading
-          title="The ultimate toolkit for forms & scheduling"
-          subtitle="Everything you need to collect leads, book meetings, and automate follow-ups — in a single, easy-to-use platform."
+          title="You ship the frontend. We run the backend."
+          subtitle="Point your forms and booking flows at LinkyCal. We store every submission, enrich it into a contact, and trigger the follow-up."
         />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-14">
           {toolkitCards.map((card) => (
@@ -239,6 +248,105 @@ export function ToolkitSection() {
               </div>
             </div>
           ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ─── Comparison: Without vs With LinkyCal ────────────────────────────────── */
+
+const comparisonRows = [
+  {
+    before: "Waste credits and usage building custom forms",
+    after: "Point your agent to LinkyCal's MCP server or LLMs.txt",
+  },
+  {
+    before: "Deal with spam, configure captcha or Turnstile",
+    after: "Spam filtered automatically",
+  },
+  {
+    before: "Pay for an email provider and configure your domain",
+    after: "New submission alerts goes out by default",
+  },
+  {
+    before: "Research and enrich every lead by hand",
+    after: "Leads enriched and tagged automatically",
+  },
+  {
+    before: "Stand up a custom backend for emails and integrations",
+    after: "Workflows to connect to your tools and services",
+  },
+];
+
+export function ComparisonSection() {
+  return (
+    <section id="why" className="relative scroll-mt-24 py-24 sm:py-28 px-6">
+      <div className="max-w-7xl mx-auto">
+        <SectionHeading
+          title="Spam-free forms without leaving chat"
+          subtitle="A working form needs spam filtering, new submission alerts, storage, and a backend to glue it together. LinkyCal takes care of it all and then some."
+        />
+        <div className="relative grid grid-cols-1 md:grid-cols-2 gap-12 md:gap-0 mt-14">
+          {/* Single vertical divider between the two timelines */}
+          <span
+            aria-hidden="true"
+            className="hidden md:block absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-foreground/15"
+          />
+          {/* Before — Without LinkyCal (mirrored toward the divider on desktop) */}
+          <div className="md:pr-20 md:text-right">
+            <h3 className="text-xl font-semibold text-muted-foreground mb-8">
+              Without LinkyCal
+            </h3>
+            <ol className="relative">
+              {comparisonRows.map((row, i) => (
+                <li
+                  key={row.before}
+                  className="relative flex items-start gap-4 pb-7 last:pb-0 md:flex-row-reverse"
+                >
+                  {i < comparisonRows.length - 1 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute top-7 bottom-0 w-px bg-red-500/20 left-3 -translate-x-1/2 md:left-auto md:right-3 md:translate-x-1/2"
+                    />
+                  )}
+                  <span className="relative mt-1 w-6 h-6 rounded-full bg-red-500/10 flex items-center justify-center shrink-0">
+                    <X className="w-3 h-3 text-red-500/80" />
+                  </span>
+                  <span className="pt-1 text-lg text-muted-foreground leading-relaxed">
+                    {row.before}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          {/* After — With LinkyCal */}
+          <div className="md:pl-20">
+            <h3 className="text-xl font-semibold text-foreground mb-8">
+              With LinkyCal
+            </h3>
+            <ol className="relative">
+              {comparisonRows.map((row, i) => (
+                <li
+                  key={row.after}
+                  className="relative flex items-start gap-4 pb-7 last:pb-0"
+                >
+                  {i < comparisonRows.length - 1 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute left-3 -translate-x-1/2 top-7 bottom-0 w-px bg-brand/25"
+                    />
+                  )}
+                  <span className="relative mt-1 w-6 h-6 rounded-full bg-brand flex items-center justify-center shrink-0">
+                    <Check className="w-3 h-3 text-white" />
+                  </span>
+                  <span className="pt-1 text-lg text-foreground leading-relaxed">
+                    {row.after}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </div>
     </section>
@@ -360,7 +468,7 @@ export function HowItWorksSection() {
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-12 lg:gap-20 items-center">
         <div>
           <h2 className="font-heading text-[2.25rem] sm:text-[3rem] font-bold tracking-[-0.03em] leading-[1.05] text-foreground mb-12">
-            Simplify your workflow
+            Up and running in minutes
           </h2>
           <div className="space-y-9">
             {workflowSteps.map((step) => (
@@ -523,7 +631,7 @@ export function IntegrationsSection() {
 
 /* ─── Headless / Developers ───────────────────────────────────────────────── */
 
-const HEADLESS_HTML_SNIPPET = `<!-- Native HTML, no JavaScript, no server -->
+export const HEADLESS_HTML_SNIPPET = `<!-- Native HTML, no JavaScript, no server -->
 <form
   action="https://linkycal.com/api/public/forms/acme/contact/submit"
   method="post">
@@ -629,7 +737,7 @@ export function HeadlessSection() {
                   className={cn(
                     "w-full text-left flex items-start gap-4 rounded-[18px] px-5 py-4 transition-colors",
                     isActive
-                      ? "bg-white ring-1 ring-brand/15 shadow-[0_14px_30px_-18px_rgba(15,26,20,0.45)]"
+                      ? "bg-white ring-1 ring-brand/15 shadow-[0_10px_24px_-20px_rgba(15,26,20,0.22)]"
                       : "bg-[#F3F6F4] hover:bg-white/70",
                   )}
                 >
@@ -744,12 +852,10 @@ export function TestimonialSection() {
             ))}
           </div>
           <blockquote className="text-xl sm:text-2xl font-medium text-foreground leading-snug text-balance">
-            &ldquo;LinkyCal replaced three tools for us. Forms, booking, and
-            follow-up automations finally live in one place — setup took an
-            afternoon.&rdquo;
+            &ldquo;I run my entire GTM, product feedback and request demo workflows with LinkyCal. My AI agents love it, I do not even have to visit the dashboard, although it has a nice, thoughtful UX!&rdquo;
           </blockquote>
           <p className="text-sm text-muted-foreground mt-5">
-            Sarah Chen, Founder at Brightside Studio
+            Mark Rudman, Founder at ImageAnimate AI
           </p>
         </div>
       </div>
@@ -884,7 +990,7 @@ export function PricingSection({ onGetStarted }: MarketingCtaProps) {
                 className={cn(
                   "marketing-card p-2 flex flex-col",
                   plan.highlighted &&
-                    "shadow-[0_40px_80px_-50px_rgba(27,67,50,0.6)]",
+                  "shadow-[0_40px_80px_-50px_rgba(27,67,50,0.6)]",
                 )}
               >
                 <div className="px-5 pt-5 pb-4">

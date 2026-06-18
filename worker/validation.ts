@@ -380,6 +380,21 @@ export const createContactSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
+const contactImportMappingSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  email: z.string().min(1).max(200).optional(),
+  phone: z.string().min(1).max(200).optional(),
+  notes: z.string().min(1).max(200).optional(),
+});
+
+export const importContactsSchema = z.object({
+  mapping: contactImportMappingSchema,
+  rows: z.array(z.record(z.string(), z.string().max(5000))).min(1).max(1000),
+}).refine((value) => value.mapping.name || value.mapping.email, {
+  message: "Map at least a name or email column",
+  path: ["mapping"],
+});
+
 export const updateContactSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   email: z.string().email().nullable().optional(),

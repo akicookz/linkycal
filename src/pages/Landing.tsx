@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
-import { CalendarCheck, ArrowRight, FileText } from "lucide-react";
+import { ArrowRight, BookOpen, Link2, Code2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import {
   ToolkitSection,
+  ComparisonSection,
   HowItWorksSection,
   IntegrationsSection,
   HeadlessSection,
@@ -25,6 +26,83 @@ import {
 } from "@/components/marketing/MarketingSections";
 
 /* ─── Landing Page ────────────────────────────────────────────────────────── */
+
+// Compact, syntax-highlighted snippet for the narrow hero card; the developer
+// section below shows the full production endpoint. Each line is a list of
+// [text, token] pairs so we can colorize without pulling in a highlighter.
+const SYN = {
+  cm: "text-[#5f7e6d] italic",
+  pu: "text-[#62917c]",
+  tag: "text-[#6bc4a3]",
+  attr: "text-[#dab27c]",
+  str: "text-[#e89c7b]",
+  txt: "text-[#cfe6da]",
+} as const;
+
+type SynToken = keyof typeof SYN;
+
+const HERO_CODE: [string, SynToken][][] = [
+  [["<!-- Native HTML. No JS, no server. -->", "cm"]],
+  [["<", "pu"], ["form", "tag"]],
+  [
+    ["  ", "txt"],
+    ["action", "attr"],
+    ["=", "pu"],
+    ['"https://linkycal.com/api/forms/acme"', "str"],
+  ],
+  [
+    ["  ", "txt"],
+    ["method", "attr"],
+    ["=", "pu"],
+    ['"post"', "str"],
+    [">", "pu"],
+  ],
+  [
+    ["  ", "txt"],
+    ["<", "pu"],
+    ["input", "tag"],
+    [" ", "txt"],
+    ["name", "attr"],
+    ["=", "pu"],
+    ['"name"', "str"],
+    [" ", "txt"],
+    ["placeholder", "attr"],
+    ["=", "pu"],
+    ['"Name"', "str"],
+    [" /", "pu"],
+    [">", "pu"],
+  ],
+  [
+    ["  ", "txt"],
+    ["<", "pu"],
+    ["input", "tag"],
+    [" ", "txt"],
+    ["name", "attr"],
+    ["=", "pu"],
+    ['"email"', "str"],
+    [" ", "txt"],
+    ["type", "attr"],
+    ["=", "pu"],
+    ['"email"', "str"],
+    [" /", "pu"],
+    [">", "pu"],
+  ],
+  [
+    ["  ", "txt"],
+    ["<", "pu"],
+    ["button", "tag"],
+    [" ", "txt"],
+    ["type", "attr"],
+    ["=", "pu"],
+    ['"submit"', "str"],
+    [">", "pu"],
+    ["Send", "txt"],
+    ["</", "pu"],
+    ["button", "tag"],
+    [">", "pu"],
+  ],
+  [["</", "pu"], ["form", "tag"], [">", "pu"]],
+];
 
 export default function Landing() {
   const navigate = useNavigate();
@@ -197,31 +275,43 @@ export default function Landing() {
                 New
               </span>
               <span className="text-sm font-medium text-foreground">
-                AI agents can now book you via MCP
+                Your agents can now manage your workspace via MCP
               </span>
             </Link>
           </div>
 
           {/* Headline */}
           <h1 className="font-heading font-bold tracking-[-0.035em] leading-[1.03] text-[2.75rem] sm:text-[3.75rem] lg:text-[4.6rem] text-foreground text-center text-balance max-w-5xl mx-auto mt-8">
-            Forms and scheduling in just a few clicks.
+            Headless forms and scheduling for vibe coders.
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground text-center leading-relaxed max-w-2xl mx-auto mt-6">
-            Effortless forms and scheduling infrastructure for{" "}
-            <span className="font-semibold text-foreground">vibe coders</span>.
+            LinkyCal is the{" "}
+            <span className="font-semibold text-foreground">
+              headless backend
+            </span>{" "}
+            for forms, scheduling, and enriched contacts. Drop it into every
+            project you ship, keep your own frontend, and let us handle storage,
+            spam, and follow-up.
           </p>
 
           {/* CTA */}
-          <div className="flex justify-center mt-9">
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-9">
             <button
               onClick={openAuth}
               className="marketing-pill-cta h-14 pl-8 pr-2.5 gap-3 text-[15px] font-medium"
             >
-              Get Started — it&rsquo;s free
+              Build your free form
               <span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center">
                 <ArrowRight className="w-4 h-4" />
               </span>
             </button>
+            <Link
+              to="/docs"
+              className="inline-flex items-center gap-2.5 h-14 px-7 rounded-full bg-white/70 backdrop-blur border border-[#0F1A14]/8 text-[15px] font-medium text-foreground hover:bg-white transition-colors"
+            >
+              <BookOpen className="w-[18px] h-[18px]" />
+              Read the docs
+            </Link>
           </div>
 
           {/* Product showcase cards */}
@@ -230,13 +320,13 @@ export default function Landing() {
             <div className="marketing-card p-5 flex flex-col">
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <FileText className="w-4 h-4 text-brand" />
-                  <h3 className="text-base font-semibold text-foreground">
-                    Visual form builder
+                  <Link2 className="w-[18px] h-[18px] text-brand" />
+                  <h3 className="text-lg font-semibold text-foreground">
+                    Share via link or embed in your site
                   </h3>
                 </div>
                 <p className="text-sm text-brand font-medium leading-relaxed">
-                  Multi-step forms with conditional logic, built in minutes.
+                  No code required. Share the hosted link or paste an embed.
                 </p>
               </div>
               <div className="relative aspect-[4/3] rounded-[18px] overflow-hidden border border-border/40 bg-white">
@@ -249,27 +339,57 @@ export default function Landing() {
               </div>
             </div>
 
-            {/* Booking page screenshot */}
+            {/* Native HTML snippet */}
             <div className="marketing-card p-5 flex flex-col">
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <CalendarCheck className="w-4 h-4 text-brand" />
-                  <h3 className="text-base font-semibold text-foreground">
-                    Hosted booking pages
+                  <Code2 className="w-[18px] h-[18px] text-brand" />
+                  <h3 className="text-lg font-semibold text-foreground">
+                    Bring your own front-end
                   </h3>
                 </div>
                 <p className="text-sm text-brand font-medium leading-relaxed">
-                  Visitors pick a time — availability stays in sync with your
-                  calendar.
+                  Robust backend for your native HTML and JavaScript forms.
                 </p>
               </div>
-              <div className="relative flex-1 min-h-0 aspect-[4/3] lg:aspect-auto rounded-[18px] overflow-hidden border border-border/40 bg-white">
-                <img
-                  src="/screenshots/booking.webp"
-                  alt="LinkyCal hosted booking page with date and time slot picker"
-                  loading="eager"
-                  className="absolute inset-0 w-full h-full object-cover object-left-top"
+              <div className="relative flex-1 min-h-0 rounded-[18px] overflow-hidden bg-gradient-to-b from-[#14241c] to-[#0d1712] ring-1 ring-white/[0.06] p-5 flex flex-col">
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 top-0 h-px bg-white/10"
                 />
+                {/* Window chrome */}
+                <div className="flex items-center gap-2.5 mb-5">
+                  <div className="flex items-center gap-[5px]">
+                    <div className="w-[9px] h-[9px] rounded-full bg-[#EC6A5E]/70" />
+                    <div className="w-[9px] h-[9px] rounded-full bg-[#F5BF4F]/70" />
+                    <div className="w-[9px] h-[9px] rounded-full bg-[#61C554]/70" />
+                  </div>
+                  <span className="ml-1.5 font-mono text-[11px] text-[#7fa890]">
+                    contact-form.html
+                  </span>
+                </div>
+
+                {/* Code */}
+                <div className="flex-1 overflow-x-auto font-mono text-[12px] leading-[1.85]">
+                  {HERO_CODE.map((line, i) => (
+                    <div key={i} className="flex">
+                      <span className="select-none shrink-0 w-4 mr-4 text-right text-[#3f5a4d] tabular-nums">
+                        {i + 1}
+                      </span>
+                      <code className="whitespace-pre">
+                        {line.map((token, j) => (
+                          <span key={j} className={SYN[token[1]]}>
+                            {token[0]}
+                          </span>
+                        ))}
+                      </code>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="mt-auto pt-4 font-mono text-[11px] text-[#5f7e6d]">
+                  Stored, spam-checked, piped to your workflows.
+                </p>
               </div>
             </div>
           </div>
@@ -278,6 +398,9 @@ export default function Landing() {
 
       {/* ── 3. Toolkit ──────────────────────────────────────────────────── */}
       <ToolkitSection />
+
+      {/* ── Before / After ──────────────────────────────────────────────── */}
+      <ComparisonSection />
 
       {/* ── 4. How It Works ─────────────────────────────────────────────── */}
       <HowItWorksSection />
