@@ -360,7 +360,7 @@ export const submitFormStepSchema = z.object({
     z.object({
       fieldId: z.string().min(1),
       value: z.string().nullable().optional(),
-      fileUrl: z.string().url().nullable().optional(),
+      fileUrl: z.string().min(1).max(2048).nullable().optional(),
     }),
   ),
   // Client-authoritative flag: true when the user is on their last visible

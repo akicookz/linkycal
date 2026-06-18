@@ -55,6 +55,7 @@ const sidebarSections: SidebarSection[] = [
     children: [
       { id: "create-response", title: "Create Response" },
       { id: "submit-step", title: "Submit Step" },
+      { id: "upload-file", title: "Upload File" },
       { id: "native-html-form", title: "Native HTML Form" },
       { id: "get-form-config", title: "Get Form Config" },
     ],
@@ -530,7 +531,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
                   name: "fields",
                   type: "array",
                   required: true,
-                  description: "Array of { fieldId, value } objects",
+                  description: "Array of { fieldId, value } objects. File fields may include fileUrl from the upload endpoint.",
                 },
               ]}
             />
@@ -557,8 +558,45 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
 }`}
             </CodeBlock>
 
-            <Callout type="tip">
-              When the response status changes to <IC>completed</IC>, all steps have been submitted.
+	            <Callout type="tip">
+	              When the response status changes to <IC>completed</IC>, all steps have been submitted.
+	            </Callout>
+
+            <SectionHeading id="upload-file" level="h2">
+              Upload File
+            </SectionHeading>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-2">
+              <IC>POST /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/uploads</IC>
+            </p>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Upload a file for a file field before submitting that step through the JSON API.
+              The upload response returns a private file pointer that you include as <IC>fileUrl</IC>.
+            </p>
+
+            <CodeBlock title="Upload request" language="bash">
+{`curl -X POST "https://linkycal.com/api/v1/forms/acme/contact/responses/resp_a1b2c3d4/uploads" \\
+  -F "fieldId=resume" \\
+  -F "file=@./resume.pdf"`}
+            </CodeBlock>
+
+            <CodeBlock title="Submit uploaded file" language="bash">
+{`curl -X PATCH "https://linkycal.com/api/v1/forms/acme/contact/responses/resp_a1b2c3d4/steps/0" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "fields": [
+      {
+        "fieldId": "resume",
+        "value": "resume.pdf",
+        "fileUrl": "form-responses/project/form/response/resume/upload-id.pdf"
+      }
+    ]
+  }'`}
+            </CodeBlock>
+
+            <Callout type="info">
+              Uploaded respondent files are private by default. Dashboard users open them from the
+              response drawer. API consumers can download them with a project API key at{" "}
+              <IC>GET /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/files/:valueId</IC>.
             </Callout>
 
             <SectionHeading id="native-html-form" level="h2">
@@ -574,23 +612,20 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </p>
 
             <CodeBlock title="HTML Form Action" language="html">
-{`<form action="https://linkycal.com/api/public/forms/acme/contact/submit" method="post">
+{`<form action="https://linkycal.com/api/public/forms/acme/contact/submit" method="post" enctype="multipart/form-data">
   <input type="text" name="full_name" required />
   <input type="email" name="email" required />
+  <input type="file" name="resume" />
   <textarea name="message"></textarea>
   <button type="submit">Send</button>
 </form>`}
             </CodeBlock>
 
-            <Callout type="tip">
-              Use your form field IDs as the HTML input <IC>name</IC> values. You can get the exact
-              IDs from the form builder or the generated form API prompt.
-            </Callout>
-
-            <Callout type="warning">
-              Native HTML submissions do not support file inputs yet. Use the widget or JSON API flow
-              if your form includes file upload fields.
-            </Callout>
+	            <Callout type="tip">
+	              Use your form field IDs as the HTML input <IC>name</IC> values. You can get the exact
+	              IDs from the form builder or the generated form API prompt. Include{" "}
+                <IC>enctype="multipart/form-data"</IC> when the form has file inputs.
+	            </Callout>
 
             <SectionHeading id="get-form-config" level="h2">
               Get Form Config

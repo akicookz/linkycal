@@ -3135,9 +3135,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 </p>
               </div>
               {hasFileFields && (
-                <p className="text-xs text-amber-700 leading-relaxed">
-                  File fields are not supported on the native HTML action endpoint yet.
-                  Use the widget or JSON API for file uploads.
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  File fields work with native HTML forms when your form uses multipart encoding.
+                  Add enctype=&quot;multipart/form-data&quot; to your form tag.
                 </p>
               )}
             </div>

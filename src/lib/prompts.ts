@@ -79,7 +79,8 @@ function exampleApiField(field: FormFieldForPrompt): Record<string, string> {
   if (field.type === "file") {
     return {
       fieldId: field.id,
-      fileUrl: "https://example.com/uploads/brief.pdf",
+      value: "brief.pdf",
+      fileUrl: "form-responses/PROJECT_ID/FORM_ID/RESPONSE_ID/FIELD_ID/upload-id.pdf",
     };
   }
 
@@ -195,9 +196,8 @@ function renderHtmlField(field: FormFieldForPrompt): string {
 
     case "file":
       return [
-        `<!-- File upload fields are not supported on the native HTML action endpoint yet -->`,
-        `<!-- <label for="${id}">${label}</label> -->`,
-        `<!-- <input id="${id}" name="${id}" type="file"${required} /> -->`,
+        `<label for="${id}">${label}</label>`,
+        `<input id="${id}" name="${id}" type="file"${required} />`,
       ].join("\n");
 
     default: {
@@ -223,8 +223,11 @@ function renderHtmlField(field: FormFieldForPrompt): string {
 }
 
 function renderHtmlFormExample(form: FormForPrompt, projectSlug: string, origin: string): string {
+  const hasFileFields = form.steps?.some((step) =>
+    step.fields.some((field) => field.type === "file"),
+  );
   const lines = [
-    `<form action="${origin}/api/public/forms/${projectSlug}/${form.slug}/submit" method="post">`,
+    `<form action="${origin}/api/public/forms/${projectSlug}/${form.slug}/submit" method="post"${hasFileFields ? ` enctype="multipart/form-data"` : ""}>`,
   ];
 
   for (let i = 0; i < (form.steps?.length ?? 0); i++) {
@@ -249,6 +252,25 @@ function renderHtmlFormExample(form: FormForPrompt, projectSlug: string, origin:
 
   lines.push(`  <button type="submit">Submit</button>`, `</form>`);
   return lines.join("\n").replace(/\n\n\n+/g, "\n\n");
+}
+
+function renderFileUploadApiExample(
+  origin: string,
+  projectSlug: string,
+  formSlug: string,
+  fileField: FormFieldForPrompt | undefined,
+): string {
+  if (!fileField) {
+    return "This form has no file upload fields.";
+  }
+
+  return `\`\`\`bash
+curl -X POST "${origin}/api/v1/forms/${projectSlug}/${formSlug}/responses/RESPONSE_ID/uploads" \\
+  -F "fieldId=${fileField.id}" \\
+  -F "file=@./brief.pdf"
+\`\`\`
+
+Use the returned \`upload.filename\` as \`value\` and \`upload.fileUrl\` as \`fileUrl\` when submitting the step. Uploaded files are private by default.`;
 }
 
 // ─── Event Type Prompts ─────────────────────────────────────────────────────
@@ -398,6 +420,7 @@ export function generateFormApiPrompt(
 ): string {
   const allFields = form.steps?.flatMap((step) => step.fields) ?? [];
   const hasFileFields = allFields.some((field) => field.type === "file");
+  const firstFileField = allFields.find((field) => field.type === "file");
   const stepsSection = (form.steps ?? [])
     .map((step, index) => {
       const stepDescription =
@@ -412,12 +435,15 @@ ${renderStepApiExample(origin, projectSlug, form.slug, index, step.fields)}`;
     })
     .join("\n\n");
 
-  const nativeHtmlSection = hasFileFields
-    ? `## Native HTML Form Action
-POST ${origin}/api/public/forms/${projectSlug}/${form.slug}/submit
+  const fileUploadSection = hasFileFields
+    ? `## Upload File Fields
+${renderFileUploadApiExample(origin, projectSlug, form.slug, firstFileField)}
 
-This form includes file fields, so native HTML form submission is not supported. Use the JSON API flow above or the widget instead.`
-    : `## Native HTML Form Action
+Private file downloads require dashboard authentication or a project API key:
+\`GET ${origin}/api/v1/forms/${projectSlug}/${form.slug}/responses/RESPONSE_ID/files/VALUE_ID\``
+    : "";
+
+  const nativeHtmlSection = `## Native HTML Form Action
 POST ${origin}/api/public/forms/${projectSlug}/${form.slug}/submit
 
 Use the exact field IDs above as your HTML input \`name\` attributes.
@@ -436,8 +462,8 @@ ${form.steps ? `- Steps: ${form.steps.length}` : ""}
 - Public endpoints; no auth required.
 
 Use one flow at a time:
-- JSON API for step-by-step submission or file uploads
-- Native HTML form action for plain browser forms without JavaScript
+- JSON API for step-by-step submissions; upload file fields before submitting their step
+- Native HTML form action for plain browser forms without JavaScript, including multipart file uploads
 
 ## Start Response
 \`\`\`bash
@@ -453,7 +479,7 @@ ${stepsSection || "No steps configured yet."}
 
 After the final step, the response status becomes \`"completed"\`.
 
-${nativeHtmlSection}
+${fileUploadSection ? `${fileUploadSection}\n\n` : ""}${nativeHtmlSection}
 
 ## Documentation
 - General docs: ${origin}/docs

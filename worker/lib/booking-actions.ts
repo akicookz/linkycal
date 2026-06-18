@@ -62,6 +62,7 @@ export async function getBookingSubmittedFields(
   const fieldValues = await db
     .select({
       label: dbSchema.formFields.label,
+      type: dbSchema.formFields.type,
       value: dbSchema.formFieldValues.value,
       fileUrl: dbSchema.formFieldValues.fileUrl,
     })
@@ -77,7 +78,10 @@ export async function getBookingSubmittedFields(
 
   return fieldValues.map((fieldValue) => ({
     label: fieldValue.label,
-    value: fieldValue.value ?? fieldValue.fileUrl ?? "",
+    value:
+      fieldValue.type === "file"
+        ? (fieldValue.value ?? (fieldValue.fileUrl ? "Uploaded file" : ""))
+        : (fieldValue.value ?? fieldValue.fileUrl ?? ""),
   }));
 }
 

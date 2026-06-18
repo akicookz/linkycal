@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { Check, Star } from "lucide-react";
+import { useRef, type ReactNode, type RefObject } from "react";
+import { Check, Star, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
@@ -23,6 +23,8 @@ export function FormFieldRenderer({
   field,
   value,
   onChange,
+  fileValue,
+  onFileChange,
   error,
   textareaRows = 4,
   themeColor,
@@ -32,6 +34,8 @@ export function FormFieldRenderer({
   field: FormFieldData;
   value: string;
   onChange: (value: string) => void;
+  fileValue?: File | null;
+  onFileChange?: (file: File | null) => void;
   error?: string;
   textareaRows?: number;
   themeColor?: string;
@@ -39,6 +43,7 @@ export function FormFieldRenderer({
   themeRadius?: number;
 }) {
   const id = `field-${field.id}`;
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const showsFieldLabel = field.type !== "checkbox";
   const showsChoiceHint =
     field.type !== "checkbox" &&
@@ -158,6 +163,22 @@ export function FormFieldRenderer({
         </ChoiceCard>
       ) : field.type === "rating" ? (
         <RatingInput value={value} onChange={onChange} />
+      ) : field.type === "file" ? (
+        <FileInput
+          id={id}
+          inputRef={fileInputRef}
+          value={value}
+          fileValue={fileValue}
+          placeholder={field.placeholder}
+          required={field.required}
+          error={error}
+          onChange={(file) => {
+            onFileChange?.(file);
+            onChange(file?.name ?? "");
+          }}
+          themeRadius={themeRadius}
+          themed={themed}
+        />
       ) : (
         <Input
           id={id}
@@ -186,6 +207,92 @@ export function FormFieldRenderer({
       )}
 
       {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+// ─── File Input ──────────────────────────────────────────────────────────────
+
+const FORM_FILE_ACCEPT =
+  ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp,.gif";
+
+function FileInput({
+  id,
+  inputRef,
+  value,
+  fileValue,
+  placeholder,
+  required,
+  error,
+  onChange,
+  themeRadius,
+  themed,
+}: {
+  id: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  value: string;
+  fileValue?: File | null;
+  placeholder?: string | null;
+  required?: boolean;
+  error?: string;
+  onChange: (file: File | null) => void;
+  themeRadius?: number;
+  themed?: boolean;
+}) {
+  const displayName = fileValue?.name || value || placeholder || "Choose a file";
+
+  function clearFile() {
+    if (inputRef.current) {
+      inputRef.current.value = "";
+    }
+    onChange(null);
+  }
+
+  return (
+    <div className="space-y-2">
+      <label
+        htmlFor={id}
+        className={cn(
+          "flex cursor-pointer items-center gap-3 rounded-[16px] border px-4 py-3.5 transition-all",
+          themed
+            ? "border-[rgba(15,23,20,0.10)] hover:border-primary/25 hover:bg-white"
+            : "border-[rgba(27,67,50,0.10)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,247,245,0.92))] shadow-[0_12px_26px_-24px_rgba(15,26,20,0.42)] hover:border-primary/25 hover:bg-white",
+          error && "border-destructive/35",
+        )}
+        style={themeRadius != null ? { borderRadius: `${themeRadius}px` } : undefined}
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-primary/10 text-primary">
+          <Upload className="h-4 w-4" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-foreground">
+            {displayName}
+          </span>
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            PDF, documents, spreadsheets, presentations, text, CSV, or images up to 10MB
+          </span>
+        </span>
+      </label>
+      <input
+        ref={inputRef}
+        id={id}
+        type="file"
+        accept={FORM_FILE_ACCEPT}
+        required={required}
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+        className="sr-only"
+        aria-invalid={error ? true : undefined}
+      />
+      {(fileValue || value) && (
+        <button
+          type="button"
+          onClick={clearFile}
+          className="inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+          Clear file
+        </button>
+      )}
     </div>
   );
 }

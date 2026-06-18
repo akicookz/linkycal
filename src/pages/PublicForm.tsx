@@ -126,6 +126,7 @@ export default function PublicForm() {
   const [screenIndex, setScreenIndex] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [values, setValues] = useState<Record<string, string>>({});
+  const [files, setFiles] = useState<Record<string, File | null>>({});
   const [responseId, setResponseId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -422,6 +423,11 @@ export default function PublicForm() {
       for (const id of hiddenWithValue) delete next[id];
       return next;
     });
+    setFiles((prev) => {
+      const next = { ...prev };
+      for (const id of hiddenWithValue) delete next[id];
+      return next;
+    });
   }, [allFields, conditionInputs, values]);
 
   // Completion redirect — hook must be declared before any early returns
@@ -447,6 +453,11 @@ export default function PublicForm() {
       delete next[fieldId];
       return next;
     });
+  }
+
+  function setFileValue(fieldId: string, file: File | null) {
+    setFiles((prev) => ({ ...prev, [fieldId]: file }));
+    setValue(fieldId, file?.name ?? "");
   }
 
   function validateField(field: FormField): string | null {
@@ -488,15 +499,75 @@ export default function PublicForm() {
     return id;
   }
 
+  async function uploadFieldFile(
+    responseId: string,
+    field: FormField,
+    file: File,
+  ): Promise<{ filename: string; fileUrl: string }> {
+    const formData = new FormData();
+    formData.set("fieldId", field.id);
+    formData.set("file", file);
+
+    const res = await fetch(
+      `/api/v1/forms/${projectSlug}/${formSlug}/responses/${responseId}/uploads`,
+      {
+        method: "POST",
+        body: formData,
+      },
+    );
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      const message =
+        typeof data.error === "string" ? data.error : "Failed to upload file";
+      throw new Error(message);
+    }
+
+    const data = await res.json();
+    const upload = data.upload;
+    if (
+      !upload ||
+      typeof upload.filename !== "string" ||
+      typeof upload.fileUrl !== "string"
+    ) {
+      throw new Error("Invalid upload response");
+    }
+
+    return {
+      filename: upload.filename,
+      fileUrl: upload.fileUrl,
+    };
+  }
+
   async function submitStepValues(stepIndex: number, complete: boolean): Promise<boolean> {
     setSubmitting(true);
     setError(null);
     try {
       const resId = await ensureResponseId();
-      const fields = visibleFieldsForStep(steps[stepIndex]).map((f) => ({
-        fieldId: f.id,
-        value: values[f.id] ?? "",
-      }));
+      const fields: Array<{
+        fieldId: string;
+        value: string;
+        fileUrl?: string;
+      }> = [];
+
+      for (const field of visibleFieldsForStep(steps[stepIndex])) {
+        if (field.type === "file") {
+          const file = files[field.id];
+          if (file) {
+            const upload = await uploadFieldFile(resId, field, file);
+            fields.push({
+              fieldId: field.id,
+              value: upload.filename,
+              fileUrl: upload.fileUrl,
+            });
+            continue;
+          }
+        }
+
+        fields.push({
+          fieldId: field.id,
+          value: values[field.id] ?? "",
+        });
+      }
 
       const res = await fetch(
         `/api/public/forms/${projectSlug}/${formSlug}/responses/${resId}/steps/${stepIndex}`,
@@ -517,8 +588,12 @@ export default function PublicForm() {
         setSubmitted(true);
       }
       return true;
-    } catch {
-      setError("Something went wrong. Please try again.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
       return false;
     } finally {
       setSubmitting(false);
@@ -855,6 +930,8 @@ export default function PublicForm() {
                         field={field}
                         value={values[field.id] ?? ""}
                         onChange={(val) => setValue(field.id, val)}
+                        fileValue={files[field.id] ?? null}
+                        onFileChange={(file) => setFileValue(field.id, file)}
                         onCommit={(trigger) => {
                           // No auto-advance on choice — other questions on
                           // this screen may still be unanswered.
@@ -916,6 +993,10 @@ export default function PublicForm() {
                   field={currentScreen.field}
                   value={values[currentScreen.field.id] ?? ""}
                   onChange={(val) => setValue(currentScreen.field.id, val)}
+                  fileValue={files[currentScreen.field.id] ?? null}
+                  onFileChange={(file) =>
+                    setFileValue(currentScreen.field.id, file)
+                  }
                   onCommit={(trigger) => {
                     if (trigger === "choice") scheduleAutoAdvance();
                     else goNext();
@@ -1018,6 +1099,8 @@ export default function PublicForm() {
             field={field}
             value={values[field.id] ?? ""}
             onChange={(val) => setValue(field.id, val)}
+            fileValue={files[field.id] ?? null}
+            onFileChange={(file) => setFileValue(field.id, file)}
             error={fieldErrors[field.id]}
             textareaRows={3}
             themeColor={theme?.primaryBg}

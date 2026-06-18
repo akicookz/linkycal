@@ -264,6 +264,221 @@ interface NativePublicFormField {
   contactMapping: string | null;
 }
 
+interface StoredFormFile {
+  key: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
+const PRIVATE_FORM_UPLOAD_PREFIX = "form-responses/";
+const MAX_FORM_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_FORM_FILE_TYPES = new Set([
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+]);
+const ALLOWED_FORM_FILE_EXTENSIONS = new Set([
+  "csv",
+  "doc",
+  "docx",
+  "gif",
+  "jpeg",
+  "jpg",
+  "pdf",
+  "png",
+  "ppt",
+  "pptx",
+  "txt",
+  "webp",
+  "xls",
+  "xlsx",
+]);
+
+function isPrivateFormUploadKey(value: string | null | undefined): boolean {
+  return !!value && value.startsWith(PRIVATE_FORM_UPLOAD_PREFIX);
+}
+
+function getFileExtension(filename: string): string {
+  const lastSegment = filename.split(/[\\/]/).pop() ?? "";
+  const extension = lastSegment.includes(".")
+    ? lastSegment.split(".").pop()
+    : "";
+  return (extension ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function sanitizeUploadFilename(filename: string): string {
+  const base = filename.split(/[\\/]/).pop()?.trim() || "upload";
+  const sanitized = base
+    .split("")
+    .filter((char) => {
+      const code = char.charCodeAt(0);
+      return code >= 32 && code !== 127 && char !== "\"";
+    })
+    .join("")
+    .replace(/[<>:|?*]+/g, "_")
+    .slice(0, 160)
+    .trim();
+
+  return sanitized || "upload";
+}
+
+function validateFormUploadFile(file: File): string | null {
+  if (file.size <= 0) return "Please choose a file to upload.";
+  if (file.size > MAX_FORM_FILE_SIZE) {
+    return "File is too large. Maximum size is 10MB.";
+  }
+
+  const extension = getFileExtension(file.name);
+  const hasAllowedType = file.type ? ALLOWED_FORM_FILE_TYPES.has(file.type) : false;
+  const hasAllowedExtension = extension
+    ? ALLOWED_FORM_FILE_EXTENSIONS.has(extension)
+    : false;
+
+  if (!hasAllowedType && !hasAllowedExtension) {
+    return "File type is not allowed. Upload a PDF, document, spreadsheet, presentation, text file, CSV, or image.";
+  }
+
+  return null;
+}
+
+async function storePrivateFormUpload(
+  env: AppEnv,
+  file: File,
+  context: {
+    projectId: string;
+    formId: string;
+    responseId: string;
+    fieldId: string;
+  },
+): Promise<StoredFormFile> {
+  const filename = sanitizeUploadFilename(file.name);
+  const extension = getFileExtension(filename);
+  const suffix = extension ? `.${extension}` : "";
+  const key = [
+    PRIVATE_FORM_UPLOAD_PREFIX.replace(/\/$/, ""),
+    context.projectId,
+    context.formId,
+    context.responseId,
+    context.fieldId,
+    `${crypto.randomUUID()}${suffix}`,
+  ].join("/");
+  const contentType = file.type || "application/octet-stream";
+
+  await env.UPLOADS.put(key, file.stream(), {
+    httpMetadata: {
+      contentType,
+      contentDisposition: `attachment; filename="${filename.replace(/"/g, "")}"`,
+    },
+    customMetadata: {
+      filename,
+      projectId: context.projectId,
+      formId: context.formId,
+      responseId: context.responseId,
+      fieldId: context.fieldId,
+    },
+  });
+
+  return {
+    key,
+    filename,
+    contentType,
+    size: file.size,
+  };
+}
+
+function uploadedFileDisplayValue(value: string | null, fileUrl: string | null): string {
+  if (value?.trim()) return value.trim();
+  if (isPrivateFormUploadKey(fileUrl)) return "Uploaded file";
+  return fileUrl?.trim() ?? "";
+}
+
+async function getPrivateFormFileObject(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  env: AppEnv,
+  input: {
+    projectId: string;
+    formId: string;
+    responseId: string;
+    valueId: string;
+  },
+): Promise<
+  | { ok: true; object: R2ObjectBody; filename: string }
+  | { ok: false; status: 404 | 400; error: string }
+> {
+  const [row] = await db
+    .select({
+      valueId: dbSchema.formFieldValues.id,
+      value: dbSchema.formFieldValues.value,
+      fileUrl: dbSchema.formFieldValues.fileUrl,
+      fieldType: dbSchema.formFields.type,
+    })
+    .from(dbSchema.formFieldValues)
+    .innerJoin(
+      dbSchema.formFields,
+      and(
+        eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+        eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+      ),
+    )
+    .innerJoin(
+      dbSchema.formResponses,
+      eq(dbSchema.formFieldValues.responseId, dbSchema.formResponses.id),
+    )
+    .innerJoin(dbSchema.forms, eq(dbSchema.formFieldValues.formId, dbSchema.forms.id))
+    .where(
+      and(
+        eq(dbSchema.formFieldValues.id, input.valueId),
+        eq(dbSchema.formFieldValues.responseId, input.responseId),
+        eq(dbSchema.formFieldValues.formId, input.formId),
+        eq(dbSchema.forms.projectId, input.projectId),
+      ),
+    )
+    .limit(1);
+
+  if (!row || row.fieldType !== "file" || !row.fileUrl) {
+    return { ok: false, status: 404, error: "File not found" };
+  }
+
+  if (!isPrivateFormUploadKey(row.fileUrl)) {
+    return { ok: false, status: 400, error: "File is not a private upload" };
+  }
+
+  const object = await env.UPLOADS.get(row.fileUrl);
+  if (!object) {
+    return { ok: false, status: 404, error: "File not found" };
+  }
+
+  return {
+    ok: true,
+    object,
+    filename: sanitizeUploadFilename(row.value ?? object.customMetadata?.filename ?? "upload"),
+  };
+}
+
+function createPrivateFileResponse(object: R2ObjectBody, filename: string): Response {
+  const headers = new Headers();
+  headers.set(
+    "Content-Type",
+    object.httpMetadata?.contentType ?? "application/octet-stream",
+  );
+  headers.set("Content-Length", String(object.size));
+  headers.set("Cache-Control", "private, max-age=60");
+  headers.set("Content-Disposition", `attachment; filename="${filename}"`);
+
+  return new Response(object.body, { headers });
+}
+
 function getFormSettingsRecord(settings: unknown): Record<string, unknown> {
   if (settings && typeof settings === "object") {
     return settings as Record<string, unknown>;
@@ -442,12 +657,38 @@ function getNativeFormStringValues(
 function parseNativeFormFieldValue(
   formData: FormData,
   field: NativePublicFormField,
-): { field: NativeFormFieldValue; respondentEmail?: string | null } | { error: string } {
+): { field: NativeFormFieldValue; respondentEmail?: string | null; file?: File } | { error: string } {
   const allEntries = formData.getAll(field.id);
-  if (allEntries.some((entry) => entry instanceof File && entry.size > 0)) {
+
+  if (field.type === "file") {
+    const file = allEntries.find(
+      (entry): entry is File => entry instanceof File && entry.size > 0,
+    );
+
+    if (!file) {
+      if (field.required) {
+        return { error: `${field.label} is required.` };
+      }
+
+      return { field: { fieldId: field.id, value: "" } };
+    }
+
+    const validationError = validateFormUploadFile(file);
+    if (validationError) {
+      return { error: `${field.label}: ${validationError}` };
+    }
+
     return {
-      error: `File fields are not supported for native HTML submissions yet. Remove "${field.label}" or use the widget/API flow instead.`,
+      field: {
+        fieldId: field.id,
+        value: sanitizeUploadFilename(file.name),
+      },
+      file,
     };
+  }
+
+  if (allEntries.some((entry) => entry instanceof File && entry.size > 0)) {
+    return { error: `${field.label} does not accept file uploads.` };
   }
 
   const optionValues = new Set((field.options ?? []).map((option) => option.value));
@@ -556,6 +797,7 @@ async function dispatchFormSubmittedTrigger(
           type: dbSchema.formFields.type,
           label: dbSchema.formFields.label,
           value: dbSchema.formFieldValues.value,
+          fileUrl: dbSchema.formFieldValues.fileUrl,
         })
         .from(dbSchema.formFieldValues)
         .innerJoin(
@@ -568,21 +810,25 @@ async function dispatchFormSubmittedTrigger(
         .where(eq(dbSchema.formFieldValues.responseId, responseId));
 
       for (const row of allValues) {
-        if (!row.value) continue;
+        const fieldValue =
+          row.type === "file"
+            ? uploadedFileDisplayValue(row.value, row.fileUrl)
+            : row.value;
+        if (!fieldValue) continue;
         // Address by fieldId and a human-friendly label slug for template resolution.
-        formFields[row.fieldId] = row.value;
+        formFields[row.fieldId] = fieldValue;
         const labelSlug = slugifyFormFieldKey(row.label);
         if (labelSlug && !(labelSlug in formFields)) {
-          formFields[labelSlug] = row.value;
+          formFields[labelSlug] = fieldValue;
         }
         if (row.contactMapping === "email") {
-          resolvedEmail = row.value;
+          resolvedEmail = fieldValue;
         } else if (row.contactMapping === "name") {
-          contactName = row.value;
+          contactName = fieldValue;
         } else if (!resolvedEmail && row.type === "email") {
-          resolvedEmail = row.value;
+          resolvedEmail = fieldValue;
         } else if ((!contactName || contactName === resolvedEmail?.split("@")[0]) && row.type === "name") {
-          contactName = row.value;
+          contactName = fieldValue;
         }
       }
     } catch { /* fall back to defaults */ }
@@ -672,7 +918,9 @@ async function notifyFormResponseCompleted(
     const fieldValues = await db
       .select({
         label: dbSchema.formFields.label,
+        type: dbSchema.formFields.type,
         value: dbSchema.formFieldValues.value,
+        fileUrl: dbSchema.formFieldValues.fileUrl,
       })
       .from(dbSchema.formFieldValues)
       .innerJoin(
@@ -692,7 +940,13 @@ async function notifyFormResponseCompleted(
       ownerName: owner.name ?? "there",
       formName: form.name,
       respondentEmail: formResponse?.respondentEmail ?? null,
-      fields: fieldValues.map((f) => ({ label: f.label, value: f.value ?? "" })),
+      fields: fieldValues.map((f) => ({
+        label: f.label,
+        value:
+          f.type === "file"
+            ? uploadedFileDisplayValue(f.value, f.fileUrl)
+            : (f.value ?? ""),
+      })),
       theme: parseProjectTheme(project.settings),
     });
   } catch (err) {
@@ -1085,6 +1339,150 @@ app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
     return c.json({ error: "Failed to start form response" }, 500);
   }
 });
+
+app.post(
+  "/api/v1/forms/:projectSlug/:formSlug/responses/:responseId/uploads",
+  async (c) => {
+    const projectSlug = c.req.param("projectSlug");
+    const formSlug = c.req.param("formSlug");
+    const responseId = c.req.param("responseId");
+    const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+    if (!checkRateLimit(`formupload:${ip}`, 30, 60_000)) {
+      return c.json({ error: "Rate limit exceeded" }, 429);
+    }
+
+    try {
+      const formData = await c.req.formData();
+      const file = formData.get("file");
+      const fieldId = formData.get("fieldId");
+
+      if (typeof fieldId !== "string" || !fieldId.trim()) {
+        return c.json({ error: "Missing fieldId" }, 400);
+      }
+
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: "No file provided" }, 400);
+      }
+
+      const validationError = validateFormUploadFile(file);
+      if (validationError) {
+        return c.json({ error: validationError }, 400);
+      }
+
+      const db = drizzle(c.env.DB, { schema });
+      const service = new FormService(db);
+
+      const [project] = await db
+        .select({ id: dbSchema.projects.id })
+        .from(dbSchema.projects)
+        .where(eq(dbSchema.projects.slug, projectSlug))
+        .limit(1);
+
+      if (!project) {
+        return c.json({ error: "Form not found" }, 404);
+      }
+
+      const form = await service.getBySlug(project.id, formSlug);
+      if (!form || form.status !== "active") {
+        return c.json({ error: "Form not found or inactive" }, 404);
+      }
+
+      const response = await service.getResponseById(responseId);
+      if (!response || response.formId !== form.id) {
+        return c.json({ error: "Response not found" }, 404);
+      }
+
+      const field = await service.getFieldById(form.id, fieldId.trim());
+      if (!field || field.type !== "file") {
+        return c.json({ error: "Field is not a file upload field" }, 400);
+      }
+
+      const upload = await storePrivateFormUpload(c.env, file, {
+        projectId: project.id,
+        formId: form.id,
+        responseId,
+        fieldId: field.id,
+      });
+
+      return c.json(
+        {
+          upload: {
+            key: upload.key,
+            fileUrl: upload.key,
+            filename: upload.filename,
+            contentType: upload.contentType,
+            size: upload.size,
+          },
+        },
+        201,
+      );
+    } catch (err) {
+      console.error("Form file upload error:", err);
+      return c.json({ error: "Failed to upload file" }, 500);
+    }
+  },
+);
+
+app.get(
+  "/api/v1/forms/:projectSlug/:formSlug/responses/:responseId/files/:valueId",
+  async (c) => {
+    const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    if (!key || !key.startsWith("lc_live_")) {
+      return c.json(
+        { error: "Missing API key. Pass Authorization: Bearer lc_live_..." },
+        401,
+      );
+    }
+
+    try {
+      const projectSlug = c.req.param("projectSlug");
+      const formSlug = c.req.param("formSlug");
+      const responseId = c.req.param("responseId");
+      const valueId = c.req.param("valueId");
+      const db = drizzle(c.env.DB, { schema });
+      const apiKeyProjectId = await new ApiKeyService(db).validate(key);
+      if (!apiKeyProjectId) {
+        return c.json({ error: "Invalid API key" }, 401);
+      }
+
+      const [project] = await db
+        .select({ id: dbSchema.projects.id })
+        .from(dbSchema.projects)
+        .where(eq(dbSchema.projects.slug, projectSlug))
+        .limit(1);
+
+      if (!project) {
+        return c.json({ error: "Form not found" }, 404);
+      }
+
+      if (apiKeyProjectId !== project.id) {
+        return c.json({ error: "Forbidden" }, 403);
+      }
+
+      const service = new FormService(db);
+      const form = await service.getBySlug(project.id, formSlug);
+      if (!form) {
+        return c.json({ error: "Form not found" }, 404);
+      }
+
+      const result = await getPrivateFormFileObject(db, c.env, {
+        projectId: project.id,
+        formId: form.id,
+        responseId,
+        valueId,
+      });
+
+      if (!result.ok) {
+        return c.json({ error: result.error }, result.status);
+      }
+
+      return createPrivateFileResponse(result.object, result.filename);
+    } catch (err) {
+      console.error("API form file download error:", err);
+      return c.json({ error: "Failed to download file" }, 500);
+    }
+  },
+);
 
 // Submit form step (public)
 app.patch(
@@ -1648,6 +2046,12 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
     const fieldsByStep = new Map<string, NativeFormFieldValue[]>(
       steps.map((step) => [step.id, []]),
     );
+    const parsedFields: Array<{
+      stepId: string;
+      fieldId: string;
+      field: NativeFormFieldValue;
+      file?: File;
+    }> = [];
     let respondentEmail: string | null = null;
 
     for (const field of fieldConfigs) {
@@ -1656,10 +2060,13 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
         return createHtmlPageResponse("Submission failed", parsed.error, 400);
       }
 
-      const stepFields = fieldsByStep.get(field.stepId);
-      if (stepFields) {
-        stepFields.push(parsed.field);
-      }
+      parsedFields.push({
+        stepId: field.stepId,
+        fieldId: field.id,
+        field: parsed.field,
+        file: parsed.file,
+      });
+
       if (!respondentEmail && parsed.respondentEmail) {
         respondentEmail = parsed.respondentEmail;
       }
@@ -1684,6 +2091,25 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
           respondentEmail,
         })
         .where(eq(dbSchema.formResponses.id, response.id));
+    }
+
+    for (const parsed of parsedFields) {
+      if (parsed.file) {
+        const upload = await storePrivateFormUpload(c.env, parsed.file, {
+          projectId: project.id,
+          formId: form.id,
+          responseId: response.id,
+          fieldId: parsed.fieldId,
+        });
+
+        parsed.field.value = upload.filename;
+        parsed.field.fileUrl = upload.key;
+      }
+
+      const stepFields = fieldsByStep.get(parsed.stepId);
+      if (stepFields) {
+        stepFields.push(parsed.field);
+      }
     }
 
     let latestResponse: typeof response | null = response;
@@ -2294,6 +2720,10 @@ app.delete("/api/projects/:projectId/uploads/:key{.+}", async (c) => {
 app.get("/api/uploads/:key{.+}", async (c) => {
   try {
     const key = c.req.param("key");
+    if (isPrivateFormUploadKey(key)) {
+      return c.json({ error: "Not found" }, 404);
+    }
+
     const object = await c.env.UPLOADS.get(key);
 
     if (!object) {
@@ -2733,7 +3163,10 @@ app.get("/api/projects/:projectId/bookings/:id/form-response", async (c) => {
       return {
         label: def?.label ?? "Unknown",
         type: def?.type ?? "text",
-        value: fv.value ?? "",
+        value:
+          def?.type === "file"
+            ? uploadedFileDisplayValue(fv.value, fv.fileUrl)
+            : (fv.value ?? ""),
       };
     });
 
@@ -3100,6 +3533,35 @@ app.get("/api/projects/:projectId/forms/:formId/responses", async (c) => {
   const responses = await service.listResponsesWithValues(formId);
   return c.json({ responses });
 });
+
+app.get(
+  "/api/projects/:projectId/forms/:formId/responses/:responseId/files/:valueId",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const formId = c.req.param("formId");
+      const responseId = c.req.param("responseId");
+      const valueId = c.req.param("valueId");
+      const db = c.get("db");
+
+      const result = await getPrivateFormFileObject(db, c.env, {
+        projectId,
+        formId,
+        responseId,
+        valueId,
+      });
+
+      if (!result.ok) {
+        return c.json({ error: result.error }, result.status);
+      }
+
+      return createPrivateFileResponse(result.object, result.filename);
+    } catch (err) {
+      console.error("Form file download error:", err);
+      return c.json({ error: "Failed to download file" }, 500);
+    }
+  },
+);
 
 app.get(
   "/api/projects/:projectId/forms/:formId/responses/:responseId",

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Check, Star } from "lucide-react";
+import { Check, Star, Upload, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -61,6 +61,8 @@ export function FocusedFieldInput({
   field,
   value,
   onChange,
+  fileValue,
+  onFileChange,
   onCommit,
   autoFocus = false,
   error,
@@ -68,11 +70,29 @@ export function FocusedFieldInput({
   field: FocusedFieldData;
   value: string;
   onChange: (value: string) => void;
+  fileValue?: File | null;
+  onFileChange?: (file: File | null) => void;
   onCommit?: (trigger: "enter" | "choice") => void;
   autoFocus?: boolean;
   error?: string;
 }) {
   if (field.type === "completion") return null;
+
+  if (field.type === "file") {
+    return (
+      <FocusedFileInput
+        value={value}
+        fileValue={fileValue}
+        onChange={(file) => {
+          onFileChange?.(file);
+          onChange(file?.name ?? "");
+        }}
+        autoFocus={autoFocus}
+        placeholder={field.placeholder || "Choose a file"}
+        error={error}
+      />
+    );
+  }
 
   if (field.type === "textarea") {
     return (
@@ -172,6 +192,81 @@ export function FocusedFieldInput({
           error && "border-destructive/60 focus:border-destructive",
         )}
       />
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
+
+// ─── File Input ──────────────────────────────────────────────────────────────
+
+const FORM_FILE_ACCEPT =
+  ".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.jpg,.jpeg,.png,.webp,.gif";
+
+function FocusedFileInput({
+  value,
+  fileValue,
+  onChange,
+  autoFocus,
+  placeholder,
+  error,
+}: {
+  value: string;
+  fileValue?: File | null;
+  onChange: (file: File | null) => void;
+  autoFocus: boolean;
+  placeholder: string;
+  error?: string;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const displayName = fileValue?.name || value || placeholder;
+
+  function clearFile() {
+    if (ref.current) {
+      ref.current.value = "";
+    }
+    onChange(null);
+  }
+
+  return (
+    <div className="space-y-2">
+      <label
+        className={cn(
+          "flex w-full max-w-lg cursor-pointer items-center gap-3 rounded-[14px] border px-4 py-4 text-left transition-all",
+          "border-primary/30 bg-primary/[0.04] hover:bg-primary/10",
+          error && "border-destructive/60",
+        )}
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-primary/10 text-primary">
+          <Upload className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-medium text-foreground">
+            {displayName}
+          </span>
+          <span className="mt-1 block text-xs text-muted-foreground">
+            PDF, documents, spreadsheets, presentations, text, CSV, or images up to 10MB
+          </span>
+        </span>
+        <input
+          ref={ref}
+          type="file"
+          accept={FORM_FILE_ACCEPT}
+          autoFocus={autoFocus}
+          onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+          className="sr-only"
+          aria-invalid={error ? true : undefined}
+        />
+      </label>
+      {(fileValue || value) && (
+        <button
+          type="button"
+          onClick={clearFile}
+          className="inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+        >
+          <X className="h-3.5 w-3.5" />
+          Clear file
+        </button>
+      )}
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );

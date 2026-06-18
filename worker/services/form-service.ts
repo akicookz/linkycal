@@ -25,6 +25,31 @@ const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
   file: "Choose a file",
 };
 
+const PRIVATE_FORM_UPLOAD_PREFIX = "form-responses/";
+
+function isPrivateFormUploadKey(value: string | null | undefined): boolean {
+  return !!value && value.startsWith(PRIVATE_FORM_UPLOAD_PREFIX);
+}
+
+function isExternalUrl(value: string | null | undefined): boolean {
+  if (!value) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeFilePointer(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (isPrivateFormUploadKey(trimmed) || isExternalUrl(trimmed)) {
+    return trimmed;
+  }
+  return null;
+}
+
 function parseJsonValue(value: unknown): unknown {
   if (typeof value !== "string") return value;
 
@@ -116,6 +141,13 @@ function formatResponseDisplayValue(
   value: string | null,
   fileUrl: string | null,
 ): string {
+  if (field?.type === "file") {
+    const filename = value?.trim() ?? "";
+    if (filename) return filename;
+    if (isPrivateFormUploadKey(fileUrl)) return "Uploaded file";
+    return fileUrl?.trim() ?? "";
+  }
+
   if (fileUrl) return fileUrl;
 
   const rawValue = value?.trim() ?? "";
@@ -744,10 +776,15 @@ export class FormService {
     const allFields = await this.listFields(response.formId);
     // Drop unknown field IDs (stale clients, renamed fields) instead of failing
     // the whole submission on the composite (form_id, field_id) FK.
-    const knownFieldIds = new Set(allFields.map((f) => f.id));
+    const fieldById = new Map(allFields.map((field) => [field.id, field]));
 
     for (const field of fields) {
-      if (!knownFieldIds.has(field.fieldId)) continue;
+      const fieldConfig = fieldById.get(field.fieldId);
+      if (!fieldConfig) continue;
+      const fileUrl =
+        fieldConfig.type === "file"
+          ? normalizeFilePointer(field.fileUrl)
+          : null;
       const id = crypto.randomUUID();
       await this.db.insert(dbSchema.formFieldValues).values({
         id,
@@ -755,7 +792,7 @@ export class FormService {
         formId: response.formId,
         fieldId: field.fieldId,
         value: field.value ?? null,
-        fileUrl: field.fileUrl ?? null,
+        fileUrl,
       });
     }
 

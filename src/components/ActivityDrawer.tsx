@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { CalendarCheck, CalendarClock, FileText, Loader, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check } from "lucide-react";
+import { CalendarCheck, CalendarClock, FileText, Loader, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check, ExternalLink } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -80,6 +80,23 @@ function formatDrawerDateTime(dateStr: string): string {
     hour: "numeric",
     minute: "2-digit",
   });
+}
+
+const PRIVATE_FORM_UPLOAD_PREFIX = "form-responses/";
+
+function isPrivateFormUploadKey(value: string | null | undefined): boolean {
+  return !!value && value.startsWith(PRIVATE_FORM_UPLOAD_PREFIX);
+}
+
+function fileResponseHref(
+  projectId: string,
+  item: ActivityDrawerProps["item"],
+  value: FormResponseValueDetail,
+): string | null {
+  if (!value.fileUrl || !item?.formId) return null;
+  if (!isPrivateFormUploadKey(value.fileUrl)) return value.fileUrl;
+
+  return `/api/projects/${projectId}/forms/${item.formId}/responses/${item.id}/files/${value.id}`;
 }
 
 // Types for the drawer data
@@ -352,13 +369,26 @@ export function ActivityDrawer({
             {!isBooking && formDetail?.values && formDetail.values.length > 0 && (
               <div>
                 <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Responses</p>
-                {formDetail.values.map((value) => (
-                  <CopyableField
-                    key={value.id}
-                    label={value.fieldLabel}
-                    value={value.displayValue}
-                  />
-                ))}
+                {formDetail.values.map((value) => {
+                  if (value.fieldType === "file" && value.fileUrl) {
+                    return (
+                      <FileResponseField
+                        key={value.id}
+                        label={value.fieldLabel}
+                        filename={value.displayValue}
+                        href={fileResponseHref(projectId, item, value)}
+                      />
+                    );
+                  }
+
+                  return (
+                    <CopyableField
+                      key={value.id}
+                      label={value.fieldLabel}
+                      value={value.displayValue}
+                    />
+                  );
+                })}
               </div>
             )}
 
@@ -487,5 +517,39 @@ export function ActivityDrawer({
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+function FileResponseField({
+  label,
+  filename,
+  href,
+}: {
+  label: string;
+  filename: string;
+  href: string | null;
+}) {
+  return (
+    <div className="py-1.5">
+      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+        {label}
+      </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-sm text-foreground">
+          {filename || "Uploaded file"}
+        </p>
+        {href && (
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-[10px] px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Open file
+          </a>
+        )}
+      </div>
+    </div>
   );
 }
