@@ -1,20 +1,176 @@
-# LinkyCal API
-> Form & Scheduling infrastructure. API-first.
+# LinkyCal
 
-## Endpoints
-- GET /api/v1/availability/:projectSlug - Check available time slots
-- POST /api/v1/bookings - Create a booking
-- POST /api/v1/forms/:projectSlug/:formSlug/responses - Start a form response
-- POST /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/uploads - Upload a file for a file field
-- PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex - Submit a form step
-- GET /api/widget/form/:projectSlug/:formSlug/config - Get a form's config
-- POST /api/public/forms/:projectSlug/:formSlug/submit - Submit a native HTML form
+> Headless forms, scheduling, and contacts infrastructure, built API-first. Run a whole workspace programmatically: create and edit event types and forms, and review bookings, form responses, and contacts through a built-in MCP server an AI agent can drive. Then drop the visitor-facing forms and booking onto any site with plain HTML or zero-dependency widgets. LinkyCal handles storage, spam, confirmations, calendar sync, and follow-up workflows; you keep your own frontend.
 
-## Auth
-Bearer token via API key: Authorization: Bearer lc_live_...
+Base URL: https://linkycal.com
+API docs: https://linkycal.com/docs
 
-## MCP
-Streamable HTTP server for AI agents: https://linkycal.com/api/mcp
+## Authentication
 
-## Docs
-/docs
+Workspace management and the MCP server use a project-scoped API key. Create one in the dashboard under "MCP & APIs" and send it as a Bearer token:
+
+    Authorization: Bearer lc_live_...
+
+A key grants full access to its project. Use it server-side or in a local agent only, never in client-side code.
+
+The visitor-facing endpoints (start a form response, submit a step, upload a file, check availability, create a booking, native HTML form posts) are open and rate-limited per IP, so you can embed forms and booking on a public site without exposing a key.
+
+## Manage the workspace (MCP server)
+
+The primary way to run a LinkyCal workspace from an agent. It speaks Model Context Protocol over Streamable HTTP, so assistants like Claude can build forms, set up scheduling, and review activity on your behalf.
+
+Endpoint: https://linkycal.com/api/mcp
+Auth: your project API key as a Bearer token. Every tool is hard-scoped to that key's project, so you never pass a project ID.
+
+Add to Claude Code:
+
+    claude mcp add --transport http linkycal https://linkycal.com/api/mcp \
+      --header "Authorization: Bearer lc_live_..."
+
+Or any MCP client config:
+
+    { "mcpServers": { "linkycal": { "type": "http", "url": "https://linkycal.com/api/mcp", "headers": { "Authorization": "Bearer lc_live_..." } } } }
+
+What an agent can do — 30 tools, grouped by domain:
+- Event Types: list_event_types, get_event_type, create_event_type, update_event_type — define bookable meeting types (name, slug, duration, buffers, confirmation rules).
+- Forms: list_forms, get_form, create_form, update_form, list_form_responses — build single or multi-step forms and read what's submitted.
+- Bookings: list_bookings, get_booking, get_available_slots, create_booking, cancel_booking, confirm_booking, decline_booking — review and manage the calendar.
+- Contacts: list_contacts, get_contact, create_contact, update_contact, delete_contact, get_contact_activity.
+- Tags: list_contact_tags, create_contact_tag, add_tag_to_contact, remove_tag_from_contact.
+- Schedules: list_schedules, get_schedule — the working hours behind event types.
+- Workflows: list_workflows, get_workflow — read-only over MCP by design.
+
+Typical setup flow: `list_event_types` to see what exists, `create_event_type` for a new meeting type, `create_form` (single or multi-step) for intake, then `list_form_responses` / `list_bookings` to review what comes in. Read with `get_*` before any `update_*` so you send back the full intended state.
+
+## Example: agent skill
+
+Drop this SKILL.md into your agent (e.g. `.claude/skills/manage-linkycal/SKILL.md`) so it can set up and run a LinkyCal workspace for you. It assumes the MCP server above is connected, and every tool is already scoped to one project.
+
+    ---
+    name: manage-linkycal
+    description: Administer a LinkyCal workspace — create and edit event types and forms, and review bookings, form responses, and contacts. Use whenever the user wants to build a booking page or form, change scheduling settings, or see what's coming in.
+    ---
+
+    # Managing a LinkyCal workspace
+
+    You administer the user's LinkyCal project through the connected MCP server. The API key is scoped to one project, so you never pass a project ID.
+
+    ## Common tasks
+    - Create a bookable event type with `create_event_type` (name, slug, duration in minutes; plus optional description, location, color, buffers, maxPerDay, requiresConfirmation). Run `list_event_types` first so you reuse an existing one instead of duplicating a slug.
+    - Build or edit a form with `create_form` (name, slug, type: 'single' or 'multi_step') and `update_form`. Always `get_form` first so you preserve its existing steps and fields.
+    - Review activity: `list_bookings`, `list_form_responses`, `list_contacts`, then drill in with `get_booking`, `get_contact`, `get_contact_activity`.
+    - Organize contacts: `create_contact` / `update_contact`, and tag them with `create_contact_tag` + `add_tag_to_contact`.
+    - Inspect scheduling rules with `list_schedules` / `get_schedule` (the working hours behind an event type).
+
+    ## Rules
+    - List before you create so you never duplicate an event type or form slug.
+    - Read with `get_*` before any `update_*`, and send the full intended state, not a partial guess.
+    - Slugs are URL-facing and stable; confirm with the user before renaming one.
+    - Workflows are read-only over MCP (`list_workflows`, `get_workflow`): inspect, don't modify.
+    - The exact required fields for each tool are in its input schema — read it rather than guessing.
+    - Never expose the API key or touch anything outside the connected project.
+
+## Public integration (visitor-facing)
+
+Once forms and event types exist, embed them on any site. These endpoints are open and rate-limited per IP — no API key needed (file download is the one exception, noted below).
+
+### Forms API
+
+Start a form response — POST /api/v1/forms/:projectSlug/:formSlug/responses
+Returns the new response plus the full form config (steps + fields). Optional JSON body: `{ "metadata": { ... } }`.
+
+    curl -X POST "https://linkycal.com/api/v1/forms/acme/contact/responses" \
+      -H "Content-Type: application/json"
+    # => { "response": { "id": "resp_a1b2", "formId": "form_x1", "currentStepIndex": 0, "status": "in_progress" },
+    #      "form": { "id": "form_x1", "name": "Contact Form", "steps": [ ... ] } }
+
+Upload a file (for file fields) — POST /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/uploads
+Multipart form-data with `fieldId` and `file`. Returns a private file pointer to pass as `fileUrl` when submitting the step.
+
+    curl -X POST "https://linkycal.com/api/v1/forms/acme/contact/responses/resp_a1b2/uploads" \
+      -F "fieldId=resume" -F "file=@./resume.pdf"
+    # => { "upload": { "fileUrl": "form-responses/.../upload-id.pdf", "filename": "resume.pdf" } }
+
+Submit a step — PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex
+Submit steps in order (0, 1, 2...). Body:
+- `fields` (required): array of `{ fieldId, value, fileUrl? }`. File fields use `fileUrl` from the upload endpoint.
+- `complete` (optional): set `true` on the last visible step to finalize the response. Required for forms with conditional steps, where the server can't infer the final step from the index alone.
+
+    curl -X PATCH "https://linkycal.com/api/v1/forms/acme/contact/responses/resp_a1b2/steps/0" \
+      -H "Content-Type: application/json" \
+      -d '{ "fields": [ { "fieldId": "fld_1", "value": "Jane Smith" } ], "complete": true }'
+
+When `status` becomes `completed`, follow-up workflows, owner notifications, and the contact record fire automatically.
+
+Download a respondent's uploaded file — GET /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/files/:valueId
+Requires `Authorization: Bearer lc_live_...`. Uploaded files are private by default.
+
+Native HTML form (no JavaScript) — POST /api/public/forms/:projectSlug/:formSlug/submit
+Post a plain browser form straight to LinkyCal. Use form field IDs as the input `name`s. Add `enctype="multipart/form-data"` when there are file inputs. Returns a hosted thank-you page, or your configured redirect.
+
+    <form action="https://linkycal.com/api/public/forms/acme/contact/submit" method="post" enctype="multipart/form-data">
+      <input type="text" name="full_name" required />
+      <input type="email" name="email" required />
+      <button type="submit">Send</button>
+    </form>
+
+Get form config — GET /api/widget/form/:projectSlug/:formSlug/config — returns steps, fields, and validation rules.
+
+### Booking API
+
+Check availability — GET /api/v1/availability/:projectSlug
+Query: `date` (YYYY-MM-DD, required), `eventTypeSlug` (required), `timezone` (IANA, optional, defaults UTC).
+
+    curl "https://linkycal.com/api/v1/availability/acme?date=2026-03-24&timezone=UTC&eventTypeSlug=consultation"
+    # => { "slots": [ { "start": "2026-03-24T09:00:00Z", "end": "2026-03-24T09:30:00Z" } ], "date": "2026-03-24", "timezone": "UTC" }
+
+Create a booking — POST /api/v1/bookings
+JSON body: `projectSlug`, `eventTypeSlug`, `startTime` (ISO 8601), `name`, `email`, `timezone` (IANA) are required; `notes` optional; `formFields` (optional) holds the event type's custom booking-form values keyed by field ID — extra details like a phone number go here, there is no top-level `phone`.
+
+    curl -X POST "https://linkycal.com/api/v1/bookings" \
+      -H "Content-Type: application/json" \
+      -d '{ "projectSlug": "acme", "eventTypeSlug": "consultation", "startTime": "2026-03-24T09:00:00Z",
+            "name": "Jane Smith", "email": "jane@example.com", "timezone": "America/New_York" }'
+    # => { "booking": { "id": "bk_abc", "status": "confirmed", "startTime": "...", "endTime": "..." } }
+
+A confirmation email is sent automatically, and a Google Calendar event is created when the event type has calendar sync connected. Cancellation is a dashboard/agent action (cancel_booking over MCP), not a public endpoint.
+
+### Embeddable widgets
+
+Zero-dependency IIFE bundles (~6KB gzipped). Drop in a script tag and initialize.
+
+    <div id="booking-widget"></div>
+    <script src="https://cdn.linkycal.com/widgets/booking.js"></script>
+    <script>
+      LinkyCal.booking({ projectSlug: "acme", container: "#booking-widget", eventTypeSlug: "consultation", theme: { primaryColor: "#1B4332" } });
+    </script>
+
+    <div id="form-widget"></div>
+    <script src="https://cdn.linkycal.com/widgets/form.js"></script>
+    <script>
+      LinkyCal.form({ projectSlug: "acme", formSlug: "contact", container: "#form-widget", theme: { primaryColor: "#1B4332" } });
+    </script>
+
+Options: `projectSlug` (required), `container` (required, CSS selector or element), `eventTypeSlug`/`formSlug` as applicable, optional `theme` ({ primaryColor, borderRadius, fontFamily }).
+
+## Workflows (automation)
+
+A trigger fires connected actions in sequence.
+- Triggers: form_submitted, booking_created, booking_cancelled, tag_added, manual
+- Actions: send_email, add_tag, remove_tag, wait, condition (if/else), webhook, update_contact
+
+Webhook actions POST a JSON payload to your URL, e.g. `{ "event": "form_submitted", "timestamp": "...", "data": { "formId": "...", "responseId": "...", "contactId": "..." } }`. Verify with a shared secret header.
+
+## Rate limits (per IP)
+
+- Availability checks: 60/min
+- Booking creation: 10/min
+- Form responses: 30/min
+- Form step submissions: 60/min
+- File uploads: 30/min
+
+Exceeding a limit returns 429.
+
+## Errors
+
+Errors return JSON `{ "error": "message" }`. Status codes: 400 validation, 401 unauthorized, 403 forbidden (plan limit or unavailable feature), 404 not found, 429 rate limited, 500 server error.
