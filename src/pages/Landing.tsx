@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { ArrowRight, Link2, Code2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { SEOHead } from "@/components/SEOHead";
 import {
   Dialog,
   DialogContent,
@@ -255,6 +256,8 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-clip">
+      <SEOHead canonical="https://linkycal.com/" />
+
       {/* ── 1. Floating Header ──────────────────────────────────────────── */}
       <MarketingNav onGetStarted={openAuth} />
 

@@ -21,6 +21,7 @@ import {
   isChoiceFieldType,
 } from "@/components/FocusedFieldInput";
 import { Logo } from "@/components/Logo";
+import { SEOHead } from "@/components/SEOHead";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/track";
 import {
@@ -104,6 +105,16 @@ type FocusedScreen = {
   | { kind: "question"; field: FormField; questionNumber: number }
   | { kind: "group"; fields: FormField[]; firstQuestionNumber: number }
 );
+
+function stripHtml(value: string): string {
+  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function truncateMetaDescription(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 180) return normalized;
+  return `${normalized.slice(0, 177).trimEnd()}...`;
+}
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -782,6 +793,30 @@ export default function PublicForm() {
     );
   }
 
+  const introStep = allSortedSteps.find(
+    (step) => step.richDescription?.trim() || step.description?.trim(),
+  );
+  const introText = introStep?.richDescription
+    ? stripHtml(introStep.richDescription)
+    : introStep?.description?.trim();
+  const seoDescription = truncateMetaDescription(
+    introText ||
+      `Submit ${form.name}${project?.name ? ` for ${project.name}` : ""}.`,
+  );
+  const seoImage = theme?.bannerImage || theme?.backgroundImage || "/og-image.png";
+  const seoCanonical =
+    projectSlug && formSlug ? `/${projectSlug}/${formSlug}` : undefined;
+  const seoHead = (
+    <SEOHead
+      title={form.name}
+      description={seoDescription}
+      image={seoImage}
+      imageAlt={`${form.name} form preview`}
+      canonical={seoCanonical}
+      noIndex={isEmbedded}
+    />
+  );
+
   // ─── Success State ─────────────────────────────────────────────────────
 
   const completionTitle = completionField?.label || "Thank you!";
@@ -828,6 +863,7 @@ export default function PublicForm() {
           progressPct={100}
           showNav={false}
         >
+          {seoHead}
           {completionContent}
         </FocusedShell>
       );
@@ -835,6 +871,7 @@ export default function PublicForm() {
 
     return (
       <PageShell theme={theme} canHideBranding={canHideBranding}>
+        {seoHead}
         <div className="py-16">{completionContent}</div>
       </PageShell>
     );
@@ -857,6 +894,7 @@ export default function PublicForm() {
         onPrev={goPrev}
         onNext={goNext}
       >
+        {seoHead}
         <div className="sr-only" aria-hidden="true">
           <label htmlFor="website">Website</label>
           <input
@@ -1047,6 +1085,7 @@ export default function PublicForm() {
 
   return (
     <PageShell theme={theme} canHideBranding={canHideBranding}>
+      {seoHead}
       <div className="space-y-1.5 mb-7">
         <h1 className="text-lg font-semibold">{form.name}</h1>
         {steps.length > 1 && currentStep?.title && (

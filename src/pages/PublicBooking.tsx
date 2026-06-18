@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Logo } from "@/components/Logo";
+import { SEOHead } from "@/components/SEOHead";
 import { cn } from "@/lib/utils";
 import { track } from "@/lib/track";
 
@@ -68,6 +69,12 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+function truncateMetaDescription(value: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 180) return normalized;
+  return `${normalized.slice(0, 177).trimEnd()}...`;
+}
 
 function formatTime(iso: string, tz: string, format: "12h" | "24h" = "12h"): string {
   return new Date(iso).toLocaleTimeString("en-US", {
@@ -570,6 +577,13 @@ export default function PublicBooking() {
   const desc = eventType.description || "";
   const descIsLong = desc.length > 120;
   const descDisplay = descIsLong && !descExpanded ? desc.slice(0, 120) + "..." : desc;
+  const seoDescription = truncateMetaDescription(
+    desc ||
+      `Book a ${eventType.duration}-minute ${eventType.name} with ${project.name}.`,
+  );
+  const seoImage = theme?.bannerImage || theme?.backgroundImage || "/og-image.png";
+  const seoCanonical =
+    projectSlug && eventSlug ? `/${projectSlug}/${eventSlug}` : undefined;
 
   // ─── Render ────────────────────────────────────────────────────────────
 
@@ -608,6 +622,15 @@ export default function PublicBooking() {
         } : {}),
       }}
     >
+      <SEOHead
+        title={`Book ${eventType.name}`}
+        description={seoDescription}
+        image={seoImage}
+        imageAlt={`${eventType.name} booking page preview`}
+        canonical={seoCanonical}
+        noIndex={isEmbedded}
+      />
+
       <div
         className="w-full transition-[max-width] duration-500 ease-in-out"
         style={{ maxWidth: step === 1 ? "880px" : "680px" }}

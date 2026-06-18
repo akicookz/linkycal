@@ -19,6 +19,7 @@ import {
   Code2,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { SEOHead } from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -348,6 +349,12 @@ export default function Docs() {
 
   return (
     <div className="min-h-screen bg-background">
+      <SEOHead
+        title="Docs"
+        description="Explore LinkyCal API docs for forms, booking links, contacts, workflows, widgets, MCP tools, and authentication."
+        canonical="https://linkycal.com/docs"
+      />
+
       {/* ── Fixed Header ────────────────────────────────────────────────── */}
       <header className="fixed top-0 z-50 w-full bg-background/80 backdrop-blur-xl border-b border-border h-14">
         <div className="max-w-[1400px] mx-auto px-6 flex items-center justify-between h-full">
