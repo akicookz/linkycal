@@ -250,7 +250,7 @@ const ALTERNATIVES: Record<string, AlternativeData> = {
       {
         question: "Is LinkyCal free too?",
         answer:
-          "Yes, there is a free plan you can build and launch on. You move up when you need more projects, calendar sync, or the API.",
+          "Yes, there is a free plan you can build and launch on. You move up when you need more projects, more calendar connections, team members, or the API.",
       },
       {
         question: "Do I lose the simple builder?",

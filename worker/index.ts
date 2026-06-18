@@ -5714,7 +5714,7 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
 
     if (!planLimits.calendarSync) {
       return c.json(
-        { error: "Calendar sync requires a Pro or Business plan" },
+        { error: "Calendar sync is not available on this plan" },
         403,
       );
     }
