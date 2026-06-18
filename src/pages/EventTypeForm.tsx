@@ -275,12 +275,13 @@ export default function EventTypeForm() {
   const { data: calendarAccounts } = useQuery<{
     accounts: CalendarConnectionAccount[];
   }>({
-    queryKey: ["calendar-accounts"],
+    queryKey: ["projects", projectId, "calendar-accounts"],
     queryFn: async () => {
-      const res = await fetch("/api/calendar/calendars");
+      const res = await fetch(`/api/projects/${projectId}/calendar/calendars`);
       if (!res.ok) throw new Error("Failed to fetch calendars");
       return res.json();
     },
+    enabled: !!projectId,
   });
 
   // Fetch event type calendar config (when editing)

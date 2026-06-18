@@ -19,7 +19,7 @@
 		"widget:build": "bun run widget:build:booking && bun run widget:build:form",
 		"widget:upload": "wrangler r2 object put linkycal-uploads/widgets/booking.js --file dist-widget/booking-widget.js --content-type application/javascript --cache-control \"public, max-age=300, must-revalidate\" --remote && wrangler r2 object put linkycal-uploads/widgets/form.js --file dist-widget/form-widget.js --content-type application/javascript --cache-control \"public, max-age=300, must-revalidate\" --remote",
 		"widget:deploy": "bun run widget:build && bun run widget:upload",
-		"deploy:full": "bun run build && bun run widget:deploy && wrangler deploy && bun run db:migrate:prod"
+		"deploy:full": "bun run build && bun run db:migrate:prod && bun run widget:deploy && wrangler deploy"
 	},
 	"dependencies": {
 		"@ai-sdk/google": "^3.0.53",

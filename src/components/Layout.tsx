@@ -11,6 +11,7 @@ import {
   Workflow,
   Settings,
   Key,
+  UserPlus,
   BarChart3,
   LogOut,
   ChevronDown,
@@ -48,6 +49,9 @@ interface Project {
   id: string;
   name: string;
   slug: string;
+  teamName?: string | null;
+  teamRole?: "owner" | "admin" | "member" | null;
+  effectiveProjectRole?: "admin" | "editor" | "viewer" | null;
 }
 
 interface NavItem {
@@ -113,6 +117,7 @@ function LayoutInner() {
     ? [
         { label: "Workflows", href: `/app/projects/${currentProject.id}/workflows`, icon: Workflow },
         { label: "MCP & APIs", href: `/app/projects/${currentProject.id}/api-keys`, icon: Key },
+        { label: "Team", href: `/app/projects/${currentProject.id}/team`, icon: UserPlus },
         { label: "Settings", href: `/app/projects/${currentProject.id}/settings`, icon: Settings },
       ]
     : [];
@@ -189,6 +194,11 @@ function LayoutInner() {
                         )}
                       >
                         <span className="flex-1 truncate">{project.name}</span>
+                        {project.teamName && project.teamName !== currentProject.teamName && (
+                          <span className="text-[11px] text-muted-foreground truncate">
+                            {project.teamName}
+                          </span>
+                        )}
                         {project.id === currentProject.id && (
                           <Check className="w-4 h-4 shrink-0 text-primary" />
                         )}

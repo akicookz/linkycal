@@ -185,6 +185,7 @@ bun run deploy:full      # Full deploy (app + widgets + migrations)
 | Event types      | 3    | 20    | Unlimited |
 | Contacts/project | 100  | 5,000 | Unlimited |
 | Workflows        | 1    | 10    | Unlimited |
-| Calendar sync    | No   | Yes   | Yes       |
+| Calendar sync    | 1 connection | Unlimited | Unlimited |
+| Team members     | No   | Yes   | Yes       |
 | API access       | No   | Yes   | Yes       |
 | Custom widgets   | No   | No    | Yes       |

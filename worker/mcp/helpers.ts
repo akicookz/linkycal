@@ -55,7 +55,10 @@ export async function getPlanLimitsForProject(
   projectId: string,
 ): Promise<PlanLimits> {
   const [project] = await db
-    .select({ userId: dbSchema.projects.userId })
+    .select({
+      userId: dbSchema.projects.userId,
+      teamId: dbSchema.projects.teamId,
+    })
     .from(dbSchema.projects)
     .where(eq(dbSchema.projects.id, projectId))
     .limit(1);
@@ -65,7 +68,11 @@ export async function getPlanLimitsForProject(
   const [subscription] = await db
     .select({ plan: dbSchema.subscriptions.plan })
     .from(dbSchema.subscriptions)
-    .where(eq(dbSchema.subscriptions.userId, project.userId))
+    .where(
+      project.teamId
+        ? eq(dbSchema.subscriptions.teamId, project.teamId)
+        : eq(dbSchema.subscriptions.userId, project.userId),
+    )
     .orderBy(
       desc(dbSchema.subscriptions.updatedAt),
       desc(dbSchema.subscriptions.createdAt),

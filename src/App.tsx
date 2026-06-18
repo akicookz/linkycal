@@ -23,6 +23,7 @@ import WorkflowBuilder from "./pages/WorkflowBuilder";
 import Settings from "./pages/Settings";
 import ApiKeys from "./pages/ApiKeys";
 import Analytics from "./pages/Analytics";
+import Team from "./pages/Team";
 import Profile from "./pages/Profile";
 import Billing from "./pages/Billing";
 import AuthCallback from "./pages/AuthCallback";
@@ -32,6 +33,7 @@ import FeaturePage from "./pages/FeaturePage";
 import AlternativePage from "./pages/AlternativePage";
 import LegalPage from "./pages/LegalPage";
 import PublicResolver from "./pages/PublicResolver";
+import Invite from "./pages/Invite";
 
 // ─── Redirect /app to first project's dashboard ──────────────────────────────
 
@@ -64,6 +66,7 @@ function App() {
       <Route path="/alternatives/:slug" element={<AlternativePage />} />
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
       <Route path="/terms" element={<LegalPage kind="terms" />} />
+      <Route path="/invite/:token" element={<Invite />} />
 
       <Route
         path="/api/auth/callback/:provider"
@@ -132,6 +135,7 @@ function App() {
         <Route path="projects/:projectId/workflows" element={<Workflows />} />
         <Route path="projects/:projectId/workflows/:workflowId" element={<WorkflowBuilder />} />
         <Route path="projects/:projectId/analytics" element={<Analytics />} />
+        <Route path="projects/:projectId/team" element={<Team />} />
         <Route path="projects/:projectId/settings" element={<Settings />} />
         <Route path="projects/:projectId/api-keys" element={<ApiKeys />} />
       </Route>

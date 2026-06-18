@@ -1,5 +1,5 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as dbSchema from "../db/schema";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -87,10 +87,15 @@ export class ApiKeyService {
 
   // ─── Delete ───────────────────────────────────────────────────────────────
 
-  async delete(id: string): Promise<void> {
+  async delete(projectId: string, id: string): Promise<void> {
     await this.db
       .delete(dbSchema.apiKeys)
-      .where(eq(dbSchema.apiKeys.id, id));
+      .where(
+        and(
+          eq(dbSchema.apiKeys.id, id),
+          eq(dbSchema.apiKeys.projectId, projectId),
+        ),
+      );
   }
 
   // ─── Validate ─────────────────────────────────────────────────────────────

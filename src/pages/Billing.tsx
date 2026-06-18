@@ -22,6 +22,8 @@ interface PlanLimits {
   maxContactsPerProject: number;
   maxWorkflows: number;
   calendarSync: boolean;
+  maxCalendarConnections: number;
+  maxTeamMembers: number;
   apiAccess: boolean;
   customWidgets: boolean;
 }

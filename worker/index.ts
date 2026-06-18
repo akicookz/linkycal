@@ -9,10 +9,10 @@ import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
-import type { AppEnv, HonoAppContext, Plan } from "./types";
+import type { AppEnv, HonoAppContext, Plan, ProjectAccessContext } from "./types";
 
 const { schema } = dbSchema;
-type AppDatabase = DrizzleD1Database<typeof schema>;
+type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
 import {
   createProjectSchema,
@@ -47,6 +47,11 @@ import {
   checkoutSchema,
   trackEventSchema,
   analyticsQuerySchema,
+  updateTeamSchema,
+  createTeamInviteSchema,
+  updateTeamMemberSchema,
+  upsertProjectMemberSchema,
+  updateProjectMemberSchema,
   validate,
 } from "./validation";
 
@@ -100,6 +105,14 @@ import {
   queryForms,
   queryFilterOptions,
 } from "./services/analytics-service";
+import {
+  ensureOwnerMembership,
+  ensurePersonalTeam,
+  getTeamMembership,
+  hasProjectPermission,
+  resolveProjectAccess,
+  type ProjectPermission,
+} from "./lib/team-access";
 
 // ─── Subscription Helpers ────────────────────────────────────────────────────
 
@@ -111,6 +124,23 @@ async function getSubscriptionRecordByUserId(
     .select()
     .from(dbSchema.subscriptions)
     .where(eq(dbSchema.subscriptions.userId, userId))
+    .orderBy(
+      desc(dbSchema.subscriptions.updatedAt),
+      desc(dbSchema.subscriptions.createdAt),
+    )
+    .limit(1);
+
+  return subscription ?? null;
+}
+
+async function getSubscriptionRecordByTeamId(
+  db: AppDatabase,
+  teamId: string,
+): Promise<dbSchema.SubscriptionRow | null> {
+  const [subscription] = await db
+    .select()
+    .from(dbSchema.subscriptions)
+    .where(eq(dbSchema.subscriptions.teamId, teamId))
     .orderBy(
       desc(dbSchema.subscriptions.updatedAt),
       desc(dbSchema.subscriptions.createdAt),
@@ -140,9 +170,25 @@ async function getSubscriptionRecordByCustomerId(
 async function ensureSubscriptionRecord(
   db: AppDatabase,
   userId: string,
+  teamId?: string | null,
 ): Promise<dbSchema.SubscriptionRow> {
+  if (teamId) {
+    const existingByTeam = await getSubscriptionRecordByTeamId(db, teamId);
+    if (existingByTeam) {
+      return existingByTeam;
+    }
+  }
+
   const existing = await getSubscriptionRecordByUserId(db, userId);
   if (existing) {
+    if (teamId && !existing.teamId) {
+      await db
+        .update(dbSchema.subscriptions)
+        .set({ teamId })
+        .where(eq(dbSchema.subscriptions.id, existing.id));
+      const updated = await getSubscriptionRecordByTeamId(db, teamId);
+      if (updated) return updated;
+    }
     return existing;
   }
 
@@ -150,6 +196,7 @@ async function ensureSubscriptionRecord(
     await db.insert(dbSchema.subscriptions).values({
       id: crypto.randomUUID(),
       userId,
+      teamId: teamId ?? null,
       plan: "free",
       interval: "monthly",
       status: "active",
@@ -160,7 +207,9 @@ async function ensureSubscriptionRecord(
     }
   }
 
-  const created = await getSubscriptionRecordByUserId(db, userId);
+  const created = teamId
+    ? await getSubscriptionRecordByTeamId(db, teamId)
+    : await getSubscriptionRecordByUserId(db, userId);
   if (!created) {
     throw new Error(`Failed to ensure subscription record for user ${userId}`);
   }
@@ -174,8 +223,100 @@ function isSubscriptionUserUniqueConstraintError(error: unknown): boolean {
   }
 
   const message = error.message.toLowerCase();
-  return message.includes("unique constraint failed")
-    && message.includes("subscriptions.user_id");
+  return (
+    message.includes("unique constraint failed") &&
+    (message.includes("subscriptions.user_id") ||
+      message.includes("subscriptions.team_id"))
+  );
+}
+
+// ─── Team Helpers ───────────────────────────────────────────────────────────
+
+const TEAM_INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function hashSecret(value: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(value);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function generateInviteToken(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function getTeamAdminContext(
+  db: AppDatabase,
+  teamId: string,
+  userId: string,
+): Promise<{
+  team: dbSchema.TeamRow;
+  member: dbSchema.TeamMemberRow;
+} | null> {
+  const [team] = await db
+    .select()
+    .from(dbSchema.teams)
+    .where(eq(dbSchema.teams.id, teamId))
+    .limit(1);
+  if (!team) return null;
+
+  let member = await getTeamMembership(db, teamId, userId);
+  if (!member && team.ownerUserId === userId) {
+    member = await ensureOwnerMembership(db, teamId, userId);
+  }
+  if (!member || (member.role !== "owner" && member.role !== "admin")) {
+    return null;
+  }
+
+  return { team, member };
+}
+
+async function sendTeamInviteEmail(
+  env: AppEnv,
+  params: {
+    to: string;
+    teamName: string;
+    inviterName: string;
+    inviteUrl: string;
+  },
+): Promise<void> {
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: "LinkyCal <noreply@updates.linkycal.com>",
+      to: [params.to],
+      subject: `${params.inviterName} invited you to ${params.teamName} on LinkyCal`,
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 560px; margin: 0 auto; padding: 40px 20px;">
+          <h2 style="color: #1B4332; margin-bottom: 8px;">Join ${params.teamName}</h2>
+          <p style="color: #374151; font-size: 15px; margin-bottom: 24px;">
+            ${params.inviterName} invited you to collaborate in LinkyCal.
+          </p>
+          <a href="${params.inviteUrl}" style="display: inline-block; background: #1B4332; color: white; padding: 12px 18px; border-radius: 12px; text-decoration: none; font-size: 14px; font-weight: 600;">
+            Accept invite
+          </a>
+          <p style="color: #94a3b8; font-size: 12px; margin-top: 24px;">
+            This invite expires in 7 days.
+          </p>
+        </div>
+      `,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Failed to send invite email: ${res.status} ${body}`);
+  }
 }
 
 // ─── Rate Limiter ────────────────────────────────────────────────────────────
@@ -885,6 +1026,7 @@ async function notifyFormResponseCompleted(
       .select({
         id: dbSchema.projects.id,
         userId: dbSchema.projects.userId,
+        teamId: dbSchema.projects.teamId,
         settings: dbSchema.projects.settings,
       })
       .from(dbSchema.projects)
@@ -896,7 +1038,11 @@ async function notifyFormResponseCompleted(
     const [sub] = await db
       .select({ plan: dbSchema.subscriptions.plan })
       .from(dbSchema.subscriptions)
-      .where(eq(dbSchema.subscriptions.userId, project.userId))
+      .where(
+        project.teamId
+          ? eq(dbSchema.subscriptions.teamId, project.teamId)
+          : eq(dbSchema.subscriptions.userId, project.userId),
+      )
       .limit(1);
     if (!sub || sub.plan === "free") return;
 
@@ -1675,7 +1821,9 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
         projected ?? [...new Set(rules.map((r) => r.dayOfWeek))];
     }
 
-    const subscription = await getSubscriptionRecordByUserId(db, project.userId);
+    const subscription = project.teamId
+      ? await getSubscriptionRecordByTeamId(db, project.teamId)
+      : await getSubscriptionRecordByUserId(db, project.userId);
     const canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
 
     return c.json({
@@ -1812,6 +1960,7 @@ app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
         slug: dbSchema.projects.slug,
         settings: dbSchema.projects.settings,
         userId: dbSchema.projects.userId,
+        teamId: dbSchema.projects.teamId,
       })
       .from(dbSchema.projects)
       .where(eq(dbSchema.projects.slug, projectSlug))
@@ -1837,7 +1986,9 @@ app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
         : {},
     };
 
-    const subscription = await getSubscriptionRecordByUserId(db, project.userId);
+    const subscription = project.teamId
+      ? await getSubscriptionRecordByTeamId(db, project.teamId)
+      : await getSubscriptionRecordByUserId(db, project.userId);
     const canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
 
     return c.json({ form, project: projectInfo, canHideBranding });
@@ -2172,8 +2323,27 @@ async function syncSubscription(
 
   if (!existingSub) {
     const customer = await stripe.customers.retrieve(customerId);
-    if (!customer.deleted && customer.metadata?.userId) {
-      existingSub = await ensureSubscriptionRecord(db, customer.metadata.userId);
+    if (!customer.deleted && customer.metadata?.teamId) {
+      const [team] = await db
+        .select({ ownerUserId: dbSchema.teams.ownerUserId })
+        .from(dbSchema.teams)
+        .where(eq(dbSchema.teams.id, customer.metadata.teamId))
+        .limit(1);
+      if (team) {
+        existingSub = await ensureSubscriptionRecord(
+          db,
+          team.ownerUserId,
+          customer.metadata.teamId,
+        );
+      }
+    }
+
+    if (!existingSub && !customer.deleted && customer.metadata?.userId) {
+      existingSub = await ensureSubscriptionRecord(
+        db,
+        customer.metadata.userId,
+        customer.metadata.teamId,
+      );
 
       if (existingSub.stripeCustomerId !== customerId) {
         await db
@@ -2349,6 +2519,7 @@ app.use("/api/*", async (c, next) => {
   if (
     path.startsWith("/api/v1/") ||
     path.startsWith("/api/auth/") ||
+    path.startsWith("/api/invites/") ||
     path.startsWith("/api/widget/") ||
     path.startsWith("/api/public/") ||
     path.startsWith("/api/uploads/") ||
@@ -2369,8 +2540,13 @@ app.use("/api/*", async (c, next) => {
 
   const db = drizzle(c.env.DB, { schema });
 
-  // Load subscription
-  const sub = await ensureSubscriptionRecord(db, session.user.id);
+  const accountTeam = await ensurePersonalTeam(db, {
+    id: session.user.id,
+    name: session.user.name,
+  });
+
+  // Load account subscription for account-level pages and new-team defaults.
+  const sub = await ensureSubscriptionRecord(db, session.user.id, accountTeam.id);
 
   let plan: Plan = (sub?.plan as Plan) ?? "free";
   const status = sub?.status ?? "active";
@@ -2399,15 +2575,139 @@ app.use("/api/*", async (c, next) => {
   c.set("db", db);
   c.set("subscription", { plan, status });
   c.set("planLimits", PLAN_LIMITS[plan]);
+  c.set("accountTeamId", accountTeam.id);
   c.set("effectiveUserId", session.user.id);
 
   return next();
 });
 
-// ─── Project Ownership Middleware ────────────────────────────────────────────
-// Ensures the authed user owns :projectId before any sub-route runs.
+// ─── Project Access Middleware ───────────────────────────────────────────────
+// Resolves team/project RBAC for :projectId and swaps project routes to the
+// owning team's plan limits. Legacy rows without team_id fall back to user_id.
 
-const projectOwnership = async (
+function resolveSubscriptionPlan(
+  subscription: dbSchema.SubscriptionRow | null,
+): { plan: Plan; status: string } {
+  let plan: Plan = (subscription?.plan as Plan) ?? "free";
+  const status = subscription?.status ?? "active";
+
+  if (
+    subscription &&
+    (status === "past_due" || status === "unpaid") &&
+    plan !== "free"
+  ) {
+    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+    const updatedAt =
+      subscription.updatedAt instanceof Date
+        ? subscription.updatedAt.getTime()
+        : new Date(subscription.updatedAt as unknown as string).getTime();
+    if (Date.now() - updatedAt > THREE_DAYS_MS) {
+      plan = "free";
+    }
+  }
+
+  return { plan, status };
+}
+
+function permissionForProjectRequest(
+  method: string,
+  path: string,
+): ProjectPermission {
+  if (path.includes("/api-keys")) return "project:api_keys";
+  if (path.includes("/members")) return "project:members";
+  if (path.includes("/calendar/")) return "project:write";
+  if (path.includes("/calendars")) return "project:write";
+  if (method === "PUT" && /^\/api\/projects\/[^/]+$/.test(path)) {
+    return "project:settings";
+  }
+  if (method === "DELETE" && /^\/api\/projects\/[^/]+$/.test(path)) {
+    return "project:delete";
+  }
+  if (method === "GET" || method === "HEAD") return "project:read";
+  return "project:write";
+}
+
+async function projectCanUseCalendarConnections(
+  db: AppDatabase,
+  access: ProjectAccessContext | undefined,
+  userId: string,
+  connectionIds: string[],
+): Promise<boolean> {
+  const uniqueIds = Array.from(new Set(connectionIds.filter(Boolean)));
+  if (uniqueIds.length === 0) return true;
+
+  if (access?.teamId) {
+    const rows = await db
+      .select({ connectionId: dbSchema.teamCalendarConnections.connectionId })
+      .from(dbSchema.teamCalendarConnections)
+      .where(
+        and(
+          eq(dbSchema.teamCalendarConnections.teamId, access.teamId),
+          inArray(dbSchema.teamCalendarConnections.connectionId, uniqueIds),
+        ),
+      );
+    return rows.length === uniqueIds.length;
+  }
+
+  const rows = await db
+    .select({ id: dbSchema.calendarConnections.id })
+    .from(dbSchema.calendarConnections)
+    .where(
+      and(
+        eq(dbSchema.calendarConnections.userId, userId),
+        inArray(dbSchema.calendarConnections.id, uniqueIds),
+      ),
+    );
+  return rows.length === uniqueIds.length;
+}
+
+async function scheduleBelongsToProject(
+  db: AppDatabase,
+  scheduleId: string,
+  projectId: string,
+): Promise<boolean> {
+  const [schedule] = await db
+    .select({ id: dbSchema.schedules.id })
+    .from(dbSchema.schedules)
+    .where(
+      and(
+        eq(dbSchema.schedules.id, scheduleId),
+        eq(dbSchema.schedules.projectId, projectId),
+      ),
+    )
+    .limit(1);
+  return !!schedule;
+}
+
+async function getTeamMemberUsage(db: AppDatabase, teamId: string) {
+  const [memberCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(dbSchema.teamMembers)
+    .where(
+      and(
+        eq(dbSchema.teamMembers.teamId, teamId),
+        ne(dbSchema.teamMembers.role, "owner"),
+      ),
+    );
+
+  const [pendingInviteCount] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(dbSchema.teamInvites)
+    .where(
+      and(
+        eq(dbSchema.teamInvites.teamId, teamId),
+        eq(dbSchema.teamInvites.status, "pending"),
+        gte(dbSchema.teamInvites.expiresAt, new Date()),
+      ),
+    );
+
+  return {
+    members: Number(memberCount?.count ?? 0),
+    pendingInvites: Number(pendingInviteCount?.count ?? 0),
+  };
+}
+
+const projectAccessMiddleware = async (
   c: Context<HonoAppContext>,
   next: Next,
 ) => {
@@ -2419,19 +2719,757 @@ const projectOwnership = async (
   if (!db || !userId) return c.json({ error: "Unauthorized" }, 401);
 
   const [project] = await db
-    .select()
+    .select({ id: dbSchema.projects.id })
     .from(dbSchema.projects)
     .where(eq(dbSchema.projects.id, projectId))
     .limit(1);
 
   if (!project) return c.json({ error: "Project not found" }, 404);
-  if (project.userId !== userId) return c.json({ error: "Forbidden" }, 403);
+  const access = await resolveProjectAccess(db, projectId, userId);
+  if (!access) return c.json({ error: "Forbidden" }, 403);
+
+  const subscription = access.teamId
+    ? await ensureSubscriptionRecord(db, access.ownerUserId, access.teamId)
+    : await ensureSubscriptionRecord(db, access.ownerUserId);
+  const { plan, status } = resolveSubscriptionPlan(subscription);
+  const planLimits = PLAN_LIMITS[plan];
+
+  if (
+    planLimits.maxTeamMembers === 0 &&
+    !access.isLegacyOwner &&
+    access.teamRole !== "owner"
+  ) {
+    return c.json(
+      {
+        error: "Team collaboration requires a paid plan",
+        code: "teams_requires_paid_plan",
+      },
+      403,
+    );
+  }
+
+  const permission = permissionForProjectRequest(c.req.method, c.req.path);
+  if (!hasProjectPermission(access, permission)) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  c.set("projectAccess", access);
+  c.set("projectSubscription", { plan, status });
+  c.set("projectPlanLimits", planLimits);
+  c.set("subscription", { plan, status });
+  c.set("planLimits", planLimits);
 
   return next();
 };
 
-app.use("/api/projects/:projectId", projectOwnership);
-app.use("/api/projects/:projectId/*", projectOwnership);
+app.use("/api/projects/:projectId", projectAccessMiddleware);
+app.use("/api/projects/:projectId/*", projectAccessMiddleware);
+
+// ─── Teams ──────────────────────────────────────────────────────────────────
+
+const teamRoutes = app
+  .get("/api/teams", async (c) => {
+  const db = c.get("db");
+  const userId = c.get("effectiveUserId");
+
+  const rows = await db
+    .select({
+      memberId: dbSchema.teamMembers.id,
+      role: dbSchema.teamMembers.role,
+      team: dbSchema.teams,
+    })
+    .from(dbSchema.teamMembers)
+    .innerJoin(dbSchema.teams, eq(dbSchema.teamMembers.teamId, dbSchema.teams.id))
+    .where(eq(dbSchema.teamMembers.userId, userId));
+
+  return c.json({
+    teams: rows.map((row) => ({ ...row.team, role: row.role, memberId: row.memberId })),
+  });
+})
+
+  .patch("/api/teams/:teamId", async (c) => {
+  try {
+    const teamId = c.req.param("teamId");
+    const db = c.get("db");
+    const userId = c.get("effectiveUserId");
+    const context = await getTeamAdminContext(db, teamId, userId);
+    if (!context) return c.json({ error: "Forbidden" }, 403);
+
+    const data = validate(updateTeamSchema, await c.req.json());
+    const values: Record<string, unknown> = {};
+    if (data.name !== undefined) values.name = data.name;
+    if (data.slug !== undefined) {
+      const [clash] = await db
+        .select({ id: dbSchema.teams.id })
+        .from(dbSchema.teams)
+        .where(and(eq(dbSchema.teams.slug, data.slug), ne(dbSchema.teams.id, teamId)))
+        .limit(1);
+      if (clash) return c.json({ error: "Team slug is already taken" }, 409);
+      values.slug = data.slug;
+    }
+    if (Object.keys(values).length === 0) {
+      return c.json({ error: "No fields to update" }, 400);
+    }
+
+    await db.update(dbSchema.teams).set(values).where(eq(dbSchema.teams.id, teamId));
+    const [team] = await db
+      .select()
+      .from(dbSchema.teams)
+      .where(eq(dbSchema.teams.id, teamId))
+      .limit(1);
+    return c.json({ team });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Team update error:", err);
+    return c.json({ error: "Failed to update team" }, 500);
+  }
+})
+
+  .get("/api/teams/:teamId/members", async (c) => {
+  const teamId = c.req.param("teamId");
+  const db = c.get("db");
+  const userId = c.get("effectiveUserId");
+  const context = await getTeamAdminContext(db, teamId, userId);
+  if (!context) return c.json({ error: "Forbidden" }, 403);
+
+  const members = await db
+    .select({
+      id: dbSchema.teamMembers.id,
+      role: dbSchema.teamMembers.role,
+      joinedAt: dbSchema.teamMembers.joinedAt,
+      user: {
+        id: dbSchema.schema.users.id,
+        name: dbSchema.schema.users.name,
+        email: dbSchema.schema.users.email,
+        image: dbSchema.schema.users.image,
+      },
+    })
+    .from(dbSchema.teamMembers)
+    .innerJoin(
+      dbSchema.schema.users,
+      eq(dbSchema.teamMembers.userId, dbSchema.schema.users.id),
+    )
+    .where(eq(dbSchema.teamMembers.teamId, teamId));
+
+  const invites = await db
+    .select()
+    .from(dbSchema.teamInvites)
+    .where(
+      and(
+        eq(dbSchema.teamInvites.teamId, teamId),
+        eq(dbSchema.teamInvites.status, "pending"),
+      ),
+    );
+
+  return c.json({ members, invites });
+})
+
+  .post("/api/teams/:teamId/invites", async (c) => {
+  try {
+    const teamId = c.req.param("teamId");
+    const db = c.get("db");
+    const user = c.get("user");
+    const context = await getTeamAdminContext(db, teamId, user.id);
+    if (!context) return c.json({ error: "Forbidden" }, 403);
+
+    const subscription = await ensureSubscriptionRecord(
+      db,
+      context.team.ownerUserId,
+      teamId,
+    );
+    const { plan } = resolveSubscriptionPlan(subscription);
+    const planLimits = PLAN_LIMITS[plan];
+    if (planLimits.maxTeamMembers === 0) {
+      return c.json(
+        {
+          error: "Team collaboration requires a paid plan",
+          code: "teams_requires_paid_plan",
+        },
+        403,
+      );
+    }
+
+    const data = validate(createTeamInviteSchema, await c.req.json());
+    const email = data.email.trim().toLowerCase();
+
+    if (data.projectRole && !data.projectId) {
+      return c.json({ error: "projectId is required when projectRole is set" }, 400);
+    }
+    if (data.projectId) {
+      const [project] = await db
+        .select({ id: dbSchema.projects.id })
+        .from(dbSchema.projects)
+        .where(
+          and(
+            eq(dbSchema.projects.id, data.projectId),
+            eq(dbSchema.projects.teamId, teamId),
+          ),
+        )
+        .limit(1);
+      if (!project) return c.json({ error: "Project not found" }, 404);
+    }
+
+    const [existingUser] = await db
+      .select({ id: dbSchema.schema.users.id })
+      .from(dbSchema.schema.users)
+      .where(eq(dbSchema.schema.users.email, email))
+      .limit(1);
+
+    if (existingUser) {
+      const member = await getTeamMembership(db, teamId, existingUser.id);
+      if (member) return c.json({ error: "User is already a team member" }, 409);
+    }
+
+    const token = generateInviteToken();
+    const tokenHash = await hashSecret(token);
+    const expiresAt = new Date(Date.now() + TEAM_INVITE_TTL_MS);
+
+    const [existingInvite] = await db
+      .select()
+      .from(dbSchema.teamInvites)
+      .where(
+        and(
+          eq(dbSchema.teamInvites.teamId, teamId),
+          eq(dbSchema.teamInvites.email, email),
+          eq(dbSchema.teamInvites.status, "pending"),
+        ),
+      )
+      .limit(1);
+
+    const inviteId = existingInvite?.id ?? crypto.randomUUID();
+    if (!existingInvite && planLimits.maxTeamMembers !== -1) {
+      const usage = await getTeamMemberUsage(db, teamId);
+      if (usage.members + usage.pendingInvites >= planLimits.maxTeamMembers) {
+        return c.json(
+          {
+            error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
+            code: "team_member_limit_reached",
+          },
+          403,
+        );
+      }
+    }
+
+    if (existingInvite) {
+      await db
+        .update(dbSchema.teamInvites)
+        .set({
+          teamRole: data.teamRole,
+          projectId: data.projectId ?? null,
+          projectRole: data.projectRole ?? null,
+          tokenHash,
+          invitedByUserId: user.id,
+          expiresAt,
+          updatedAt: new Date(),
+        })
+        .where(eq(dbSchema.teamInvites.id, existingInvite.id));
+    } else {
+      await db.insert(dbSchema.teamInvites).values({
+        id: inviteId,
+        teamId,
+        email,
+        teamRole: data.teamRole,
+        projectId: data.projectId ?? null,
+        projectRole: data.projectRole ?? null,
+        tokenHash,
+        invitedByUserId: user.id,
+        expiresAt,
+      });
+    }
+
+    await sendTeamInviteEmail(c.env, {
+      to: email,
+      teamName: context.team.name,
+      inviterName: user.name,
+      inviteUrl: `${c.env.BETTER_AUTH_URL}/invite/${token}`,
+    });
+
+    const [invite] = await db
+      .select()
+      .from(dbSchema.teamInvites)
+      .where(eq(dbSchema.teamInvites.id, inviteId))
+      .limit(1);
+
+    return c.json({ invite }, existingInvite ? 200 : 201);
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Team invite error:", err);
+    return c.json({ error: "Failed to send invite" }, 500);
+  }
+})
+
+  .post("/api/teams/:teamId/invites/:inviteId/resend", async (c) => {
+  try {
+    const teamId = c.req.param("teamId");
+    const inviteId = c.req.param("inviteId");
+    const db = c.get("db");
+    const user = c.get("user");
+    const context = await getTeamAdminContext(db, teamId, user.id);
+    if (!context) return c.json({ error: "Forbidden" }, 403);
+
+    const subscription = await ensureSubscriptionRecord(
+      db,
+      context.team.ownerUserId,
+      teamId,
+    );
+    const { plan } = resolveSubscriptionPlan(subscription);
+    const planLimits = PLAN_LIMITS[plan];
+    if (planLimits.maxTeamMembers === 0) {
+      return c.json(
+        {
+          error: "Team collaboration requires a paid plan",
+          code: "teams_requires_paid_plan",
+        },
+        403,
+      );
+    }
+
+    const [invite] = await db
+      .select()
+      .from(dbSchema.teamInvites)
+      .where(
+        and(
+          eq(dbSchema.teamInvites.id, inviteId),
+          eq(dbSchema.teamInvites.teamId, teamId),
+          eq(dbSchema.teamInvites.status, "pending"),
+        ),
+      )
+      .limit(1);
+    if (!invite) return c.json({ error: "Invite not found" }, 404);
+
+    const token = generateInviteToken();
+    const tokenHash = await hashSecret(token);
+    const expiresAt = new Date(Date.now() + TEAM_INVITE_TTL_MS);
+    await db
+      .update(dbSchema.teamInvites)
+      .set({ tokenHash, expiresAt, invitedByUserId: user.id, updatedAt: new Date() })
+      .where(eq(dbSchema.teamInvites.id, invite.id));
+
+    await sendTeamInviteEmail(c.env, {
+      to: invite.email,
+      teamName: context.team.name,
+      inviterName: user.name,
+      inviteUrl: `${c.env.BETTER_AUTH_URL}/invite/${token}`,
+    });
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Team invite resend error:", err);
+    return c.json({ error: "Failed to resend invite" }, 500);
+  }
+})
+
+  .delete("/api/teams/:teamId/invites/:inviteId", async (c) => {
+  const teamId = c.req.param("teamId");
+  const inviteId = c.req.param("inviteId");
+  const db = c.get("db");
+  const userId = c.get("effectiveUserId");
+  const context = await getTeamAdminContext(db, teamId, userId);
+  if (!context) return c.json({ error: "Forbidden" }, 403);
+
+  await db
+    .update(dbSchema.teamInvites)
+    .set({ status: "revoked", updatedAt: new Date() })
+    .where(
+      and(
+        eq(dbSchema.teamInvites.id, inviteId),
+        eq(dbSchema.teamInvites.teamId, teamId),
+      ),
+    );
+  return c.json({ success: true });
+})
+
+  .patch("/api/teams/:teamId/members/:memberId", async (c) => {
+  try {
+    const teamId = c.req.param("teamId");
+    const memberId = c.req.param("memberId");
+    const db = c.get("db");
+    const userId = c.get("effectiveUserId");
+    const context = await getTeamAdminContext(db, teamId, userId);
+    if (!context) return c.json({ error: "Forbidden" }, 403);
+
+    const data = validate(updateTeamMemberSchema, await c.req.json());
+    const [target] = await db
+      .select()
+      .from(dbSchema.teamMembers)
+      .where(
+        and(
+          eq(dbSchema.teamMembers.id, memberId),
+          eq(dbSchema.teamMembers.teamId, teamId),
+        ),
+      )
+      .limit(1);
+    if (!target) return c.json({ error: "Member not found" }, 404);
+    if (target.role === "owner") {
+      return c.json({ error: "Team owner cannot be changed" }, 403);
+    }
+    if (context.member.role !== "owner" && target.role === "admin") {
+      return c.json({ error: "Only the owner can change admins" }, 403);
+    }
+
+    await db
+      .update(dbSchema.teamMembers)
+      .set({ role: data.role })
+      .where(eq(dbSchema.teamMembers.id, target.id));
+    return c.json({ success: true });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Team member update error:", err);
+    return c.json({ error: "Failed to update member" }, 500);
+  }
+})
+
+  .delete("/api/teams/:teamId/members/:memberId", async (c) => {
+  const teamId = c.req.param("teamId");
+  const memberId = c.req.param("memberId");
+  const db = c.get("db");
+  const userId = c.get("effectiveUserId");
+  const context = await getTeamAdminContext(db, teamId, userId);
+  if (!context) return c.json({ error: "Forbidden" }, 403);
+
+  const [target] = await db
+    .select()
+    .from(dbSchema.teamMembers)
+    .where(
+      and(
+        eq(dbSchema.teamMembers.id, memberId),
+        eq(dbSchema.teamMembers.teamId, teamId),
+      ),
+    )
+    .limit(1);
+  if (!target) return c.json({ error: "Member not found" }, 404);
+  if (target.role === "owner") {
+    return c.json({ error: "Team owner cannot be removed" }, 403);
+  }
+  if (context.member.role !== "owner" && target.role === "admin") {
+    return c.json({ error: "Only the owner can remove admins" }, 403);
+  }
+
+  await db.delete(dbSchema.teamMembers).where(eq(dbSchema.teamMembers.id, target.id));
+  return c.json({ success: true });
+})
+
+// ─── Public Invite Acceptance ───────────────────────────────────────────────
+
+  .get("/api/invites/:token", async (c) => {
+  const token = c.req.param("token");
+  const tokenHash = await hashSecret(token);
+  const db = drizzle(c.env.DB, { schema });
+
+  const [invite] = await db
+    .select({
+      id: dbSchema.teamInvites.id,
+      email: dbSchema.teamInvites.email,
+      teamRole: dbSchema.teamInvites.teamRole,
+      projectRole: dbSchema.teamInvites.projectRole,
+      status: dbSchema.teamInvites.status,
+      expiresAt: dbSchema.teamInvites.expiresAt,
+      team: {
+        id: dbSchema.teams.id,
+        name: dbSchema.teams.name,
+      },
+      project: {
+        id: dbSchema.projects.id,
+        name: dbSchema.projects.name,
+      },
+    })
+    .from(dbSchema.teamInvites)
+    .innerJoin(dbSchema.teams, eq(dbSchema.teamInvites.teamId, dbSchema.teams.id))
+    .leftJoin(dbSchema.projects, eq(dbSchema.teamInvites.projectId, dbSchema.projects.id))
+    .where(eq(dbSchema.teamInvites.tokenHash, tokenHash))
+    .limit(1);
+
+  if (!invite || invite.status !== "pending" || invite.expiresAt < new Date()) {
+    return c.json({ error: "Invite not found or expired" }, 404);
+  }
+
+  return c.json({ invite });
+})
+
+  .post("/api/invites/:token/accept", async (c) => {
+  try {
+    const token = c.req.param("token");
+    const auth = createAuth(c.env);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!session?.user) return c.json({ error: "Unauthorized" }, 401);
+
+    const db = drizzle(c.env.DB, { schema });
+    const tokenHash = await hashSecret(token);
+    const [invite] = await db
+      .select()
+      .from(dbSchema.teamInvites)
+      .where(eq(dbSchema.teamInvites.tokenHash, tokenHash))
+      .limit(1);
+    if (!invite || invite.status !== "pending" || invite.expiresAt < new Date()) {
+      return c.json({ error: "Invite not found or expired" }, 404);
+    }
+    if (session.user.email.toLowerCase() !== invite.email.toLowerCase()) {
+      return c.json({ error: "Invite email does not match signed-in user" }, 403);
+    }
+
+    const [team] = await db
+      .select({ ownerUserId: dbSchema.teams.ownerUserId })
+      .from(dbSchema.teams)
+      .where(eq(dbSchema.teams.id, invite.teamId))
+      .limit(1);
+    if (!team) return c.json({ error: "Invite not found or expired" }, 404);
+
+    const subscription = await ensureSubscriptionRecord(
+      db,
+      team.ownerUserId,
+      invite.teamId,
+    );
+    const { plan } = resolveSubscriptionPlan(subscription);
+    const planLimits = PLAN_LIMITS[plan];
+
+    let member = await getTeamMembership(db, invite.teamId, session.user.id);
+    if (!member) {
+      if (planLimits.maxTeamMembers === 0) {
+        return c.json(
+          {
+            error: "Team collaboration requires a paid plan",
+            code: "teams_requires_paid_plan",
+          },
+          403,
+        );
+      }
+      if (planLimits.maxTeamMembers !== -1) {
+        const usage = await getTeamMemberUsage(db, invite.teamId);
+        if (usage.members >= planLimits.maxTeamMembers) {
+          return c.json(
+            {
+              error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
+              code: "team_member_limit_reached",
+            },
+            403,
+          );
+        }
+      }
+
+      const memberId = crypto.randomUUID();
+      await db.insert(dbSchema.teamMembers).values({
+        id: memberId,
+        teamId: invite.teamId,
+        userId: session.user.id,
+        role: invite.teamRole,
+        invitedByUserId: invite.invitedByUserId,
+      });
+      member = await getTeamMembership(db, invite.teamId, session.user.id);
+    }
+
+    if (member && invite.projectId && invite.projectRole) {
+      const [existingGrant] = await db
+        .select()
+        .from(dbSchema.projectMembers)
+        .where(
+          and(
+            eq(dbSchema.projectMembers.projectId, invite.projectId),
+            eq(dbSchema.projectMembers.teamMemberId, member.id),
+          ),
+        )
+        .limit(1);
+      if (existingGrant) {
+        await db
+          .update(dbSchema.projectMembers)
+          .set({ role: invite.projectRole })
+          .where(eq(dbSchema.projectMembers.id, existingGrant.id));
+      } else {
+        await db.insert(dbSchema.projectMembers).values({
+          id: crypto.randomUUID(),
+          projectId: invite.projectId,
+          teamMemberId: member.id,
+          role: invite.projectRole,
+        });
+      }
+    }
+
+    await db
+      .update(dbSchema.teamInvites)
+      .set({ status: "accepted", acceptedAt: new Date(), updatedAt: new Date() })
+      .where(eq(dbSchema.teamInvites.id, invite.id));
+
+    return c.json({ success: true, teamId: invite.teamId, projectId: invite.projectId });
+  } catch (err) {
+    console.error("Invite accept error:", err);
+    return c.json({ error: "Failed to accept invite" }, 500);
+  }
+})
+
+// ─── Project Members ────────────────────────────────────────────────────────
+
+  .get("/api/projects/:projectId/members", async (c) => {
+  const projectId = c.req.param("projectId");
+  const access = c.get("projectAccess");
+  const db = c.get("db");
+  if (!access?.teamId) return c.json({ members: [] });
+
+  const members = await db
+    .select({
+      teamMemberId: dbSchema.teamMembers.id,
+      teamRole: dbSchema.teamMembers.role,
+      joinedAt: dbSchema.teamMembers.joinedAt,
+      user: {
+        id: dbSchema.schema.users.id,
+        name: dbSchema.schema.users.name,
+        email: dbSchema.schema.users.email,
+        image: dbSchema.schema.users.image,
+      },
+    })
+    .from(dbSchema.teamMembers)
+    .innerJoin(
+      dbSchema.schema.users,
+      eq(dbSchema.teamMembers.userId, dbSchema.schema.users.id),
+    )
+    .where(eq(dbSchema.teamMembers.teamId, access.teamId));
+
+  const grants = await db
+    .select()
+    .from(dbSchema.projectMembers)
+    .where(eq(dbSchema.projectMembers.projectId, projectId));
+  const grantByTeamMemberId = new Map(
+    grants.map((grant) => [grant.teamMemberId, grant]),
+  );
+  const planLimits = c.get("planLimits");
+
+  return c.json({
+    planLimits: {
+      maxTeamMembers: planLimits.maxTeamMembers,
+      maxCalendarConnections: planLimits.maxCalendarConnections,
+    },
+    members: members.map((member) => ({
+      ...member,
+      projectMember: grantByTeamMemberId.get(member.teamMemberId) ?? null,
+    })),
+  });
+})
+
+  .post("/api/projects/:projectId/members", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const access = c.get("projectAccess");
+    const db = c.get("db");
+    if (!access?.teamId) return c.json({ error: "Project has no team" }, 400);
+    const planLimits = c.get("planLimits");
+    if (planLimits.maxTeamMembers === 0) {
+      return c.json(
+        {
+          error: "Team collaboration requires a paid plan",
+          code: "teams_requires_paid_plan",
+        },
+        403,
+      );
+    }
+
+    const data = validate(upsertProjectMemberSchema, await c.req.json());
+    const [teamMember] = await db
+      .select()
+      .from(dbSchema.teamMembers)
+      .where(
+        and(
+          eq(dbSchema.teamMembers.id, data.teamMemberId),
+          eq(dbSchema.teamMembers.teamId, access.teamId),
+        ),
+      )
+      .limit(1);
+    if (!teamMember) return c.json({ error: "Team member not found" }, 404);
+
+    const [existing] = await db
+      .select()
+      .from(dbSchema.projectMembers)
+      .where(
+        and(
+          eq(dbSchema.projectMembers.projectId, projectId),
+          eq(dbSchema.projectMembers.teamMemberId, teamMember.id),
+        ),
+      )
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(dbSchema.projectMembers)
+        .set({ role: data.role })
+        .where(eq(dbSchema.projectMembers.id, existing.id));
+    } else {
+      await db.insert(dbSchema.projectMembers).values({
+        id: crypto.randomUUID(),
+        projectId,
+        teamMemberId: teamMember.id,
+        role: data.role,
+      });
+    }
+
+    return c.json({ success: true });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Project member upsert error:", err);
+    return c.json({ error: "Failed to save project member" }, 500);
+  }
+})
+
+  .patch("/api/projects/:projectId/members/:memberId", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const memberId = c.req.param("memberId");
+    const db = c.get("db");
+    const planLimits = c.get("planLimits");
+    if (planLimits.maxTeamMembers === 0) {
+      return c.json(
+        {
+          error: "Team collaboration requires a paid plan",
+          code: "teams_requires_paid_plan",
+        },
+        403,
+      );
+    }
+
+    const data = validate(updateProjectMemberSchema, await c.req.json());
+    const [grant] = await db
+      .select()
+      .from(dbSchema.projectMembers)
+      .where(
+        and(
+          eq(dbSchema.projectMembers.id, memberId),
+          eq(dbSchema.projectMembers.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    if (!grant) return c.json({ error: "Project member not found" }, 404);
+    await db
+      .update(dbSchema.projectMembers)
+      .set({ role: data.role })
+      .where(eq(dbSchema.projectMembers.id, grant.id));
+    return c.json({ success: true });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Project member update error:", err);
+    return c.json({ error: "Failed to update project member" }, 500);
+  }
+})
+
+  .delete("/api/projects/:projectId/members/:memberId", async (c) => {
+  const projectId = c.req.param("projectId");
+  const memberId = c.req.param("memberId");
+  const db = c.get("db");
+  await db
+    .delete(dbSchema.projectMembers)
+    .where(
+      and(
+        eq(dbSchema.projectMembers.id, memberId),
+        eq(dbSchema.projectMembers.projectId, projectId),
+      ),
+    );
+  return c.json({ success: true });
+});
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
@@ -2439,12 +3477,75 @@ app.get("/api/projects", async (c) => {
   const db = c.get("db");
   const userId = c.get("effectiveUserId");
 
+  const memberships = await db
+    .select()
+    .from(dbSchema.teamMembers)
+    .where(eq(dbSchema.teamMembers.userId, userId));
+
+  const teamIds = memberships.map((m) => m.teamId);
+  if (teamIds.length === 0) {
+    return c.json({ projects: [] });
+  }
+
+  const teams = await db
+    .select({
+      id: dbSchema.teams.id,
+      ownerUserId: dbSchema.teams.ownerUserId,
+      name: dbSchema.teams.name,
+    })
+    .from(dbSchema.teams)
+    .where(inArray(dbSchema.teams.id, teamIds));
+
+  const teamById = new Map(teams.map((team) => [team.id, team]));
+  const membershipByTeamId = new Map(
+    memberships.map((member) => [member.teamId, member]),
+  );
+  const membershipIds = memberships.map((member) => member.id);
+  const grants = membershipIds.length > 0
+    ? await db
+        .select()
+        .from(dbSchema.projectMembers)
+        .where(inArray(dbSchema.projectMembers.teamMemberId, membershipIds))
+    : [];
+  const grantByProjectId = new Map(
+    grants.map((grant) => [grant.projectId, grant]),
+  );
+
   const rows = await db
     .select()
     .from(dbSchema.projects)
-    .where(eq(dbSchema.projects.userId, userId));
+    .where(
+      or(
+        eq(dbSchema.projects.userId, userId),
+        inArray(dbSchema.projects.teamId, teamIds),
+      ),
+    );
 
-  return c.json({ projects: rows });
+  const projects = rows
+    .map((project) => {
+      const teamId = project.teamId;
+      const team = teamId ? teamById.get(teamId) : null;
+      const membership = teamId ? membershipByTeamId.get(teamId) : null;
+      const grant = grantByProjectId.get(project.id);
+      const teamRole = membership?.role ?? (project.userId === userId ? "owner" : null);
+      const hasImplicitAccess = teamRole === "owner" || teamRole === "admin";
+      const hasLegacyAccess = !teamId && project.userId === userId;
+
+      if (!hasImplicitAccess && !grant && !hasLegacyAccess) return null;
+
+      return {
+        ...project,
+        teamName: team?.name ?? null,
+        teamOwnerUserId: team?.ownerUserId ?? project.userId,
+        teamRole,
+        projectRole: grant?.role ?? (hasImplicitAccess || hasLegacyAccess ? "admin" : null),
+        effectiveProjectRole:
+          hasImplicitAccess || hasLegacyAccess ? "admin" : grant?.role ?? null,
+      };
+    })
+    .filter((project): project is NonNullable<typeof project> => project !== null);
+
+  return c.json({ projects });
 });
 
 app.post("/api/projects", async (c) => {
@@ -2454,13 +3555,14 @@ app.post("/api/projects", async (c) => {
 
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
+    const accountTeamId = c.get("accountTeamId");
     const planLimits = c.get("planLimits");
 
     // Check plan limits
     const existingProjects = await db
       .select()
       .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.userId, userId));
+      .where(eq(dbSchema.projects.teamId, accountTeamId));
 
     if (
       planLimits.maxProjects !== -1 &&
@@ -2489,6 +3591,7 @@ app.post("/api/projects", async (c) => {
     await db.insert(dbSchema.projects).values({
       id,
       userId,
+      teamId: accountTeamId,
       name: data.name,
       slug: data.slug,
       timezone: data.timezone,
@@ -2625,6 +3728,22 @@ app.put("/api/projects/:projectId", async (c) => {
   }
 });
 
+const projectRoutes = teamRoutes.delete("/api/projects/:projectId", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const db = c.get("db");
+
+    await db
+      .delete(dbSchema.projects)
+      .where(eq(dbSchema.projects.id, projectId));
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Project deletion error:", err);
+    return c.json({ error: "Failed to delete project" }, 500);
+  }
+});
+
 // ─── Uploads (R2) ────────────────────────────────────────────────────────────
 
 const ALLOWED_IMAGE_TYPES = [
@@ -2708,7 +3827,11 @@ app.post("/api/projects/:projectId/uploads", async (c) => {
 
 app.delete("/api/projects/:projectId/uploads/:key{.+}", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const key = c.req.param("key");
+    if (!key.startsWith(`projects/${projectId}/`)) {
+      return c.json({ error: "Upload not found" }, 404);
+    }
     await c.env.UPLOADS.delete(key);
     return c.json({ success: true });
   } catch (err) {
@@ -2756,11 +3879,12 @@ app.get("/api/projects/:projectId/event-types", async (c) => {
 });
 
 app.get("/api/projects/:projectId/event-types/:id", async (c) => {
+  const projectId = c.req.param("projectId");
   const id = c.req.param("id");
   const db = c.get("db");
   const service = new EventTypeService(db);
   const result = await service.getByIdWithSchedule(id);
-  if (!result) {
+  if (!result || result.eventType.projectId !== projectId) {
     return c.json({ error: "Event type not found" }, 404);
   }
   return c.json(result);
@@ -2819,12 +3943,17 @@ app.post("/api/projects/:projectId/event-types", async (c) => {
 
 app.put("/api/projects/:projectId/event-types/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const body = await c.req.json();
     const data = validate(updateEventTypeSchema, body);
 
     const db = c.get("db");
     const service = new EventTypeService(db);
+    const existing = await service.getById(id);
+    if (!existing || existing.projectId !== projectId) {
+      return c.json({ error: "Event type not found" }, 404);
+    }
     const updateData: Record<string, unknown> = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.slug !== undefined) updateData.slug = data.slug;
@@ -2869,12 +3998,13 @@ app.put("/api/projects/:projectId/event-types/:id", async (c) => {
 
 app.delete("/api/projects/:projectId/event-types/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new EventTypeService(db);
 
     const existing = await service.getById(id);
-    if (!existing) {
+    if (!existing || existing.projectId !== projectId) {
       return c.json({ error: "Event type not found" }, 404);
     }
 
@@ -2918,12 +4048,16 @@ app.post("/api/projects/:projectId/schedules", async (c) => {
 
 app.put("/api/projects/:projectId/schedules/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const body = await c.req.json();
     const data = validate(createScheduleSchema, body);
 
     const db = c.get("db");
     const service = new ScheduleService(db);
+    if (!(await scheduleBelongsToProject(db, id, projectId))) {
+      return c.json({ error: "Schedule not found" }, 404);
+    }
     const schedule = await service.update(id, data);
 
     if (!schedule) {
@@ -2942,9 +4076,13 @@ app.put("/api/projects/:projectId/schedules/:id", async (c) => {
 
 app.delete("/api/projects/:projectId/schedules/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new ScheduleService(db);
+    if (!(await scheduleBelongsToProject(db, id, projectId))) {
+      return c.json({ error: "Schedule not found" }, 404);
+    }
     await service.delete(id);
     return c.json({ success: true });
   } catch (err) {
@@ -2955,12 +4093,16 @@ app.delete("/api/projects/:projectId/schedules/:id", async (c) => {
 
 app.put("/api/projects/:projectId/schedules/:id/rules", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const body = await c.req.json();
     const data = validate(updateAvailabilityRulesSchema, body);
 
     const db = c.get("db");
     const service = new ScheduleService(db);
+    if (!(await scheduleBelongsToProject(db, id, projectId))) {
+      return c.json({ error: "Schedule not found" }, 404);
+    }
 
     // Also update timezone if provided
     if (body.timezone) {
@@ -2981,9 +4123,13 @@ app.put("/api/projects/:projectId/schedules/:id/rules", async (c) => {
 
 app.get("/api/projects/:projectId/schedules/:id/rules", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new ScheduleService(db);
+    if (!(await scheduleBelongsToProject(db, id, projectId))) {
+      return c.json({ error: "Schedule not found" }, 404);
+    }
     const rules = await service.getRules(id);
     return c.json({ rules });
   } catch (err) {
@@ -2994,9 +4140,13 @@ app.get("/api/projects/:projectId/schedules/:id/rules", async (c) => {
 
 app.get("/api/projects/:projectId/schedules/:id/overrides", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new ScheduleService(db);
+    if (!(await scheduleBelongsToProject(db, id, projectId))) {
+      return c.json({ error: "Schedule not found" }, 404);
+    }
     const overrides = await service.getOverrides(id);
     return c.json({ overrides });
   } catch (err) {
@@ -3007,10 +4157,14 @@ app.get("/api/projects/:projectId/schedules/:id/overrides", async (c) => {
 
 app.post("/api/projects/:projectId/schedules/:id/overrides", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const body = await c.req.json();
     const db = c.get("db");
     const service = new ScheduleService(db);
+    if (!(await scheduleBelongsToProject(db, id, projectId))) {
+      return c.json({ error: "Schedule not found" }, 404);
+    }
     const override = await service.addOverride(id, body);
     return c.json({ override }, 201);
   } catch (err) {
@@ -3023,9 +4177,18 @@ app.delete(
   "/api/projects/:projectId/schedules/:id/overrides/:overrideId",
   async (c) => {
     try {
+      const projectId = c.req.param("projectId");
+      const id = c.req.param("id");
       const overrideId = c.req.param("overrideId");
       const db = c.get("db");
       const service = new ScheduleService(db);
+      if (!(await scheduleBelongsToProject(db, id, projectId))) {
+        return c.json({ error: "Schedule not found" }, 404);
+      }
+      const overrides = await service.getOverrides(id);
+      if (!overrides.some((override) => override.id === overrideId)) {
+        return c.json({ error: "Override not found" }, 404);
+      }
       await service.deleteOverride(overrideId);
       return c.json({ success: true });
     } catch (err) {
@@ -4484,6 +5647,10 @@ app.get("/api/projects/:projectId/api-keys", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const db = c.get("db");
+    const planLimits = c.get("planLimits");
+    if (!planLimits.apiAccess) {
+      return c.json({ error: "API access requires a Pro or Business plan" }, 403);
+    }
     const service = new ApiKeyService(db);
     const apiKeys = await service.list(projectId);
     return c.json({ apiKeys });
@@ -4500,6 +5667,10 @@ app.post("/api/projects/:projectId/api-keys", async (c) => {
     const data = validate(createApiKeySchema, body);
 
     const db = c.get("db");
+    const planLimits = c.get("planLimits");
+    if (!planLimits.apiAccess) {
+      return c.json({ error: "API access requires a Pro or Business plan" }, 403);
+    }
     const service = new ApiKeyService(db);
     const result = await service.create(projectId, data.label);
 
@@ -4515,10 +5686,15 @@ app.post("/api/projects/:projectId/api-keys", async (c) => {
 
 app.delete("/api/projects/:projectId/api-keys/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
+    const planLimits = c.get("planLimits");
+    if (!planLimits.apiAccess) {
+      return c.json({ error: "API access requires a Pro or Business plan" }, 403);
+    }
     const service = new ApiKeyService(db);
-    await service.delete(id);
+    await service.delete(projectId, id);
     return c.json({ success: true });
   } catch (err) {
     console.error("API key deletion error:", err);
@@ -4534,6 +5710,7 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
     const planLimits = c.get("planLimits");
+    const access = c.get("projectAccess");
 
     if (!planLimits.calendarSync) {
       return c.json(
@@ -4544,10 +5721,15 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
 
     // Check connection count limit
     if (planLimits.maxCalendarConnections !== -1) {
-      const existing = await db
-        .select()
-        .from(dbSchema.calendarConnections)
-        .where(eq(dbSchema.calendarConnections.userId, userId));
+      const existing = access?.teamId
+        ? await db
+            .select()
+            .from(dbSchema.teamCalendarConnections)
+            .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
+        : await db
+            .select()
+            .from(dbSchema.calendarConnections)
+            .where(eq(dbSchema.calendarConnections.userId, userId));
 
       if (existing.length >= planLimits.maxCalendarConnections) {
         return c.json(
@@ -4625,6 +5807,22 @@ app.get("/api/integrations/gcal/callback", async (c) => {
       email: tokens.email,
     });
 
+    if (projectId) {
+      const [project] = await db
+        .select({ teamId: dbSchema.projects.teamId, userId: dbSchema.projects.userId })
+        .from(dbSchema.projects)
+        .where(eq(dbSchema.projects.id, projectId))
+        .limit(1);
+      if (project?.teamId) {
+        await db.insert(dbSchema.teamCalendarConnections).values({
+          id: crypto.randomUUID(),
+          teamId: project.teamId,
+          connectionId: id,
+          createdByUserId: userId,
+        });
+      }
+    }
+
     // Redirect back to the page that initiated the connection
     if (returnUrl) {
       const separator = returnUrl.includes("?") ? "&" : "?";
@@ -4641,18 +5839,39 @@ app.get("/api/integrations/gcal/callback", async (c) => {
 });
 
 app.get("/api/projects/:projectId/calendar/connections", async (c) => {
-  const userId = c.get("effectiveUserId");
   const db = c.get("db");
+  const access = c.get("projectAccess");
 
-  const rows = await db
-    .select({
-      id: dbSchema.calendarConnections.id,
-      provider: dbSchema.calendarConnections.provider,
-      email: dbSchema.calendarConnections.email,
-      createdAt: dbSchema.calendarConnections.createdAt,
-    })
-    .from(dbSchema.calendarConnections)
-    .where(eq(dbSchema.calendarConnections.userId, userId));
+  const rows = access?.teamId
+    ? await db
+        .select({
+          id: dbSchema.calendarConnections.id,
+          provider: dbSchema.calendarConnections.provider,
+          email: dbSchema.calendarConnections.email,
+          createdAt: dbSchema.calendarConnections.createdAt,
+          linkedAt: dbSchema.teamCalendarConnections.createdAt,
+          createdByUserId: dbSchema.teamCalendarConnections.createdByUserId,
+        })
+        .from(dbSchema.teamCalendarConnections)
+        .innerJoin(
+          dbSchema.calendarConnections,
+          eq(
+            dbSchema.teamCalendarConnections.connectionId,
+            dbSchema.calendarConnections.id,
+          ),
+        )
+        .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
+    : await db
+        .select({
+          id: dbSchema.calendarConnections.id,
+          provider: dbSchema.calendarConnections.provider,
+          email: dbSchema.calendarConnections.email,
+          createdAt: dbSchema.calendarConnections.createdAt,
+          linkedAt: dbSchema.calendarConnections.createdAt,
+          createdByUserId: dbSchema.calendarConnections.userId,
+        })
+        .from(dbSchema.calendarConnections)
+        .where(eq(dbSchema.calendarConnections.userId, c.get("effectiveUserId")));
 
   return c.json({ connections: rows });
 });
@@ -4660,28 +5879,66 @@ app.get("/api/projects/:projectId/calendar/connections", async (c) => {
 app.delete("/api/projects/:projectId/calendar/connections/:id", async (c) => {
   try {
     const id = c.req.param("id");
-    const userId = c.get("effectiveUserId");
     const db = c.get("db");
+    const access = c.get("projectAccess");
+    const projectId = c.req.param("projectId");
 
-    // Verify the connection belongs to the current user
-    const [connection] = await db
-      .select()
-      .from(dbSchema.calendarConnections)
-      .where(
-        and(
-          eq(dbSchema.calendarConnections.id, id),
-          eq(dbSchema.calendarConnections.userId, userId),
-        ),
-      )
-      .limit(1);
+    const [connection] = access?.teamId
+      ? await db
+          .select({ id: dbSchema.teamCalendarConnections.id })
+          .from(dbSchema.teamCalendarConnections)
+          .where(
+            and(
+              eq(dbSchema.teamCalendarConnections.teamId, access.teamId),
+              eq(dbSchema.teamCalendarConnections.connectionId, id),
+            ),
+          )
+          .limit(1)
+      : await db
+          .select({ id: dbSchema.calendarConnections.id })
+          .from(dbSchema.calendarConnections)
+          .where(
+            and(
+              eq(dbSchema.calendarConnections.id, id),
+              eq(dbSchema.calendarConnections.userId, c.get("effectiveUserId")),
+            ),
+          )
+          .limit(1);
 
     if (!connection) {
       return c.json({ error: "Calendar connection not found" }, 404);
     }
 
-    await db
-      .delete(dbSchema.calendarConnections)
-      .where(eq(dbSchema.calendarConnections.id, id));
+    const eventTypes = await db
+      .select({
+        destinationConnectionId: dbSchema.eventTypes.destinationConnectionId,
+        busyCalendars: dbSchema.eventTypes.busyCalendars,
+        inviteConnectionIds: dbSchema.eventTypes.inviteConnectionIds,
+      })
+      .from(dbSchema.eventTypes)
+      .where(eq(dbSchema.eventTypes.projectId, projectId));
+
+    const inUse = eventTypes.some((eventType) => {
+      if (eventType.destinationConnectionId === id) return true;
+      if (parseBusyCalendars(eventType.busyCalendars).some((ref) => ref.connectionId === id)) {
+        return true;
+      }
+      return parseInviteConnectionIds(eventType.inviteConnectionIds).includes(id);
+    });
+
+    if (inUse) {
+      return c.json({ error: "Calendar is still used by an event type" }, 409);
+    }
+
+    if (access?.teamId) {
+      await db
+        .delete(dbSchema.teamCalendarConnections)
+        .where(eq(dbSchema.teamCalendarConnections.id, connection.id));
+    } else {
+      await db
+        .delete(dbSchema.calendarConnections)
+        .where(eq(dbSchema.calendarConnections.id, id));
+    }
 
     return c.json({ success: true });
   } catch (err) {
@@ -4691,6 +5948,76 @@ app.delete("/api/projects/:projectId/calendar/connections/:id", async (c) => {
 });
 
 // ─── Calendar: List Sub-Calendars ────────────────────────────────────────────
+
+const calendarRoutes = projectRoutes.get("/api/projects/:projectId/calendar/calendars", async (c) => {
+  try {
+    const access = c.get("projectAccess");
+    const userId = c.get("effectiveUserId");
+    const db = c.get("db");
+
+    const connections = access?.teamId
+      ? await db
+          .select({
+            id: dbSchema.calendarConnections.id,
+            email: dbSchema.calendarConnections.email,
+            refreshToken: dbSchema.calendarConnections.refreshToken,
+          })
+          .from(dbSchema.teamCalendarConnections)
+          .innerJoin(
+            dbSchema.calendarConnections,
+            eq(
+              dbSchema.teamCalendarConnections.connectionId,
+              dbSchema.calendarConnections.id,
+            ),
+          )
+          .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
+      : await db
+          .select({
+            id: dbSchema.calendarConnections.id,
+            email: dbSchema.calendarConnections.email,
+            refreshToken: dbSchema.calendarConnections.refreshToken,
+          })
+          .from(dbSchema.calendarConnections)
+          .where(eq(dbSchema.calendarConnections.userId, userId));
+
+    if (connections.length === 0) {
+      return c.json({ accounts: [] });
+    }
+
+    const calendarService = new CalendarService(db, {
+      GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
+      GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
+    });
+
+    const accounts = [];
+    for (const conn of connections) {
+      try {
+        const accessToken = await calendarService.refreshAccessToken(conn.refreshToken);
+        const calendars = await calendarService.listCalendars(accessToken);
+        accounts.push({
+          connectionId: conn.id,
+          email: conn.email,
+          calendars,
+        });
+      } catch (err) {
+        console.error(`Failed to list calendars for ${conn.email}:`, err);
+        accounts.push({
+          connectionId: conn.id,
+          email: conn.email,
+          calendars: [],
+        });
+      }
+    }
+
+    return c.json({ accounts });
+  } catch (err) {
+    console.error("Project calendar list error:", err);
+    return c.json({ error: "Failed to list calendars" }, 500);
+  }
+});
+
+export const rpcRoutes = calendarRoutes;
+export type AppType = typeof rpcRoutes;
 
 app.get("/api/calendar/calendars", async (c) => {
   try {
@@ -4743,13 +6070,19 @@ app.get("/api/calendar/calendars", async (c) => {
 
 app.get("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const eventTypeId = c.req.param("eventTypeId");
     const db = c.get("db");
 
     const [eventType] = await db
       .select()
       .from(dbSchema.eventTypes)
-      .where(eq(dbSchema.eventTypes.id, eventTypeId))
+      .where(
+        and(
+          eq(dbSchema.eventTypes.id, eventTypeId),
+          eq(dbSchema.eventTypes.projectId, projectId),
+        ),
+      )
       .limit(1);
 
     if (!eventType) {
@@ -4775,10 +6108,44 @@ app.get("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
 
 app.put("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const eventTypeId = c.req.param("eventTypeId");
     const body = await c.req.json();
     const data = validate(updateEventTypeCalendarsSchema, body);
     const db = c.get("db");
+    const userId = c.get("effectiveUserId");
+    const access = c.get("projectAccess");
+
+    const [eventType] = await db
+      .select({ id: dbSchema.eventTypes.id })
+      .from(dbSchema.eventTypes)
+      .where(
+        and(
+          eq(dbSchema.eventTypes.id, eventTypeId),
+          eq(dbSchema.eventTypes.projectId, projectId),
+        ),
+      )
+      .limit(1);
+
+    if (!eventType) {
+      return c.json({ error: "Event type not found" }, 404);
+    }
+
+    const connectionIds = [
+      data.destination?.connectionId,
+      ...data.busyCalendars.map((calendar) => calendar.connectionId),
+      ...data.inviteConnectionIds,
+    ].filter((id): id is string => Boolean(id));
+
+    const canUseConnections = await projectCanUseCalendarConnections(
+      db,
+      access,
+      userId,
+      connectionIds,
+    );
+    if (!canUseConnections) {
+      return c.json({ error: "Calendar connection is not available to this project" }, 400);
+    }
 
     await db
       .update(dbSchema.eventTypes)
@@ -4788,7 +6155,12 @@ app.put("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c)
         busyCalendars: serializeBusyCalendars(data.busyCalendars),
         inviteConnectionIds: serializeInviteConnectionIds(data.inviteConnectionIds),
       })
-      .where(eq(dbSchema.eventTypes.id, eventTypeId));
+      .where(
+        and(
+          eq(dbSchema.eventTypes.id, eventTypeId),
+          eq(dbSchema.eventTypes.projectId, projectId),
+        ),
+      );
 
     return c.json({ success: true });
   } catch (err) {
@@ -4962,11 +6334,12 @@ app.post("/api/billing/checkout", async (c) => {
 
     const user = c.get("user");
     const db = c.get("db") as AppDatabase;
+    const accountTeamId = c.get("accountTeamId");
     const stripe = getStripe(c.env);
     const priceId = getPriceId(c.env, plan, interval);
 
     // Get or create Stripe customer
-    const sub = await ensureSubscriptionRecord(db, user.id);
+    const sub = await ensureSubscriptionRecord(db, user.id, accountTeamId);
 
     let customerId = sub?.stripeCustomerId;
 
@@ -4980,11 +6353,15 @@ app.post("/api/billing/checkout", async (c) => {
       if (recoveredCustomer) {
         customerId = recoveredCustomer.id;
 
-        if (recoveredCustomer.metadata?.userId !== user.id) {
+        if (
+          recoveredCustomer.metadata?.userId !== user.id ||
+          recoveredCustomer.metadata?.teamId !== accountTeamId
+        ) {
           await stripe.customers.update(customerId, {
             metadata: {
               ...recoveredCustomer.metadata,
               userId: user.id,
+              teamId: accountTeamId,
             },
           });
         }
@@ -4992,7 +6369,7 @@ app.post("/api/billing/checkout", async (c) => {
         const customer = await stripe.customers.create({
           email: user.email,
           name: user.name,
-          metadata: { userId: user.id },
+          metadata: { userId: user.id, teamId: accountTeamId },
         });
         customerId = customer.id;
       }
@@ -5015,11 +6392,16 @@ app.post("/api/billing/checkout", async (c) => {
       allow_promotion_codes: true,
       line_items: [{ quantity: 1, price: priceId }],
       ...(isNewSubscriber
-        ? { subscription_data: { trial_period_days: 7, metadata: { plan, interval, userId: user.id } } }
+        ? {
+            subscription_data: {
+              trial_period_days: 7,
+              metadata: { plan, interval, userId: user.id, teamId: accountTeamId },
+            },
+          }
         : {}),
       success_url: successUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?success=true`,
       cancel_url: cancelUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?canceled=true`,
-      metadata: { plan, interval, userId: user.id },
+      metadata: { plan, interval, userId: user.id, teamId: accountTeamId },
     });
 
     return c.json({ url: session.url });
@@ -5072,13 +6454,14 @@ app.post("/api/onboarding", async (c) => {
 
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
+    const accountTeamId = c.get("accountTeamId");
     const planLimits = c.get("planLimits");
 
     // Check plan limits for projects
     const existingProjects = await db
       .select()
       .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.userId, userId));
+      .where(eq(dbSchema.projects.teamId, accountTeamId));
 
     if (
       planLimits.maxProjects !== -1 &&
@@ -5108,6 +6491,7 @@ app.post("/api/onboarding", async (c) => {
     await db.insert(dbSchema.projects).values({
       id: projectId,
       userId,
+      teamId: accountTeamId,
       name: data.name,
       slug: data.slug,
       timezone: data.timezone,
@@ -5147,14 +6531,8 @@ app.post("/api/onboarding/complete", async (c) => {
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
 
-    // Verify project belongs to user
-    const [project] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, projectId))
-      .limit(1);
-
-    if (!project || project.userId !== userId) {
+    const access = await resolveProjectAccess(db, projectId, userId);
+    if (!access || !hasProjectPermission(access, "project:write")) {
       return c.json({ error: "Project not found" }, 404);
     }
 
@@ -5182,14 +6560,8 @@ app.post("/api/onboarding/default-form", async (c) => {
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
 
-    // Verify project belongs to user
-    const [project] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, projectId))
-      .limit(1);
-
-    if (!project || project.userId !== userId) {
+    const access = await resolveProjectAccess(db, projectId, userId);
+    if (!access || !hasProjectPermission(access, "project:write")) {
       return c.json({ error: "Project not found" }, 404);
     }
 
@@ -5269,13 +6641,6 @@ app.get("/api/projects/:projectId/analytics/filters", async (c) => {
 
   try {
     const projectId = c.req.param("projectId");
-    const userId = c.get("effectiveUserId");
-    const db = c.get("db");
-
-    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
-    if (!project || project.userId !== userId) {
-      return c.json({ error: "Project not found" }, 404);
-    }
 
     const filters = await queryFilterOptions(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, projectId);
     return c.json(filters);
@@ -5293,13 +6658,6 @@ app.get("/api/projects/:projectId/analytics/overview", async (c) => {
 
   try {
     const projectId = c.req.param("projectId");
-    const userId = c.get("effectiveUserId");
-    const db = c.get("db");
-
-    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
-    if (!project || project.userId !== userId) {
-      return c.json({ error: "Project not found" }, 404);
-    }
 
     const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
     const data = await queryOverview(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
@@ -5318,13 +6676,6 @@ app.get("/api/projects/:projectId/analytics/bookings", async (c) => {
 
   try {
     const projectId = c.req.param("projectId");
-    const userId = c.get("effectiveUserId");
-    const db = c.get("db");
-
-    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
-    if (!project || project.userId !== userId) {
-      return c.json({ error: "Project not found" }, 404);
-    }
 
     const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
     const data = await queryBookings(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
@@ -5343,13 +6694,6 @@ app.get("/api/projects/:projectId/analytics/forms", async (c) => {
 
   try {
     const projectId = c.req.param("projectId");
-    const userId = c.get("effectiveUserId");
-    const db = c.get("db");
-
-    const [project] = await db.select().from(dbSchema.projects).where(eq(dbSchema.projects.id, projectId)).limit(1);
-    if (!project || project.userId !== userId) {
-      return c.json({ error: "Project not found" }, 404);
-    }
 
     const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
     const data = await queryForms(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });

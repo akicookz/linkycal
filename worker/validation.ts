@@ -8,6 +8,36 @@ export function validate<T>(schema: z.ZodSchema<T>, data: unknown): T {
 
 // ─── Projects ────────────────────────────────────────────────────────────────
 
+export const updateTeamSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  slug: z
+    .string()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
+});
+
+export const createTeamInviteSchema = z.object({
+  email: z.string().email().max(320),
+  teamRole: z.enum(["admin", "member"]).default("member"),
+  projectId: z.string().optional(),
+  projectRole: z.enum(["admin", "editor", "viewer"]).optional(),
+});
+
+export const updateTeamMemberSchema = z.object({
+  role: z.enum(["admin", "member"]),
+});
+
+export const upsertProjectMemberSchema = z.object({
+  teamMemberId: z.string().min(1),
+  role: z.enum(["admin", "editor", "viewer"]),
+});
+
+export const updateProjectMemberSchema = z.object({
+  role: z.enum(["admin", "editor", "viewer"]),
+});
+
 export const createProjectSchema = z.object({
   name: z.string().min(1).max(100),
   slug: z

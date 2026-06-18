@@ -327,7 +327,7 @@ const ALTERNATIVES: Record<string, AlternativeData> = {
       {
         question: "Is there a free plan?",
         answer:
-          "Yes, you can start free and connect a calendar when you upgrade.",
+          "Yes, you can start free and connect 1 calendar.",
       },
     ],
     closing:

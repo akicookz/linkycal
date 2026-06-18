@@ -108,6 +108,7 @@ export const plans: PlanDefinition[] = [
       "Community support",
     ],
     limits: [
+      "No team members",
       "No API access",
       "No custom widgets",
     ],

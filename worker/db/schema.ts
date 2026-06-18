@@ -11,6 +11,72 @@ import {
 
 import * as authSchema from "./auth.schema";
 
+// ─── Teams ──────────────────────────────────────────────────────────────────
+
+export const teams = sqliteTable(
+  "teams",
+  {
+    id: text("id").primaryKey(),
+    ownerUserId: text("owner_user_id")
+      .notNull()
+      .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    slug: text("slug").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("teams_owner_user_id_idx").on(t.ownerUserId),
+    uniqueIndex("teams_slug_idx").on(t.slug),
+  ],
+);
+
+export type TeamRow = typeof teams.$inferSelect;
+export type NewTeamRow = typeof teams.$inferInsert;
+
+export const teamMembers = sqliteTable(
+  "team_members",
+  {
+    id: text("id").primaryKey(),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["owner", "admin", "member"] })
+      .notNull()
+      .default("member"),
+    invitedByUserId: text("invited_by_user_id").references(
+      () => authSchema.users.id,
+      { onDelete: "set null" },
+    ),
+    joinedAt: integer("joined_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("team_members_team_id_idx").on(t.teamId),
+    index("team_members_user_id_idx").on(t.userId),
+    uniqueIndex("team_members_team_user_idx").on(t.teamId, t.userId),
+  ],
+);
+
+export type TeamMemberRow = typeof teamMembers.$inferSelect;
+export type NewTeamMemberRow = typeof teamMembers.$inferInsert;
+
 // ─── Projects ────────────────────────────────────────────────────────────────
 
 export const projects = sqliteTable(
@@ -20,6 +86,7 @@ export const projects = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    teamId: text("team_id").references(() => teams.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     slug: text("slug").notNull(),
     timezone: text("timezone").notNull().default("America/New_York"),
@@ -35,12 +102,89 @@ export const projects = sqliteTable(
   },
   (t) => [
     index("projects_user_id_idx").on(t.userId),
+    index("projects_team_id_idx").on(t.teamId),
     uniqueIndex("projects_slug_idx").on(t.slug),
   ],
 );
 
 export type ProjectRow = typeof projects.$inferSelect;
 export type NewProjectRow = typeof projects.$inferInsert;
+
+export const projectMembers = sqliteTable(
+  "project_members",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    teamMemberId: text("team_member_id")
+      .notNull()
+      .references(() => teamMembers.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["admin", "editor", "viewer"] })
+      .notNull()
+      .default("viewer"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("project_members_project_id_idx").on(t.projectId),
+    index("project_members_team_member_id_idx").on(t.teamMemberId),
+    uniqueIndex("project_members_project_team_member_idx").on(
+      t.projectId,
+      t.teamMemberId,
+    ),
+  ],
+);
+
+export type ProjectMemberRow = typeof projectMembers.$inferSelect;
+export type NewProjectMemberRow = typeof projectMembers.$inferInsert;
+
+export const teamInvites = sqliteTable(
+  "team_invites",
+  {
+    id: text("id").primaryKey(),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    teamRole: text("team_role", { enum: ["admin", "member"] })
+      .notNull()
+      .default("member"),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    projectRole: text("project_role", { enum: ["admin", "editor", "viewer"] }),
+    tokenHash: text("token_hash").notNull(),
+    invitedByUserId: text("invited_by_user_id")
+      .notNull()
+      .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    status: text("status", { enum: ["pending", "accepted", "revoked"] })
+      .notNull()
+      .default("pending"),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    acceptedAt: integer("accepted_at", { mode: "timestamp" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("team_invites_team_id_idx").on(t.teamId),
+    index("team_invites_email_idx").on(t.email),
+    uniqueIndex("team_invites_token_hash_idx").on(t.tokenHash),
+  ],
+);
+
+export type TeamInviteRow = typeof teamInvites.$inferSelect;
+export type NewTeamInviteRow = typeof teamInvites.$inferInsert;
 
 // ─── Event Types ─────────────────────────────────────────────────────────────
 
@@ -574,6 +718,36 @@ export const calendarConnections = sqliteTable(
 export type CalendarConnectionRow = typeof calendarConnections.$inferSelect;
 export type NewCalendarConnectionRow = typeof calendarConnections.$inferInsert;
 
+export const teamCalendarConnections = sqliteTable(
+  "team_calendar_connections",
+  {
+    id: text("id").primaryKey(),
+    teamId: text("team_id")
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    connectionId: text("connection_id")
+      .notNull()
+      .references(() => calendarConnections.id, { onDelete: "cascade" }),
+    createdByUserId: text("created_by_user_id")
+      .notNull()
+      .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+  },
+  (t) => [
+    index("team_calendar_connections_team_id_idx").on(t.teamId),
+    index("team_calendar_connections_connection_id_idx").on(t.connectionId),
+    uniqueIndex("team_calendar_connections_team_connection_idx").on(
+      t.teamId,
+      t.connectionId,
+    ),
+  ],
+);
+
+export type TeamCalendarConnectionRow = typeof teamCalendarConnections.$inferSelect;
+export type NewTeamCalendarConnectionRow = typeof teamCalendarConnections.$inferInsert;
+
 // ─── Workflows ───────────────────────────────────────────────────────────────
 
 export const workflows = sqliteTable(
@@ -688,6 +862,7 @@ export const subscriptions = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    teamId: text("team_id").references(() => teams.id, { onDelete: "cascade" }),
     stripeCustomerId: text("stripe_customer_id"),
     stripeSubscriptionId: text("stripe_subscription_id"),
     plan: text("plan", { enum: ["free", "pro", "business"] })
@@ -723,7 +898,9 @@ export const subscriptions = sqliteTable(
   },
   (t) => [
     index("subscriptions_user_id_idx").on(t.userId),
+    index("subscriptions_team_id_idx").on(t.teamId),
     uniqueIndex("subscriptions_user_id_unique").on(t.userId),
+    uniqueIndex("subscriptions_team_id_unique").on(t.teamId),
     uniqueIndex("subscriptions_stripe_sub_id_idx").on(t.stripeSubscriptionId),
   ],
 );
@@ -780,7 +957,11 @@ export type NewApiKeyRow = typeof apiKeys.$inferInsert;
 
 export const schema = {
   ...authSchema,
+  teams,
+  teamMembers,
   projects,
+  projectMembers,
+  teamInvites,
   eventTypes,
   schedules,
   availabilityRules,
@@ -797,6 +978,7 @@ export const schema = {
   contactActivity,
   contactViews,
   calendarConnections,
+  teamCalendarConnections,
   workflows,
   workflowSteps,
   workflowRuns,

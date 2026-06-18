@@ -19,6 +19,8 @@ const plans = [
       "3 event types",
       "100 contacts",
       "1 workflow",
+      "1 calendar connection",
+      "Solo workspace",
       "Community support",
     ],
     cta: "Get Started Free",

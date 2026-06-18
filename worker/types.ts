@@ -12,9 +12,25 @@ export interface PlanLimits {
   maxWorkflows: number;
   calendarSync: boolean;
   maxCalendarConnections: number; // -1 = unlimited
+  maxTeamMembers: number; // non-owner members; -1 = unlimited
   apiAccess: boolean;
   customWidgets: boolean;
   analytics: boolean;
+}
+
+export type TeamRole = "owner" | "admin" | "member";
+export type ProjectRole = "admin" | "editor" | "viewer";
+
+export interface ProjectAccessContext {
+  projectId: string;
+  teamId: string | null;
+  ownerUserId: string;
+  teamMemberId: string | null;
+  teamRole: TeamRole | null;
+  projectMemberId: string | null;
+  projectRole: ProjectRole | null;
+  effectiveProjectRole: ProjectRole;
+  isLegacyOwner: boolean;
 }
 
 // ─── Worker Env ──────────────────────────────────────────────────────────────
@@ -103,6 +119,13 @@ export interface HonoAppContext {
       status: string;
     };
     planLimits: PlanLimits;
+    accountTeamId: string;
+    projectAccess?: ProjectAccessContext;
+    projectSubscription?: {
+      plan: Plan;
+      status: string;
+    };
+    projectPlanLimits?: PlanLimits;
     effectiveUserId: string;
   };
 }

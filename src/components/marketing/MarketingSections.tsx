@@ -887,9 +887,10 @@ const pricingPlans: PricingPlan[] = [
       "3 forms & 3 event types",
       "100 contacts",
       "1 workflow",
+      "1 calendar connection",
       "Community support",
     ],
-    excluded: ["Google Calendar sync", "API access"],
+    excluded: ["Team members", "API access"],
   },
   {
     name: "Pro plan",
@@ -1088,7 +1089,7 @@ const faqItems: FaqItemData[] = [
   {
     question: "What's included in the free plan?",
     answer:
-      "The free plan includes 1 project, 3 forms, 3 event types, 100 contacts, and 1 workflow. It's a great way to try LinkyCal for personal projects or small-scale use. Upgrade to Pro or Business when you need more capacity, calendar sync, or API access.",
+      "The free plan includes 1 project, 3 forms, 3 event types, 100 contacts, 1 workflow, and 1 calendar connection. Team members, more capacity, and API access require Pro or Business.",
   },
   {
     question: "Can I migrate from Calendly or Typeform?",
