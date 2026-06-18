@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
-import { ArrowRight, BookOpen, Link2, Code2 } from "lucide-react";
+import { ArrowRight, Link2, Code2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import {
   Dialog,
@@ -13,6 +13,7 @@ import { signIn, emailOtp, useSession } from "@/lib/auth-client";
 import { usePostHog } from "@posthog/react";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
+import { CopyLlmsButton } from "@/components/marketing/CopyLlmsButton";
 import {
   ToolkitSection,
   ComparisonSection,
@@ -305,13 +306,10 @@ export default function Landing() {
                 <ArrowRight className="w-4 h-4" />
               </span>
             </button>
-            <Link
-              to="/docs"
-              className="inline-flex items-center gap-2.5 h-14 px-7 rounded-full bg-white/70 backdrop-blur border border-[#0F1A14]/8 text-[15px] font-medium text-foreground hover:bg-white transition-colors"
-            >
-              <BookOpen className="w-[18px] h-[18px]" />
-              Read the docs
-            </Link>
+            <CopyLlmsButton
+              className="inline-flex items-center gap-2.5 h-14 px-7 rounded-full bg-white/70 backdrop-blur border border-[#0F1A14]/8 text-[15px] font-medium text-foreground hover:bg-white transition-colors cursor-pointer"
+              iconClassName="w-[18px] h-[18px]"
+            />
           </div>
 
           {/* Product showcase cards */}

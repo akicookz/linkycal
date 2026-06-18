@@ -189,7 +189,7 @@ export default function ApiKeys() {
                     <Label htmlFor="key-label">Label (optional)</Label>
                     <Input
                       id="key-label"
-                      placeholder="e.g. Production, Staging, CI/CD"
+                      placeholder="Claude MCP"
                       value={label}
                       onChange={(e) => setLabel(e.target.value)}
                     />

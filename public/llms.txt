@@ -4,13 +4,17 @@
 ## Endpoints
 - GET /api/v1/availability/:projectSlug - Check available time slots
 - POST /api/v1/bookings - Create a booking
-- DELETE /api/v1/bookings/:id - Cancel a booking
 - POST /api/v1/forms/:projectSlug/:formSlug/responses - Start a form response
-- PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:id/steps/:step - Submit form step
-- GET /api/v1/contacts - List contacts (coming soon)
+- POST /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/uploads - Upload a file for a file field
+- PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex - Submit a form step
+- GET /api/widget/form/:projectSlug/:formSlug/config - Get a form's config
+- POST /api/public/forms/:projectSlug/:formSlug/submit - Submit a native HTML form
 
 ## Auth
 Bearer token via API key: Authorization: Bearer lc_live_...
+
+## MCP
+Streamable HTTP server for AI agents: https://linkycal.com/api/mcp
 
 ## Docs
 /docs

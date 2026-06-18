@@ -577,7 +577,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Submit field values for a specific step. Steps must be submitted in order (0, 1, 2...).
-              When the last step is submitted, the response is automatically marked as completed.
+              Pass <IC>complete: true</IC> on the final visible step to mark the response completed.
             </p>
 
             <PropTable
@@ -587,6 +587,12 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
                   type: "array",
                   required: true,
                   description: "Array of { fieldId, value } objects. File fields may include fileUrl from the upload endpoint.",
+                },
+                {
+                  name: "complete",
+                  type: "boolean",
+                  required: false,
+                  description: "Set true on the last visible step to finalize the response. Required for forms with conditional steps, where the server can't infer the final step from the index alone.",
                 },
               ]}
             />
@@ -816,12 +822,6 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
                   description: "Guest email",
                 },
                 {
-                  name: "phone",
-                  type: "string",
-                  required: false,
-                  description: "Guest phone number",
-                },
-                {
                   name: "notes",
                   type: "string",
                   required: false,
@@ -830,8 +830,14 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
                 {
                   name: "timezone",
                   type: "string",
+                  required: true,
+                  description: "Guest timezone (IANA format, e.g. America/New_York)",
+                },
+                {
+                  name: "formFields",
+                  type: "object",
                   required: false,
-                  description: "Guest timezone (IANA format)",
+                  description: "Values for the event type's custom booking-form fields, keyed by field ID",
                 },
               ]}
             />
@@ -846,7 +852,6 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
     "startTime": "2026-03-24T09:00:00Z",
     "name": "Jane Smith",
     "email": "jane@example.com",
-    "phone": "+1-555-0123",
     "notes": "Looking forward to our meeting",
     "timezone": "America/New_York"
   }'`}
@@ -859,7 +864,6 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
     "eventTypeId": "et_xyz789",
     "name": "Jane Smith",
     "email": "jane@example.com",
-    "phone": "+1-555-0123",
     "startTime": "2026-03-24T09:00:00Z",
     "endTime": "2026-03-24T09:30:00Z",
     "timezone": "America/New_York",

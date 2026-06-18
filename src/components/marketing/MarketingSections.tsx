@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CopyLlmsButton } from "@/components/marketing/CopyLlmsButton";
 
 interface MarketingCtaProps {
   onGetStarted: () => void;
@@ -785,13 +786,10 @@ export function HeadlessSection() {
               <Code2 className="w-4 h-4" />
               Explore the API
             </Link>
-            <Link
-              to="/docs"
-              className="inline-flex items-center gap-2 h-12 px-2 text-sm font-medium text-brand hover:text-foreground transition-colors"
-            >
-              <BookOpen className="w-4 h-4" />
-              Read the docs
-            </Link>
+            <CopyLlmsButton
+              className="inline-flex items-center gap-2 h-12 px-2 text-sm font-medium text-brand hover:text-foreground transition-colors cursor-pointer"
+              iconClassName="w-4 h-4"
+            />
           </div>
         </div>
 
