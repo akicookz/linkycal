@@ -5360,28 +5360,6 @@ app.get("/api/projects/:projectId/analytics/forms", async (c) => {
   }
 });
 
-// ─── LLMs.txt ────────────────────────────────────────────────────────────────
-
-app.get("/llms.txt", (c) => {
-  return c.text(`# LinkyCal API
-> Form & Scheduling infrastructure. API-first.
-
-## Endpoints
-- GET /api/v1/availability/:projectSlug - Check available time slots
-- POST /api/v1/bookings - Create a booking
-- DELETE /api/v1/bookings/:id - Cancel a booking
-- POST /api/v1/forms/:projectSlug/:formSlug/responses - Start a form response
-- PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:id/steps/:step - Submit form step
-- GET /api/v1/contacts - List contacts (coming soon)
-
-## Auth
-Bearer token via API key: Authorization: Bearer lc_live_...
-
-## Docs
-/docs
-`);
-});
-
 // ─── SPA Fallback ────────────────────────────────────────────────────────────
 
 const LOVABLEHTML_FORWARD_HEADERS = [

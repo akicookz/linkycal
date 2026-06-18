@@ -124,7 +124,50 @@ const sidebarSections: SidebarSection[] = [
   },
 ];
 
+// ─── Constants ──────────────────────────────────────────────────────────────
+
+const MCP_CLIENT_CONFIG = `{
+  "mcpServers": {
+    "linkycal": {
+      "type": "http",
+      "url": "https://linkycal.com/api/mcp",
+      "headers": {
+        "Authorization": "Bearer lc_live_a1b2c3d4e5f6..."
+      }
+    }
+  }
+}`;
+
 // ─── Inline Helpers ───────────────────────────────────────────────────────────
+
+function CopyActionButton({
+  label,
+  icon: Icon,
+  getValue,
+}: {
+  label: string;
+  icon: React.ElementType;
+  getValue: () => string | Promise<string>;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(await getValue());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (e.g. insecure context) — fail silently.
+    }
+  }
+
+  return (
+    <Button variant="outline" size="sm" className="rounded-full h-8" onClick={handleCopy}>
+      {copied ? <Check /> : <Icon />}
+      {copied ? "Copied" : label}
+    </Button>
+  );
+}
 
 function SectionHeading({
   id,
@@ -374,6 +417,18 @@ export default function Docs() {
                 Everything you need to integrate forms, booking, and contact management into your
                 product.
               </p>
+              <div className="flex flex-wrap items-center gap-2 mt-6">
+                <CopyActionButton
+                  label="MCP config"
+                  icon={Bot}
+                  getValue={() => MCP_CLIENT_CONFIG}
+                />
+                <CopyActionButton
+                  label="Copy llms.txt"
+                  icon={FileText}
+                  getValue={() => "https://linkycal.com/llms.txt"}
+                />
+              </div>
             </div>
 
             {/* ════════════════════════════════════════════════════════════
@@ -1267,17 +1322,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </p>
 
             <CodeBlock title="MCP Client Config" language="json">
-              {`{
-  "mcpServers": {
-    "linkycal": {
-      "type": "http",
-      "url": "https://linkycal.com/api/mcp",
-      "headers": {
-        "Authorization": "Bearer lc_live_a1b2c3d4e5f6..."
-      }
-    }
-  }
-}`}
+              {MCP_CLIENT_CONFIG}
             </CodeBlock>
 
             <Callout type="warning">
