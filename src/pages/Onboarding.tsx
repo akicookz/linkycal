@@ -9,6 +9,7 @@ import {
   ArrowLeft,
   FileText,
   CalendarDays,
+  LogOut,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ import { Logo } from "@/components/Logo";
 import FormBuilder from "@/pages/FormBuilder";
 import CopyPromptButton from "@/components/CopyPromptButton";
 import { cn, copyToClipboard } from "@/lib/utils";
+import { signOut } from "@/lib/auth-client";
 import { getTimezones, getDetectedTimezone, FONT_OPTIONS, plans } from "@/lib/constants";
 import {
   generateFormApiPrompt,
@@ -580,6 +582,17 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     },
   });
 
+  const signOutMutation = useMutation({
+    mutationFn: async () => {
+      posthog?.capture("user_signed_out");
+      posthog?.reset();
+      await signOut();
+    },
+    onSuccess: () => {
+      navigate("/");
+    },
+  });
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   function completeOnboarding(pid: string) {
@@ -598,7 +611,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
   if (completing || !resumeChecked) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-background px-4">
-        <Logo size="lg" />
+        <Logo size="sm" />
         <div className="mt-8 flex items-center gap-3 text-muted-foreground">
           <Loader className="h-5 w-5 animate-spin" />
           <span className="text-sm">{completing ? "Finishing setup..." : "Loading..."}</span>
@@ -723,7 +736,19 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
                     {error && <p className="text-sm text-destructive">{error}</p>}
 
-                    <div className="flex justify-end pt-2">
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => signOutMutation.mutate()}
+                        disabled={signOutMutation.isPending}
+                      >
+                        {signOutMutation.isPending ? (
+                          <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                        ) : (
+                          <LogOut className="h-4 w-4 mr-1.5" />
+                        )}
+                        Log out
+                      </Button>
                       <Button
                         onClick={() => {
                           if (!name.trim()) {
