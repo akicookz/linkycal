@@ -1,25 +1,30 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowRight, Loader, LogIn, UserPlus } from "lucide-react";
+import { useEffect } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { ArrowRight, Loader, LogIn, LogOut, UserPlus } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/Logo";
-import { useSession } from "@/lib/auth-client";
+import { signOut, useSession } from "@/lib/auth-client";
 
 interface InviteData {
   id: string;
-  email: string;
   teamRole: string;
   projectRole: string | null;
   team: { id: string; name: string };
   project: { id: string; name: string } | null;
+  emailMatchesSignedInUser: boolean | null;
 }
 
 export default function Invite() {
   const { token } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: session, isPending: sessionPending } = useSession();
+  const invitePath = token ? `/invite/${token}?accept=true` : "/app";
+  const signInPath = `/?show_auth=true&redirect=${encodeURIComponent(invitePath)}`;
 
   const { data, isLoading, isError } = useQuery<{ invite: InviteData }>({
     queryKey: ["invite", token],
@@ -41,14 +46,45 @@ export default function Invite() {
       return body as { projectId?: string | null };
     },
     onSuccess: (body) => {
+      queryClient.removeQueries({ queryKey: ["projects"] });
       navigate(body.projectId ? `/app/projects/${body.projectId}` : "/app");
     },
   });
 
+  const signOutMutation = useMutation({
+    mutationFn: async () => {
+      await signOut();
+    },
+    onSuccess: () => {
+      navigate(signInPath);
+    },
+  });
+
   const invite = data?.invite;
-  const signedInEmail = session?.user?.email?.toLowerCase();
-  const inviteEmail = invite?.email.toLowerCase();
-  const emailMismatch = !!signedInEmail && !!inviteEmail && signedInEmail !== inviteEmail;
+  const emailMismatch = invite?.emailMatchesSignedInUser === false;
+  const autoAccept = searchParams.get("accept") === "true";
+
+  useEffect(() => {
+    if (
+      !autoAccept ||
+      sessionPending ||
+      !session ||
+      !invite ||
+      invite.emailMatchesSignedInUser !== true ||
+      acceptMutation.isPending ||
+      acceptMutation.isSuccess
+    ) {
+      return;
+    }
+
+    acceptMutation.mutate();
+  }, [
+    acceptMutation,
+    autoAccept,
+    invite,
+    session,
+    sessionPending,
+  ]);
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -84,15 +120,29 @@ export default function Invite() {
               </Button>
             ) : !session ? (
               <Button asChild>
-                <Link to="/?show_auth=true">
+                <Link to={signInPath}>
                   <LogIn className="h-4 w-4" />
                   Sign in to accept
                 </Link>
               </Button>
             ) : emailMismatch ? (
-              <p className="text-sm text-destructive">
-                This invite is for {invite.email}. Sign in with that email to accept it.
-              </p>
+              <div className="space-y-3">
+                <p className="text-sm text-destructive">
+                  You are signed in with a different account. Switch accounts to accept this invite.
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={() => signOutMutation.mutate()}
+                  disabled={signOutMutation.isPending}
+                >
+                  {signOutMutation.isPending ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <LogOut className="h-4 w-4" />
+                  )}
+                  Switch account
+                </Button>
+              </div>
             ) : (
               <>
                 {invite.project && (

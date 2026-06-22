@@ -3189,7 +3189,24 @@ const teamRoutes = app
     return c.json({ error: "Invite not found or expired" }, 404);
   }
 
-  return c.json({ invite });
+  const auth = createAuth(c.env);
+  const session = await auth.api.getSession({ headers: c.req.raw.headers });
+  const sessionEmail = session?.user?.email?.toLowerCase();
+
+  return c.json({
+    invite: {
+      id: invite.id,
+      teamRole: invite.teamRole,
+      projectRole: invite.projectRole,
+      status: invite.status,
+      expiresAt: invite.expiresAt,
+      team: invite.team,
+      project: invite.project,
+      emailMatchesSignedInUser: sessionEmail
+        ? sessionEmail === invite.email.toLowerCase()
+        : null,
+    },
+  });
 })
 
   .post("/api/invites/:token/accept", async (c) => {

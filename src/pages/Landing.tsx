@@ -43,6 +43,22 @@ const SYN = {
 
 type SynToken = keyof typeof SYN;
 
+function getSafeAuthRedirect(value: string | null): string {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return "/app";
+  }
+
+  return value;
+}
+
+function getAuthSearchParams(redirectTo: string): Record<string, string> {
+  if (redirectTo === "/app") {
+    return { show_auth: "true" };
+  }
+
+  return { show_auth: "true", redirect: redirectTo };
+}
+
 const HERO_CODE: [string, SynToken][][] = [
   [["<!-- Native HTML. No JS, no server. -->", "cm"]],
   [["<", "pu"], ["form", "tag"]],
@@ -113,6 +129,7 @@ export default function Landing() {
   const { data: session, isPending: isSessionPending } = useSession();
   const posthog = usePostHog();
   const showAuth = searchParams.get("show_auth") === "true";
+  const authRedirect = getSafeAuthRedirect(searchParams.get("redirect"));
   const [authOpen, setAuthOpen] = useState(false);
   const [loading, setLoading] = useState<string | null>(null);
   const [authStep, setAuthStep] = useState<"social" | "otp">("social");
@@ -126,12 +143,12 @@ export default function Landing() {
 
     if (session && showAuth) {
       setAuthOpen(false);
-      navigate("/app", { replace: true });
+      navigate(authRedirect, { replace: true });
       return;
     }
 
     setAuthOpen(showAuth);
-  }, [isSessionPending, navigate, session, showAuth]);
+  }, [authRedirect, isSessionPending, navigate, session, showAuth]);
 
   // Scroll to #features / #pricing / #faq when arriving from another page
   // (BrowserRouter doesn't handle hash scrolling itself).
@@ -152,23 +169,23 @@ export default function Landing() {
 
   const openAuth = useCallback(() => {
     if (isSessionPending) {
-      setSearchParams({ show_auth: "true" }, { replace: true });
+      setSearchParams(getAuthSearchParams(authRedirect), { replace: true });
       return;
     }
 
     if (session) {
-      navigate("/app");
+      navigate(authRedirect);
       return;
     }
 
     setAuthOpen(true);
-    setSearchParams({ show_auth: "true" }, { replace: true });
-  }, [isSessionPending, navigate, session, setSearchParams]);
+    setSearchParams(getAuthSearchParams(authRedirect), { replace: true });
+  }, [authRedirect, isSessionPending, navigate, session, setSearchParams]);
 
   async function handleSignIn(provider: "google" | "facebook") {
     setLoading(provider);
     try {
-      await signIn.social({ provider, callbackURL: "/app" });
+      await signIn.social({ provider, callbackURL: authRedirect });
     } catch {
       setLoading(null);
     }
@@ -247,7 +264,7 @@ export default function Landing() {
         return;
       }
       posthog?.capture("user_signed_in", { method: "email_otp" });
-      window.location.href = "/app";
+      window.location.href = authRedirect;
     } catch {
       setOtpError("Verification failed. Please try again.");
       setLoading(null);
