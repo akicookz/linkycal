@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Logo } from "@/components/Logo";
 import { signOut, useSession } from "@/lib/auth-client";
+import { clearStoredAuthRedirect, storeAuthRedirect } from "@/lib/auth-redirect";
 
 interface InviteData {
   id: string;
@@ -46,6 +47,7 @@ export default function Invite() {
       return body as { projectId?: string | null };
     },
     onSuccess: (body) => {
+      clearStoredAuthRedirect();
       queryClient.removeQueries({ queryKey: ["projects"] });
       navigate(body.projectId ? `/app/projects/${body.projectId}` : "/app");
     },
@@ -70,7 +72,7 @@ export default function Invite() {
       sessionPending ||
       !session ||
       !invite ||
-      invite.emailMatchesSignedInUser !== true ||
+      invite.emailMatchesSignedInUser === false ||
       acceptMutation.isPending ||
       acceptMutation.isSuccess
     ) {
@@ -120,7 +122,10 @@ export default function Invite() {
               </Button>
             ) : !session ? (
               <Button asChild>
-                <Link to={signInPath}>
+                <Link
+                  to={signInPath}
+                  onClick={() => storeAuthRedirect(invitePath)}
+                >
                   <LogIn className="h-4 w-4" />
                   Sign in to accept
                 </Link>

@@ -44,6 +44,23 @@ interface OnboardingProps {
   mode?: "onboarding" | "new-project";
 }
 
+interface OnboardingProject {
+  id: string;
+  slug: string;
+  name: string;
+  teamId?: string | null;
+  teamName?: string | null;
+  onboarded: boolean;
+  settings: string | null;
+  teamRole?: "owner" | "admin" | "member" | null;
+}
+
+interface WorkspaceOption {
+  projectId: string;
+  label: string;
+  detail: string;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type StepId =
@@ -107,6 +124,46 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
   const flow = useMemo(() => buildFlow(intent), [intent]);
 
+  const {
+    data: accessibleProjects = [],
+    isPending: projectsPending,
+    isError: projectsError,
+  } = useQuery<OnboardingProject[]>({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await fetch("/api/projects");
+      if (!res.ok) throw new Error("Failed to fetch projects");
+      const data = await res.json();
+      return data.projects ?? data;
+    },
+  });
+
+  const workspaceOptions = useMemo<WorkspaceOption[]>(() => {
+    const seenTeamIds = new Set<string>();
+
+    return accessibleProjects
+      .filter((project) => {
+        const teamKey = project.teamId ?? project.id;
+        if (seenTeamIds.has(teamKey)) return false;
+        seenTeamIds.add(teamKey);
+        return true;
+      })
+      .map((project) => ({
+        projectId: project.id,
+        label: project.teamName ?? project.name,
+        detail: project.teamRole === "owner"
+          ? "Your workspace"
+          : project.teamName
+            ? project.name
+            : "Team dashboard",
+      }));
+  }, [accessibleProjects]);
+
+  function handleWorkspaceChange(value: string) {
+    if (value === "personal") return;
+    navigate(`/app/projects/${value}`);
+  }
+
   function goNext(currentIntent?: Intent) {
     const activeFlow = currentIntent ? buildFlow(currentIntent) : flow;
     const idx = activeFlow.indexOf(step);
@@ -131,18 +188,28 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       return;
     }
 
+    if (projectsPending) return;
+    if (projectsError) {
+      setResumeChecked(true);
+      return;
+    }
+
     async function detectResume() {
       try {
-        // 1. Find incomplete project
-        const projRes = await fetch("/api/projects");
-        if (!projRes.ok) { setResumeChecked(true); return; }
-        const { projects } = await projRes.json() as { projects: { id: string; slug: string; name: string; onboarded: boolean; settings: string | null }[] };
-        const incomplete = projects.find((p) => !p.onboarded);
+        const projects = accessibleProjects;
+        const hasCollaboratorProject = projects.some(
+          (p) => p.teamRole && p.teamRole !== "owner",
+        );
+
+        const incomplete = projects.find(
+          (p) => !p.onboarded && (!p.teamRole || p.teamRole === "owner"),
+        );
         if (!incomplete) {
           // If at least one project exists and they're all onboarded, this user
           // is done — don't sit on this page. If there are no projects at all
-          // (fresh signup), stay on the project step.
-          if (projects.length > 0) {
+          // (fresh signup), stay on the project step. Collaborators can stay
+          // here to set up a personal project and use the workspace switcher.
+          if (projects.length > 0 && !hasCollaboratorProject) {
             navigate("/app", { replace: true });
             return;
           }
@@ -176,7 +243,14 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     }
 
     detectResume();
-  }, [mode, completing]);
+  }, [
+    accessibleProjects,
+    completing,
+    mode,
+    navigate,
+    projectsError,
+    projectsPending,
+  ]);
 
   // ─── Step 0: Project ──────────────────────────────────────────────────────
   const [name, setName] = useState("");
@@ -556,625 +630,662 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
               : "max-w-lg";
         return (
           <>
-            <div className={cn("w-full mb-10", widthClass)}>
-              <Logo size="lg" />
-            </div>
-            <Card className={cn("w-full", widthClass)}>
-        {/* ── Step: Project ────────────────────────────────────────────── */}
-        {step === "project" && (
-          <>
-            <CardHeader>
-              <CardTitle className="text-xl">Create your project</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                A project is your workspace for forms, bookings, and contacts.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="project-name">Project Name</Label>
-                <Input
-                  id="project-name"
-                  placeholder="e.g. My Business"
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    setError(null);
-                  }}
-                  autoFocus
-                />
+            <div className={cn("w-full mb-4 flex items-center justify-between gap-3", widthClass)}>
+              <div className="min-w-0">
+                <span className="hidden sm:inline-flex">
+                  <Logo size="sm" />
+                </span>
+                <span className="inline-flex sm:hidden">
+                  <Logo size="sm" iconOnly />
+                </span>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="project-slug">URL Slug</Label>
-                <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-10">
-                  <span className="text-sm text-muted-foreground mr-1">linkycal.com/</span>
-                  <span className="text-sm font-medium text-foreground">
-                    {slug || "your-project"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="timezone">Timezone</Label>
-                <Select value={timezone} onValueChange={setTimezone}>
-                  <SelectTrigger>
-                    <SelectValue />
+              {workspaceOptions.length > 0 && (
+                <Select value="personal" onValueChange={handleWorkspaceChange}>
+                  <SelectTrigger
+                    aria-label="Switch workspace"
+                    className="h-10 w-[min(13.5rem,calc(100vw-6rem))] bg-background shadow-[0_8px_24px_-20px_rgba(15,26,20,0.45)]"
+                  >
+                    <SelectValue placeholder="Personal setup" />
                   </SelectTrigger>
-                  <SelectContent>
-                    {timezones.map((tz) => (
-                      <SelectItem key={tz} value={tz}>
-                        {tz.replace(/_/g, " ")}
+                  <SelectContent align="end" className="w-64">
+                    <SelectItem value="personal">
+                      <span className="flex flex-col">
+                        <span className="font-medium">Personal setup</span>
+                        <span className="text-xs text-muted-foreground">
+                          Create your own project
+                        </span>
+                      </span>
+                    </SelectItem>
+                    {workspaceOptions.map((option) => (
+                      <SelectItem key={option.projectId} value={option.projectId}>
+                        <span className="flex flex-col">
+                          <span className="font-medium">{option.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {option.detail}
+                          </span>
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
-              <div className="flex justify-end pt-2">
-                <Button
-                  onClick={() => {
-                    if (!name.trim()) {
-                      setError("Project name is required");
-                      return;
-                    }
-                    if (!slug) {
-                      setError("Please enter a valid project name");
-                      return;
-                    }
-                    setError(null);
-                    createProjectMutation.mutate();
-                  }}
-                  disabled={isLoading || !name.trim()}
-                >
-                  {createProjectMutation.isPending ? (
-                    <>
-                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step: Intent ─────────────────────────────────────────────── */}
-        {step === "intent" && (
-          <>
-            <CardHeader>
-              <CardTitle className="text-xl">What are you here for?</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Pick one or both. We'll tailor the rest of the setup.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {([
-                  {
-                    key: "forms" as const,
-                    icon: FileText,
-                    title: "Add contact forms to my website",
-                    description: "Embed forms that collect name, email, phone, and a message.",
-                  },
-                  {
-                    key: "scheduling" as const,
-                    icon: CalendarDays,
-                    title: "Scheduling and form links",
-                    description: "Bookable event types, availability, and shareable booking pages.",
-                  },
-                ]).map((card) => {
-                  const Icon = card.icon;
-                  const selected = intent[card.key];
-                  return (
-                    <button
-                      key={card.key}
-                      type="button"
-                      onClick={() =>
-                        setIntent((prev) => ({ ...prev, [card.key]: !prev[card.key] }))
-                      }
-                      className={cn(
-                        "text-left rounded-[16px] border p-4 transition-all flex flex-col gap-3 hover:border-primary/40",
-                        selected && "border-primary",
-                      )}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="h-9 w-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
-                          <Icon className="h-4 w-4 text-primary" />
-                        </div>
-                        <div
-                          className={cn(
-                            "h-5 w-5 rounded-full border flex items-center justify-center transition-colors",
-                            selected
-                              ? "bg-primary border-primary text-primary-foreground"
-                              : "border-border",
-                          )}
-                        >
-                          {selected && <Check className="h-3 w-3" />}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-semibold">{card.title}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {card.description}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
-                  <ArrowLeft className="h-4 w-4 mr-1.5" />
-                  Back
-                </Button>
-                <Button
-                  disabled={!intent.forms && !intent.scheduling}
-                  onClick={() => {
-                    setError(null);
-                    goNext(intent);
-                  }}
-                >
-                  Continue
-                  <ArrowRight className="h-4 w-4 ml-1.5" />
-                </Button>
-              </div>
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step: Form template (live FormBuilder) ───────────────────── */}
-        {step === "form-template" && (
-          <>
-            <CardHeader className="px-4 sm:px-6">
-              <CardTitle className="text-xl">Your contact form</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                A starter form is ready. Edit it now or continue and refine later.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5 px-3 sm:px-6">
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
-              {!templateFormId || !projectId ? (
-                <div className="flex items-center justify-center py-16 text-muted-foreground">
-                  <Loader className="h-5 w-5 animate-spin mr-2" />
-                  <span className="text-sm">Setting up your form...</span>
-                </div>
-              ) : (
-                <FormBuilder
-                  projectId={projectId}
-                  formId={templateFormId}
-                  mode="template"
-                  onboardingFooter={
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-4 border-t mt-2">
-                      <Button
-                        variant="ghost"
-                        className="w-full sm:w-auto order-2 sm:order-1 text-muted-foreground"
-                        onClick={() => {
-                          goBack();
+              )}
+            </div>
+            <Card className={cn("w-full", widthClass)}>
+              {/* ── Step: Project ────────────────────────────────────────────── */}
+              {step === "project" && (
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-xl">Create your project</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      A project is your workspace for forms, bookings, and contacts.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="project-name">Project Name</Label>
+                      <Input
+                        id="project-name"
+                        placeholder="e.g. My Business"
+                        value={name}
+                        onChange={(e) => {
+                          setName(e.target.value);
                           setError(null);
                         }}
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="project-slug">URL Slug</Label>
+                      <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-10">
+                        <span className="text-sm text-muted-foreground mr-1">linkycal.com/</span>
+                        <span className="text-sm font-medium text-foreground">
+                          {slug || "your-project"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="timezone">Timezone</Label>
+                      <Select value={timezone} onValueChange={setTimezone}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {timezones.map((tz) => (
+                            <SelectItem key={tz} value={tz}>
+                              {tz.replace(/_/g, " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {error && <p className="text-sm text-destructive">{error}</p>}
+
+                    <div className="flex justify-end pt-2">
+                      <Button
+                        onClick={() => {
+                          if (!name.trim()) {
+                            setError("Project name is required");
+                            return;
+                          }
+                          if (!slug) {
+                            setError("Please enter a valid project name");
+                            return;
+                          }
+                          setError(null);
+                          createProjectMutation.mutate();
+                        }}
+                        disabled={isLoading || !name.trim()}
                       >
+                        {createProjectMutation.isPending ? (
+                          <>
+                            <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            Continue
+                            <ArrowRight className="h-4 w-4 ml-1.5" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── Step: Intent ─────────────────────────────────────────────── */}
+              {step === "intent" && (
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-xl">What are you here for?</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Pick one or both. We'll tailor the rest of the setup.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {([
+                        {
+                          key: "forms" as const,
+                          icon: FileText,
+                          title: "Add contact forms to my website",
+                          description: "Embed forms that collect name, email, phone, and a message.",
+                        },
+                        {
+                          key: "scheduling" as const,
+                          icon: CalendarDays,
+                          title: "Scheduling and form links",
+                          description: "Bookable event types, availability, and shareable booking pages.",
+                        },
+                      ]).map((card) => {
+                        const Icon = card.icon;
+                        const selected = intent[card.key];
+                        return (
+                          <button
+                            key={card.key}
+                            type="button"
+                            onClick={() =>
+                              setIntent((prev) => ({ ...prev, [card.key]: !prev[card.key] }))
+                            }
+                            className={cn(
+                              "text-left rounded-[16px] border p-4 transition-all flex flex-col gap-3 hover:border-primary/40",
+                              selected && "border-primary",
+                            )}
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="h-9 w-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
+                                <Icon className="h-4 w-4 text-primary" />
+                              </div>
+                              <div
+                                className={cn(
+                                  "h-5 w-5 rounded-full border flex items-center justify-center transition-colors",
+                                  selected
+                                    ? "bg-primary border-primary text-primary-foreground"
+                                    : "border-border",
+                                )}
+                              >
+                                {selected && <Check className="h-3 w-3" />}
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-sm font-semibold">{card.title}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {card.description}
+                              </p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {error && <p className="text-sm text-destructive">{error}</p>}
+
+                    <div className="flex justify-between pt-2">
+                      <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
                         <ArrowLeft className="h-4 w-4 mr-1.5" />
                         Back
                       </Button>
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 order-1 sm:order-2">
-                        <CopyPromptButton
-                          align="end"
-                          buttonVariant="outline"
-                          buttonSize="default"
-                          buttonClassName="h-10 px-4 text-sm w-full sm:w-auto justify-center"
-                          items={[
-                            {
-                              id: "embed",
-                              label:
-                                promptCopiedId === "embed"
-                                  ? "Copied!"
-                                  : "Embed prompt",
-                              description:
-                                "Instructions for AI builders (Lovable, Cursor) to install the form.",
-                              copied: promptCopiedId === "embed",
-                              onClick: () => {
-                                if (!templateForm) return;
-                                const slug = projectSlug ?? "your-project";
-                                copyToClipboard(
-                                  generateFormEmbedPrompt(
-                                    templateForm,
-                                    slug,
-                                    window.location.origin,
-                                  ),
-                                );
-                                setPromptCopiedId("embed");
-                                setTimeout(
-                                  () => setPromptCopiedId(null),
-                                  2000,
-                                );
-                              },
-                            },
-                            {
-                              id: "api",
-                              label:
-                                promptCopiedId === "api"
-                                  ? "Copied!"
-                                  : "API prompt",
-                              description:
-                                "Wire the form up via API or native HTML action.",
-                              copied: promptCopiedId === "api",
-                              onClick: () => {
-                                if (!templateForm) return;
-                                const slug = projectSlug ?? "your-project";
-                                copyToClipboard(
-                                  generateFormApiPrompt(
-                                    templateForm,
-                                    slug,
-                                    window.location.origin,
-                                  ),
-                                );
-                                setPromptCopiedId("api");
-                                setTimeout(
-                                  () => setPromptCopiedId(null),
-                                  2000,
-                                );
-                              },
-                            },
-                          ]}
-                        />
-                        <Button
-                          className="w-full sm:w-auto"
-                          onClick={() => {
-                            setError(null);
-                            goNext();
-                          }}
+                      <Button
+                        disabled={!intent.forms && !intent.scheduling}
+                        onClick={() => {
+                          setError(null);
+                          goNext(intent);
+                        }}
+                      >
+                        Continue
+                        <ArrowRight className="h-4 w-4 ml-1.5" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── Step: Form template (live FormBuilder) ───────────────────── */}
+              {step === "form-template" && (
+                <>
+                  <CardHeader className="px-4 sm:px-6">
+                    <CardTitle className="text-xl">Your contact form</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      A starter form is ready. Edit it now or continue and refine later.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-5 px-3 sm:px-6">
+                    {error && <p className="text-sm text-destructive">{error}</p>}
+
+                    {!templateFormId || !projectId ? (
+                      <div className="flex items-center justify-center py-16 text-muted-foreground">
+                        <Loader className="h-5 w-5 animate-spin mr-2" />
+                        <span className="text-sm">Setting up your form...</span>
+                      </div>
+                    ) : (
+                      <FormBuilder
+                        projectId={projectId}
+                        formId={templateFormId}
+                        mode="template"
+                        onboardingFooter={
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-4 border-t mt-2">
+                            <Button
+                              variant="ghost"
+                              className="w-full sm:w-auto order-2 sm:order-1 text-muted-foreground"
+                              onClick={() => {
+                                goBack();
+                                setError(null);
+                              }}
+                            >
+                              <ArrowLeft className="h-4 w-4 mr-1.5" />
+                              Back
+                            </Button>
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-2 order-1 sm:order-2">
+                              <CopyPromptButton
+                                align="end"
+                                buttonVariant="outline"
+                                buttonSize="default"
+                                buttonClassName="h-10 px-4 text-sm w-full sm:w-auto justify-center"
+                                items={[
+                                  {
+                                    id: "embed",
+                                    label:
+                                      promptCopiedId === "embed"
+                                        ? "Copied!"
+                                        : "Embed prompt",
+                                    description:
+                                      "Instructions for AI builders (Lovable, Cursor) to install the form.",
+                                    copied: promptCopiedId === "embed",
+                                    onClick: () => {
+                                      if (!templateForm) return;
+                                      const slug = projectSlug ?? "your-project";
+                                      copyToClipboard(
+                                        generateFormEmbedPrompt(
+                                          templateForm,
+                                          slug,
+                                          window.location.origin,
+                                        ),
+                                      );
+                                      setPromptCopiedId("embed");
+                                      setTimeout(
+                                        () => setPromptCopiedId(null),
+                                        2000,
+                                      );
+                                    },
+                                  },
+                                  {
+                                    id: "api",
+                                    label:
+                                      promptCopiedId === "api"
+                                        ? "Copied!"
+                                        : "API prompt",
+                                    description:
+                                      "Wire the form up via API or native HTML action.",
+                                    copied: promptCopiedId === "api",
+                                    onClick: () => {
+                                      if (!templateForm) return;
+                                      const slug = projectSlug ?? "your-project";
+                                      copyToClipboard(
+                                        generateFormApiPrompt(
+                                          templateForm,
+                                          slug,
+                                          window.location.origin,
+                                        ),
+                                      );
+                                      setPromptCopiedId("api");
+                                      setTimeout(
+                                        () => setPromptCopiedId(null),
+                                        2000,
+                                      );
+                                    },
+                                  },
+                                ]}
+                              />
+                              <Button
+                                className="w-full sm:w-auto"
+                                onClick={() => {
+                                  setError(null);
+                                  goNext();
+                                }}
+                              >
+                                Continue
+                                <ArrowRight className="h-4 w-4 ml-1.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        }
+                      />
+                    )}
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── Step: Event Type ─────────────────────────────────────────── */}
+              {step === "event-type" && (
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-xl">Create your first event type</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      An event type is a bookable meeting. You can customize availability later.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="space-y-2">
+                      <Label htmlFor="event-name">Event Name</Label>
+                      <Input
+                        id="event-name"
+                        placeholder="e.g. 30 Min Meeting"
+                        value={eventName}
+                        onChange={(e) => {
+                          setEventName(e.target.value);
+                          setError(null);
+                        }}
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="event-slug">URL Slug</Label>
+                      <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-10">
+                        <span className="text-sm text-muted-foreground mr-1">linkycal.com/{slug}/</span>
+                        <span className="text-sm font-medium text-foreground">
+                          {eventSlug || "your-event"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="event-duration">Duration</Label>
+                      <Select value={eventDuration} onValueChange={setEventDuration}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {durations.map((d) => (
+                            <SelectItem key={d.value} value={d.value}>
+                              {d.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {error && <p className="text-sm text-destructive">{error}</p>}
+
+                    <div className="flex justify-between pt-2">
+                      <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
+                        <ArrowLeft className="h-4 w-4 mr-1.5" />
+                        Back
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (!eventName.trim()) {
+                            setError("Event name is required");
+                            return;
+                          }
+                          if (!eventSlug) {
+                            setError("Please enter a valid event name");
+                            return;
+                          }
+                          setError(null);
+                          createEventTypeMutation.mutate();
+                        }}
+                        disabled={isLoading || !eventName.trim()}
+                      >
+                        {createEventTypeMutation.isPending ? (
+                          <>
+                            <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            Continue
+                            <ArrowRight className="h-4 w-4 ml-1.5" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── Step: Availability ───────────────────────────────────────── */}
+              {step === "availability" && (
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-xl">Set your availability</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Choose which days and hours you're available for bookings.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <WeeklyAvailabilityEditor
+                      dayConfigs={dayConfigs}
+                      onChange={setDayConfigs}
+                      disabled={saveAvailabilityMutation.isPending}
+                    />
+
+                    {error && <p className="text-sm text-destructive">{error}</p>}
+
+                    <div className="flex justify-between pt-2">
+                      <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
+                        <ArrowLeft className="h-4 w-4 mr-1.5" />
+                        Back
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const hasAtLeastOneDay = dayConfigs.some((day) => day.enabled && day.blocks.length > 0);
+                          if (!hasAtLeastOneDay) {
+                            setError("Please enable at least one day");
+                            return;
+                          }
+                          setError(null);
+                          saveAvailabilityMutation.mutate();
+                        }}
+                        disabled={isLoading || !scheduleId}
+                      >
+                        {saveAvailabilityMutation.isPending ? (
+                          <>
+                            <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            Continue
+                            <ArrowRight className="h-4 w-4 ml-1.5" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── Step: Branding ───────────────────────────────────────────── */}
+              {step === "branding" && (
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-xl">Customize your pages</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Style your public booking and form pages. You can refine these in settings later.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="grid grid-cols-2 gap-3">
+                      {([
+                        { label: "Primary BG", value: primaryBg, onChange: setPrimaryBg },
+                        { label: "Primary Text", value: primaryText, onChange: setPrimaryText },
+                        { label: "Background", value: bgColor, onChange: setBgColor },
+                        { label: "Text", value: textColor, onChange: setTextColor },
+                      ] as const).map((field) => (
+                        <div key={field.label}>
+                          <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                            {field.label}
+                          </label>
+                          <label className="flex items-center gap-2 cursor-pointer rounded-[12px] border border-border px-2.5 py-1.5 hover:bg-accent/50 transition-colors">
+                            <input
+                              type="color"
+                              value={field.value}
+                              onChange={(e) => field.onChange(e.target.value)}
+                              className="sr-only"
+                            />
+                            <span
+                              className="h-5 w-5 rounded-full border border-border shrink-0"
+                              style={{ backgroundColor: field.value }}
+                            />
+                            <span className="font-mono text-xs">{field.value}</span>
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                        Border Radius ({borderRadius}px)
+                      </label>
+                      <input
+                        type="range"
+                        min={0}
+                        max={32}
+                        value={borderRadius}
+                        onChange={(e) => setBorderRadius(Number(e.target.value))}
+                        className="w-full accent-primary"
+                      />
+                      <div className="flex justify-between text-[11px] text-muted-foreground mt-0.5">
+                        <span>Sharp</span>
+                        <span>Round</span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Font</label>
+                      <Select value={fontFamily} onValueChange={setFontFamily}>
+                        <SelectTrigger className="w-full" style={{ fontFamily }}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {FONT_OPTIONS.map((f) => (
+                            <SelectItem key={f.value} value={f.value}>
+                              {f.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {error && <p className="text-sm text-destructive">{error}</p>}
+
+                    <div className="flex justify-between pt-2">
+                      <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
+                        <ArrowLeft className="h-4 w-4 mr-1.5" />
+                        Back
+                      </Button>
+                      <Button
+                        onClick={() => saveBrandingMutation.mutate()}
+                        disabled={isLoading}
+                      >
+                        {saveBrandingMutation.isPending ? (
+                          <>
+                            <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            Continue
+                            <ArrowRight className="h-4 w-4 ml-1.5" />
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </>
+              )}
+
+              {/* ── Step: Plan ───────────────────────────────────────────────── */}
+              {step === "plan" && (
+                <>
+                  <CardHeader>
+                    <CardTitle className="text-xl">Choose your plan</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Start free and upgrade anytime as you grow.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                      {plans.map((plan) => (
+                        <div
+                          key={plan.id}
+                          className={cn(
+                            "relative rounded-[16px] border p-5 flex flex-col transition-shadow",
+                            plan.popular && "ring-2 ring-primary",
+                          )}
                         >
-                          Continue
-                          <ArrowRight className="h-4 w-4 ml-1.5" />
+                          {plan.popular && (
+                            <div className="absolute top-0 right-0 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-bl-[12px] rounded-tr-[15px]">
+                              Popular
+                            </div>
+                          )}
+
+                          <div className="mb-4">
+                            <h3 className="text-base font-semibold">{plan.name}</h3>
+                            <p className="text-xs text-muted-foreground mt-0.5">{plan.description}</p>
+                          </div>
+
+                          <div className="mb-4">
+                            {plan.price === 0 ? (
+                              <div className="text-2xl font-bold">Free</div>
+                            ) : (
+                              <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-bold">${plan.price}</span>
+                                <span className="text-sm text-muted-foreground">/{plan.interval}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <ul className="space-y-2 mb-5 flex-1">
+                            {plan.features.map((feature) => (
+                              <li key={feature} className="flex items-start gap-2 text-sm">
+                                <Check className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                                <span>{feature}</span>
+                              </li>
+                            ))}
+                            {plan.limits.map((limit) => (
+                              <li key={limit} className="flex items-start gap-2 text-sm text-muted-foreground">
+                                <span className="h-4 w-4 flex items-center justify-center mt-0.5 shrink-0">&mdash;</span>
+                                <span>{limit}</span>
+                              </li>
+                            ))}
+                          </ul>
+
+                          <Button
+                            variant={plan.id === "free" ? "outline" : "default"}
+                            className="w-full"
+                            disabled={isLoading}
+                            onClick={() => handleSelectPlan(plan.id)}
+                          >
+                            {checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id ? (
+                              <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                            ) : null}
+                            {completeMutation.isPending && plan.id === "free" ? (
+                              <Loader className="h-4 w-4 animate-spin mr-1.5" />
+                            ) : null}
+                            {plan.id === "free"
+                              ? "Continue for free"
+                              : `Get ${plan.name}`}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+
+                    {flow.indexOf("plan") > 1 && (
+                      <div className="flex justify-start pt-5">
+                        <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
+                          <ArrowLeft className="h-4 w-4 mr-1.5" />
+                          Back
                         </Button>
                       </div>
-                    </div>
-                  }
-                />
-              )}
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step: Event Type ─────────────────────────────────────────── */}
-        {step === "event-type" && (
-          <>
-            <CardHeader>
-              <CardTitle className="text-xl">Create your first event type</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                An event type is a bookable meeting. You can customize availability later.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="event-name">Event Name</Label>
-                <Input
-                  id="event-name"
-                  placeholder="e.g. 30 Min Meeting"
-                  value={eventName}
-                  onChange={(e) => {
-                    setEventName(e.target.value);
-                    setError(null);
-                  }}
-                  autoFocus
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="event-slug">URL Slug</Label>
-                <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-10">
-                  <span className="text-sm text-muted-foreground mr-1">linkycal.com/{slug}/</span>
-                  <span className="text-sm font-medium text-foreground">
-                    {eventSlug || "your-event"}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="event-duration">Duration</Label>
-                <Select value={eventDuration} onValueChange={setEventDuration}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {durations.map((d) => (
-                      <SelectItem key={d.value} value={d.value}>
-                        {d.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
-                  <ArrowLeft className="h-4 w-4 mr-1.5" />
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    if (!eventName.trim()) {
-                      setError("Event name is required");
-                      return;
-                    }
-                    if (!eventSlug) {
-                      setError("Please enter a valid event name");
-                      return;
-                    }
-                    setError(null);
-                    createEventTypeMutation.mutate();
-                  }}
-                  disabled={isLoading || !eventName.trim()}
-                >
-                  {createEventTypeMutation.isPending ? (
-                    <>
-                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                      Creating...
-                    </>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step: Availability ───────────────────────────────────────── */}
-        {step === "availability" && (
-          <>
-            <CardHeader>
-              <CardTitle className="text-xl">Set your availability</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Choose which days and hours you're available for bookings.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <WeeklyAvailabilityEditor
-                dayConfigs={dayConfigs}
-                onChange={setDayConfigs}
-                disabled={saveAvailabilityMutation.isPending}
-              />
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
-                  <ArrowLeft className="h-4 w-4 mr-1.5" />
-                  Back
-                </Button>
-                <Button
-                  onClick={() => {
-                    const hasAtLeastOneDay = dayConfigs.some((day) => day.enabled && day.blocks.length > 0);
-                    if (!hasAtLeastOneDay) {
-                      setError("Please enable at least one day");
-                      return;
-                    }
-                    setError(null);
-                    saveAvailabilityMutation.mutate();
-                  }}
-                  disabled={isLoading || !scheduleId}
-                >
-                  {saveAvailabilityMutation.isPending ? (
-                    <>
-                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step: Branding ───────────────────────────────────────────── */}
-        {step === "branding" && (
-          <>
-            <CardHeader>
-              <CardTitle className="text-xl">Customize your pages</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Style your public booking and form pages. You can refine these in settings later.
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              <div className="grid grid-cols-2 gap-3">
-                {([
-                  { label: "Primary BG", value: primaryBg, onChange: setPrimaryBg },
-                  { label: "Primary Text", value: primaryText, onChange: setPrimaryText },
-                  { label: "Background", value: bgColor, onChange: setBgColor },
-                  { label: "Text", value: textColor, onChange: setTextColor },
-                ] as const).map((field) => (
-                  <div key={field.label}>
-                    <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                      {field.label}
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer rounded-[12px] border border-border px-2.5 py-1.5 hover:bg-accent/50 transition-colors">
-                      <input
-                        type="color"
-                        value={field.value}
-                        onChange={(e) => field.onChange(e.target.value)}
-                        className="sr-only"
-                      />
-                      <span
-                        className="h-5 w-5 rounded-full border border-border shrink-0"
-                        style={{ backgroundColor: field.value }}
-                      />
-                      <span className="font-mono text-xs">{field.value}</span>
-                    </label>
-                  </div>
-                ))}
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
-                  Border Radius ({borderRadius}px)
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={32}
-                  value={borderRadius}
-                  onChange={(e) => setBorderRadius(Number(e.target.value))}
-                  className="w-full accent-primary"
-                />
-                <div className="flex justify-between text-[11px] text-muted-foreground mt-0.5">
-                  <span>Sharp</span>
-                  <span>Round</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Font</label>
-                <Select value={fontFamily} onValueChange={setFontFamily}>
-                  <SelectTrigger className="w-full" style={{ fontFamily }}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {FONT_OPTIONS.map((f) => (
-                      <SelectItem key={f.value} value={f.value}>
-                        {f.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {error && <p className="text-sm text-destructive">{error}</p>}
-
-              <div className="flex justify-between pt-2">
-                <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
-                  <ArrowLeft className="h-4 w-4 mr-1.5" />
-                  Back
-                </Button>
-                <Button
-                  onClick={() => saveBrandingMutation.mutate()}
-                  disabled={isLoading}
-                >
-                  {saveBrandingMutation.isPending ? (
-                    <>
-                      <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      Continue
-                      <ArrowRight className="h-4 w-4 ml-1.5" />
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </>
-        )}
-
-        {/* ── Step: Plan ───────────────────────────────────────────────── */}
-        {step === "plan" && (
-          <>
-            <CardHeader>
-              <CardTitle className="text-xl">Choose your plan</CardTitle>
-              <p className="text-sm text-muted-foreground mt-1">
-                Start free and upgrade anytime as you grow.
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                {plans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    className={cn(
-                      "relative rounded-[16px] border p-5 flex flex-col transition-shadow",
-                      plan.popular && "ring-2 ring-primary",
                     )}
-                  >
-                    {plan.popular && (
-                      <div className="absolute top-0 right-0 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-bl-[12px] rounded-tr-[15px]">
-                        Popular
-                      </div>
-                    )}
-
-                    <div className="mb-4">
-                      <h3 className="text-base font-semibold">{plan.name}</h3>
-                      <p className="text-xs text-muted-foreground mt-0.5">{plan.description}</p>
-                    </div>
-
-                    <div className="mb-4">
-                      {plan.price === 0 ? (
-                        <div className="text-2xl font-bold">Free</div>
-                      ) : (
-                        <div className="flex items-baseline gap-1">
-                          <span className="text-2xl font-bold">${plan.price}</span>
-                          <span className="text-sm text-muted-foreground">/{plan.interval}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <ul className="space-y-2 mb-5 flex-1">
-                      {plan.features.map((feature) => (
-                        <li key={feature} className="flex items-start gap-2 text-sm">
-                          <Check className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                          <span>{feature}</span>
-                        </li>
-                      ))}
-                      {plan.limits.map((limit) => (
-                        <li key={limit} className="flex items-start gap-2 text-sm text-muted-foreground">
-                          <span className="h-4 w-4 flex items-center justify-center mt-0.5 shrink-0">&mdash;</span>
-                          <span>{limit}</span>
-                        </li>
-                      ))}
-                    </ul>
-
-                    <Button
-                      variant={plan.id === "free" ? "outline" : "default"}
-                      className="w-full"
-                      disabled={isLoading}
-                      onClick={() => handleSelectPlan(plan.id)}
-                    >
-                      {checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id ? (
-                        <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                      ) : null}
-                      {completeMutation.isPending && plan.id === "free" ? (
-                        <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                      ) : null}
-                      {plan.id === "free"
-                        ? "Continue for free"
-                        : `Get ${plan.name}`}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-
-              {flow.indexOf("plan") > 1 && (
-                <div className="flex justify-start pt-5">
-                  <Button variant="outline" onClick={() => { goBack(); setError(null); }}>
-                    <ArrowLeft className="h-4 w-4 mr-1.5" />
-                    Back
-                  </Button>
-                </div>
+                  </CardContent>
+                </>
               )}
-            </CardContent>
-          </>
-        )}
             </Card>
           </>
         );

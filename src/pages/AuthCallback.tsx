@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader } from "lucide-react";
 
+import {
+  clearStoredAuthRedirect,
+  resolveAuthRedirect,
+} from "@/lib/auth-redirect";
+
 function AuthCallback() {
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
@@ -27,18 +32,24 @@ function AuthCallback() {
             try {
               const url = new URL(redirectUrl, window.location.origin);
               if (url.origin === window.location.origin) {
-                navigate(url.pathname + url.search, { replace: true });
+                const redirectTo = resolveAuthRedirect(url.pathname + url.search);
+                clearStoredAuthRedirect();
+                navigate(redirectTo, { replace: true });
                 return;
               }
               window.location.href = redirectUrl;
               return;
             } catch {
-              navigate(redirectUrl, { replace: true });
+              const redirectTo = resolveAuthRedirect(redirectUrl);
+              clearStoredAuthRedirect();
+              navigate(redirectTo, { replace: true });
               return;
             }
           }
 
-          navigate("/app", { replace: true });
+          const redirectTo = resolveAuthRedirect("/app");
+          clearStoredAuthRedirect();
+          navigate(redirectTo, { replace: true });
           return;
         }
 
@@ -46,14 +57,19 @@ function AuthCallback() {
           try {
             const data = await response.json();
             if (data?.url || data?.redirectTo || data?.redirect) {
-              const redirectTo = data.url || data.redirectTo || data.redirect;
+              const redirectTo = resolveAuthRedirect(
+                data.url || data.redirectTo || data.redirect,
+              );
+              clearStoredAuthRedirect();
               navigate(redirectTo, { replace: true });
               return;
             }
           } catch {
             // Response was not JSON, that's fine
           }
-          navigate("/app", { replace: true });
+          const redirectTo = resolveAuthRedirect("/app");
+          clearStoredAuthRedirect();
+          navigate(redirectTo, { replace: true });
           return;
         }
 

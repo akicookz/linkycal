@@ -11,6 +11,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { signIn, emailOtp, useSession } from "@/lib/auth-client";
+import { getSafeAuthRedirect, storeAuthRedirect } from "@/lib/auth-redirect";
 import { usePostHog } from "@posthog/react";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
@@ -42,14 +43,6 @@ const SYN = {
 } as const;
 
 type SynToken = keyof typeof SYN;
-
-function getSafeAuthRedirect(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) {
-    return "/app";
-  }
-
-  return value;
-}
 
 function getAuthSearchParams(redirectTo: string): Record<string, string> {
   if (redirectTo === "/app") {
@@ -141,6 +134,10 @@ export default function Landing() {
   useEffect(() => {
     if (isSessionPending) return;
 
+    if (showAuth) {
+      storeAuthRedirect(authRedirect);
+    }
+
     if (session && showAuth) {
       setAuthOpen(false);
       navigate(authRedirect, { replace: true });
@@ -184,6 +181,7 @@ export default function Landing() {
 
   async function handleSignIn(provider: "google" | "facebook") {
     setLoading(provider);
+    storeAuthRedirect(authRedirect);
     try {
       await signIn.social({ provider, callbackURL: authRedirect });
     } catch {
@@ -253,6 +251,7 @@ export default function Landing() {
     }
     setLoading("verify");
     setOtpError(null);
+    storeAuthRedirect(authRedirect);
     try {
       const { error } = await signIn.emailOtp({
         email: otpEmail.trim(),

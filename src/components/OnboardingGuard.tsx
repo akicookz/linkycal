@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 interface Project {
   id: string;
   onboarded: boolean;
+  teamRole?: "owner" | "admin" | "member" | null;
 }
 
 function OnboardingGuard({ children }: { children: React.ReactNode }) {
@@ -30,7 +31,10 @@ function OnboardingGuard({ children }: { children: React.ReactNode }) {
   }
 
   const hasOnboarded = projects.some((p) => p.onboarded);
-  if (!hasOnboarded) {
+  const hasCollaboratorProject = projects.some(
+    (p) => p.teamRole && p.teamRole !== "owner",
+  );
+  if (!hasOnboarded && !hasCollaboratorProject) {
     return <Navigate to="/app/onboarding" replace />;
   }
 
