@@ -736,18 +736,15 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
                     {error && <p className="text-sm text-destructive">{error}</p>}
 
-                    <div className="flex justify-end gap-2 pt-2">
+                    <div className="flex justify-between gap-2 pt-2">
                       <Button
-                        variant="outline"
+                        variant="ghost"
+                        size="sm"
                         onClick={() => signOutMutation.mutate()}
                         disabled={signOutMutation.isPending}
                       >
-                        {signOutMutation.isPending ? (
-                          <Loader className="h-4 w-4 animate-spin mr-1.5" />
-                        ) : (
-                          <LogOut className="h-4 w-4 mr-1.5" />
-                        )}
-                        Log out
+                        {signOutMutation.isPending && <Loader className="h-4 w-4 animate-spin mr-1.5" />}
+                        {signOutMutation.isPending ? "Logging out..." : "Log out"}
                       </Button>
                       <Button
                         onClick={() => {
