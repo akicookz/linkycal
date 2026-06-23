@@ -9,7 +9,7 @@ import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
-import type { AppEnv, HonoAppContext, Plan, ProjectAccessContext } from "./types";
+import type { AppEnv, HonoAppContext, ProjectAccessContext } from "./types";
 
 const { schema } = dbSchema;
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -56,12 +56,21 @@ import {
 } from "./validation";
 
 import {
-  findExistingCustomerForUser,
+  findExistingCustomerForTeam,
   getStripe,
   getPriceId,
   getPlanFromPriceId,
 } from "./lib/stripe";
 import { PLAN_LIMITS } from "./lib/plan-limits";
+import {
+  ensureLegacySubscriptionRecord,
+  ensureTeamSubscriptionRecord,
+  getSubscriptionRecordByCustomerId,
+  getSubscriptionRecordByStripeSubscriptionId,
+  getSubscriptionRecordByTeamId,
+  resolveProjectEntitlements,
+  resolveSubscriptionPlan,
+} from "./lib/entitlements";
 import {
   createBookingAction,
   cancelBookingAction,
@@ -113,122 +122,6 @@ import {
   resolveProjectAccess,
   type ProjectPermission,
 } from "./lib/team-access";
-
-// ─── Subscription Helpers ────────────────────────────────────────────────────
-
-async function getSubscriptionRecordByUserId(
-  db: AppDatabase,
-  userId: string,
-): Promise<dbSchema.SubscriptionRow | null> {
-  const [subscription] = await db
-    .select()
-    .from(dbSchema.subscriptions)
-    .where(eq(dbSchema.subscriptions.userId, userId))
-    .orderBy(
-      desc(dbSchema.subscriptions.updatedAt),
-      desc(dbSchema.subscriptions.createdAt),
-    )
-    .limit(1);
-
-  return subscription ?? null;
-}
-
-async function getSubscriptionRecordByTeamId(
-  db: AppDatabase,
-  teamId: string,
-): Promise<dbSchema.SubscriptionRow | null> {
-  const [subscription] = await db
-    .select()
-    .from(dbSchema.subscriptions)
-    .where(eq(dbSchema.subscriptions.teamId, teamId))
-    .orderBy(
-      desc(dbSchema.subscriptions.updatedAt),
-      desc(dbSchema.subscriptions.createdAt),
-    )
-    .limit(1);
-
-  return subscription ?? null;
-}
-
-async function getSubscriptionRecordByCustomerId(
-  db: AppDatabase,
-  customerId: string,
-): Promise<dbSchema.SubscriptionRow | null> {
-  const [subscription] = await db
-    .select()
-    .from(dbSchema.subscriptions)
-    .where(eq(dbSchema.subscriptions.stripeCustomerId, customerId))
-    .orderBy(
-      desc(dbSchema.subscriptions.updatedAt),
-      desc(dbSchema.subscriptions.createdAt),
-    )
-    .limit(1);
-
-  return subscription ?? null;
-}
-
-async function ensureSubscriptionRecord(
-  db: AppDatabase,
-  userId: string,
-  teamId?: string | null,
-): Promise<dbSchema.SubscriptionRow> {
-  if (teamId) {
-    const existingByTeam = await getSubscriptionRecordByTeamId(db, teamId);
-    if (existingByTeam) {
-      return existingByTeam;
-    }
-  }
-
-  const existing = await getSubscriptionRecordByUserId(db, userId);
-  if (existing) {
-    if (teamId && !existing.teamId) {
-      await db
-        .update(dbSchema.subscriptions)
-        .set({ teamId })
-        .where(eq(dbSchema.subscriptions.id, existing.id));
-      const updated = await getSubscriptionRecordByTeamId(db, teamId);
-      if (updated) return updated;
-    }
-    return existing;
-  }
-
-  try {
-    await db.insert(dbSchema.subscriptions).values({
-      id: crypto.randomUUID(),
-      userId,
-      teamId: teamId ?? null,
-      plan: "free",
-      interval: "monthly",
-      status: "active",
-    });
-  } catch (error) {
-    if (!isSubscriptionUserUniqueConstraintError(error)) {
-      throw error;
-    }
-  }
-
-  const created = teamId
-    ? await getSubscriptionRecordByTeamId(db, teamId)
-    : await getSubscriptionRecordByUserId(db, userId);
-  if (!created) {
-    throw new Error(`Failed to ensure subscription record for user ${userId}`);
-  }
-
-  return created;
-}
-
-function isSubscriptionUserUniqueConstraintError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const message = error.message.toLowerCase();
-  return (
-    message.includes("unique constraint failed") &&
-    (message.includes("subscriptions.user_id") ||
-      message.includes("subscriptions.team_id"))
-  );
-}
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -1034,17 +927,8 @@ async function notifyFormResponseCompleted(
       .limit(1);
     if (!project) return;
 
-    // Check if user is on a paid plan
-    const [sub] = await db
-      .select({ plan: dbSchema.subscriptions.plan })
-      .from(dbSchema.subscriptions)
-      .where(
-        project.teamId
-          ? eq(dbSchema.subscriptions.teamId, project.teamId)
-          : eq(dbSchema.subscriptions.userId, project.userId),
-      )
-      .limit(1);
-    if (!sub || sub.plan === "free") return;
+    const entitlements = await resolveProjectEntitlements(db, project.id);
+    if (!entitlements || entitlements.subscription.plan === "free") return;
 
     // Get owner details
     const [owner] = await db
@@ -1821,10 +1705,10 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
         projected ?? [...new Set(rules.map((r) => r.dayOfWeek))];
     }
 
-    const subscription = project.teamId
-      ? await getSubscriptionRecordByTeamId(db, project.teamId)
-      : await getSubscriptionRecordByUserId(db, project.userId);
-    const canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
+    const entitlements = await resolveProjectEntitlements(db, project.id);
+    const canHideBranding =
+      entitlements?.subscription.plan === "pro" ||
+      entitlements?.subscription.plan === "business";
 
     return c.json({
       project: {
@@ -1986,10 +1870,10 @@ app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
         : {},
     };
 
-    const subscription = project.teamId
-      ? await getSubscriptionRecordByTeamId(db, project.teamId)
-      : await getSubscriptionRecordByUserId(db, project.userId);
-    const canHideBranding = subscription?.plan === "pro" || subscription?.plan === "business";
+    const entitlements = await resolveProjectEntitlements(db, project.id);
+    const canHideBranding =
+      entitlements?.subscription.plan === "pro" ||
+      entitlements?.subscription.plan === "business";
 
     return c.json({ form, project: projectInfo, canHideBranding });
   } catch (err) {
@@ -2318,8 +2202,31 @@ async function syncSubscription(
   subscriptionId: string,
   customerId: string,
 ) {
-  // Find user by stripeCustomerId
-  let existingSub = await getSubscriptionRecordByCustomerId(db, customerId);
+  const stripeSubscription =
+    await stripe.subscriptions.retrieve(subscriptionId);
+  let existingSub = await getSubscriptionRecordByStripeSubscriptionId(
+    db,
+    subscriptionId,
+  );
+
+  if (!existingSub && stripeSubscription.metadata?.teamId) {
+    const [team] = await db
+      .select({ ownerUserId: dbSchema.teams.ownerUserId })
+      .from(dbSchema.teams)
+      .where(eq(dbSchema.teams.id, stripeSubscription.metadata.teamId))
+      .limit(1);
+    if (team) {
+      existingSub = await ensureTeamSubscriptionRecord(
+        db,
+        team.ownerUserId,
+        stripeSubscription.metadata.teamId,
+      );
+    }
+  }
+
+  if (!existingSub) {
+    existingSub = await getSubscriptionRecordByCustomerId(db, customerId);
+  }
 
   if (!existingSub) {
     const customer = await stripe.customers.retrieve(customerId);
@@ -2330,7 +2237,7 @@ async function syncSubscription(
         .where(eq(dbSchema.teams.id, customer.metadata.teamId))
         .limit(1);
       if (team) {
-        existingSub = await ensureSubscriptionRecord(
+        existingSub = await ensureTeamSubscriptionRecord(
           db,
           team.ownerUserId,
           customer.metadata.teamId,
@@ -2339,23 +2246,10 @@ async function syncSubscription(
     }
 
     if (!existingSub && !customer.deleted && customer.metadata?.userId) {
-      existingSub = await ensureSubscriptionRecord(
+      existingSub = await ensureLegacySubscriptionRecord(
         db,
         customer.metadata.userId,
-        customer.metadata.teamId,
       );
-
-      if (existingSub.stripeCustomerId !== customerId) {
-        await db
-          .update(dbSchema.subscriptions)
-          .set({ stripeCustomerId: customerId })
-          .where(eq(dbSchema.subscriptions.id, existingSub.id));
-
-        existingSub = {
-          ...existingSub,
-          stripeCustomerId: customerId,
-        };
-      }
     }
   }
 
@@ -2364,8 +2258,18 @@ async function syncSubscription(
     return;
   }
 
-  const stripeSubscription =
-    await stripe.subscriptions.retrieve(subscriptionId);
+  if (existingSub.stripeCustomerId !== customerId) {
+    await db
+      .update(dbSchema.subscriptions)
+      .set({ stripeCustomerId: customerId })
+      .where(eq(dbSchema.subscriptions.id, existingSub.id));
+
+    existingSub = {
+      ...existingSub,
+      stripeCustomerId: customerId,
+    };
+  }
+
   const firstItem = stripeSubscription.items.data[0];
   const priceId = firstItem?.price?.id;
 
@@ -2546,19 +2450,9 @@ app.use("/api/*", async (c, next) => {
   });
 
   // Load account subscription for account-level pages and new-team defaults.
-  const sub = await ensureSubscriptionRecord(db, session.user.id, accountTeam.id);
+  const sub = await ensureTeamSubscriptionRecord(db, session.user.id, accountTeam.id);
 
-  let plan: Plan = (sub?.plan as Plan) ?? "free";
-  const status = sub?.status ?? "active";
-
-  // Downgrade to free if subscription is past_due or unpaid for more than 3 days
-  if (sub && (status === "past_due" || status === "unpaid") && plan !== "free") {
-    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-    const updatedAt = sub.updatedAt instanceof Date ? sub.updatedAt.getTime() : new Date(sub.updatedAt as unknown as string).getTime();
-    if (Date.now() - updatedAt > THREE_DAYS_MS) {
-      plan = "free";
-    }
-  }
+  const { plan, status } = resolveSubscriptionPlan(sub);
 
   c.set("user", {
     id: session.user.id,
@@ -2584,30 +2478,6 @@ app.use("/api/*", async (c, next) => {
 // ─── Project Access Middleware ───────────────────────────────────────────────
 // Resolves team/project RBAC for :projectId and swaps project routes to the
 // owning team's plan limits. Legacy rows without team_id fall back to user_id.
-
-function resolveSubscriptionPlan(
-  subscription: dbSchema.SubscriptionRow | null,
-): { plan: Plan; status: string } {
-  let plan: Plan = (subscription?.plan as Plan) ?? "free";
-  const status = subscription?.status ?? "active";
-
-  if (
-    subscription &&
-    (status === "past_due" || status === "unpaid") &&
-    plan !== "free"
-  ) {
-    const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
-    const updatedAt =
-      subscription.updatedAt instanceof Date
-        ? subscription.updatedAt.getTime()
-        : new Date(subscription.updatedAt as unknown as string).getTime();
-    if (Date.now() - updatedAt > THREE_DAYS_MS) {
-      plan = "free";
-    }
-  }
-
-  return { plan, status };
-}
 
 function permissionForProjectRequest(
   method: string,
@@ -2729,15 +2599,19 @@ const projectAccessMiddleware = async (
   if (!access) return c.json({ error: "Forbidden" }, 403);
 
   const subscription = access.teamId
-    ? await ensureSubscriptionRecord(db, access.ownerUserId, access.teamId)
-    : await ensureSubscriptionRecord(db, access.ownerUserId);
+    ? await ensureTeamSubscriptionRecord(db, access.ownerUserId, access.teamId)
+    : await ensureLegacySubscriptionRecord(db, access.ownerUserId);
   const { plan, status } = resolveSubscriptionPlan(subscription);
   const planLimits = PLAN_LIMITS[plan];
+  const isEntitlementsRequest =
+    c.req.method === "GET" &&
+    /^\/api\/projects\/[^/]+\/entitlements$/.test(c.req.path);
 
   if (
     planLimits.maxTeamMembers === 0 &&
     !access.isLegacyOwner &&
-    access.teamRole !== "owner"
+    access.teamRole !== "owner" &&
+    !isEntitlementsRequest
   ) {
     return c.json(
       {
@@ -2874,7 +2748,7 @@ const teamRoutes = app
     const context = await getTeamAdminContext(db, teamId, user.id);
     if (!context) return c.json({ error: "Forbidden" }, 403);
 
-    const subscription = await ensureSubscriptionRecord(
+    const subscription = await ensureTeamSubscriptionRecord(
       db,
       context.team.ownerUserId,
       teamId,
@@ -3011,7 +2885,7 @@ const teamRoutes = app
     const context = await getTeamAdminContext(db, teamId, user.id);
     if (!context) return c.json({ error: "Forbidden" }, 403);
 
-    const subscription = await ensureSubscriptionRecord(
+    const subscription = await ensureTeamSubscriptionRecord(
       db,
       context.team.ownerUserId,
       teamId,
@@ -3237,7 +3111,7 @@ const teamRoutes = app
       .limit(1);
     if (!team) return c.json({ error: "Invite not found or expired" }, 404);
 
-    const subscription = await ensureSubscriptionRecord(
+    const subscription = await ensureTeamSubscriptionRecord(
       db,
       team.ownerUserId,
       invite.teamId,
@@ -3488,6 +3362,92 @@ const teamRoutes = app
   return c.json({ success: true });
 });
 
+// ─── Team Billing ───────────────────────────────────────────────────────────
+
+app.get("/api/teams/:teamId/billing/subscription", async (c) => {
+  const teamId = c.req.param("teamId");
+  const db = c.get("db");
+  const userId = c.get("effectiveUserId");
+  const context = await getTeamAdminContext(db, teamId, userId);
+  if (!context) return c.json({ error: "Forbidden" }, 403);
+
+  const subscription = await ensureTeamSubscriptionRecord(
+    db,
+    context.team.ownerUserId,
+    teamId,
+  );
+  const summary = resolveSubscriptionPlan(subscription);
+  return c.json({
+    subscription: summary,
+    planLimits: PLAN_LIMITS[summary.plan],
+    team: {
+      id: context.team.id,
+      name: context.team.name,
+      role: context.member.role,
+    },
+    canManageBilling: true,
+  });
+});
+
+app.post("/api/teams/:teamId/billing/checkout", async (c) => {
+  try {
+    const teamId = c.req.param("teamId");
+    const body = await c.req.json();
+    const { plan, interval, successUrl, cancelUrl } = validate(checkoutSchema, body);
+    const db = c.get("db");
+    const user = c.get("user");
+    const context = await getTeamAdminContext(db, teamId, user.id);
+    if (!context) return c.json({ error: "Forbidden" }, 403);
+
+    const [owner] = await db
+      .select({
+        id: dbSchema.schema.users.id,
+        name: dbSchema.schema.users.name,
+        email: dbSchema.schema.users.email,
+      })
+      .from(dbSchema.schema.users)
+      .where(eq(dbSchema.schema.users.id, context.team.ownerUserId))
+      .limit(1);
+    if (!owner) return c.json({ error: "Team owner not found" }, 404);
+
+    const fallbackUrl = `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?teamId=${teamId}`;
+    const url = await createBillingCheckoutSession(c, {
+      teamId,
+      ownerUser: owner,
+      billingActorUserId: user.id,
+      plan,
+      interval,
+      successUrl: successUrl ?? `${fallbackUrl}&success=true`,
+      cancelUrl: cancelUrl ?? `${fallbackUrl}&canceled=true`,
+    });
+
+    return c.json({ url });
+  } catch (err) {
+    console.error("Team checkout session creation error:", err);
+    return c.json({ error: "Failed to create checkout session" }, 500);
+  }
+});
+
+app.post("/api/teams/:teamId/billing/portal", async (c) => {
+  try {
+    const teamId = c.req.param("teamId");
+    const db = c.get("db");
+    const userId = c.get("effectiveUserId");
+    const context = await getTeamAdminContext(db, teamId, userId);
+    if (!context) return c.json({ error: "Forbidden" }, 403);
+
+    const url = await createBillingPortalSession(
+      c,
+      teamId,
+      `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?teamId=${teamId}`,
+    );
+    return c.json({ url });
+  } catch (err) {
+    console.error("Team portal session creation error:", err);
+    return c.json({ error: "Failed to create portal session" }, 500);
+  }
+});
+
 // ─── Projects ────────────────────────────────────────────────────────────────
 
 app.get("/api/projects", async (c) => {
@@ -3650,6 +3610,31 @@ app.get("/api/projects/:projectId", async (c) => {
     settings: project.settings ? JSON.parse(project.settings as string) : {},
   };
   return c.json({ project: parsed });
+});
+
+app.get("/api/projects/:projectId/entitlements", async (c) => {
+  const access = c.get("projectAccess");
+  const subscription = c.get("projectSubscription") ?? c.get("subscription");
+  const planLimits = c.get("projectPlanLimits") ?? c.get("planLimits");
+  const canManageBilling =
+    access?.isLegacyOwner === true ||
+    access?.teamRole === "owner" ||
+    access?.teamRole === "admin";
+
+  return c.json({
+    subscription,
+    planLimits,
+    billing: {
+      teamId: access?.teamId ?? null,
+      ownerUserId: access?.ownerUserId ?? null,
+      canManageBilling,
+    },
+    access: {
+      teamRole: access?.teamRole ?? null,
+      projectRole: access?.projectRole ?? null,
+      effectiveProjectRole: access?.effectiveProjectRole ?? null,
+    },
+  });
 });
 
 // Update project
@@ -6344,84 +6329,141 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
+interface BillingOwnerUser {
+  id: string;
+  name: string;
+  email: string;
+}
+
+async function createBillingCheckoutSession(
+  c: Context<HonoAppContext>,
+  params: {
+    teamId: string;
+    ownerUser: BillingOwnerUser;
+    billingActorUserId: string;
+    plan: "pro" | "business";
+    interval: "month" | "year";
+    successUrl: string;
+    cancelUrl: string;
+  },
+): Promise<string | null> {
+  const db = c.get("db") as AppDatabase;
+  const stripe = getStripe(c.env);
+  const priceId = getPriceId(c.env, params.plan, params.interval);
+  const sub = await ensureTeamSubscriptionRecord(
+    db,
+    params.ownerUser.id,
+    params.teamId,
+  );
+
+  let customerId = sub.stripeCustomerId;
+  const metadata = {
+    userId: params.ownerUser.id,
+    teamId: params.teamId,
+    billingActorUserId: params.billingActorUserId,
+  };
+
+  if (!customerId) {
+    const recoveredCustomer = await findExistingCustomerForTeam(
+      stripe,
+      params.teamId,
+    );
+
+    if (recoveredCustomer) {
+      customerId = recoveredCustomer.id;
+      if (
+        recoveredCustomer.metadata?.userId !== params.ownerUser.id ||
+        recoveredCustomer.metadata?.teamId !== params.teamId
+      ) {
+        await stripe.customers.update(customerId, {
+          metadata: {
+            ...recoveredCustomer.metadata,
+            ...metadata,
+          },
+        });
+      }
+    } else {
+      const customer = await stripe.customers.create({
+        email: params.ownerUser.email,
+        name: params.ownerUser.name,
+        metadata,
+      });
+      customerId = customer.id;
+    }
+
+    await db
+      .update(dbSchema.subscriptions)
+      .set({ stripeCustomerId: customerId })
+      .where(eq(dbSchema.subscriptions.id, sub.id));
+  }
+
+  const isNewSubscriber = !sub.stripeSubscriptionId;
+  const sessionMetadata = {
+    plan: params.plan,
+    interval: params.interval,
+    ...metadata,
+  };
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    payment_method_types: ["card"],
+    billing_address_collection: "auto",
+    customer: customerId,
+    customer_update: { address: "auto" },
+    allow_promotion_codes: true,
+    line_items: [{ quantity: 1, price: priceId }],
+    subscription_data: {
+      ...(isNewSubscriber ? { trial_period_days: 7 } : {}),
+      metadata: sessionMetadata,
+    },
+    success_url: params.successUrl,
+    cancel_url: params.cancelUrl,
+    metadata: sessionMetadata,
+  });
+
+  return session.url;
+}
+
+async function createBillingPortalSession(
+  c: Context<HonoAppContext>,
+  teamId: string,
+  returnUrl: string,
+): Promise<string | null> {
+  const db = c.get("db");
+  const sub = await getSubscriptionRecordByTeamId(db, teamId);
+
+  if (!sub?.stripeCustomerId) {
+    throw new Error("No billing account found");
+  }
+
+  const stripe = getStripe(c.env);
+  const session = await stripe.billingPortal.sessions.create({
+    customer: sub.stripeCustomerId,
+    return_url: returnUrl,
+  });
+
+  return session.url;
+}
+
 app.post("/api/billing/checkout", async (c) => {
   try {
     const body = await c.req.json();
     const { plan, interval, successUrl, cancelUrl } = validate(checkoutSchema, body);
 
     const user = c.get("user");
-    const db = c.get("db") as AppDatabase;
     const accountTeamId = c.get("accountTeamId");
-    const stripe = getStripe(c.env);
-    const priceId = getPriceId(c.env, plan, interval);
-
-    // Get or create Stripe customer
-    const sub = await ensureSubscriptionRecord(db, user.id, accountTeamId);
-
-    let customerId = sub?.stripeCustomerId;
-
-    if (!customerId) {
-      const recoveredCustomer = await findExistingCustomerForUser(
-        stripe,
-        user.id,
-        user.email,
-      );
-
-      if (recoveredCustomer) {
-        customerId = recoveredCustomer.id;
-
-        if (
-          recoveredCustomer.metadata?.userId !== user.id ||
-          recoveredCustomer.metadata?.teamId !== accountTeamId
-        ) {
-          await stripe.customers.update(customerId, {
-            metadata: {
-              ...recoveredCustomer.metadata,
-              userId: user.id,
-              teamId: accountTeamId,
-            },
-          });
-        }
-      } else {
-        const customer = await stripe.customers.create({
-          email: user.email,
-          name: user.name,
-          metadata: { userId: user.id, teamId: accountTeamId },
-        });
-        customerId = customer.id;
-      }
-
-      await db
-        .update(dbSchema.subscriptions)
-        .set({ stripeCustomerId: customerId })
-        .where(eq(dbSchema.subscriptions.id, sub.id));
-    }
-
-    // Only offer 7-day trial to users who have never had a Stripe subscription
-    const isNewSubscriber = !sub?.stripeSubscriptionId;
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      payment_method_types: ["card"],
-      billing_address_collection: "auto",
-      customer: customerId,
-      customer_update: { address: "auto" },
-      allow_promotion_codes: true,
-      line_items: [{ quantity: 1, price: priceId }],
-      ...(isNewSubscriber
-        ? {
-            subscription_data: {
-              trial_period_days: 7,
-              metadata: { plan, interval, userId: user.id, teamId: accountTeamId },
-            },
-          }
-        : {}),
-      success_url: successUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?success=true`,
-      cancel_url: cancelUrl || `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing?canceled=true`,
-      metadata: { plan, interval, userId: user.id, teamId: accountTeamId },
+    const origin = c.req.header("origin") ?? c.env.BETTER_AUTH_URL;
+    const url = await createBillingCheckoutSession(c, {
+      teamId: accountTeamId,
+      ownerUser: user,
+      billingActorUserId: user.id,
+      plan,
+      interval,
+      successUrl: successUrl ?? `${origin}/app/account/billing?success=true`,
+      cancelUrl: cancelUrl ?? `${origin}/app/account/billing?canceled=true`,
     });
 
-    return c.json({ url: session.url });
+    return c.json({ url });
   } catch (err) {
     console.error("Checkout session creation error:", err);
     return c.json({ error: "Failed to create checkout session" }, 500);
@@ -6430,26 +6472,14 @@ app.post("/api/billing/checkout", async (c) => {
 
 app.post("/api/billing/portal", async (c) => {
   try {
-    const user = c.get("user");
-    const db = c.get("db");
+    const accountTeamId = c.get("accountTeamId");
+    const url = await createBillingPortalSession(
+      c,
+      accountTeamId,
+      `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing`,
+    );
 
-    const [sub] = await db
-      .select()
-      .from(dbSchema.subscriptions)
-      .where(eq(dbSchema.subscriptions.userId, user.id))
-      .limit(1);
-
-    if (!sub?.stripeCustomerId) {
-      return c.json({ error: "No billing account found" }, 400);
-    }
-
-    const stripe = getStripe(c.env);
-    const session = await stripe.billingPortal.sessions.create({
-      customer: sub.stripeCustomerId,
-      return_url: `${c.req.header("origin") ?? c.env.BETTER_AUTH_URL}/app/account/billing`,
-    });
-
-    return c.json({ url: session.url });
+    return c.json({ url });
   } catch (err) {
     console.error("Portal session creation error:", err);
     return c.json({ error: "Failed to create portal session" }, 500);

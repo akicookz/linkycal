@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { Sparkles } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { CreditCard, Loader, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,8 +19,33 @@ interface UpgradeDialogProps {
   description: string;
 }
 
-export function UpgradeDialog({ open, onClose, projectId: _projectId, feature: _feature, description }: UpgradeDialogProps) {
+interface ProjectEntitlements {
+  billing: {
+    teamId: string | null;
+    canManageBilling: boolean;
+  };
+}
+
+export function UpgradeDialog({ open, onClose, projectId, feature: _feature, description }: UpgradeDialogProps) {
   const navigate = useNavigate();
+  const { data: entitlements, isLoading } = useQuery<ProjectEntitlements>({
+    queryKey: ["projects", projectId, "entitlements"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/entitlements`);
+      if (!res.ok) throw new Error("Failed to fetch entitlements");
+      return res.json();
+    },
+    enabled: open && !!projectId,
+  });
+
+  const canManageBilling = entitlements?.billing.canManageBilling === true;
+  const billingHref = entitlements?.billing.teamId
+    ? `/app/account/billing?teamId=${entitlements.billing.teamId}`
+    : "/app/account/billing";
+  const dialogDescription =
+    entitlements && !canManageBilling
+      ? `${description} Ask a team owner or admin to manage billing.`
+      : description;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
@@ -30,7 +56,7 @@ export function UpgradeDialog({ open, onClose, projectId: _projectId, feature: _
           </div>
           <DialogTitle className="text-center">Upgrade your plan</DialogTitle>
           <DialogDescription className="text-center">
-            {description}
+            {dialogDescription}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter className="sm:justify-center gap-2">
@@ -38,12 +64,19 @@ export function UpgradeDialog({ open, onClose, projectId: _projectId, feature: _
             Cancel
           </Button>
           <Button
+            disabled={isLoading || !canManageBilling}
             onClick={() => {
               onClose();
-              navigate("/app/account/billing");
+              navigate(billingHref);
             }}
           >
-            <Sparkles className="h-4 w-4" />
+            {isLoading ? (
+              <Loader className="h-4 w-4 animate-spin" />
+            ) : canManageBilling ? (
+              <CreditCard className="h-4 w-4" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
             View Plans
           </Button>
         </DialogFooter>

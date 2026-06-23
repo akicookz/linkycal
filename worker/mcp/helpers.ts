@@ -1,9 +1,10 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 import * as dbSchema from "../db/schema";
-import type { Plan, PlanLimits } from "../types";
+import type { PlanLimits } from "../types";
 import { PLAN_LIMITS } from "../lib/plan-limits";
+import { resolveProjectEntitlements } from "../lib/entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -54,33 +55,8 @@ export async function getPlanLimitsForProject(
   db: AppDatabase,
   projectId: string,
 ): Promise<PlanLimits> {
-  const [project] = await db
-    .select({
-      userId: dbSchema.projects.userId,
-      teamId: dbSchema.projects.teamId,
-    })
-    .from(dbSchema.projects)
-    .where(eq(dbSchema.projects.id, projectId))
-    .limit(1);
-
-  if (!project) return PLAN_LIMITS.free;
-
-  const [subscription] = await db
-    .select({ plan: dbSchema.subscriptions.plan })
-    .from(dbSchema.subscriptions)
-    .where(
-      project.teamId
-        ? eq(dbSchema.subscriptions.teamId, project.teamId)
-        : eq(dbSchema.subscriptions.userId, project.userId),
-    )
-    .orderBy(
-      desc(dbSchema.subscriptions.updatedAt),
-      desc(dbSchema.subscriptions.createdAt),
-    )
-    .limit(1);
-
-  const plan = (subscription?.plan as Plan | undefined) ?? "free";
-  return PLAN_LIMITS[plan] ?? PLAN_LIMITS.free;
+  const entitlements = await resolveProjectEntitlements(db, projectId);
+  return entitlements?.planLimits ?? PLAN_LIMITS.free;
 }
 
 // ─── Project-Scoping Asserts ─────────────────────────────────────────────────

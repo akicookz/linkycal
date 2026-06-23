@@ -108,6 +108,29 @@ export async function findExistingCustomerForUser(
   return selectRecoveredCustomer(emailMatches.data, userId, email);
 }
 
+export function selectRecoveredCustomerForTeam(
+  customers: Stripe.Customer[],
+  teamId: string,
+): Stripe.Customer | null {
+  return customers.find((customer) => customer.metadata?.teamId === teamId) ?? null;
+}
+
+export async function findExistingCustomerForTeam(
+  stripe: Stripe,
+  teamId: string,
+): Promise<Stripe.Customer | null> {
+  try {
+    const search = await stripe.customers.search({
+      query: `metadata['teamId']:'${escapeStripeSearchValue(teamId)}'`,
+      limit: 10,
+    });
+    return selectRecoveredCustomerForTeam(search.data, teamId);
+  } catch (error) {
+    console.warn("Stripe customer team metadata search failed", error);
+    return null;
+  }
+}
+
 function escapeStripeSearchValue(value: string): string {
   return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }

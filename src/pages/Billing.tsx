@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
 import { Check, CreditCard, ExternalLink, Loader } from "lucide-react";
@@ -26,11 +27,18 @@ interface PlanLimits {
   maxTeamMembers: number;
   apiAccess: boolean;
   customWidgets: boolean;
+  analytics: boolean;
 }
 
 interface BillingData {
   subscription: Subscription;
   planLimits: PlanLimits;
+  team?: {
+    id: string;
+    name: string;
+    role: string;
+  };
+  canManageBilling?: boolean;
 }
 
 import { plans } from "@/lib/constants";
@@ -39,12 +47,18 @@ import { plans } from "@/lib/constants";
 
 export default function Billing() {
   const [selectedInterval, setSelectedInterval] = useState<"month" | "year">("month");
+  const [searchParams] = useSearchParams();
   const posthog = usePostHog();
+  const billingTeamId = searchParams.get("teamId");
+  const billingBasePath = billingTeamId
+    ? `/api/teams/${billingTeamId}/billing`
+    : "/api/billing";
+  const billingScope = billingTeamId ? "team" : "account";
 
   const { data, isLoading } = useQuery<BillingData>({
-    queryKey: ["billing-subscription"],
+    queryKey: ["billing-subscription", billingTeamId],
     queryFn: async () => {
-      const res = await fetch("/api/billing/subscription");
+      const res = await fetch(`${billingBasePath}/subscription`);
       if (!res.ok) throw new Error("Failed to fetch subscription");
       const data = await res.json();
       return data;
@@ -53,7 +67,7 @@ export default function Billing() {
 
   const checkoutMutation = useMutation({
     mutationFn: async ({ plan, interval }: { plan: string; interval: string }) => {
-      const res = await fetch("/api/billing/checkout", {
+      const res = await fetch(`${billingBasePath}/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ plan, interval }),
@@ -70,7 +84,7 @@ export default function Billing() {
 
   const portalMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/billing/portal", {
+      const res = await fetch(`${billingBasePath}/portal`, {
         method: "POST",
       });
       if (!res.ok) throw new Error("Failed to create portal session");
@@ -86,9 +100,19 @@ export default function Billing() {
   const currentPlan = data?.subscription?.plan ?? "free";
   const subscriptionStatus = data?.subscription?.status ?? "active";
   const isAnnual = selectedInterval === "year";
+  const billingTitle = data?.team?.name ? `${data.team.name} Billing` : "Billing";
+  const billingDescription = data?.team?.name
+    ? "Manage this team's subscription and billing"
+    : "Manage your subscription and billing";
 
   function handleUpgrade(planId: string) {
-    posthog?.capture("checkout_initiated", { plan: planId, interval: selectedInterval, current_plan: currentPlan });
+    posthog?.capture("checkout_initiated", {
+      plan: planId,
+      interval: selectedInterval,
+      current_plan: currentPlan,
+      billing_scope: billingScope,
+      team_id: billingTeamId,
+    });
     checkoutMutation.mutate({ plan: planId, interval: selectedInterval });
   }
 
@@ -108,7 +132,7 @@ export default function Billing() {
 
   return (
     <div>
-      <PageHeader title="Billing" description="Manage your subscription and billing">
+      <PageHeader title={billingTitle} description={billingDescription}>
         {currentPlan !== "free" && (
           <Button
             variant="outline"

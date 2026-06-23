@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
@@ -33,6 +33,7 @@ import {
   SelectItem,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -60,6 +61,12 @@ interface FilterOptions {
   utmSources: string[];
   utmMediums: string[];
   utmCampaigns: string[];
+}
+
+interface ProjectEntitlements {
+  planLimits: {
+    analytics: boolean;
+  };
 }
 
 type Period = "7d" | "30d" | "90d";
@@ -148,24 +155,36 @@ function FunnelStep({
 
 // ─── Upgrade Prompt ──────────────────────────────────────────────────────────
 
-function UpgradePrompt() {
+function UpgradePrompt({ projectId }: { projectId: string }) {
+  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+
   return (
-    <div className="flex flex-col items-center justify-center py-40">
-      <div className="w-16 h-16 rounded-[20px] bg-primary/10 flex items-center justify-center mb-6">
-        <BarChart3 className="w-8 h-8 text-primary" />
-      </div>
-      <h2 className="text-xl font-semibold mb-2">Unlock Analytics</h2>
-      <p className="text-muted-foreground text-sm text-center max-w-md mb-6">
-        Get insights into your booking and form performance. Track page views,
-        conversions, UTM sources, and more with detailed analytics.
-      </p>
-      <Link to="/app/account/billing">
-        <Button className="rounded-[16px] glow-surface">
+    <>
+      <div className="flex flex-col items-center justify-center py-40">
+        <div className="w-16 h-16 rounded-[20px] bg-primary/10 flex items-center justify-center mb-6">
+          <BarChart3 className="w-8 h-8 text-primary" />
+        </div>
+        <h2 className="text-xl font-semibold mb-2">Unlock Analytics</h2>
+        <p className="text-muted-foreground text-sm text-center max-w-md mb-6">
+          Get insights into your booking and form performance. Track page views,
+          conversions, UTM sources, and more with detailed analytics.
+        </p>
+        <Button
+          className="rounded-[16px] glow-surface"
+          onClick={() => setShowUpgradeDialog(true)}
+        >
           <Sparkles className="w-4 h-4" />
           Upgrade to Pro
         </Button>
-      </Link>
-    </div>
+      </div>
+      <UpgradeDialog
+        open={showUpgradeDialog}
+        onClose={() => setShowUpgradeDialog(false)}
+        projectId={projectId}
+        feature="analytics"
+        description="Analytics requires a Pro or Business plan."
+      />
+    </>
   );
 }
 
@@ -544,17 +563,17 @@ export default function Analytics() {
   const [utmMedium, setUtmMedium] = useState<string | undefined>();
   const [utmCampaign, setUtmCampaign] = useState<string | undefined>();
 
-  // Check plan access
-  const { data: subData, isLoading: subLoading } = useQuery<{ subscription: { plan: string; status: string }; planLimits: { analytics: boolean } }>({
-    queryKey: ["billing-subscription"],
+  const { data: entitlements, isLoading: entitlementsLoading } = useQuery<ProjectEntitlements>({
+    queryKey: ["projects", projectId, "entitlements"],
     queryFn: async () => {
-      const res = await fetch("/api/billing/subscription");
+      const res = await fetch(`/api/projects/${projectId}/entitlements`);
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
+    enabled: !!projectId,
   });
 
-  const hasAccess = subData?.planLimits?.analytics === true;
+  const hasAccess = entitlements?.planLimits?.analytics === true;
 
   // Fetch filter options
   const { data: filterOptions } = useQuery<FilterOptions>({
@@ -567,7 +586,7 @@ export default function Analytics() {
     enabled: !!hasAccess,
   });
 
-  if (subLoading) {
+  if (entitlementsLoading) {
     return (
       <>
         <PageHeader title="Analytics" description="Track performance across your bookings and forms" />
@@ -582,7 +601,7 @@ export default function Analytics() {
     return (
       <>
         <PageHeader title="Analytics" description="Track performance across your bookings and forms" />
-        <UpgradePrompt />
+        <UpgradePrompt projectId={projectId!} />
       </>
     );
   }

@@ -86,18 +86,22 @@ export default function Team() {
     data: membersData,
     isLoading,
     isError,
+    error: membersError,
   } = useQuery<ProjectMembersResponse>({
     queryKey: ["projects", projectId, "members"],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/members`);
-      if (!res.ok) throw new Error("Failed to fetch members");
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to fetch members");
+      }
       return {
         members: data.members ?? [],
         planLimits: data.planLimits ?? { maxTeamMembers: -1 },
       };
     },
     enabled: !!projectId,
+    retry: false,
   });
   const members = membersData?.members ?? [];
   const canInviteTeamMembers = (membersData?.planLimits.maxTeamMembers ?? -1) !== 0;
@@ -273,7 +277,7 @@ export default function Team() {
             </div>
           ) : isError ? (
             <div className="py-8 text-sm text-muted-foreground">
-              You do not have permission to manage this project&apos;s team access.
+              {(membersError as Error).message}
             </div>
           ) : (
             <div className="space-y-2">

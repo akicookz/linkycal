@@ -899,7 +899,6 @@ export const subscriptions = sqliteTable(
   (t) => [
     index("subscriptions_user_id_idx").on(t.userId),
     index("subscriptions_team_id_idx").on(t.teamId),
-    uniqueIndex("subscriptions_user_id_unique").on(t.userId),
     uniqueIndex("subscriptions_team_id_unique").on(t.teamId),
     uniqueIndex("subscriptions_stripe_sub_id_idx").on(t.stripeSubscriptionId),
   ],
