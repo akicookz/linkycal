@@ -48,13 +48,6 @@ export const workflowTemplates: WorkflowTemplateDefinition[] = [
         },
       },
       {
-        type: "update_contact",
-        config: {
-          field: "notes",
-          value: "{{research.summary}}",
-        },
-      },
-      {
         type: "send_email",
         config: {
           toList: ["team@example.com"],

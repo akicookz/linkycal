@@ -25,4 +25,17 @@ describe("workflow templates", () => {
       );
     }
   });
+
+  test("manual-contact-research is named 'Research & Enrich Contact' and has no update_contact step", () => {
+    const template = workflowTemplates.find((t) => t.id === "manual-contact-research");
+    expect(template).toBeDefined();
+    expect(template!.name).toBe("Research & Enrich Contact");
+    expect(template!.steps.some((s) => s.type === "update_contact")).toBe(false);
+  });
+
+  test("form-lead-research has no update_contact step", () => {
+    const template = workflowTemplates.find((t) => t.id === "form-lead-research");
+    expect(template).toBeDefined();
+    expect(template!.steps.some((s) => s.type === "update_contact")).toBe(false);
+  });
 });

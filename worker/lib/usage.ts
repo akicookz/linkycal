@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 
@@ -34,27 +34,11 @@ export async function incrementEnrichmentUsage(
   now: Date,
 ): Promise<void> {
   const periodStart = currentPeriodStart(now);
-  const [row] = await db
-    .select({ id: dbSchema.usage.id, count: dbSchema.usage.enrichmentsCount })
-    .from(dbSchema.usage)
-    .where(
-      and(
-        eq(dbSchema.usage.userId, userId),
-        eq(dbSchema.usage.periodStart, periodStart),
-      ),
-    )
-    .limit(1);
-  if (row) {
-    await db
-      .update(dbSchema.usage)
-      .set({ enrichmentsCount: row.count + 1 })
-      .where(eq(dbSchema.usage.id, row.id));
-  } else {
-    await db.insert(dbSchema.usage).values({
-      id: crypto.randomUUID(),
-      userId,
-      periodStart,
-      enrichmentsCount: 1,
+  await db
+    .insert(dbSchema.usage)
+    .values({ id: crypto.randomUUID(), userId, periodStart, enrichmentsCount: 1 })
+    .onConflictDoUpdate({
+      target: [dbSchema.usage.userId, dbSchema.usage.periodStart],
+      set: { enrichmentsCount: sql`${dbSchema.usage.enrichmentsCount} + 1` },
     });
-  }
 }

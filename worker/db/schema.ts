@@ -930,7 +930,10 @@ export const usage = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("usage_user_id_idx").on(t.userId)],
+  (t) => [
+    index("usage_user_id_idx").on(t.userId),
+    uniqueIndex("usage_user_period_idx").on(t.userId, t.periodStart),
+  ],
 );
 
 export type UsageRow = typeof usage.$inferSelect;

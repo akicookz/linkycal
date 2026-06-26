@@ -156,6 +156,11 @@ function activityDescription(activity: ContactActivity): string {
   }
 }
 
+function ensureHttps(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  return `https://${url}`;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -283,6 +288,7 @@ export default function ContactDetailPage() {
   // ─── Enrichment ───
 
   const [enriching, setEnriching] = useState(false);
+  const [enrichError, setEnrichError] = useState<string | null>(null);
   const enrichBaselineRef = useRef<number | null>(null);
 
   const { data: enrichUsage } = useQuery<{ used: number; limit: number; remaining: number; unlimited: boolean }>({
@@ -305,9 +311,16 @@ export default function ContactDetailPage() {
       return res.json();
     },
     onSuccess: () => {
+      setEnrichError(null);
       enrichBaselineRef.current = contact?.activity.length ?? 0;
       setEnriching(true);
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "enrichment-usage"] });
+    },
+    onError: (err: Error) => {
+      const msg = err.message.includes("Monthly enrichment limit")
+        ? "Monthly enrichment limit reached."
+        : (err.message || "Failed to start enrichment.");
+      setEnrichError(msg);
     },
   });
 
@@ -484,6 +497,13 @@ export default function ContactDetailPage() {
         </Button>
       </PageHeader>
 
+      {enrichError && (
+        <div className="flex items-center gap-2 rounded-[12px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive mb-4">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {enrichError}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         {/* ─── Main Column ─── */}
         <div className="space-y-6">
@@ -591,6 +611,17 @@ export default function ContactDetailPage() {
                   <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
                   <InlineField key={`website-${contact.id}`} value={contact.companyWebsite}
                     placeholder="Add company website..." onSave={(v) => updateMutation.mutate({ companyWebsite: v })} />
+                  {contact.companyWebsite && (
+                    <a
+                      href={ensureHttps(contact.companyWebsite)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+                      title="Open website"
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                    </a>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 text-sm">
                   <Users className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -606,6 +637,17 @@ export default function ContactDetailPage() {
                   <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
                   <InlineField key={`linkedin-${contact.id}`} value={contact.linkedinUrl}
                     placeholder="Add LinkedIn URL..." onSave={(v) => updateMutation.mutate({ linkedinUrl: v })} />
+                  {contact.linkedinUrl && (
+                    <a
+                      href={ensureHttps(contact.linkedinUrl)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
+                      title="Open LinkedIn"
+                    >
+                      <Link2 className="h-3.5 w-3.5" />
+                    </a>
+                  )}
                 </div>
               </div>
             </CardContent>

@@ -7011,6 +7011,9 @@ export default {
       try {
         const body = message.body;
         if ("kind" in body && body.kind === "enrich") {
+          // Note: if the queue retries this message (e.g. after a transient failure),
+          // the AI research runs again and appends another dated summary block to notes.
+          // Dedup and quota refunds for retried jobs are out of scope per spec.
           await executionService.enrichContact(body.projectId, body.contactId, env);
         } else {
           const { workflowRunId, stepIndex, remainingDelay } = body as { workflowRunId: string; stepIndex: number; remainingDelay?: number };
