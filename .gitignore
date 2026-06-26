@@ -7,3 +7,6 @@ dist-widget
 .env.local
 worker-configuration.d.ts
 .dev.vars
+
+# Subagent-driven-dev scratch/ledger
+.superpowers/
