@@ -15,7 +15,9 @@ import {
   resolveWorkflowValue,
   workflowStepInputSchema,
   type WorkflowTriggerContext,
+  type WorkflowResearchRecord,
 } from "../lib/workflow-runtime";
+import { enrichContactFromResearch, appendResearchSummaryToNotes } from "../lib/contact-enrich";
 import {
   evaluateWorkflowCondition,
   parseWorkflowCondition,
@@ -671,18 +673,7 @@ export class WorkflowExecutionService {
       env,
     );
 
-    const contact = await this.contactService.getById(contactId);
-    const contactMetadata = parseRecord(contact?.metadata);
-    const nextMetadata = mergeWorkflowResearchMetadata(contactMetadata, record);
-
-    await this.contactService.update(contactId, { metadata: nextMetadata });
-    await this.contactService.logActivity(contactId, "workflow_researched", undefined, {
-      provider: record.provider,
-      model: record.model,
-      resultKey: record.resultKey,
-      summary: record.result.summary,
-      sourceCount: record.result.sources.length,
-    });
+    await this.applyResearchToContact(contactId, record);
 
     context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
 
@@ -698,6 +689,53 @@ export class WorkflowExecutionService {
       insights: record.result.insights,
       model: record.model,
     };
+  }
+
+  // Single place that turns a research record into contact updates:
+  // metadata envelope + structured columns + appended summary + activity.
+  private async applyResearchToContact(
+    contactId: string,
+    record: WorkflowResearchRecord,
+  ): Promise<void> {
+    const contact = await this.contactService.getById(contactId);
+    const contactMetadata = parseRecord(contact?.metadata);
+    const nextMetadata = mergeWorkflowResearchMetadata(contactMetadata, record);
+    const fields = enrichContactFromResearch(record.result);
+    const today = new Date().toISOString().slice(0, 10);
+    const nextNotes = appendResearchSummaryToNotes(
+      contact?.notes ?? null,
+      record.result.summary,
+      today,
+    );
+    await this.contactService.update(contactId, {
+      ...fields,
+      metadata: nextMetadata,
+      notes: nextNotes,
+    });
+    await this.contactService.logActivity(contactId, "workflow_researched", undefined, {
+      provider: record.provider,
+      model: record.model,
+      resultKey: record.resultKey,
+      summary: record.result.summary,
+      sourceCount: record.result.sources.length,
+    });
+  }
+
+  // On-demand enrichment (called by the queue consumer for `enrich` jobs).
+  async enrichContact(projectId: string, contactId: string, env: AppEnv): Promise<void> {
+    const contact = await this.contactService.getById(contactId);
+    if (!contact || contact.projectId !== projectId) return;
+    const prompt =
+      `Research this contact and their company using public sources: ` +
+      `${contact.name}${contact.email ? ` <${contact.email}>` : ""}. ` +
+      `Return the company name, company website, the person's position/title, ` +
+      `the company's size (employee range), an estimated annual revenue range, ` +
+      `their LinkedIn URL, and a concise executive summary for sales outreach.`;
+    const record = await this.workflowAiResearchService.execute(
+      { provider: "chatgpt", prompt, resultKey: "enrichment" },
+      env,
+    );
+    await this.applyResearchToContact(contactId, record);
   }
 
   // ─── add_tag ───────────────────────────────────────────────────────────
