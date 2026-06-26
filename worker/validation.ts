@@ -408,6 +408,12 @@ export const createContactSchema = z.object({
   phone: z.string().max(30).optional(),
   notes: z.string().max(5000).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  company: z.string().max(200).nullable().optional(),
+  companyWebsite: z.string().max(500).nullable().optional(),
+  position: z.string().max(200).nullable().optional(),
+  companySize: z.string().max(100).nullable().optional(),
+  estimatedRevenue: z.string().max(100).nullable().optional(),
+  linkedinUrl: z.string().max(500).nullable().optional(),
 });
 
 const contactImportMappingSchema = z.object({
@@ -431,6 +437,12 @@ export const updateContactSchema = z.object({
   phone: z.string().max(30).nullable().optional(),
   notes: z.string().max(5000).nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).nullable().optional(),
+  company: z.string().max(200).nullable().optional(),
+  companyWebsite: z.string().max(500).nullable().optional(),
+  position: z.string().max(200).nullable().optional(),
+  companySize: z.string().max(100).nullable().optional(),
+  estimatedRevenue: z.string().max(100).nullable().optional(),
+  linkedinUrl: z.string().max(500).nullable().optional(),
 });
 
 // ─── Tags ────────────────────────────────────────────────────────────────────

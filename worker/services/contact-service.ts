@@ -197,6 +197,12 @@ export class ContactService {
       phone?: string;
       notes?: string;
       metadata?: Record<string, unknown>;
+      company?: string | null;
+      companyWebsite?: string | null;
+      position?: string | null;
+      companySize?: string | null;
+      estimatedRevenue?: string | null;
+      linkedinUrl?: string | null;
     },
   ) {
     const id = crypto.randomUUID();
@@ -208,6 +214,12 @@ export class ContactService {
       phone: data.phone ?? null,
       notes: data.notes ?? null,
       metadata: data.metadata ?? null,
+      company: data.company ?? null,
+      companyWebsite: data.companyWebsite ?? null,
+      position: data.position ?? null,
+      companySize: data.companySize ?? null,
+      estimatedRevenue: data.estimatedRevenue ?? null,
+      linkedinUrl: data.linkedinUrl ?? null,
     });
     const row = await this.getById(id);
     if (!row) throw new Error("Contact not found after insert");
@@ -222,6 +234,12 @@ export class ContactService {
       phone?: string | null;
       notes?: string | null;
       metadata?: Record<string, unknown> | null;
+      company?: string | null;
+      companyWebsite?: string | null;
+      position?: string | null;
+      companySize?: string | null;
+      estimatedRevenue?: string | null;
+      linkedinUrl?: string | null;
     },
   ) {
     const values: Record<string, unknown> = {};
@@ -230,6 +248,12 @@ export class ContactService {
     if (data.phone !== undefined) values.phone = data.phone;
     if (data.notes !== undefined) values.notes = data.notes;
     if (data.metadata !== undefined) values.metadata = data.metadata ?? null;
+    if (data.company !== undefined) values.company = data.company;
+    if (data.companyWebsite !== undefined) values.companyWebsite = data.companyWebsite;
+    if (data.position !== undefined) values.position = data.position;
+    if (data.companySize !== undefined) values.companySize = data.companySize;
+    if (data.estimatedRevenue !== undefined) values.estimatedRevenue = data.estimatedRevenue;
+    if (data.linkedinUrl !== undefined) values.linkedinUrl = data.linkedinUrl;
 
     if (Object.keys(values).length === 0) return this.getById(id);
 
