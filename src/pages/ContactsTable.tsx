@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ArrowUp, ArrowDown, Trash2 } from "lucide-react";
+import { ArrowUp, ArrowDown, Trash2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -14,8 +14,9 @@ interface ContactsTableProps {
   contacts: ViewContact[];
   allTags: ViewTag[];
   pivotTagIds: string[] | null;
-  onSelect: (contactId: string) => void;
-  onDelete: (contact: ViewContact) => void;
+  onSelect: (id: string) => void;
+  onEdit: (id: string) => void;
+  onDelete: (id: string) => void;
 }
 
 function formatRelative(iso: string | null | undefined): string {
@@ -34,6 +35,7 @@ export default function ContactsTable({
   allTags,
   pivotTagIds,
   onSelect,
+  onEdit,
   onDelete,
 }: ContactsTableProps) {
   const hasStage = !!pivotTagIds && pivotTagIds.length > 0;
@@ -144,15 +146,26 @@ export default function ContactsTable({
                   {formatRelative(contact.lastActivityAt)}
                 </td>
                 <td className="px-3 py-2.5 text-right" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive opacity-0 group-hover/row:opacity-100 hover:bg-destructive/10"
-                    onClick={() => onDelete(contact)}
-                    aria-label={`Delete ${contact.name}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <div className="flex items-center justify-end gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 opacity-0 group-hover/row:opacity-100 hover:bg-accent"
+                      onClick={() => onEdit(contact.id)}
+                      aria-label={`Edit ${contact.name}`}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive opacity-0 group-hover/row:opacity-100 hover:bg-destructive/10"
+                      onClick={() => onDelete(contact.id)}
+                      aria-label={`Delete ${contact.name}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </td>
               </tr>
             );

@@ -868,6 +868,17 @@ export default function Contacts() {
     setDeleteDialogOpen(true);
   }, []);
 
+  const openEditDialog = useCallback((contact: Contact) => {
+    setEditingContact(contact);
+    setEditForm({
+      name: contact.name,
+      email: contact.email ?? "",
+      phone: contact.phone ?? "",
+      notes: contact.notes ?? "",
+    });
+    setEditDialogOpen(true);
+  }, []);
+
   function resetContactImportState() {
     setCsvFileName("");
     setCsvHeaders([]);
@@ -958,7 +969,10 @@ export default function Contacts() {
   }
 
   function handleStageChange(contactId: string, toColumnId: string) {
-    const groupTagIds = config.pivotTagIds ?? [];
+    const groupTagIds =
+      config.pivotTagIds && config.pivotTagIds.length > 0
+        ? config.pivotTagIds
+        : tags.map((t) => t.id);
     const isUntagged = toColumnId === UNTAGGED_COLUMN_ID;
     const tagId = isUntagged ? null : toColumnId;
     const tag = tagId ? tags.find((t) => t.id === tagId) : null;
@@ -1670,7 +1684,14 @@ export default function Contacts() {
               allTags={allTagsForKanban}
               pivotTagIds={config.pivotTagIds ?? null}
               onSelect={(id) => navigateToContact(id)}
-              onDelete={(ct) => openDeleteDialog(ct as unknown as Contact)}
+              onEdit={(id) => {
+                const c = contacts.find((x) => x.id === id);
+                if (c) openEditDialog(c);
+              }}
+              onDelete={(id) => {
+                const c = contacts.find((x) => x.id === id);
+                if (c) openDeleteDialog(c);
+              }}
             />
           )}
         </Card>

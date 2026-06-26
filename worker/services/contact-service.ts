@@ -511,6 +511,7 @@ export class ContactService {
       type: "kanban",
       config: { pivotTagIds: tagIds, showUntagged: true },
     });
+    if (!view) throw new Error("Failed to create pipeline view");
     return { view };
   }
 

@@ -42,7 +42,15 @@ function getInitial(name: string): string {
   return name.charAt(0).toUpperCase();
 }
 
-function KanbanCard({ contact, columnId }: { contact: ViewContact; columnId: string }) {
+function KanbanCard({
+  contact,
+  columnId,
+  pivotTagIds,
+}: {
+  contact: ViewContact;
+  columnId: string;
+  pivotTagIds: string[] | null;
+}) {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
@@ -50,28 +58,32 @@ function KanbanCard({ contact, columnId }: { contact: ViewContact; columnId: str
     data: { fromColumnId: columnId },
   });
 
+  // Exclude ALL stage tags from chips, not just the current column's tag.
+  const stageSet =
+    pivotTagIds && pivotTagIds.length > 0
+      ? new Set(pivotTagIds)
+      : new Set([columnId]);
+  const visibleChips = contact.tags.filter((t) => !stageSet.has(t.id));
+
   return (
     <div
       ref={setNodeRef}
+      {...listeners}
+      {...attributes}
+      onClick={() => navigate(`/app/projects/${projectId}/contacts/${contact.id}`)}
       className={cn(
-        "group/contact relative bg-card rounded-[12px] border border-border/60 p-3 transition-all",
+        "group/contact relative bg-card rounded-[12px] border border-border/60 p-3 transition-all touch-none cursor-grab active:cursor-grabbing",
         isDragging ? "opacity-40" : "hover:border-border hover:shadow-xs",
       )}
     >
-      {/* Floating drag handle, revealed on hover; absolute so it never shifts the card. */}
+      {/* Visual drag affordance — decorative only, not the drag target */}
       <span
-        className="absolute left-1 top-1/2 -translate-y-1/2 -translate-x-full flex h-6 w-5 cursor-grab items-center justify-center text-muted-foreground/0 transition-colors group-hover/contact:text-muted-foreground/60 active:cursor-grabbing"
-        aria-label="Drag to move stage"
-        {...listeners}
-        {...attributes}
+        aria-hidden="true"
+        className="absolute left-1 top-1/2 -translate-y-1/2 -translate-x-full flex h-6 w-5 items-center justify-center text-muted-foreground/0 transition-colors group-hover/contact:text-muted-foreground/60"
       >
         <GripVertical className="h-3.5 w-3.5" />
       </span>
-      <button
-        type="button"
-        onClick={() => navigate(`/app/projects/${projectId}/contacts/${contact.id}`)}
-        className="flex w-full items-start gap-2.5 text-left"
-      >
+      <div className="flex w-full items-start gap-2.5 text-left">
         <div
           className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
           style={{ backgroundColor: getAvatarColor(contact.name) }}
@@ -95,27 +107,24 @@ function KanbanCard({ contact, columnId }: { contact: ViewContact; columnId: str
               {contact.phone}
             </p>
           )}
-          {contact.tags.filter((t) => t.id !== columnId).length > 0 && (
+          {visibleChips.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">
-              {contact.tags
-                .filter((t) => t.id !== columnId)
-                .slice(0, 3)
-                .map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                    style={{
-                      backgroundColor: `${tag.color ?? "#6366f1"}15`,
-                      color: tag.color ?? "#6366f1",
-                    }}
-                  >
-                    {tag.name}
-                  </span>
-                ))}
+              {visibleChips.slice(0, 3).map((tag) => (
+                <span
+                  key={tag.id}
+                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                  style={{
+                    backgroundColor: `${tag.color ?? "#6366f1"}15`,
+                    color: tag.color ?? "#6366f1",
+                  }}
+                >
+                  {tag.name}
+                </span>
+              ))}
             </div>
           )}
         </div>
-      </button>
+      </div>
     </div>
   );
 }
@@ -209,7 +218,7 @@ export default function ContactsKanban({
                 <p className="text-xs text-muted-foreground text-center py-6">Drop here</p>
               )}
               {col.contacts.map((contact) => (
-                <KanbanCard key={contact.id} contact={contact} columnId={col.id} />
+                <KanbanCard key={contact.id} contact={contact} columnId={col.id} pivotTagIds={pivotTagIds} />
               ))}
             </KanbanColumnBox>
           ))}
