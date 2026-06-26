@@ -323,6 +323,12 @@ export const contacts = sqliteTable(
     email: text("email"),
     phone: text("phone"),
     notes: text("notes"),
+    company: text("company"),
+    companyWebsite: text("company_website"),
+    position: text("position"),
+    companySize: text("company_size"),
+    estimatedRevenue: text("estimated_revenue"),
+    linkedinUrl: text("linkedin_url"),
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -919,6 +925,7 @@ export const usage = sqliteTable(
     periodStart: integer("period_start", { mode: "timestamp" }).notNull(),
     formResponses: integer("form_responses").notNull().default(0),
     bookingsCount: integer("bookings_count").notNull().default(0),
+    enrichmentsCount: integer("enrichments_count").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

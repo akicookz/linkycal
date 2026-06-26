@@ -204,6 +204,13 @@
       "when": 1782345600000,
       "tag": "0028_team_subscription_scope",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1782492174738,
+      "tag": "0029_naive_sage",
+      "breakpoints": true
     }
   ]
 }
