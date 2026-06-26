@@ -59,6 +59,40 @@ export function buildKanbanColumns(opts: {
   return columns;
 }
 
+// Effective ordered list of real (non-untagged) column tag ids the board shows.
+// When there is no explicit pivot, the board falls back to all tags in order.
+// Filtering against allTags drops ids whose tag was deleted elsewhere.
+export function resolveColumnTagIds(
+  pivotTagIds: string[] | null,
+  allTags: ViewTag[],
+): string[] {
+  if (pivotTagIds && pivotTagIds.length > 0) {
+    const known = new Set(allTags.map((t) => t.id));
+    return pivotTagIds.filter((id) => known.has(id));
+  }
+  return allTags.map((t) => t.id);
+}
+
+// Pure array move; returns a new array. Out-of-range indices are a no-op.
+export function applyReorder(
+  ids: string[],
+  fromIndex: number,
+  toIndex: number,
+): string[] {
+  if (
+    fromIndex < 0 ||
+    toIndex < 0 ||
+    fromIndex >= ids.length ||
+    toIndex >= ids.length
+  ) {
+    return ids.slice();
+  }
+  const next = ids.slice();
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved);
+  return next;
+}
+
 export function contactStageTagId(
   contact: ViewContact,
   pivotTagIds: string[] | null,

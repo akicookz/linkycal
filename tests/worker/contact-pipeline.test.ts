@@ -123,3 +123,40 @@ describe("ContactService ownership guards", () => {
     expect(valid).toEqual(["lead"]);
   });
 });
+
+describe("ContactService.updateTag", () => {
+  test("updates name only, leaving color intact", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    const updated = await svc.updateTag("p", "lead", { name: "Renamed" });
+    expect(updated?.name).toBe("Renamed");
+    expect(updated?.color).toBe("#6b7280");
+  });
+
+  test("updates color only, leaving name intact", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    const updated = await svc.updateTag("p", "lead", { color: "#123456" });
+    expect(updated?.name).toBe("Lead");
+    expect(updated?.color).toBe("#123456");
+  });
+
+  test("updates name and color together", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    const updated = await svc.updateTag("p", "lead", { name: "Hot", color: "#abcdef" });
+    expect(updated?.name).toBe("Hot");
+    expect(updated?.color).toBe("#abcdef");
+  });
+
+  test("does not update a tag from another project", async () => {
+    const db = await seed();
+    await db.insert(dbSchema.projects).values({ id: "p2", userId: "u", name: "P2", slug: "p2" });
+    await db.insert(dbSchema.tags).values({ id: "foreign", projectId: "p2", name: "Foreign", color: "#000000" });
+    const svc = new ContactService(db);
+    const result = await svc.updateTag("p", "foreign", { name: "Hijacked" });
+    expect(result).toBeNull();
+    const [row] = await db.select().from(dbSchema.tags).where(eq(dbSchema.tags.id, "foreign"));
+    expect(row.name).toBe("Foreign");
+  });
+});
