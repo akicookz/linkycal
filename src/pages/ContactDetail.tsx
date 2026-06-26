@@ -15,6 +15,13 @@ import {
   Loader,
   AlertCircle,
   Clock,
+  Building2,
+  Briefcase,
+  Globe,
+  Users,
+  DollarSign,
+  Link2,
+  Sparkles,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
@@ -55,6 +62,12 @@ interface ContactDetail {
   phone: string | null;
   notes: string | null;
   metadata: unknown;
+  company: string | null;
+  companyWebsite: string | null;
+  position: string | null;
+  companySize: string | null;
+  estimatedRevenue: string | null;
+  linkedinUrl: string | null;
   createdAt: string;
   updatedAt: string;
   tags: ContactTag[];
@@ -204,6 +217,12 @@ export default function ContactDetailPage() {
         email: string | null;
         phone: string | null;
         notes: string | null;
+        company: string | null;
+        companyWebsite: string | null;
+        position: string | null;
+        companySize: string | null;
+        estimatedRevenue: string | null;
+        linkedinUrl: string | null;
       }>,
     ) => {
       const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}`, {
@@ -260,6 +279,55 @@ export default function ContactDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
     },
   });
+
+  // ─── Enrichment ───
+
+  const [enriching, setEnriching] = useState(false);
+  const enrichBaselineRef = useRef<number | null>(null);
+
+  const { data: enrichUsage } = useQuery<{ used: number; limit: number; remaining: number; unlimited: boolean }>({
+    queryKey: ["projects", projectId, "enrichment-usage"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/enrichment-usage`);
+      if (!res.ok) throw new Error("Failed to load usage");
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  const enrichMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}/enrich`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? "Failed to start enrichment");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      enrichBaselineRef.current = contact?.activity.length ?? 0;
+      setEnriching(true);
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "enrichment-usage"] });
+    },
+  });
+
+  // While enriching, poll the contact until a new activity (the research) lands.
+  useEffect(() => {
+    if (!enriching) return;
+    const interval = setInterval(() => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
+    }, 4000);
+    const timeout = setTimeout(() => setEnriching(false), 90000);
+    return () => { clearInterval(interval); clearTimeout(timeout); };
+  }, [enriching, projectId, contactId, queryClient]);
+
+  useEffect(() => {
+    if (!enriching || enrichBaselineRef.current === null || !contact) return;
+    if (contact.activity.length > enrichBaselineRef.current) {
+      setEnriching(false);
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "enrichment-usage"] });
+    }
+  }, [contact, enriching, projectId, queryClient]);
 
   // ─── Handlers ───
 
@@ -394,6 +462,26 @@ export default function ContactDetailPage() {
           <ArrowLeft className="h-4 w-4" />
           Back
         </Button>
+        <Button
+          onClick={() => enrichMutation.mutate()}
+          disabled={
+            enriching || enrichMutation.isPending ||
+            (!!enrichUsage && !enrichUsage.unlimited && enrichUsage.remaining <= 0)
+          }
+          title={
+            enrichUsage && !enrichUsage.unlimited && enrichUsage.remaining <= 0
+              ? "Monthly enrichment limit reached — upgrade for more"
+              : undefined
+          }
+        >
+          {enriching || enrichMutation.isPending ? (
+            <><Loader className="h-4 w-4 animate-spin" /> Enriching…</>
+          ) : (
+            <><Sparkles className="h-4 w-4" /> Enrich
+              {enrichUsage && !enrichUsage.unlimited ? ` (${enrichUsage.remaining} left)` : ""}
+            </>
+          )}
+        </Button>
       </PageHeader>
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
@@ -487,6 +575,37 @@ export default function ContactDetailPage() {
                     placeholder="Add notes..."
                     onSave={(v) => updateMutation.mutate({ notes: v })}
                   />
+                </div>
+
+                <div className="flex items-center gap-3 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <InlineField key={`company-${contact.id}`} value={contact.company}
+                    placeholder="Add company..." onSave={(v) => updateMutation.mutate({ company: v })} />
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Briefcase className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <InlineField key={`position-${contact.id}`} value={contact.position}
+                    placeholder="Add position..." onSave={(v) => updateMutation.mutate({ position: v })} />
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <InlineField key={`website-${contact.id}`} value={contact.companyWebsite}
+                    placeholder="Add company website..." onSave={(v) => updateMutation.mutate({ companyWebsite: v })} />
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <InlineField key={`size-${contact.id}`} value={contact.companySize}
+                    placeholder="Add company size..." onSave={(v) => updateMutation.mutate({ companySize: v })} />
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <InlineField key={`revenue-${contact.id}`} value={contact.estimatedRevenue}
+                    placeholder="Add estimated revenue..." onSave={(v) => updateMutation.mutate({ estimatedRevenue: v })} />
+                </div>
+                <div className="flex items-center gap-3 text-sm">
+                  <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <InlineField key={`linkedin-${contact.id}`} value={contact.linkedinUrl}
+                    placeholder="Add LinkedIn URL..." onSave={(v) => updateMutation.mutate({ linkedinUrl: v })} />
                 </div>
               </div>
             </CardContent>
