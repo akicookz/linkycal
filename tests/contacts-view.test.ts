@@ -4,6 +4,8 @@ import {
   buildKanbanColumns,
   contactStageTagId,
   compareContacts,
+  resolveColumnTagIds,
+  applyReorder,
   type ViewContact,
   type ViewTag,
 } from "../src/lib/contacts-view";
@@ -39,6 +41,32 @@ describe("buildKanbanColumns", () => {
   test("falls back to all tags when no pivot, no untagged column", () => {
     const cols = buildKanbanColumns({ contacts: [], allTags: tags, pivotTagIds: null, showUntagged: false });
     expect(cols.map((c) => c.id)).toEqual(["lead", "prospect", "vip"]);
+  });
+});
+
+describe("resolveColumnTagIds", () => {
+  test("returns all tag ids when pivot is null", () => {
+    expect(resolveColumnTagIds(null, tags)).toEqual(["lead", "prospect", "vip"]);
+  });
+  test("returns all tag ids when pivot is empty", () => {
+    expect(resolveColumnTagIds([], tags)).toEqual(["lead", "prospect", "vip"]);
+  });
+  test("follows pivot order and drops ids no longer in allTags", () => {
+    expect(resolveColumnTagIds(["vip", "gone", "lead"], tags)).toEqual(["vip", "lead"]);
+  });
+});
+
+describe("applyReorder", () => {
+  test("moves an item forward", () => {
+    expect(applyReorder(["a", "b", "c"], 0, 2)).toEqual(["b", "c", "a"]);
+  });
+  test("moves an item backward", () => {
+    expect(applyReorder(["a", "b", "c"], 2, 0)).toEqual(["c", "a", "b"]);
+  });
+  test("no-op for out-of-range indices and does not mutate input", () => {
+    const input = ["a", "b", "c"];
+    expect(applyReorder(input, 0, 9)).toEqual(["a", "b", "c"]);
+    expect(input).toEqual(["a", "b", "c"]);
   });
 });
 
