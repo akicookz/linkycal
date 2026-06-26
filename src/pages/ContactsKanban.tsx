@@ -59,6 +59,7 @@ interface ContactsKanbanProps {
   onSwapStep?: (tagId: string, newTagId: string) => void;
   onRemoveStepFromBoard?: (tagId: string) => void;
   onDeleteStepTag?: (tagId: string) => void;
+  onReorderSteps?: (fromIndex: number, toIndex: number) => void;
 }
 
 function getAvatarColor(name: string): string {
@@ -85,7 +86,7 @@ function KanbanCard({
   const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: contact.id,
-    data: { fromColumnId: columnId },
+    data: { type: "card", fromColumnId: columnId },
   });
 
   // Exclude ALL stage tags from chips, not just the current column's tag.
@@ -445,30 +446,53 @@ function AddStepColumn({
 
 function KanbanColumnBox({
   id,
+  tagId,
   name,
   color,
   count,
+  editable,
   menu,
   children,
 }: {
   id: string;
+  tagId?: string;
   name: string;
   color: string | null;
   count: number;
+  editable?: boolean;
   menu?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id });
+  const { setNodeRef: setDropRef, isOver } = useDroppable({ id });
+  const draggable = useDraggable({
+    id: `col:${tagId ?? id}`,
+    data: { type: "column", tagId },
+    disabled: !editable || !tagId,
+  });
   return (
     <div
-      ref={setNodeRef}
+      ref={setDropRef}
       className={cn(
         "flex flex-col w-72 shrink-0 rounded-[16px] p-3 transition-colors",
         isOver ? "bg-primary/10 ring-1 ring-primary/30" : "bg-muted/40",
+        draggable.isDragging && "opacity-50",
       )}
     >
-      <div className="flex items-center justify-between mb-3 px-1">
-        <div className="flex items-center gap-2 min-w-0">
+      <div
+        ref={draggable.setNodeRef}
+        className="flex items-center justify-between mb-3 px-1"
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          {editable && tagId && (
+            <span
+              {...draggable.listeners}
+              {...draggable.attributes}
+              className="flex h-5 w-4 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+              aria-label={`Reorder ${name}`}
+            >
+              <GripVertical className="h-3.5 w-3.5" />
+            </span>
+          )}
           <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color ?? "#94a3b8" }} />
           <p className="text-sm font-semibold truncate">{name}</p>
         </div>
@@ -499,6 +523,7 @@ export default function ContactsKanban({
   onSwapStep,
   onRemoveStepFromBoard,
   onDeleteStepTag,
+  onReorderSteps,
 }: ContactsKanbanProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -553,6 +578,18 @@ export default function ContactsKanban({
     setActiveId(null);
     const { active, over } = event;
     if (!over) return;
+    const activeType = (active.data.current as { type?: string } | undefined)?.type;
+
+    if (activeType === "column") {
+      const fromTagId = (active.data.current as { tagId?: string } | undefined)?.tagId;
+      const overId = String(over.id);
+      const fromIndex = columnTagIds.indexOf(fromTagId ?? "");
+      const toIndex = columnTagIds.indexOf(overId);
+      if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return;
+      onReorderSteps?.(fromIndex, toIndex);
+      return;
+    }
+
     const contactId = String(active.id);
     const toColumnId = String(over.id);
     const fromColumnId = (active.data.current as { fromColumnId?: string } | undefined)?.fromColumnId;
@@ -574,9 +611,11 @@ export default function ContactsKanban({
             <KanbanColumnBox
               key={col.id}
               id={col.id}
+              tagId={col.id === UNTAGGED_COLUMN_ID ? undefined : col.id}
               name={col.name}
               color={col.color}
               count={col.contacts.length}
+              editable={editable}
               menu={
                 editable && col.id !== UNTAGGED_COLUMN_ID && onRenameStep ? (
                   <StepMenu

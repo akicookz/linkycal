@@ -54,7 +54,11 @@ import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import ContactsKanban from "./ContactsKanban";
 import ContactsTable from "./ContactsTable";
-import { UNTAGGED_COLUMN_ID, resolveColumnTagIds } from "@/lib/contacts-view";
+import {
+  UNTAGGED_COLUMN_ID,
+  resolveColumnTagIds,
+  applyReorder,
+} from "@/lib/contacts-view";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1115,6 +1119,11 @@ export default function Contacts() {
     setConfig((c) => ({ ...c, pivotTagIds: next }));
   }
 
+  function handleReorderSteps(fromIndex: number, toIndex: number) {
+    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    setConfig((c) => ({ ...c, pivotTagIds: applyReorder(base, fromIndex, toIndex) }));
+  }
+
   // ─── Description ───
 
   const headerDescription = useMemo(() => {
@@ -1856,6 +1865,7 @@ export default function Contacts() {
           onSwapStep={handleSwapStep}
           onRemoveStepFromBoard={handleRemoveStepFromBoard}
           onDeleteStepTag={handleDeleteStepTag}
+          onReorderSteps={handleReorderSteps}
         />
       )}
 
