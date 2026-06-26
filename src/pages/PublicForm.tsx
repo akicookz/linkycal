@@ -8,8 +8,6 @@ import {
   CheckCircle2,
   ChevronRight,
   ChevronLeft,
-  ChevronUp,
-  ChevronDown,
   ArrowRight,
   Check,
 } from "lucide-react";
@@ -30,7 +28,13 @@ import {
   type FormCondition,
   type FormConditionField,
 } from "@/lib/form-conditions";
-import { sectionShowsFieldsTogether } from "@/lib/form-sections";
+import {
+  sectionShowsFieldsTogether,
+  getSectionImage,
+  sectionImageStyle,
+  type SectionImage,
+  type SectionImageLayout,
+} from "@/lib/form-sections";
 import { prefillFromQuery, parseQueryString } from "@/lib/form-prefill";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -883,6 +887,14 @@ export default function PublicForm() {
     const progressPct =
       screens.length > 0 ? Math.round((screenIndex / screens.length) * 100) : 0;
 
+    // The section's image stays pinned for every screen within that section
+    // (statement/question/group screens share the same stepId).
+    const currentSectionImage = currentScreen
+      ? getSectionImage(
+          steps.find((s) => s.id === currentScreen.stepId)?.settings,
+        )
+      : null;
+
     return (
       <FocusedShell
         theme={theme}
@@ -893,6 +905,10 @@ export default function PublicForm() {
         canNext={!isLastScreen && !submitting}
         onPrev={goPrev}
         onNext={goNext}
+        media={
+          currentSectionImage ? <SectionMedia image={currentSectionImage} /> : undefined
+        }
+        mediaLayout={currentSectionImage?.layout}
       >
         {seoHead}
         <div className="sr-only" aria-hidden="true">
@@ -1083,8 +1099,17 @@ export default function PublicForm() {
 
   // ─── Classic (single page) Rendering ────────────────────────────────────
 
+  const classicSectionImage = getSectionImage(currentStep?.settings);
+
   return (
-    <PageShell theme={theme} canHideBranding={canHideBranding}>
+    <PageShell
+      theme={theme}
+      canHideBranding={canHideBranding}
+      media={
+        classicSectionImage ? <SectionMedia image={classicSectionImage} /> : undefined
+      }
+      mediaLayout={classicSectionImage?.layout}
+    >
       {seoHead}
       <div className="space-y-1.5 mb-7">
         <h1 className="text-lg font-semibold">{form.name}</h1>
@@ -1195,6 +1220,20 @@ export default function PublicForm() {
 // bottom. Inside an embed it keeps a stable min-height instead of filling
 // the viewport so the host iframe doesn't jump between questions.
 
+// Fills its (relative, overflow-hidden) container while honoring the stored
+// focal point + zoom. Shared by the focused split and the classic card.
+function SectionMedia({ image }: { image: SectionImage }) {
+  return (
+    <img
+      src={image.url}
+      alt=""
+      draggable={false}
+      className="absolute inset-0 h-full w-full select-none"
+      style={sectionImageStyle(image)}
+    />
+  );
+}
+
 function FocusedShell({
   children,
   theme,
@@ -1205,6 +1244,8 @@ function FocusedShell({
   canNext = false,
   onPrev,
   onNext,
+  media,
+  mediaLayout = "left",
 }: {
   children: React.ReactNode;
   theme?: BookingTheme;
@@ -1215,6 +1256,8 @@ function FocusedShell({
   canNext?: boolean;
   onPrev?: () => void;
   onNext?: () => void;
+  media?: React.ReactNode;
+  mediaLayout?: SectionImageLayout;
 }) {
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
@@ -1262,17 +1305,42 @@ function FocusedShell({
         />
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-6 py-14 sm:px-10">
-        <div className="w-full max-w-2xl mx-auto">{children}</div>
-      </div>
+      {media && mediaLayout === "top" ? (
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="relative w-full h-44 shrink-0 overflow-hidden sm:h-60">
+            {media}
+          </div>
+          <div className="flex-1 flex items-center justify-center px-6 py-12 sm:px-10">
+            <div className="w-full max-w-3xl mx-auto">{children}</div>
+          </div>
+        </div>
+      ) : media ? (
+        <div
+          className={cn(
+            "flex-1 flex min-h-0",
+            mediaLayout === "right" && "flex-row-reverse",
+          )}
+        >
+          <div className="relative hidden md:block md:w-[44%] shrink-0 overflow-hidden">
+            {media}
+          </div>
+          <div className="flex-1 flex items-center justify-center px-6 py-14 sm:px-10 min-w-0">
+            <div className="w-full max-w-3xl mx-auto">{children}</div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center px-6 py-14 sm:px-10">
+          <div className="w-full max-w-3xl mx-auto">{children}</div>
+        </div>
+      )}
 
       <div className="flex items-center justify-between px-5 pb-4 sm:px-8 sm:pb-5">
         {showBranding ? (
           <Link
             to="/"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
           >
-            Powered by <Logo size="sm" />
+            Powered by <Logo size="xs" />
           </Link>
         ) : (
           <span />
@@ -1288,7 +1356,7 @@ function FocusedShell({
               className="flex h-9 w-9 items-center justify-center rounded-l-[10px] bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
               style={navButtonStyle}
             >
-              <ChevronUp className="h-5 w-5" />
+              <ChevronLeft className="h-5 w-5" />
             </button>
             <button
               type="button"
@@ -1298,7 +1366,7 @@ function FocusedShell({
               className="flex h-9 w-9 items-center justify-center rounded-r-[10px] bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
               style={navButtonStyle}
             >
-              <ChevronDown className="h-5 w-5" />
+              <ChevronRight className="h-5 w-5" />
             </button>
           </div>
         )}
@@ -1313,15 +1381,21 @@ function PageShell({
   children,
   theme,
   canHideBranding,
+  media,
+  mediaLayout = "left",
 }: {
   children: React.ReactNode;
   theme?: BookingTheme;
   canHideBranding?: boolean;
+  media?: React.ReactNode;
+  mediaLayout?: SectionImageLayout;
 }) {
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
   const hideBanner = searchParams.get("hide_banner") === "1";
-  const showBanner = !!theme?.bannerImage && !hideBanner;
+  // A section image takes over the card layout; suppress the theme banner so we
+  // don't stack two images.
+  const showBanner = !!theme?.bannerImage && !hideBanner && !media;
   const hideBrandingRequested = searchParams.get("hide_branding") === "1";
   const showBranding = !(hideBrandingRequested && canHideBranding);
 
@@ -1333,8 +1407,36 @@ function PageShell({
       } as React.CSSProperties)
     : undefined;
 
-  const card = (
-    <div className="w-full max-w-[52rem] mx-auto" style={themeVars}>
+  const radiusStyle =
+    theme?.borderRadius != null
+      ? { borderRadius: `${theme.borderRadius}px` }
+      : undefined;
+
+  const card = media ? (
+    <div className="w-full max-w-[60rem] mx-auto" style={themeVars}>
+      <div
+        className={cn(
+          "overflow-hidden rounded-[20px] bg-card",
+          mediaLayout !== "top" && "flex",
+          mediaLayout === "right" && "flex-row-reverse",
+        )}
+        style={radiusStyle}
+      >
+        {mediaLayout === "top" && (
+          <div className="relative h-44 w-full shrink-0 overflow-hidden sm:h-60">
+            {media}
+          </div>
+        )}
+        {(mediaLayout === "left" || mediaLayout === "right") && (
+          <div className="relative hidden shrink-0 overflow-hidden sm:block sm:w-[42%]">
+            {media}
+          </div>
+        )}
+        <div className="min-w-0 flex-1 px-6 py-7 sm:px-10 sm:py-9">{children}</div>
+      </div>
+    </div>
+  ) : (
+    <div className="w-full max-w-[60rem] mx-auto" style={themeVars}>
       {showBanner && (
         <div
           className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"

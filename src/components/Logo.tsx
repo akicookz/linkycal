@@ -1,10 +1,11 @@
 interface LogoProps {
-  size?: "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg";
   iconOnly?: boolean;
   variant?: "dark" | "light";
 }
 
 const logoSizes = {
+  xs: { icon: 16, font: 13, gap: 5 },
   sm: { icon: 28, font: 22, gap: 8 },
   md: { icon: 40, font: 32, gap: 10 },
   lg: { icon: 52, font: 42, gap: 12 },

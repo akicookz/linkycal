@@ -4,8 +4,6 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
-  ArrowUp,
-  ArrowDown,
   Plus,
   Loader,
   AlertCircle,
@@ -73,7 +71,12 @@ import {
   generateFormApiPrompt,
   generateFormEmbedPrompt,
 } from "@/lib/prompts";
-import { sectionShowsFieldsTogether } from "@/lib/form-sections";
+import {
+  sectionShowsFieldsTogether,
+  getSectionImage,
+  type SectionImage,
+} from "@/lib/form-sections";
+import { SectionImageField } from "@/components/SectionImageField";
 import { getRenderableRichTextHtml, richTextToPlainText } from "@/lib/rich-text";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { normalizeToFieldId } from "@/lib/constants";
@@ -1488,6 +1491,12 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
 
+  // Dedicated sensors for the choices reorder (its own DndContext in the
+  // settings panel, separate from the content-panel field/section drag).
+  const choiceSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
+
   const collisionDetection = useCallback<CollisionDetection>(
     (args) => {
       const activeId = getIdValue(args.active.id);
@@ -1812,17 +1821,23 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     });
   }
 
-  function moveFieldOption(
+  function reorderFieldOptions(
     fieldId: string,
-    index: number,
-    direction: -1 | 1,
+    fromIndex: number,
+    toIndex: number,
     field: FormField,
   ) {
     const current = getFieldOptions(field);
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= current.length) return;
-
-    const updated = arrayMove(current, index, nextIndex);
+    if (
+      fromIndex === toIndex ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= current.length ||
+      toIndex >= current.length
+    ) {
+      return;
+    }
+    const updated = arrayMove(current, fromIndex, toIndex);
     setFieldOptions(fieldId, updated);
     updateFieldMutation.mutate({
       fieldId,
@@ -2692,12 +2707,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             </div>
 
             <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium">Required</p>
-                <p className="text-xs text-muted-foreground">
-                  Respondents must answer to continue
-                </p>
-              </div>
+              <p className="text-sm font-medium">Required</p>
               <Switch
                 checked={selectedField.required}
                 onCheckedChange={(checked) =>
@@ -2752,82 +2762,55 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             {isOptionFieldType(selectedField.type) && selectedField.type !== "checkbox" && (() => {
               const options = getFieldOptions(selectedField);
               const minOptions = selectedField.type === "multi_select" ? 2 : 1;
+              const canRemove = options.length > minOptions;
               return (
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">Choices</Label>
-                  <div className="space-y-1.5">
-                    {options.map((opt, idx) => {
-                      const isLast = idx === options.length - 1;
-                      const canRemove = options.length > minOptions;
-                      return (
-                        <div key={opt.id} className="space-y-1">
-                          <div className="flex items-center gap-1.5">
-                            <Input
-                              placeholder={`Option ${idx + 1}`}
-                              value={opt.label}
-                              onChange={(e) =>
-                                updateFieldOption(selectedField.id, idx, e.target.value, selectedField)
-                              }
-                              onBlur={() => saveFieldOptions(selectedField.id)}
-                              className="h-8 min-w-0 flex-1 text-xs"
-                            />
-                            {isLast && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                className="h-8 px-2 shrink-0 text-xs"
-                                onClick={() => addFieldOption(selectedField.id, selectedField)}
-                              >
-                                <Plus className="h-3 w-3" />
-                                Add
-                              </Button>
-                            )}
-                            {canRemove && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 px-2 shrink-0 rounded-[8px] bg-muted/70 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                                onClick={() => removeFieldOption(selectedField.id, idx, selectedField)}
-                              >
-                                <X className="h-3 w-3" />
-                                Remove
-                              </Button>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs text-muted-foreground"
-                              disabled={idx === 0}
-                              onClick={() =>
-                                moveFieldOption(selectedField.id, idx, -1, selectedField)
-                              }
-                            >
-                              <ArrowUp className="h-3 w-3" />
-                              Up
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 px-2 text-xs text-muted-foreground"
-                              disabled={isLast}
-                              onClick={() =>
-                                moveFieldOption(selectedField.id, idx, 1, selectedField)
-                              }
-                            >
-                              <ArrowDown className="h-3 w-3" />
-                              Down
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <DndContext
+                    sensors={choiceSensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={(event) => {
+                      const { active, over } = event;
+                      if (!over || active.id === over.id) return;
+                      const from = options.findIndex((o) => o.id === active.id);
+                      const to = options.findIndex((o) => o.id === over.id);
+                      reorderFieldOptions(selectedField.id, from, to, selectedField);
+                    }}
+                  >
+                    <SortableContext
+                      items={options.map((o) => o.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-1.5">
+                        {options.map((opt, idx) => (
+                          <SortableChoiceRow
+                            key={opt.id}
+                            id={opt.id}
+                            placeholder={`Option ${idx + 1}`}
+                            value={opt.label}
+                            canRemove={canRemove}
+                            onChange={(val) =>
+                              updateFieldOption(selectedField.id, idx, val, selectedField)
+                            }
+                            onBlur={() => saveFieldOptions(selectedField.id)}
+                            onRemove={() =>
+                              removeFieldOption(selectedField.id, idx, selectedField)
+                            }
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-dashed text-muted-foreground hover:text-foreground"
+                    onClick={() => addFieldOption(selectedField.id, selectedField)}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add option
+                  </Button>
                 </div>
               );
             })()}
@@ -2847,9 +2830,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             )}
 
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="w-full text-destructive hover:text-destructive"
+              className="mt-2 w-full bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => deleteFieldMutation.mutate(selectedField.id)}
               disabled={
                 deleteFieldMutation.isPending &&
@@ -2921,9 +2904,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             </div>
 
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="w-full text-destructive hover:text-destructive"
+              className="mt-2 w-full bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={() => {
                 const step = findField(selectedField.id)?.step;
                 if (step) deleteStepMutation.mutate(step.id);
@@ -2984,6 +2967,21 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               />
             </div>
 
+            <SectionImageField
+              value={getSectionImage(selectedStep.settings)}
+              uploadUrl={`/api/projects/${projectId}/uploads`}
+              onChange={(next: SectionImage | null) => {
+                const current =
+                  selectedStep.settings && typeof selectedStep.settings === "object"
+                    ? (selectedStep.settings as Record<string, unknown>)
+                    : {};
+                updateStepMutation.mutate({
+                  stepId: selectedStep.id,
+                  data: { settings: { ...current, image: next } },
+                });
+              }}
+            />
+
             {(sourcesByStepId[selectedStep.id] ?? []).length > 0 && (
               <FormConditionEditor
                 title="Show this section when"
@@ -3000,9 +2998,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
             {contentSteps.length > 1 && (
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className="w-full text-destructive hover:text-destructive"
+                className="mt-2 w-full bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => deleteStepMutation.mutate(selectedStep.id)}
                 disabled={deleteStepMutation.isPending}
               >
@@ -3439,6 +3437,71 @@ function StepFieldList({
         )}
       </div>
     </SortableContext>
+  );
+}
+
+function SortableChoiceRow({
+  id,
+  placeholder,
+  value,
+  canRemove,
+  onChange,
+  onBlur,
+  onRemove,
+}: {
+  id: string;
+  placeholder: string;
+  value: string;
+  canRemove: boolean;
+  onChange: (val: string) => void;
+  onBlur: () => void;
+  onRemove: () => void;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="group/choice relative flex items-center gap-1.5"
+    >
+      {/* Floating grab handle: sits in the card's left gutter, revealed on hover,
+          absolutely positioned so it never shifts the input. */}
+      <span
+        className="absolute left-0 top-1/2 -ml-5 flex h-6 w-5 -translate-y-1/2 cursor-grab items-center justify-center text-muted-foreground/0 transition-colors group-hover/choice:text-muted-foreground/60 active:cursor-grabbing"
+        aria-label="Drag to reorder"
+        {...listeners}
+        {...attributes}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </span>
+      <Input
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onBlur={onBlur}
+        className="h-8 min-w-0 flex-1 text-xs"
+      />
+      {canRemove && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-[8px] bg-muted/70 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          onClick={onRemove}
+          aria-label="Remove choice"
+        >
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      )}
+    </div>
   );
 }
 

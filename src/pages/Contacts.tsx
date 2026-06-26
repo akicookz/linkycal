@@ -650,10 +650,36 @@ export default function Contacts() {
       if (!res.ok) throw new Error("Failed to delete contact");
       return res.json();
     },
+    // Optimistically drop the contact from every cached contacts list so the row
+    // disappears instantly. The full-list refetch over (remote) D1 can take 10s+,
+    // which made deletions look like they did nothing until the refetch landed.
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({
+        queryKey: ["projects", projectId, "contacts"],
+      });
+      const previous = queryClient.getQueriesData<Contact[]>({
+        queryKey: ["projects", projectId, "contacts"],
+      });
+      queryClient.setQueriesData<Contact[]>(
+        { queryKey: ["projects", projectId, "contacts"] },
+        (old) => (Array.isArray(old) ? old.filter((c) => c.id !== id) : old),
+      );
+      return { previous };
+    },
+    onError: (_err, _id, context) => {
+      // Restore the snapshots if the delete fails.
+      context?.previous?.forEach(([key, data]) =>
+        queryClient.setQueryData(key, data),
+      );
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
       setDeleteDialogOpen(false);
       setDeletingContact(null);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contacts"],
+      });
     },
   });
 
