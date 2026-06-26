@@ -16,6 +16,7 @@ export interface PlanLimits {
   apiAccess: boolean;
   customWidgets: boolean;
   analytics: boolean;
+  maxEnrichmentsPerMonth: number; // -1 = unlimited
 }
 
 export type TeamRole = "owner" | "admin" | "member";
