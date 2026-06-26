@@ -93,33 +93,27 @@ export const workflowTemplates: WorkflowTemplateDefinition[] = [
   },
   {
     id: "manual-contact-research",
-    name: "Manual Contact Research",
-    description: "Run research on a selected contact, store the findings, and notify the team.",
+    name: "Research & Enrich Contact",
+    description:
+      "Research a selected contact, enrich their company, role, size, revenue and LinkedIn, and append an executive summary to notes.",
     trigger: "manual",
     steps: [
       {
         type: "ai_research",
         config: {
           provider: "chatgpt",
-          resultKey: "contact_research",
+          resultKey: "enrichment",
           prompt:
-            "Research this contact using public sources. Summarize who they are, where they work, what their company does, and the best next-step context for outreach.",
-        },
-      },
-      {
-        type: "update_contact",
-        config: {
-          field: "notes",
-          value: "{{research.summary}}",
+            "Research this contact and their company using public sources. Return the company name, company website, the person's position/title, the company's size (employee range), an estimated annual revenue range, their LinkedIn URL, and a concise executive summary for outreach.",
         },
       },
       {
         type: "send_email",
         config: {
           toList: ["team@example.com"],
-          subject: "Manual research complete for {{contact.name}}",
+          subject: "Contact enriched: {{contact.name}}",
           body:
-            "<p><strong>Summary</strong></p><p>{{research.summary}}</p><p><strong>LinkedIn</strong>: {{research.linkedinUrl}}</p>",
+            "<p><strong>Summary</strong></p><p>{{research.summary}}</p><p><strong>Company</strong>: {{research.company}} ({{research.companySize}})</p><p><strong>Position</strong>: {{research.role}}</p><p><strong>LinkedIn</strong>: {{research.linkedinUrl}}</p>",
         },
       },
     ],
