@@ -1,6 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Mail, Phone, GripVertical, Sparkles, Loader } from "lucide-react";
+import {
+  Mail,
+  Phone,
+  GripVertical,
+  Sparkles,
+  Loader,
+  MoreHorizontal,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+} from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -17,10 +29,17 @@ import {
 } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import CopyContactButton from "@/components/CopyContactButton";
 import {
   buildKanbanColumns,
+  UNTAGGED_COLUMN_ID,
   type ViewContact,
   type ViewTag,
 } from "@/lib/contacts-view";
@@ -33,6 +52,13 @@ interface ContactsKanbanProps {
   onStageChange: (contactId: string, toColumnId: string) => void;
   onStartPipeline?: () => void;
   seedingPipeline?: boolean;
+  editable?: boolean;
+  onAddStep?: (input: { name?: string; color?: string; tagId?: string }) => void;
+  onRenameStep?: (tagId: string, name: string) => void;
+  onRecolorStep?: (tagId: string, color: string) => void;
+  onSwapStep?: (tagId: string, newTagId: string) => void;
+  onRemoveStepFromBoard?: (tagId: string) => void;
+  onDeleteStepTag?: (tagId: string) => void;
 }
 
 function getAvatarColor(name: string): string {
@@ -133,17 +159,303 @@ function KanbanCard({
   );
 }
 
+const STEP_COLORS = [
+  "#6b7280", "#ef4444", "#f59e0b", "#10b981",
+  "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899",
+];
+
+function StepMenu({
+  tagId,
+  name,
+  color,
+  swappableTags,
+  onRename,
+  onRecolor,
+  onSwap,
+  onRemoveFromBoard,
+  onDeleteTag,
+}: {
+  tagId: string;
+  name: string;
+  color: string | null;
+  swappableTags: ViewTag[];
+  onRename: (tagId: string, name: string) => void;
+  onRecolor: (tagId: string, color: string) => void;
+  onSwap: (tagId: string, newTagId: string) => void;
+  onRemoveFromBoard: (tagId: string) => void;
+  onDeleteTag: (tagId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [renameValue, setRenameValue] = useState(name);
+
+  function close() {
+    setOpen(false);
+    setConfirmRemove(false);
+    setRenameValue(name);
+  }
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) {
+          setConfirmRemove(false);
+          setRenameValue(name);
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="flex h-6 w-6 items-center justify-center rounded-[8px] text-muted-foreground/70 hover:bg-background hover:text-foreground transition-colors"
+          aria-label={`Edit ${name}`}
+        >
+          <MoreHorizontal className="h-4 w-4" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-60 p-2">
+        {confirmRemove ? (
+          <div className="space-y-1">
+            <p className="px-2 py-1 text-xs text-muted-foreground">
+              Remove "{name}" from the board, or delete the tag everywhere?
+            </p>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={() => {
+                onRemoveFromBoard(tagId);
+                close();
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+              Remove from board
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+              onClick={() => {
+                onDeleteTag(tagId);
+                close();
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Delete tag everywhere
+            </button>
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-accent"
+              onClick={() => setConfirmRemove(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <form
+              className="flex items-center gap-1.5"
+              onSubmit={(e) => {
+                e.preventDefault();
+                onRename(tagId, renameValue);
+                close();
+              }}
+            >
+              <Pencil className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                className="h-8 flex-1"
+                aria-label="Step name"
+              />
+              <button
+                type="submit"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] hover:bg-accent"
+                aria-label="Save name"
+              >
+                <Check className="h-4 w-4" />
+              </button>
+            </form>
+
+            <div className="flex flex-wrap gap-1.5 px-1">
+              {STEP_COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="h-5 w-5 rounded-full border transition-transform hover:scale-110"
+                  style={{
+                    backgroundColor: c,
+                    borderColor: c === color ? "var(--foreground)" : c,
+                  }}
+                  aria-label={`Color ${c}`}
+                  onClick={() => {
+                    onRecolor(tagId, c);
+                    close();
+                  }}
+                />
+              ))}
+            </div>
+
+            {swappableTags.length > 0 && (
+              <div className="border-t border-border/60 pt-1">
+                <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Swap to tag
+                </p>
+                <div className="max-h-32 overflow-y-auto">
+                  {swappableTags.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-accent"
+                      onClick={() => {
+                        onSwap(tagId, t.id);
+                        close();
+                      }}
+                    >
+                      <span
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: t.color ?? "#94a3b8" }}
+                      />
+                      <span className="truncate">{t.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 rounded-[8px] border-t border-border/60 px-2 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+              onClick={() => setConfirmRemove(true)}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Remove step
+            </button>
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function AddStepColumn({
+  availableTags,
+  onAdd,
+}: {
+  availableTags: ViewTag[];
+  onAdd: (input: { name?: string; color?: string; tagId?: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState(STEP_COLORS[4]);
+
+  return (
+    <div className="w-72 shrink-0">
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o);
+          if (!o) {
+            setName("");
+            setColor(STEP_COLORS[4]);
+          }
+        }}
+      >
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-[16px] border border-dashed border-border text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add step
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-64 p-2 space-y-2">
+          <form
+            className="flex items-center gap-1.5"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!name.trim()) return;
+              onAdd({ name: name.trim(), color });
+              setOpen(false);
+              setName("");
+            }}
+          >
+            <label
+              className="h-8 w-8 shrink-0 cursor-pointer rounded-[8px] border"
+              style={{ backgroundColor: color }}
+              title="Pick a color"
+            >
+              <input
+                type="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                className="h-0 w-0 opacity-0"
+                aria-label="Step color"
+              />
+            </label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="New step name"
+              className="h-8 flex-1"
+              aria-label="New step name"
+            />
+            <button
+              type="submit"
+              disabled={!name.trim()}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] hover:bg-accent disabled:opacity-40"
+              aria-label="Add step"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </form>
+
+          {availableTags.length > 0 && (
+            <div className="border-t border-border/60 pt-1">
+              <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                Use existing tag
+              </p>
+              <div className="max-h-40 overflow-y-auto">
+                {availableTags.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-accent"
+                    onClick={() => {
+                      onAdd({ tagId: t.id });
+                      setOpen(false);
+                    }}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ backgroundColor: t.color ?? "#94a3b8" }}
+                    />
+                    <span className="truncate">{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 function KanbanColumnBox({
   id,
   name,
   color,
   count,
+  menu,
   children,
 }: {
   id: string;
   name: string;
   color: string | null;
   count: number;
+  menu?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id });
@@ -160,7 +472,10 @@ function KanbanColumnBox({
           <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: color ?? "#94a3b8" }} />
           <p className="text-sm font-semibold truncate">{name}</p>
         </div>
-        <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-muted-foreground tabular-nums">{count}</span>
+          {menu}
+        </div>
       </div>
       <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-0.5 pl-2">
         {children}
@@ -177,6 +492,13 @@ export default function ContactsKanban({
   onStageChange,
   onStartPipeline,
   seedingPipeline,
+  editable,
+  onAddStep,
+  onRenameStep,
+  onRecolorStep,
+  onSwapStep,
+  onRemoveStepFromBoard,
+  onDeleteStepTag,
 }: ContactsKanbanProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -196,6 +518,14 @@ export default function ContactsKanban({
     () => buildKanbanColumns({ contacts, allTags, pivotTagIds, showUntagged }),
     [contacts, allTags, pivotTagIds, showUntagged],
   );
+  const columnTagIds = useMemo(
+    () => columns.filter((c) => c.id !== UNTAGGED_COLUMN_ID).map((c) => c.id),
+    [columns],
+  );
+  const swappableTags = useMemo(() => {
+    const used = new Set(columnTagIds);
+    return allTags.filter((t) => !used.has(t.id));
+  }, [allTags, columnTagIds]);
 
   if (columns.length === 0) {
     return (
@@ -241,7 +571,28 @@ export default function ContactsKanban({
       <div className="overflow-x-auto -mx-6 px-6 pb-2">
         <div className="flex gap-4 min-w-max">
           {columns.map((col) => (
-            <KanbanColumnBox key={col.id} id={col.id} name={col.name} color={col.color} count={col.contacts.length}>
+            <KanbanColumnBox
+              key={col.id}
+              id={col.id}
+              name={col.name}
+              color={col.color}
+              count={col.contacts.length}
+              menu={
+                editable && col.id !== UNTAGGED_COLUMN_ID && onRenameStep ? (
+                  <StepMenu
+                    tagId={col.id}
+                    name={col.name}
+                    color={col.color}
+                    swappableTags={swappableTags}
+                    onRename={onRenameStep}
+                    onRecolor={onRecolorStep!}
+                    onSwap={onSwapStep!}
+                    onRemoveFromBoard={onRemoveStepFromBoard!}
+                    onDeleteTag={onDeleteStepTag!}
+                  />
+                ) : undefined
+              }
+            >
               {col.contacts.length === 0 && (
                 <p className="text-xs text-muted-foreground text-center py-6">Drop here</p>
               )}
@@ -250,6 +601,7 @@ export default function ContactsKanban({
               ))}
             </KanbanColumnBox>
           ))}
+          {editable && onAddStep && <AddStepColumn availableTags={swappableTags} onAdd={onAddStep} />}
         </div>
       </div>
       {/* Floating preview that follows the cursor while dragging (portaled,

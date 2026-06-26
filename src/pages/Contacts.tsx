@@ -54,7 +54,7 @@ import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import ContactsKanban from "./ContactsKanban";
 import ContactsTable from "./ContactsTable";
-import { UNTAGGED_COLUMN_ID } from "@/lib/contacts-view";
+import { UNTAGGED_COLUMN_ID, resolveColumnTagIds } from "@/lib/contacts-view";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -707,6 +707,22 @@ export default function Contacts() {
     },
   });
 
+  const updateTagMutation = useMutation({
+    mutationFn: async (vars: { id: string; name?: string; color?: string }) => {
+      const res = await fetch(`/api/projects/${projectId}/tags/${vars.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: vars.name, color: vars.color }),
+      });
+      if (!res.ok) throw new Error("Failed to update tag");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+    },
+  });
+
   const createViewMutation = useMutation({
     mutationFn: async (payload: {
       name: string;
@@ -1035,6 +1051,68 @@ export default function Contacts() {
       ...c,
       pivotTagIds: current.size === 0 ? undefined : Array.from(current),
     }));
+  }
+
+  // ─── Kanban step editing ───
+  // Board-composition ops edit the live config draft (persisted via "Update view").
+  // Materialize the implicit "all tags" order into pivotTagIds on first structural edit.
+  function handleAddStep(input: { name?: string; color?: string; tagId?: string }) {
+    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    if (input.tagId) {
+      if (base.includes(input.tagId)) return;
+      const next = [...base, input.tagId];
+      setConfig((c) => ({ ...c, pivotTagIds: next }));
+      return;
+    }
+    const name = input.name?.trim();
+    if (!name) return;
+    createTagMutation.mutate(
+      { name, color: input.color },
+      {
+        onSuccess: (data: { tag?: { id: string } }) => {
+          const newId = data?.tag?.id;
+          if (!newId) return;
+          setConfig((c) => ({
+            ...c,
+            pivotTagIds: [...resolveColumnTagIds(c.pivotTagIds ?? null, tags), newId],
+          }));
+        },
+      },
+    );
+  }
+
+  function handleRemoveStepFromBoard(tagId: string) {
+    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    setConfig((c) => ({ ...c, pivotTagIds: base.filter((id) => id !== tagId) }));
+  }
+
+  function handleDeleteStepTag(tagId: string) {
+    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    setConfig((c) => ({ ...c, pivotTagIds: base.filter((id) => id !== tagId) }));
+    deleteTagMutation.mutate(tagId);
+  }
+
+  function handleRenameStep(tagId: string, name: string) {
+    const n = name.trim();
+    if (!n) return;
+    updateTagMutation.mutate({ id: tagId, name: n });
+  }
+
+  function handleRecolorStep(tagId: string, color: string) {
+    updateTagMutation.mutate({ id: tagId, color });
+  }
+
+  function handleSwapStep(tagId: string, newTagId: string) {
+    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    const idx = base.indexOf(tagId);
+    if (idx === -1) return;
+    if (base.includes(newTagId)) {
+      setConfig((c) => ({ ...c, pivotTagIds: base.filter((id) => id !== tagId) }));
+      return;
+    }
+    const next = [...base];
+    next[idx] = newTagId;
+    setConfig((c) => ({ ...c, pivotTagIds: next }));
   }
 
   // ─── Description ───
@@ -1771,6 +1849,13 @@ export default function Contacts() {
           onStageChange={handleStageChange}
           onStartPipeline={() => seedPipelineMutation.mutate()}
           seedingPipeline={seedPipelineMutation.isPending}
+          editable
+          onAddStep={handleAddStep}
+          onRenameStep={handleRenameStep}
+          onRecolorStep={handleRecolorStep}
+          onSwapStep={handleSwapStep}
+          onRemoveStepFromBoard={handleRemoveStepFromBoard}
+          onDeleteStepTag={handleDeleteStepTag}
         />
       )}
 
