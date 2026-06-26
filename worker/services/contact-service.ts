@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, gte } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 
@@ -20,6 +20,14 @@ export interface ContactListOptions {
   noActivitySinceDays?: number;
   bookingStatus?: "confirmed" | "cancelled" | "rescheduled" | "pending" | "declined";
 }
+
+export const PIPELINE_STAGES: ReadonlyArray<{ name: string; color: string }> = [
+  { name: "Lead", color: "#6b7280" },
+  { name: "Prospect", color: "#3b82f6" },
+  { name: "First Contact", color: "#6366f1" },
+  { name: "Follow Up", color: "#f59e0b" },
+  { name: "Met", color: "#10b981" },
+];
 
 // Drizzle's { mode: "json" } columns already stringify on write and parse on
 // read. Older rows were double-stringified by this service, so a read can
@@ -341,12 +349,40 @@ export class ContactService {
     await this.logActivity(contactId, "tag_removed", tagId, tagName ? { tagName } : undefined);
   }
 
+  // Move a contact into a single pipeline stage: drop the board's other stage
+  // tags it currently has, then add the target. tagId === null = "Untagged".
+  async setStage(
+    contactId: string,
+    tagId: string | null,
+    groupTagIds: string[],
+  ): Promise<void> {
+    const toRemove = groupTagIds.filter((id) => id !== tagId);
+    if (toRemove.length > 0) {
+      const existing = await this.db
+        .select({ tagId: dbSchema.contactTags.tagId })
+        .from(dbSchema.contactTags)
+        .where(
+          and(
+            eq(dbSchema.contactTags.contactId, contactId),
+            inArray(dbSchema.contactTags.tagId, toRemove),
+          ),
+        );
+      for (const row of existing) {
+        await this.removeTag(contactId, row.tagId);
+      }
+    }
+    if (tagId) {
+      await this.addTag(contactId, tagId);
+    }
+  }
+
   // Get all contacts with their tags in one go (for list view)
   async listWithTags(projectId: string, opts?: ContactListOptions) {
     const contacts = await this.list(projectId, opts);
     if (contacts.length === 0) return [];
 
     const contactIds = contacts.map((c) => c.id);
+
     const allContactTags = await this.db
       .select({
         contactId: dbSchema.contactTags.contactId,
@@ -358,12 +394,28 @@ export class ContactService {
       .innerJoin(dbSchema.tags, eq(dbSchema.contactTags.tagId, dbSchema.tags.id))
       .where(inArray(dbSchema.contactTags.contactId, contactIds));
 
-    return contacts.map((contact) => ({
-      ...contact,
-      tags: allContactTags
-        .filter((t) => t.contactId === contact.id)
-        .map((t) => ({ id: t.tagId, name: t.tagName, color: t.tagColor })),
-    }));
+    // One batched query (not N+1): newest activity per contact.
+    const lastActivityRows = await this.db
+      .select({
+        contactId: dbSchema.contactActivity.contactId,
+        last: sql<number>`max(${dbSchema.contactActivity.createdAt})`,
+      })
+      .from(dbSchema.contactActivity)
+      .where(inArray(dbSchema.contactActivity.contactId, contactIds))
+      .groupBy(dbSchema.contactActivity.contactId);
+    const lastById = new Map(lastActivityRows.map((r) => [r.contactId, r.last]));
+
+    return contacts.map((contact) => {
+      const last = lastById.get(contact.id);
+      return {
+        ...contact,
+        tags: allContactTags
+          .filter((t) => t.contactId === contact.id)
+          .map((t) => ({ id: t.tagId, name: t.tagName, color: t.tagColor })),
+        // createdAt is unixepoch seconds in D1; convert to ISO for the client.
+        lastActivityAt: last != null ? new Date(Number(last) * 1000).toISOString() : null,
+      };
+    });
   }
 
   // ─── Activity ────────────────────────────────────────────────────────────
@@ -444,6 +496,22 @@ export class ContactService {
       sortOrder: data.sortOrder ?? 0,
     });
     return this.getView(id);
+  }
+
+  // One-click starter: create the canonical stage tags + a kanban view whose
+  // columns are those tags in pipeline order.
+  async seedPipeline(projectId: string) {
+    const tagIds: string[] = [];
+    for (const stage of PIPELINE_STAGES) {
+      const tag = await this.createTag(projectId, { name: stage.name, color: stage.color });
+      if (tag) tagIds.push(tag.id);
+    }
+    const view = await this.createView(projectId, {
+      name: "Sales Pipeline",
+      type: "kanban",
+      config: { pivotTagIds: tagIds, showUntagged: true },
+    });
+    return { view };
   }
 
   async updateView(
