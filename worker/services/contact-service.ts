@@ -324,6 +324,29 @@ export class ContactService {
     await this.db.delete(dbSchema.tags).where(eq(dbSchema.tags.id, id));
   }
 
+  async updateTag(
+    projectId: string,
+    id: string,
+    data: { name?: string; color?: string },
+  ) {
+    const fields: Partial<{ name: string; color: string }> = {};
+    if (data.name !== undefined) fields.name = data.name;
+    if (data.color !== undefined) fields.color = data.color;
+    const where = and(
+      eq(dbSchema.tags.id, id),
+      eq(dbSchema.tags.projectId, projectId),
+    );
+    if (Object.keys(fields).length > 0) {
+      await this.db.update(dbSchema.tags).set(fields).where(where);
+    }
+    const rows = await this.db
+      .select()
+      .from(dbSchema.tags)
+      .where(where)
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async getContactTags(contactId: string) {
     const rows = await this.db
       .select({

@@ -34,6 +34,7 @@ import {
   importContactsSchema,
   updateContactSchema,
   createTagSchema,
+  updateTagSchema,
   setStageSchema,
   createContactViewSchema,
   updateContactViewSchema,
@@ -5203,6 +5204,28 @@ app.delete("/api/projects/:projectId/tags/:id", async (c) => {
   } catch (err) {
     console.error("Tag deletion error:", err);
     return c.json({ error: "Failed to delete tag" }, 500);
+  }
+});
+
+app.patch("/api/projects/:projectId/tags/:id", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const id = c.req.param("id");
+    const body = await c.req.json();
+    const data = validate(updateTagSchema, body);
+
+    const db = c.get("db");
+    const service = new ContactService(db);
+    const tag = await service.updateTag(projectId, id, data);
+    if (!tag) return c.json({ error: "Tag not found" }, 404);
+
+    return c.json({ tag });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Tag update error:", err);
+    return c.json({ error: "Failed to update tag" }, 500);
   }
 });
 
