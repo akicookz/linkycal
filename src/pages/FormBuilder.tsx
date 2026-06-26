@@ -4,6 +4,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
   Plus,
   Loader,
   AlertCircle,
@@ -853,6 +855,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   // resolution promise, so no PUT ever lands on a non-existent temp id.
   const fieldIdMap = useRef<Map<string, string>>(new Map());
   const pendingFieldCreates = useRef<Map<string, Promise<string>>>(new Map());
+  const fieldUpdateQueues = useRef<Map<string, Promise<void>>>(new Map());
   const stepIdMap = useRef<Map<string, string>>(new Map());
   const pendingStepCreates = useRef<Map<string, Promise<string>>>(new Map());
 
@@ -870,6 +873,75 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     const pending = pendingStepCreates.current.get(clientId);
     if (pending) return pending;
     return clientId;
+  }
+
+  function adoptServerFieldId(clientId: string, serverId: string) {
+    if (!clientId || !serverId || clientId === serverId) return;
+
+    fieldIdMap.current.set(clientId, serverId);
+    for (const [key, value] of fieldIdMap.current.entries()) {
+      if (value === clientId) {
+        fieldIdMap.current.set(key, serverId);
+      }
+    }
+    setSelection((current) =>
+      current?.kind === "field" && current.id === clientId
+        ? { kind: "field", id: serverId }
+        : current,
+    );
+    setFieldOptionsState((prev) => {
+      if (!prev[clientId]) return prev;
+      const next = { ...prev, [serverId]: prev[clientId] };
+      delete next[clientId];
+      return next;
+    });
+    setPreviewValues((prev) => {
+      if (!(clientId in prev)) return prev;
+      const next = { ...prev, [serverId]: prev[clientId] };
+      delete next[clientId];
+      return next;
+    });
+    setSaveStatus((prev) => {
+      if (!(clientId in prev)) return prev;
+      const next = { ...prev, [serverId]: prev[clientId] };
+      delete next[clientId];
+      return next;
+    });
+    queryClient.setQueryData<FullForm>(formQueryKey, (old) =>
+      old
+        ? {
+            ...old,
+            steps: old.steps.map((step) => ({
+              ...step,
+              fields: step.fields.map((field) =>
+                field.id === clientId ? { ...field, id: serverId } : field,
+              ),
+            })),
+          }
+        : old,
+    );
+  }
+
+  async function queueFieldUpdate<T>(
+    fieldId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous = fieldUpdateQueues.current.get(fieldId) ?? Promise.resolve();
+    const queued = previous.catch(() => undefined).then(operation);
+    const blocker = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+
+    fieldUpdateQueues.current.set(fieldId, blocker);
+
+    try {
+      return await queued;
+    } finally {
+      if (fieldUpdateQueues.current.get(fieldId) === blocker) {
+        fieldUpdateQueues.current.delete(fieldId);
+      }
+    }
   }
 
   // ─── Form mutations ─────────────────────────────────────────────────────
@@ -1201,20 +1273,40 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         visibility: FormCondition | null;
       }>;
     }) => {
-      const realFieldId = await resolveFieldId(fieldId);
-      const payload = data.stepId
-        ? { ...data, stepId: await resolveStepId(data.stepId) }
-        : data;
-      const res = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/fields/${realFieldId}`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+      return queueFieldUpdate(fieldId, async () => {
+        const realFieldId = await resolveFieldId(fieldId);
+        const payload = data.stepId
+          ? { ...data, stepId: await resolveStepId(data.stepId) }
+          : data;
+        let res = await fetch(
+          `/api/projects/${projectId}/forms/${formId}/fields/${realFieldId}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+        if (!res.ok && res.status === 404) {
+          const latestFieldId = await resolveFieldId(fieldId);
+          if (latestFieldId !== realFieldId) {
+            res = await fetch(
+              `/api/projects/${projectId}/forms/${formId}/fields/${latestFieldId}`,
+              {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+              },
+            );
+          }
         }
-      );
-      if (!res.ok) throw new Error("Failed to update field");
-      return res.json();
+        if (!res.ok) throw new Error("Failed to update field");
+        const json = await res.json();
+        const field = json?.field as FormField | undefined;
+        if (field?.id) {
+          adoptServerFieldId(fieldId, field.id);
+        }
+        return json;
+      });
     },
     onMutate: async ({ fieldId, data }) => {
       setSaveStatusFor(fieldId, "saving");
@@ -1226,12 +1318,16 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       }));
       return { snapshot };
     },
-    onSuccess: (_data, variables) => {
+    onSuccess: (data, variables) => {
       // The optimistic state set in onMutate is the source of truth. We
       // deliberately don't overwrite the cache with the server's echo — the
       // user may have typed newer characters between dispatch and response,
       // and re-applying the server field would clobber them.
-      setSaveStatusFor(variables.fieldId, "saved");
+      const field = data?.field as FormField | undefined;
+      if (field?.id) {
+        adoptServerFieldId(variables.fieldId, field.id);
+      }
+      setSaveStatusFor(field?.id ?? variables.fieldId, "saved");
     },
     onError: (_err, vars, ctx) => {
       setSaveStatusFor(vars.fieldId, "error");
@@ -1709,6 +1805,24 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   function removeFieldOption(fieldId: string, index: number, field: FormField) {
     const current = getFieldOptions(field);
     const updated = current.filter((_, i) => i !== index);
+    setFieldOptions(fieldId, updated);
+    updateFieldMutation.mutate({
+      fieldId,
+      data: { options: toPersistedFieldOptions(updated) },
+    });
+  }
+
+  function moveFieldOption(
+    fieldId: string,
+    index: number,
+    direction: -1 | 1,
+    field: FormField,
+  ) {
+    const current = getFieldOptions(field);
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= current.length) return;
+
+    const updated = arrayMove(current, index, nextIndex);
     setFieldOptions(fieldId, updated);
     updateFieldMutation.mutate({
       fieldId,
@@ -2646,39 +2760,70 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                       const isLast = idx === options.length - 1;
                       const canRemove = options.length > minOptions;
                       return (
-                        <div key={opt.id} className="flex items-center gap-1.5">
-                          <Input
-                            placeholder={`Option ${idx + 1}`}
-                            value={opt.label}
-                            onChange={(e) =>
-                              updateFieldOption(selectedField.id, idx, e.target.value, selectedField)
-                            }
-                            onBlur={() => saveFieldOptions(selectedField.id)}
-                            className="h-8 text-xs"
-                          />
-                          {isLast && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 px-2 shrink-0 text-xs"
-                              onClick={() => addFieldOption(selectedField.id, selectedField)}
-                            >
-                              <Plus className="h-3 w-3" />
-                              Add
-                            </Button>
-                          )}
-                          {canRemove && (
+                        <div key={opt.id} className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              placeholder={`Option ${idx + 1}`}
+                              value={opt.label}
+                              onChange={(e) =>
+                                updateFieldOption(selectedField.id, idx, e.target.value, selectedField)
+                              }
+                              onBlur={() => saveFieldOptions(selectedField.id)}
+                              className="h-8 min-w-0 flex-1 text-xs"
+                            />
+                            {isLast && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-2 shrink-0 text-xs"
+                                onClick={() => addFieldOption(selectedField.id, selectedField)}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Add
+                              </Button>
+                            )}
+                            {canRemove && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 px-2 shrink-0 rounded-[8px] bg-muted/70 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                onClick={() => removeFieldOption(selectedField.id, idx, selectedField)}
+                              >
+                                <X className="h-3 w-3" />
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-8 px-1.5 shrink-0 rounded-[8px] bg-muted/70 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => removeFieldOption(selectedField.id, idx, selectedField)}
+                              className="h-7 px-2 text-xs text-muted-foreground"
+                              disabled={idx === 0}
+                              onClick={() =>
+                                moveFieldOption(selectedField.id, idx, -1, selectedField)
+                              }
                             >
-                              <X className="h-3 w-3" />
+                              <ArrowUp className="h-3 w-3" />
+                              Up
                             </Button>
-                          )}
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-muted-foreground"
+                              disabled={isLast}
+                              onClick={() =>
+                                moveFieldOption(selectedField.id, idx, 1, selectedField)
+                              }
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                              Down
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}
