@@ -49,11 +49,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-import { TagPickerContent } from "@/components/TagPicker";
-import CopyContactButton from "@/components/CopyContactButton";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 import ContactsKanban from "./ContactsKanban";
+import ContactsTable from "./ContactsTable";
+import { UNTAGGED_COLUMN_ID } from "@/lib/contacts-view";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -74,6 +74,7 @@ interface Contact {
   createdAt: string;
   updatedAt: string;
   tags: ContactTag[];
+  lastActivityAt?: string | null;
 }
 
 interface Tag {
@@ -166,15 +167,6 @@ function getAvatarColor(name: string): string {
 
 function getInitial(name: string): string {
   return name.charAt(0).toUpperCase();
-}
-
-function formatDate(dateStr: string): string {
-  const date = new Date(dateStr);
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -683,35 +675,6 @@ export default function Contacts() {
     },
   });
 
-  const rowAddTagMutation = useMutation({
-    mutationFn: async ({ contactId, tagId }: { contactId: string; tagId: string }) => {
-      const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}/tags`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tagId }),
-      });
-      if (!res.ok) throw new Error("Failed to add tag");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
-    },
-  });
-
-  const rowRemoveTagMutation = useMutation({
-    mutationFn: async ({ contactId, tagId }: { contactId: string; tagId: string }) => {
-      const res = await fetch(
-        `/api/projects/${projectId}/contacts/${contactId}/tags/${tagId}`,
-        { method: "DELETE" },
-      );
-      if (!res.ok) throw new Error("Failed to remove tag");
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
-    },
-  });
-
   const createTagMutation = useMutation({
     mutationFn: async (data: { name: string; color?: string }) => {
       const res = await fetch(`/api/projects/${projectId}/tags`, {
@@ -817,6 +780,72 @@ export default function Contacts() {
     },
   });
 
+  const seedPipelineMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/pipeline/seed`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to start pipeline");
+      const data = (await res.json()) as { view: SavedView };
+      return data.view;
+    },
+    onSuccess: (view) => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contact-views"] });
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
+      // Load the new pipeline view immediately.
+      setActiveViewId(view.id);
+      setConfig(view.config ?? {});
+      setSearchInput("");
+      setViewType("kanban");
+    },
+  });
+
+  const stageMutation = useMutation({
+    mutationFn: async (vars: {
+      contactId: string;
+      tagId: string | null;
+      groupTagIds: string[];
+      optimisticTag: { id: string; name: string; color: string | null } | null;
+    }) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/contacts/${vars.contactId}/stage`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tagId: vars.tagId, groupTagIds: vars.groupTagIds }),
+        },
+      );
+      if (!res.ok) throw new Error("Failed to move stage");
+      return res.json();
+    },
+    onMutate: async (vars) => {
+      await queryClient.cancelQueries({ queryKey: ["projects", projectId, "contacts"] });
+      const previous = queryClient.getQueriesData<Contact[]>({
+        queryKey: ["projects", projectId, "contacts"],
+      });
+      const groupSet = new Set(vars.groupTagIds);
+      queryClient.setQueriesData<Contact[]>(
+        { queryKey: ["projects", projectId, "contacts"] },
+        (old) =>
+          Array.isArray(old)
+            ? old.map((ct) => {
+                if (ct.id !== vars.contactId) return ct;
+                const kept = ct.tags.filter((t) => !groupSet.has(t.id));
+                return {
+                  ...ct,
+                  tags: vars.optimisticTag ? [...kept, vars.optimisticTag] : kept,
+                };
+              })
+            : old,
+      );
+      return { previous };
+    },
+    onError: (_e, _vars, context) => {
+      context?.previous?.forEach(([key, data]) => queryClient.setQueryData(key, data));
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+    },
+  });
+
   // ─── Handlers ───
 
   const applyView = useCallback((view: SavedView | null) => {
@@ -832,17 +861,6 @@ export default function Contacts() {
     setConfig({ ...cfg, search: undefined });
     setSearchInput(cfg.search ?? "");
     setViewType(view.type);
-  }, []);
-
-  const openEditDialog = useCallback((contact: Contact) => {
-    setEditingContact(contact);
-    setEditForm({
-      name: contact.name,
-      email: contact.email ?? "",
-      phone: contact.phone ?? "",
-      notes: contact.notes ?? "",
-    });
-    setEditDialogOpen(true);
   }, []);
 
   const openDeleteDialog = useCallback((contact: Contact) => {
@@ -939,6 +957,19 @@ export default function Contacts() {
     navigate(`/app/projects/${projectId}/contacts/${contactId}`);
   }
 
+  function handleStageChange(contactId: string, toColumnId: string) {
+    const groupTagIds = config.pivotTagIds ?? [];
+    const isUntagged = toColumnId === UNTAGGED_COLUMN_ID;
+    const tagId = isUntagged ? null : toColumnId;
+    const tag = tagId ? tags.find((t) => t.id === tagId) : null;
+    stageMutation.mutate({
+      contactId,
+      tagId,
+      groupTagIds,
+      optimisticTag: tag ? { id: tag.id, name: tag.name, color: tag.color } : null,
+    });
+  }
+
   function toggleTagFilter(tagId: string) {
     const current = new Set(config.tagIds ?? []);
     if (current.has(tagId)) current.delete(tagId);
@@ -1025,126 +1056,6 @@ export default function Contacts() {
         <AlertCircle className="h-10 w-10 text-destructive mb-4" />
         <p className="text-sm font-medium text-foreground mb-1">Failed to load contacts</p>
         <p className="text-sm text-muted-foreground">Please try refreshing the page.</p>
-      </div>
-    );
-  }
-
-  function renderTable() {
-    if (contacts.length === 0) return renderEmptyState();
-
-    return (
-      <div className="space-y-1 px-6">
-        {contacts.map((contact) => (
-          <div key={contact.id}>
-            <div
-              className="group/contact flex items-center gap-4 py-3 px-3 -mx-3 rounded-[14px] cursor-pointer hover:bg-muted/40 transition-colors"
-              onClick={() => navigateToContact(contact.id)}
-            >
-              <div
-                className="h-10 w-10 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
-                style={{ backgroundColor: getAvatarColor(contact.name) }}
-              >
-                {getInitial(contact.name)}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">
-                  {contact.name}
-                </p>
-                <div className="flex items-center gap-1 min-w-0">
-                  <p className="text-xs text-muted-foreground truncate">
-                    {[contact.email, contact.phone].filter(Boolean).join(" · ") ||
-                      `Added ${formatDate(contact.createdAt)}`}
-                  </p>
-                  {contact.email && (
-                    <CopyContactButton
-                      name={contact.name}
-                      email={contact.email}
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Tags — chips + attach right from the row */}
-              <div
-                className="hidden sm:flex items-center gap-1.5 shrink-0 max-w-[340px] overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {contact.tags.slice(0, 3).map((tag) => (
-                  <span
-                    key={tag.id}
-                    className="inline-flex items-center rounded-full px-3 py-1 text-xs font-medium whitespace-nowrap"
-                    style={{
-                      backgroundColor: `${tag.color ?? "#6366f1"}15`,
-                      color: tag.color ?? "#6366f1",
-                    }}
-                  >
-                    {tag.name}
-                  </span>
-                ))}
-                {contact.tags.length > 3 && (
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
-                    +{contact.tags.length - 3}
-                  </span>
-                )}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/70 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                      aria-label={`Edit tags for ${contact.name}`}
-                    >
-                      <Tags className="h-4 w-4" />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 p-2">
-                    <TagPickerContent
-                      projectId={projectId!}
-                      assignedTagIds={contact.tags.map((t) => t.id)}
-                      pendingTagId={
-                        rowAddTagMutation.isPending &&
-                        rowAddTagMutation.variables?.contactId === contact.id
-                          ? rowAddTagMutation.variables.tagId
-                          : rowRemoveTagMutation.isPending &&
-                              rowRemoveTagMutation.variables?.contactId === contact.id
-                            ? rowRemoveTagMutation.variables.tagId
-                            : null
-                      }
-                      onToggle={(tag, assigned) =>
-                        assigned
-                          ? rowRemoveTagMutation.mutate({ contactId: contact.id, tagId: tag.id })
-                          : rowAddTagMutation.mutate({ contactId: contact.id, tagId: tag.id })
-                      }
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div
-                className="flex items-center gap-1.5 shrink-0"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 px-2.5 text-xs"
-                  onClick={() => openEditDialog(contact)}
-                >
-                  Edit
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2.5 text-xs text-destructive hover:text-destructive"
-                  onClick={() => openDeleteDialog(contact)}
-                >
-                  <Trash2 className="h-3 w-3" />
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </div>
-        ))}
       </div>
     );
   }
@@ -1736,7 +1647,7 @@ export default function Contacts() {
             <TabsList className="h-9">
               <TabsTrigger value="list" className="h-7 px-2.5">
                 <ListIcon className="h-3.5 w-3.5" />
-                List
+                Table
               </TabsTrigger>
               <TabsTrigger value="kanban" className="h-7 px-2.5">
                 <LayoutGrid className="h-3.5 w-3.5" />
@@ -1752,7 +1663,16 @@ export default function Contacts() {
         <Card>
           {loadingContacts && renderSkeletonRows()}
           {errorContacts && !loadingContacts && renderErrorState()}
-          {!loadingContacts && !errorContacts && renderTable()}
+          {!loadingContacts && !errorContacts && contacts.length === 0 && renderEmptyState()}
+          {!loadingContacts && !errorContacts && contacts.length > 0 && (
+            <ContactsTable
+              contacts={contacts}
+              allTags={allTagsForKanban}
+              pivotTagIds={config.pivotTagIds ?? null}
+              onSelect={(id) => navigateToContact(id)}
+              onDelete={(ct) => openDeleteDialog(ct as unknown as Contact)}
+            />
+          )}
         </Card>
       ) : loadingContacts ? (
         <Card className="p-12">
@@ -1762,14 +1682,15 @@ export default function Contacts() {
         </Card>
       ) : errorContacts ? (
         <Card>{renderErrorState()}</Card>
-      ) : contacts.length === 0 ? (
-        <Card>{renderEmptyState()}</Card>
       ) : (
         <ContactsKanban
           contacts={contacts}
           allTags={allTagsForKanban}
           pivotTagIds={config.pivotTagIds ?? null}
           showUntagged={!!config.showUntagged}
+          onStageChange={handleStageChange}
+          onStartPipeline={() => seedPipelineMutation.mutate()}
+          seedingPipeline={seedPipelineMutation.isPending}
         />
       )}
 
