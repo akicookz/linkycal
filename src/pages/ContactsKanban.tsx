@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Mail, Phone, GripVertical, Sparkles, Loader } from "lucide-react";
 import {
@@ -8,7 +8,11 @@ import {
   useSensors,
   useDraggable,
   useDroppable,
-  closestCorners,
+  DragOverlay,
+  pointerWithin,
+  rectIntersection,
+  type CollisionDetection,
+  type DragStartEvent,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { Card } from "@/components/ui/card";
@@ -175,6 +179,19 @@ export default function ContactsKanban({
   seedingPipeline,
 }: ContactsKanbanProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const activeContact = useMemo(
+    () => (activeId ? contacts.find((c) => c.id === activeId) ?? null : null),
+    [activeId, contacts],
+  );
+
+  // Pointer-based collision: which column the CURSOR is over decides the drop,
+  // not the dragged card's (stationary) rect. Falls back to rect overlap when
+  // the cursor is in a gap between columns.
+  const collisionDetection: CollisionDetection = (args) => {
+    const byPointer = pointerWithin(args);
+    return byPointer.length > 0 ? byPointer : rectIntersection(args);
+  };
   const columns = useMemo(
     () => buildKanbanColumns({ contacts, allTags, pivotTagIds, showUntagged }),
     [contacts, allTags, pivotTagIds, showUntagged],
@@ -198,7 +215,12 @@ export default function ContactsKanban({
     );
   }
 
+  function handleDragStart(event: DragStartEvent) {
+    setActiveId(String(event.active.id));
+  }
+
   function handleDragEnd(event: DragEndEvent) {
+    setActiveId(null);
     const { active, over } = event;
     if (!over) return;
     const contactId = String(active.id);
@@ -209,7 +231,13 @@ export default function ContactsKanban({
   }
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={collisionDetection}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
       <div className="overflow-x-auto -mx-6 px-6 pb-2">
         <div className="flex gap-4 min-w-max">
           {columns.map((col) => (
@@ -224,6 +252,28 @@ export default function ContactsKanban({
           ))}
         </div>
       </div>
+      {/* Floating preview that follows the cursor while dragging (portaled,
+          so it isn't clipped by the columns' overflow). */}
+      <DragOverlay dropAnimation={null}>
+        {activeContact ? (
+          <div className="w-64 rounded-[12px] border border-border bg-card p-3 shadow-lg cursor-grabbing">
+            <div className="flex items-start gap-2.5">
+              <div
+                className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                style={{ backgroundColor: getAvatarColor(activeContact.name) }}
+              >
+                {getInitial(activeContact.name)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium truncate">{activeContact.name}</p>
+                {activeContact.email && (
+                  <p className="text-xs text-muted-foreground truncate">{activeContact.email}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }

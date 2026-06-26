@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -791,7 +791,12 @@ export default function Contacts() {
     onSuccess: (view) => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contact-views"] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
-      // Load the new pipeline view immediately.
+      // Load the new pipeline view immediately, and remember it across reloads.
+      try {
+        localStorage.setItem(`linkycal:contacts:lastView:${projectId}`, view.id);
+      } catch {
+        /* ignore */
+      }
       setActiveViewId(view.id);
       setConfig(view.config ?? {});
       setSearchInput("");
@@ -849,20 +854,47 @@ export default function Contacts() {
 
   // ─── Handlers ───
 
-  const applyView = useCallback((view: SavedView | null) => {
-    if (!view) {
-      setActiveViewId(null);
-      setConfig(EMPTY_CONFIG);
-      setSearchInput("");
-      setViewType("list");
-      return;
+  const applyView = useCallback(
+    (view: SavedView | null) => {
+      // Remember the last-selected view so it survives reloads/navigation.
+      try {
+        const key = `linkycal:contacts:lastView:${projectId}`;
+        if (view) localStorage.setItem(key, view.id);
+        else localStorage.removeItem(key);
+      } catch {
+        /* localStorage unavailable — non-fatal */
+      }
+      if (!view) {
+        setActiveViewId(null);
+        setConfig(EMPTY_CONFIG);
+        setSearchInput("");
+        setViewType("list");
+        return;
+      }
+      setActiveViewId(view.id);
+      const cfg = view.config ?? {};
+      setConfig({ ...cfg, search: undefined });
+      setSearchInput(cfg.search ?? "");
+      setViewType(view.type);
+    },
+    [projectId],
+  );
+
+  // Restore the last-selected view once saved views have loaded.
+  const restoredViewRef = useRef(false);
+  useEffect(() => {
+    if (restoredViewRef.current || savedViews.length === 0) return;
+    restoredViewRef.current = true;
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(`linkycal:contacts:lastView:${projectId}`);
+    } catch {
+      /* ignore */
     }
-    setActiveViewId(view.id);
-    const cfg = view.config ?? {};
-    setConfig({ ...cfg, search: undefined });
-    setSearchInput(cfg.search ?? "");
-    setViewType(view.type);
-  }, []);
+    if (!stored) return;
+    const view = savedViews.find((v) => v.id === stored);
+    if (view) applyView(view);
+  }, [savedViews, projectId, applyView]);
 
   const openDeleteDialog = useCallback((contact: Contact) => {
     setDeletingContact(contact);
