@@ -4610,22 +4610,10 @@ app.get("/api/projects/:projectId/forms/:formId/fields", async (c) => {
   return c.json({ fields });
 });
 
-async function createFormFieldResponse(
-  c: Context<HonoAppContext>,
-  fieldType?: string,
-) {
+app.post("/api/projects/:projectId/forms/:formId/fields", async (c) => {
   try {
     const body = await c.req.json();
-    const payload =
-      fieldType === undefined
-        ? body
-        : {
-            ...(body && typeof body === "object" && !Array.isArray(body)
-              ? body
-              : {}),
-            type: fieldType,
-          };
-    const data = validate(createFormFieldSchema, payload);
+    const data = validate(createFormFieldSchema, body);
 
     const db = c.get("db");
     const service = new FormService(db);
@@ -4643,18 +4631,7 @@ async function createFormFieldResponse(
     console.error("Form field creation error:", err);
     return c.json({ error: "Failed to create form field" }, 500);
   }
-}
-
-app.post("/api/projects/:projectId/forms/:formId/fields", async (c) => {
-  return createFormFieldResponse(c);
 });
-
-app.post(
-  "/api/projects/:projectId/forms/:formId/fields/:fieldType",
-  async (c) => {
-    return createFormFieldResponse(c, c.req.param("fieldType"));
-  },
-);
 
 app.put("/api/projects/:projectId/forms/:formId/fields/reorder", async (c) => {
   try {
