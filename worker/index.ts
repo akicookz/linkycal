@@ -123,6 +123,7 @@ import {
   resolveProjectAccess,
   type ProjectPermission,
 } from "./lib/team-access";
+import { getEnrichmentUsage, incrementEnrichmentUsage } from "./lib/usage";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -5299,6 +5300,44 @@ app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
   }
 });
 
+app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const contactId = c.req.param("contactId");
+    const db = c.get("db");
+    const service = new ContactService(db);
+    if (!(await service.contactInProject(projectId, contactId))) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
+    const ent = await resolveProjectEntitlements(db, projectId, { ensureSubscription: true });
+    if (!ent) return c.json({ error: "Project not found" }, 404);
+    const limit = ent.planLimits.maxEnrichmentsPerMonth;
+    const now = new Date();
+    const used = await getEnrichmentUsage(db, ent.ownerUserId, now);
+    if (limit !== -1 && used >= limit) {
+      return c.json({ error: "Monthly enrichment limit reached", used, limit }, 403);
+    }
+    await incrementEnrichmentUsage(db, ent.ownerUserId, now);
+    await c.env.WORKFLOW_QUEUE.send({ kind: "enrich", projectId, contactId });
+    const remaining = limit === -1 ? -1 : Math.max(0, limit - (used + 1));
+    return c.json({ success: true, remaining, unlimited: limit === -1 });
+  } catch (err) {
+    console.error("Enrich error:", err);
+    return c.json({ error: "Failed to start enrichment" }, 500);
+  }
+});
+
+app.get("/api/projects/:projectId/enrichment-usage", async (c) => {
+  const projectId = c.req.param("projectId");
+  const db = c.get("db");
+  const ent = await resolveProjectEntitlements(db, projectId);
+  if (!ent) return c.json({ error: "Project not found" }, 404);
+  const limit = ent.planLimits.maxEnrichmentsPerMonth;
+  const used = await getEnrichmentUsage(db, ent.ownerUserId, new Date());
+  const unlimited = limit === -1;
+  return c.json({ used, limit, remaining: unlimited ? -1 : Math.max(0, limit - used), unlimited });
+});
+
 app.post("/api/projects/:projectId/pipeline/seed", async (c) => {
   try {
     const projectId = c.req.param("projectId");
@@ -6959,7 +6998,10 @@ export default {
   },
 
   async queue(
-    batch: MessageBatch<{ workflowRunId: string; stepIndex: number; remainingDelay?: number }>,
+    batch: MessageBatch<
+      | { workflowRunId: string; stepIndex: number; remainingDelay?: number }
+      | { kind: "enrich"; projectId: string; contactId: string }
+    >,
     env: import("./types").AppEnv,
   ) {
     const db = drizzle(env.DB, { schema });
@@ -6967,17 +7009,22 @@ export default {
 
     for (const message of batch.messages) {
       try {
-        const { workflowRunId, stepIndex, remainingDelay } = message.body;
-
-        // If this is a chained wait (delay > 12h), re-enqueue without executing
-        if (remainingDelay !== undefined && remainingDelay > 0) {
-          await executionService.continueWait(workflowRunId, stepIndex, remainingDelay, env);
+        const body = message.body;
+        if ("kind" in body && body.kind === "enrich") {
+          await executionService.enrichContact(body.projectId, body.contactId, env);
         } else {
-          await executionService.executeStep(workflowRunId, stepIndex, env);
+          const { workflowRunId, stepIndex, remainingDelay } = body as { workflowRunId: string; stepIndex: number; remainingDelay?: number };
+
+          // If this is a chained wait (delay > 12h), re-enqueue without executing
+          if (remainingDelay !== undefined && remainingDelay > 0) {
+            await executionService.continueWait(workflowRunId, stepIndex, remainingDelay, env);
+          } else {
+            await executionService.executeStep(workflowRunId, stepIndex, env);
+          }
         }
         message.ack();
       } catch (err) {
-        console.error("Workflow step failed:", err);
+        console.error("Queue message failed:", err);
         message.retry();
       }
     }
