@@ -313,6 +313,40 @@ export class ContactService {
     return rows;
   }
 
+  // ── Ownership guards (routes use these to prevent cross-project mutation) ──
+  async contactInProject(projectId: string, contactId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ id: dbSchema.contacts.id })
+      .from(dbSchema.contacts)
+      .where(
+        and(
+          eq(dbSchema.contacts.id, contactId),
+          eq(dbSchema.contacts.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    return !!row;
+  }
+
+  // Subset of tagIds that actually belong to the project (drops foreign ids).
+  async filterProjectTagIds(
+    projectId: string,
+    tagIds: string[],
+  ): Promise<string[]> {
+    if (tagIds.length === 0) return [];
+    const rows = await this.db
+      .select({ id: dbSchema.tags.id })
+      .from(dbSchema.tags)
+      .where(
+        and(
+          eq(dbSchema.tags.projectId, projectId),
+          inArray(dbSchema.tags.id, tagIds),
+        ),
+      );
+    const valid = new Set(rows.map((r) => r.id));
+    return tagIds.filter((id) => valid.has(id));
+  }
+
   async addTag(contactId: string, tagId: string) {
     // Check if already assigned
     const existing = await this.db

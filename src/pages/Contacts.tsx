@@ -8,6 +8,7 @@ import {
   Trash2,
   Tags,
   Loader,
+  Sparkles,
   AlertCircle,
   X,
   Filter,
@@ -1649,6 +1650,32 @@ export default function Contacts() {
                     </button>
                   </div>
                 ))}
+                {/* Always-reachable starter pipeline — hidden once one exists */}
+                {!savedViews.some(
+                  (v) =>
+                    v.type === "kanban" &&
+                    (v.config?.pivotTagIds?.length ?? 0) > 0,
+                ) && (
+                  <>
+                    <div className="my-1 h-px bg-border" />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        seedPipelineMutation.mutate();
+                        setViewsMenuOpen(false);
+                      }}
+                      disabled={seedPipelineMutation.isPending}
+                      className="flex w-full items-center gap-2 rounded-[10px] px-2.5 py-2 text-sm hover:bg-accent text-left disabled:opacity-60"
+                    >
+                      {seedPipelineMutation.isPending ? (
+                        <Loader className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+                      )}
+                      Start a sales pipeline
+                    </button>
+                  </>
+                )}
               </div>
             </PopoverContent>
           </Popover>

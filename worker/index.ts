@@ -5196,16 +5196,23 @@ app.delete("/api/projects/:projectId/tags/:id", async (c) => {
 // Assign tag to contact
 app.post("/api/projects/:projectId/contacts/:contactId/tags", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const contactId = c.req.param("contactId");
     const body = await c.req.json();
     const { tagId } = body as { tagId: string };
 
     const db = c.get("db");
     const service = new ContactService(db);
+
+    if (!(await service.contactInProject(projectId, contactId))) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
+    if ((await service.filterProjectTagIds(projectId, [tagId])).length === 0) {
+      return c.json({ error: "Invalid tag" }, 400);
+    }
     await service.addTag(contactId, tagId);
 
     // Dispatch tag_added workflow trigger
-    const projectId = c.req.param("projectId");
     c.executionCtx.waitUntil(
       dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
         projectId,
@@ -5226,11 +5233,16 @@ app.delete(
   "/api/projects/:projectId/contacts/:contactId/tags/:tagId",
   async (c) => {
     try {
+      const projectId = c.req.param("projectId");
       const contactId = c.req.param("contactId");
       const tagId = c.req.param("tagId");
 
       const db = c.get("db");
       const service = new ContactService(db);
+
+      if (!(await service.contactInProject(projectId, contactId))) {
+        return c.json({ error: "Contact not found" }, 404);
+      }
       await service.removeTag(contactId, tagId);
 
       return c.json({ success: true });
@@ -5243,12 +5255,28 @@ app.delete(
 
 app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const contactId = c.req.param("contactId");
     const body = await c.req.json();
     const data = validate(setStageSchema, body);
     const db = c.get("db");
     const service = new ContactService(db);
-    await service.setStage(contactId, data.tagId, data.groupTagIds);
+
+    if (!(await service.contactInProject(projectId, contactId))) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
+    // Only ever touch tags that belong to this project.
+    const groupTagIds = await service.filterProjectTagIds(
+      projectId,
+      data.groupTagIds,
+    );
+    if (
+      data.tagId &&
+      (await service.filterProjectTagIds(projectId, [data.tagId])).length === 0
+    ) {
+      return c.json({ error: "Invalid tag" }, 400);
+    }
+    await service.setStage(contactId, data.tagId, groupTagIds);
     return c.json({ success: true });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {

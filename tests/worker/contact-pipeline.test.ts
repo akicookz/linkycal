@@ -103,3 +103,23 @@ describe("ContactService.listWithTags lastActivityAt", () => {
     expect(contact.lastActivityAt).toBeNull();
   });
 });
+
+describe("ContactService ownership guards", () => {
+  test("contactInProject is true only for the owning project", async () => {
+    const db = await seed();
+    await db.insert(dbSchema.projects).values({ id: "p2", userId: "u", name: "P2", slug: "p2" });
+    const svc = new ContactService(db);
+    expect(await svc.contactInProject("p", "c")).toBe(true);
+    expect(await svc.contactInProject("p2", "c")).toBe(false);
+    expect(await svc.contactInProject("p", "nonexistent")).toBe(false);
+  });
+
+  test("filterProjectTagIds drops foreign and unknown tag ids", async () => {
+    const db = await seed();
+    await db.insert(dbSchema.projects).values({ id: "p2", userId: "u", name: "P2", slug: "p2" });
+    await db.insert(dbSchema.tags).values({ id: "foreign", projectId: "p2", name: "Foreign", color: "#000000" });
+    const svc = new ContactService(db);
+    const valid = await svc.filterProjectTagIds("p", ["lead", "foreign", "missing"]);
+    expect(valid).toEqual(["lead"]);
+  });
+});
