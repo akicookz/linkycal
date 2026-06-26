@@ -440,6 +440,11 @@ export const createTagSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
 });
 
+export const setStageSchema = z.object({
+  tagId: z.string().min(1).nullable(),
+  groupTagIds: z.array(z.string()).max(50),
+});
+
 // ─── Contact Views ───────────────────────────────────────────────────────────
 
 const activityTypeEnum = z.enum([

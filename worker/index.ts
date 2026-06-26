@@ -34,6 +34,7 @@ import {
   importContactsSchema,
   updateContactSchema,
   createTagSchema,
+  setStageSchema,
   createContactViewSchema,
   updateContactViewSchema,
   createWorkflowSchema,
@@ -5239,6 +5240,37 @@ app.delete(
     }
   },
 );
+
+app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
+  try {
+    const contactId = c.req.param("contactId");
+    const body = await c.req.json();
+    const data = validate(setStageSchema, body);
+    const db = c.get("db");
+    const service = new ContactService(db);
+    await service.setStage(contactId, data.tagId, data.groupTagIds);
+    return c.json({ success: true });
+  } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Set stage error:", err);
+    return c.json({ error: "Failed to set stage" }, 500);
+  }
+});
+
+app.post("/api/projects/:projectId/pipeline/seed", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const db = c.get("db");
+    const service = new ContactService(db);
+    const { view } = await service.seedPipeline(projectId);
+    return c.json({ view }, 201);
+  } catch (err) {
+    console.error("Seed pipeline error:", err);
+    return c.json({ error: "Failed to seed pipeline" }, 500);
+  }
+});
 
 // ─── Workflows ───────────────────────────────────────────────────────────────
 
