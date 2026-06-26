@@ -5113,12 +5113,17 @@ app.get("/api/projects/:projectId/contacts/:id", async (c) => {
 
 app.put("/api/projects/:projectId/contacts/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const body = await c.req.json();
     const data = validate(updateContactSchema, body);
 
     const db = c.get("db");
     const service = new ContactService(db);
+
+    if (!(await service.contactInProject(projectId, id))) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
     const contact = await service.update(id, data);
 
     if (!contact) {
@@ -5137,9 +5142,13 @@ app.put("/api/projects/:projectId/contacts/:id", async (c) => {
 
 app.delete("/api/projects/:projectId/contacts/:id", async (c) => {
   try {
+    const projectId = c.req.param("projectId");
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new ContactService(db);
+    if (!(await service.contactInProject(projectId, id))) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
     await service.delete(id);
     return c.json({ success: true });
   } catch (err) {
@@ -5184,6 +5193,9 @@ app.delete("/api/projects/:projectId/tags/:id", async (c) => {
     const id = c.req.param("id");
     const db = c.get("db");
     const service = new ContactService(db);
+    if ((await service.filterProjectTagIds(projectId, [id])).length === 0) {
+      return c.json({ error: "Tag not found" }, 404);
+    }
     await service.pruneTagFromViews(projectId, id);
     await service.deleteTag(id);
     return c.json({ success: true });
