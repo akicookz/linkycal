@@ -73,6 +73,8 @@ export const workflowResearchResultSchema = z.object({
   linkedinUrl: z.string().nullable(),
   location: z.string().nullable(),
   description: z.string().nullable(),
+  companySize: z.string().nullable(),
+  estimatedRevenue: z.string().nullable(),
   recommendedTags: z.array(z.string()),
   insights: z.array(z.string()),
   sources: z.array(
