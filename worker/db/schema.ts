@@ -204,6 +204,8 @@ export const eventTypes = sqliteTable(
     bufferBefore: integer("buffer_before").notNull().default(0),
     bufferAfter: integer("buffer_after").notNull().default(0),
     maxPerDay: integer("max_per_day"),
+    maxPerWeek: integer("max_per_week"),
+    weekStart: text("week_start").notNull().default("monday"),
     enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
     scheduleId: text("schedule_id").references(() => schedules.id, {
       onDelete: "set null",
