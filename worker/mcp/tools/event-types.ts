@@ -61,6 +61,8 @@ export async function createEventType(
     bufferBefore: input.bufferBefore,
     bufferAfter: input.bufferAfter,
     maxPerDay: input.maxPerDay ?? undefined,
+    maxPerWeek: input.maxPerWeek ?? undefined,
+    weekStart: input.weekStart,
     enabled: input.enabled,
     requiresConfirmation: input.requiresConfirmation,
     bookingFormId: input.bookingFormId ?? undefined,
@@ -86,7 +88,9 @@ export async function updateEventType(
   if (input.color !== undefined) updateData.color = input.color;
   if (input.bufferBefore !== undefined) updateData.bufferBefore = input.bufferBefore;
   if (input.bufferAfter !== undefined) updateData.bufferAfter = input.bufferAfter;
-  if (input.maxPerDay !== undefined) updateData.maxPerDay = input.maxPerDay ?? undefined;
+  if (input.maxPerDay !== undefined) updateData.maxPerDay = input.maxPerDay;
+  if (input.maxPerWeek !== undefined) updateData.maxPerWeek = input.maxPerWeek;
+  if (input.weekStart !== undefined) updateData.weekStart = input.weekStart;
   if (input.enabled !== undefined) updateData.enabled = input.enabled;
   if (input.requiresConfirmation !== undefined) updateData.requiresConfirmation = input.requiresConfirmation;
   if (input.bookingFormId !== undefined) updateData.bookingFormId = input.bookingFormId;
@@ -141,6 +145,8 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
         bufferBefore: createShape.bufferBefore.describe("Buffer before, in minutes (default 0)"),
         bufferAfter: createShape.bufferAfter.describe("Buffer after, in minutes (default 0)"),
         maxPerDay: createShape.maxPerDay.describe("Max bookings per day (null = unlimited)"),
+        maxPerWeek: createShape.maxPerWeek.describe("Max bookings per week (null = unlimited)"),
+        weekStart: createShape.weekStart.describe("Week boundary for the weekly cap: 'monday' or 'sunday' (default monday)"),
         enabled: createShape.enabled.describe("Whether the event type is bookable (default true)"),
         requiresConfirmation: createShape.requiresConfirmation.describe(
           "If true, new bookings are pending until confirmed (default false)",
@@ -165,6 +171,8 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
         bufferBefore: updateShape.bufferBefore.describe("Buffer before, in minutes"),
         bufferAfter: updateShape.bufferAfter.describe("Buffer after, in minutes"),
         maxPerDay: updateShape.maxPerDay.describe("Max bookings per day (null = unlimited)"),
+        maxPerWeek: updateShape.maxPerWeek.describe("Max bookings per week (null = unlimited)"),
+        weekStart: updateShape.weekStart.describe("Week boundary for the weekly cap: 'monday' or 'sunday'"),
         enabled: updateShape.enabled.describe("Enable/disable booking"),
         requiresConfirmation: updateShape.requiresConfirmation.describe("Require manual confirmation"),
       },

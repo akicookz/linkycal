@@ -25,6 +25,20 @@ export function getUtcRangeForLocalDate(
   };
 }
 
+export function getWeekRangeForLocalDate(
+  dateStr: string,
+  timezone: string,
+  weekStart: "monday" | "sunday",
+): { start: Date; end: Date } {
+  const dayOfWeek = getDayOfWeekForDate(dateStr, timezone); // 0=Sun..6=Sat
+  const offset = weekStart === "monday" ? (dayOfWeek + 6) % 7 : dayOfWeek;
+  const weekStartDate = shiftDateString(dateStr, -offset);
+  return {
+    start: localTimeToUtc(weekStartDate, "00:00", timezone),
+    end: localTimeToUtc(shiftDateString(weekStartDate, 7), "00:00", timezone),
+  };
+}
+
 export function getScheduleDatesForViewerDay(
   viewerDayRange: { start: Date; end: Date },
   scheduleTimezone: string,

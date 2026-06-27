@@ -7,6 +7,7 @@ import {
   getScheduleDatesForViewerDay,
   getUtcRangeForLocalDate,
   getViewerAvailableWeekdays,
+  getWeekRangeForLocalDate,
   localTimeToUtc,
 } from "../../worker/lib/timezone";
 
@@ -130,5 +131,34 @@ describe("getViewerAvailableWeekdays", () => {
     expect(
       getViewerAvailableWeekdays([], "America/New_York", "Asia/Tokyo", NOW),
     ).toEqual([]);
+  });
+});
+
+describe("getWeekRangeForLocalDate", () => {
+  // 2026-06-24 is a Wednesday.
+  test("monday-start week runs Mon 00:00 to next Mon 00:00 (UTC)", () => {
+    const range = getWeekRangeForLocalDate("2026-06-24", "UTC", "monday");
+    expect(range.start.toISOString()).toBe("2026-06-22T00:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-06-29T00:00:00.000Z");
+  });
+
+  test("sunday-start week runs Sun 00:00 to next Sun 00:00 (UTC)", () => {
+    const range = getWeekRangeForLocalDate("2026-06-24", "UTC", "sunday");
+    expect(range.start.toISOString()).toBe("2026-06-21T00:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-06-28T00:00:00.000Z");
+  });
+
+  test("a date that is itself the week start maps to a week starting that day", () => {
+    // 2026-06-22 is a Monday.
+    const range = getWeekRangeForLocalDate("2026-06-22", "UTC", "monday");
+    expect(range.start.toISOString()).toBe("2026-06-22T00:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-06-29T00:00:00.000Z");
+  });
+
+  test("boundaries are anchored in the schedule timezone, not UTC", () => {
+    // America/New_York is UTC-4 on this date, so local midnight is 04:00Z.
+    const range = getWeekRangeForLocalDate("2026-06-24", "America/New_York", "monday");
+    expect(range.start.toISOString()).toBe("2026-06-22T04:00:00.000Z");
+    expect(range.end.toISOString()).toBe("2026-06-29T04:00:00.000Z");
   });
 });
