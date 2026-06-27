@@ -1,4 +1,11 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useCallback,
+} from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
@@ -235,6 +242,14 @@ export default function PublicBooking() {
   });
 
   const eventType = data?.eventType;
+  const descRef = useRef<HTMLParagraphElement>(null);
+  const [descIsLong, setDescIsLong] = useState(false);
+  useLayoutEffect(() => {
+    const el = descRef.current;
+    if (el && !descExpanded) {
+      setDescIsLong(el.scrollHeight > el.clientHeight + 1);
+    }
+  }, [eventType?.description, descExpanded]);
   const project = data?.project;
   const owner = data?.owner;
   const themeFromProject = project?.settings?.theme;
@@ -575,8 +590,6 @@ export default function PublicBooking() {
   // ─── Description truncation ────────────────────────────────────────────
 
   const desc = eventType.description || "";
-  const descIsLong = desc.length > 120;
-  const descDisplay = descIsLong && !descExpanded ? desc.slice(0, 120) + "..." : desc;
   const seoDescription = truncateMetaDescription(
     desc ||
       `Book a ${eventType.duration}-minute ${eventType.name} with ${project.name}.`,
@@ -684,8 +697,14 @@ export default function PublicBooking() {
 
               {desc && (
                 <div className="mt-1.5">
-                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
-                    {descDisplay}
+                  <p
+                    ref={descRef}
+                    className={cn(
+                      "text-sm text-muted-foreground leading-relaxed whitespace-pre-line",
+                      !descExpanded && "line-clamp-3",
+                    )}
+                  >
+                    {desc}
                   </p>
                   {descIsLong && (
                     <button
