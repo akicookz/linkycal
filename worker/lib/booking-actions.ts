@@ -11,7 +11,11 @@ import { EmailService } from "../services/email-service";
 import type { EmailTheme } from "../services/email-service";
 import { FormService } from "../services/form-service";
 import type { TriggerContext } from "../services/workflow-execution-service";
-import { formatDateInTimezone } from "./timezone";
+import {
+  formatDateInTimezone,
+  getUtcRangeForLocalDate,
+  getWeekRangeForLocalDate,
+} from "./timezone";
 import { parseInviteConnectionIds } from "./calendar-refs";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 
@@ -190,8 +194,48 @@ export async function createBookingAction(
     startTime.getTime() + eventType.duration * 60 * 1000,
   );
 
-  // 4. Check availability — verify the slot is still open
   const availabilityService = new AvailabilityService(db);
+
+  // 3b. Enforce per-day / per-week booking caps (count pending + confirmed).
+  // Boundaries are measured in the host's schedule timezone.
+  if (eventType.maxPerDay !== null || eventType.maxPerWeek !== null) {
+    const schedule = await availabilityService.resolveSchedule(
+      project.id,
+      eventType,
+    );
+    if (schedule) {
+      const scheduleDate = formatDateInTimezone(startTime, schedule.timezone);
+      if (eventType.maxPerDay !== null) {
+        const dayRange = getUtcRangeForLocalDate(scheduleDate, schedule.timezone);
+        const dayCount = await availabilityService.countBookingsInRange(
+          eventType.id,
+          dayRange.start,
+          dayRange.end,
+        );
+        if (dayCount >= eventType.maxPerDay) {
+          return { ok: false, status: 409, error: "This day is fully booked" };
+        }
+      }
+      if (eventType.maxPerWeek !== null) {
+        const weekStart = eventType.weekStart === "sunday" ? "sunday" : "monday";
+        const weekRange = getWeekRangeForLocalDate(
+          scheduleDate,
+          schedule.timezone,
+          weekStart,
+        );
+        const weekCount = await availabilityService.countBookingsInRange(
+          eventType.id,
+          weekRange.start,
+          weekRange.end,
+        );
+        if (weekCount >= eventType.maxPerWeek) {
+          return { ok: false, status: 409, error: "This week is fully booked" };
+        }
+      }
+    }
+  }
+
+  // 4. Check availability — verify the slot is still open
   const dateStr = formatDateInTimezone(startTime, input.timezone);
   const slots = await availabilityService.getAvailableSlots({
     projectSlug: input.projectSlug,
