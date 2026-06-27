@@ -62,6 +62,8 @@ interface EventType {
   bufferBefore: number;
   bufferAfter: number;
   maxPerDay: number | null;
+  maxPerWeek: number | null;
+  weekStart: "monday" | "sunday";
   enabled: boolean;
   requiresConfirmation: boolean;
   bookingFormId: string | null;
@@ -99,6 +101,9 @@ interface EventTypeFormData {
   color: string;
   bufferBefore: number;
   bufferAfter: number;
+  maxPerDay: number | null;
+  maxPerWeek: number | null;
+  weekStart: "monday" | "sunday";
   requiresConfirmation: boolean;
   bookingFormId: string | null;
 }
@@ -178,6 +183,9 @@ const defaultFormData: EventTypeFormData = {
   color: "#3b82f6",
   bufferBefore: 0,
   bufferAfter: 0,
+  maxPerDay: null,
+  maxPerWeek: null,
+  weekStart: "monday",
   requiresConfirmation: false,
   bookingFormId: null as string | null,
 };
@@ -401,6 +409,9 @@ export default function EventTypeForm() {
       color: et.color,
       bufferBefore: et.bufferBefore,
       bufferAfter: et.bufferAfter,
+      maxPerDay: et.maxPerDay ?? null,
+      maxPerWeek: et.maxPerWeek ?? null,
+      weekStart: et.weekStart ?? "monday",
       requiresConfirmation: et.requiresConfirmation ?? false,
       bookingFormId: et.bookingFormId ?? null,
     });
@@ -995,6 +1006,80 @@ export default function EventTypeForm() {
                   />
                 </div>
               </div>
+
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium">Booking limits</p>
+                  <p className="text-xs text-muted-foreground">
+                    Cap how many calls this event type accepts. Pending and
+                    booked calls count; cancelled and declined ones don't. Leave
+                    blank for no limit.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="maxPerDay">Max calls per day</Label>
+                    <Input
+                      id="maxPerDay"
+                      type="number"
+                      min={1}
+                      placeholder="Unlimited"
+                      value={formData.maxPerDay ?? ""}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          maxPerDay:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="maxPerWeek">Max calls per week</Label>
+                    <Input
+                      id="maxPerWeek"
+                      type="number"
+                      min={1}
+                      placeholder="Unlimited"
+                      value={formData.maxPerWeek ?? ""}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          maxPerWeek:
+                            e.target.value === ""
+                              ? null
+                              : Number(e.target.value),
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                {formData.maxPerWeek !== null && (
+                  <div className="space-y-2">
+                    <Label>Week starts on</Label>
+                    <Select
+                      value={formData.weekStart}
+                      onValueChange={(val) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          weekStart: val as "monday" | "sunday",
+                        }))
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="monday">Monday</SelectItem>
+                        <SelectItem value="sunday">Sunday</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-between rounded-[12px] border px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">Require confirmation</p>

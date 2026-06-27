@@ -11,6 +11,7 @@ interface EventTypeForPrompt {
   bufferBefore: number;
   bufferAfter: number;
   maxPerDay: number | null;
+  maxPerWeek?: number | null;
   requiresConfirmation?: boolean;
   bookingFormId?: string | null;
 }
@@ -316,6 +317,7 @@ ${renderFieldGuide(bookingFormFields)}
 - Location: ${et.location || "Not specified"}
 - Requires confirmation: ${et.requiresConfirmation ? "Yes" : "No"}
 ${et.maxPerDay ? `- Max bookings per day: ${et.maxPerDay}` : ""}
+${et.maxPerWeek ? `- Max bookings per week: ${et.maxPerWeek}` : ""}
 
 ## Check Availability
 \`\`\`bash
