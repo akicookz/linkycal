@@ -212,9 +212,6 @@ export default function EventTypeForm() {
   );
   const [timezone, setTimezone] = useState("America/New_York");
 
-  // Copy from state (for new event types)
-  const [copyFromId, setCopyFromId] = useState<string>("");
-
   // Copy availability state (for editing)
   const [copyAvailabilityOpen, setCopyAvailabilityOpen] = useState(false);
   const [copyAvailabilitySourceId, setCopyAvailabilitySourceId] = useState("");
@@ -434,36 +431,7 @@ export default function EventTypeForm() {
     }
   }, [formData.name, slugManuallyEdited, isEditing]);
 
-  // When "copy from" changes for a new event type, load that event type's availability
-  const { data: copySourceData } = useQuery<{
-    eventType: EventType;
-    schedule: Schedule | null;
-    rules: AvailabilityRule[];
-    overrides: ScheduleOverride[];
-  }>({
-    queryKey: ["projects", projectId, "event-types", copyFromId, "full"],
-    queryFn: async () => {
-      const res = await fetch(
-        `/api/projects/${projectId}/event-types/${copyFromId}`,
-      );
-      if (!res.ok) throw new Error("Failed to fetch source event type");
-      return res.json();
-    },
-    enabled: !!copyFromId && !isEditing,
-  });
-
-  useEffect(() => {
-    if (!copySourceData) return;
-    if (copySourceData.schedule) {
-      setTimezone(copySourceData.schedule.timezone);
-    }
-    if (copySourceData.rules) {
-      setDayConfigs(rulesToDayConfigs(copySourceData.rules));
-    }
-    setSelectRenderVersion((current) => current + 1);
-  }, [copySourceData]);
-
-  // Fetch source event type for copy-availability dialog (edit mode)
+  // Fetch source event type for the copy-availability dialog
   const { data: copyAvailabilityData, isFetching: isFetchingCopyAvailability } = useQuery<{
     eventType: EventType;
     schedule: Schedule | null;
@@ -478,7 +446,7 @@ export default function EventTypeForm() {
       if (!res.ok) throw new Error("Failed to fetch source event type");
       return res.json();
     },
-    enabled: !!copyAvailabilitySourceId && isEditing,
+    enabled: !!copyAvailabilitySourceId,
   });
 
   function applyCopiedAvailability() {
@@ -496,7 +464,7 @@ export default function EventTypeForm() {
 
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: async (data: EventTypeFormData & { copyFromEventTypeId?: string }) => {
+    mutationFn: async (data: EventTypeFormData) => {
       const res = await fetch(`/api/projects/${projectId}/event-types`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -719,10 +687,7 @@ export default function EventTypeForm() {
     if (isEditing) {
       updateMutation.mutate(formData);
     } else {
-      createMutation.mutate({
-        ...formData,
-        copyFromEventTypeId: copyFromId || undefined,
-      });
+      createMutation.mutate(formData);
     }
   }
 
@@ -981,11 +946,13 @@ export default function EventTypeForm() {
                     id="bufferBefore"
                     type="number"
                     min={0}
-                    value={formData.bufferBefore}
+                    placeholder="0"
+                    value={formData.bufferBefore === 0 ? "" : formData.bufferBefore}
                     onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
-                        bufferBefore: Number(e.target.value),
+                        bufferBefore:
+                          e.target.value === "" ? 0 : Number(e.target.value),
                       }))
                     }
                   />
@@ -996,11 +963,13 @@ export default function EventTypeForm() {
                     id="bufferAfter"
                     type="number"
                     min={0}
-                    value={formData.bufferAfter}
+                    placeholder="0"
+                    value={formData.bufferAfter === 0 ? "" : formData.bufferAfter}
                     onChange={(e) =>
                       setFormData((prev) => ({
                         ...prev,
-                        bufferAfter: Number(e.target.value),
+                        bufferAfter:
+                          e.target.value === "" ? 0 : Number(e.target.value),
                       }))
                     }
                   />
@@ -1335,46 +1304,6 @@ export default function EventTypeForm() {
             </CardContent>
           </Card>
 
-          {/* Availability Source (only for new event types) */}
-          {!isEditing && copyableEventTypes.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">
-                  Availability Source
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <Label>Start with availability from</Label>
-                  <Select
-                    value={copyFromId || "__default__"}
-                    onValueChange={(val) =>
-                      setCopyFromId(val === "__default__" ? "" : val)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Default (Mon-Fri, 9am-5pm)" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default__">
-                        Default (Mon-Fri, 9am-5pm)
-                      </SelectItem>
-                      {copyableEventTypes.map((et) => (
-                        <SelectItem key={et.id} value={et.id}>
-                          Copy from: {et.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-[11px] text-muted-foreground">
-                    This creates an independent copy. Changes won't affect the
-                    source.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
           {/* Error messages */}
           {(createMutation.isError || updateMutation.isError) && (
             <p className="text-sm text-destructive">
@@ -1393,7 +1322,7 @@ export default function EventTypeForm() {
                 <Clock className="h-4 w-4 text-muted-foreground" />
                 Available Times
               </CardTitle>
-              {isEditing && copyableEventTypes.length > 0 && (
+              {copyableEventTypes.length > 0 && (
                 <Button
                   type="button"
                   variant="outline"
