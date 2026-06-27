@@ -14,7 +14,9 @@ interface CreateEventTypeInput {
   color?: string;
   bufferBefore?: number;
   bufferAfter?: number;
-  maxPerDay?: number;
+  maxPerDay?: number | null;
+  maxPerWeek?: number | null;
+  weekStart?: "monday" | "sunday";
   enabled?: boolean;
   requiresConfirmation?: boolean;
   bookingFormId?: string | null;
@@ -220,6 +222,8 @@ export class EventTypeService {
       bufferBefore: data.bufferBefore ?? 0,
       bufferAfter: data.bufferAfter ?? 0,
       maxPerDay: data.maxPerDay ?? null,
+      maxPerWeek: data.maxPerWeek ?? null,
+      weekStart: data.weekStart ?? "monday",
       enabled: data.enabled ?? true,
       requiresConfirmation: data.requiresConfirmation ?? false,
       bookingFormId: data.bookingFormId ?? null,

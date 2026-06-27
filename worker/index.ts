@@ -3930,6 +3930,8 @@ app.post("/api/projects/:projectId/event-types", async (c) => {
       bufferBefore: data.bufferBefore,
       bufferAfter: data.bufferAfter,
       maxPerDay: data.maxPerDay ?? undefined,
+      maxPerWeek: data.maxPerWeek ?? undefined,
+      weekStart: data.weekStart,
       enabled: data.enabled,
       requiresConfirmation: data.requiresConfirmation,
       bookingFormId: data.bookingFormId ?? undefined,
@@ -3972,8 +3974,9 @@ app.put("/api/projects/:projectId/event-types/:id", async (c) => {
       updateData.bufferBefore = data.bufferBefore;
     if (data.bufferAfter !== undefined)
       updateData.bufferAfter = data.bufferAfter;
-    if (data.maxPerDay !== undefined)
-      updateData.maxPerDay = data.maxPerDay ?? undefined;
+    if (data.maxPerDay !== undefined) updateData.maxPerDay = data.maxPerDay;
+    if (data.maxPerWeek !== undefined) updateData.maxPerWeek = data.maxPerWeek;
+    if (data.weekStart !== undefined) updateData.weekStart = data.weekStart;
     if (data.enabled !== undefined) updateData.enabled = data.enabled;
     if (data.requiresConfirmation !== undefined)
       updateData.requiresConfirmation = data.requiresConfirmation;
