@@ -1025,15 +1025,13 @@ export default function EventTypeForm() {
                       min={1}
                       placeholder="Unlimited"
                       value={formData.maxPerDay ?? ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
                         setFormData((prev) => ({
                           ...prev,
-                          maxPerDay:
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                        }))
-                      }
+                          maxPerDay: value >= 1 ? value : null,
+                        }));
+                      }}
                     />
                   </div>
                   <div className="space-y-2">
@@ -1044,15 +1042,13 @@ export default function EventTypeForm() {
                       min={1}
                       placeholder="Unlimited"
                       value={formData.maxPerWeek ?? ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const value = Number(e.target.value);
                         setFormData((prev) => ({
                           ...prev,
-                          maxPerWeek:
-                            e.target.value === ""
-                              ? null
-                              : Number(e.target.value),
-                        }))
-                      }
+                          maxPerWeek: value >= 1 ? value : null,
+                        }));
+                      }}
                     />
                   </div>
                 </div>
