@@ -1,10 +1,11 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { and, eq, gt, inArray, lt } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lt } from "drizzle-orm";
 import * as dbSchema from "../db/schema";
 import {
   getDayOfWeekForDate,
   getScheduleDatesForViewerDay,
   getUtcRangeForLocalDate,
+  getWeekRangeForLocalDate,
   localTimeToUtc,
 } from "../lib/timezone";
 
@@ -32,6 +33,62 @@ interface SlotWindow {
 
 export class AvailabilityService {
   constructor(private db: DrizzleD1Database<Record<string, unknown>>) {}
+
+  // ─── Resolve Schedule ─────────────────────────────────────────────────────
+
+  async resolveSchedule(
+    projectId: string,
+    eventType: dbSchema.EventTypeRow,
+  ): Promise<dbSchema.ScheduleRow | undefined> {
+    if (eventType.scheduleId) {
+      const rows = await this.db
+        .select()
+        .from(dbSchema.schedules)
+        .where(eq(dbSchema.schedules.id, eventType.scheduleId))
+        .limit(1);
+      if (rows[0]) return rows[0];
+    }
+
+    const defaultRows = await this.db
+      .select()
+      .from(dbSchema.schedules)
+      .where(
+        and(
+          eq(dbSchema.schedules.projectId, projectId),
+          eq(dbSchema.schedules.isDefault, true),
+        ),
+      )
+      .limit(1);
+    if (defaultRows[0]) return defaultRows[0];
+
+    const fallbackRows = await this.db
+      .select()
+      .from(dbSchema.schedules)
+      .where(eq(dbSchema.schedules.projectId, projectId))
+      .limit(1);
+    return fallbackRows[0];
+  }
+
+  // ─── Count Bookings In Range ──────────────────────────────────────────────
+
+  async countBookingsInRange(
+    eventTypeId: string,
+    start: Date,
+    end: Date,
+  ): Promise<number> {
+    const rows = await this.db
+      .select({ id: dbSchema.bookings.id })
+      .from(dbSchema.bookings)
+      .where(
+        and(
+          eq(dbSchema.bookings.eventTypeId, eventTypeId),
+          inArray(dbSchema.bookings.status, ["pending", "confirmed"]),
+          gte(dbSchema.bookings.startTime, start),
+          lt(dbSchema.bookings.startTime, end),
+        ),
+      );
+    return rows.length;
+  }
 
   // ─── Get Available Slots ──────────────────────────────────────────────────
 
@@ -63,43 +120,8 @@ export class AvailabilityService {
     const eventType = eventTypeRows[0];
     if (!eventType || !eventType.enabled) return [];
 
-    // 3. Get the event type's own schedule, or fall back to project default
-    let schedule: typeof dbSchema.schedules.$inferSelect | undefined;
-
-    if (eventType.scheduleId) {
-      const etScheduleRows = await this.db
-        .select()
-        .from(dbSchema.schedules)
-        .where(eq(dbSchema.schedules.id, eventType.scheduleId))
-        .limit(1);
-      schedule = etScheduleRows[0];
-    }
-
-    // Fall back to project default schedule
-    if (!schedule) {
-      const scheduleRows = await this.db
-        .select()
-        .from(dbSchema.schedules)
-        .where(
-          and(
-            eq(dbSchema.schedules.projectId, project.id),
-            eq(dbSchema.schedules.isDefault, true),
-          ),
-        )
-        .limit(1);
-      schedule = scheduleRows[0];
-    }
-
-    // Fall back to first schedule
-    if (!schedule) {
-      const fallbackRows = await this.db
-        .select()
-        .from(dbSchema.schedules)
-        .where(eq(dbSchema.schedules.projectId, project.id))
-        .limit(1);
-      schedule = fallbackRows[0];
-    }
-
+    // 3. Resolve the schedule (event-type's own → project default → first)
+    const schedule = await this.resolveSchedule(project.id, eventType);
     if (!schedule) return [];
 
     // 4. Get availability rules for that schedule
@@ -149,6 +171,41 @@ export class AvailabilityService {
         ),
       );
 
+    // 6b. Gate any schedule-tz day/week that has hit its booking cap.
+    const blockedScheduleDates = new Set<string>();
+    if (eventType.maxPerDay !== null || eventType.maxPerWeek !== null) {
+      const weekStart = eventType.weekStart === "sunday" ? "sunday" : "monday";
+      for (const scheduleDate of scheduleDates) {
+        if (eventType.maxPerDay !== null) {
+          const dayRange = getUtcRangeForLocalDate(scheduleDate, schedule.timezone);
+          const dayCount = await this.countBookingsInRange(
+            eventType.id,
+            dayRange.start,
+            dayRange.end,
+          );
+          if (dayCount >= eventType.maxPerDay) {
+            blockedScheduleDates.add(scheduleDate);
+            continue;
+          }
+        }
+        if (eventType.maxPerWeek !== null) {
+          const weekRange = getWeekRangeForLocalDate(
+            scheduleDate,
+            schedule.timezone,
+            weekStart,
+          );
+          const weekCount = await this.countBookingsInRange(
+            eventType.id,
+            weekRange.start,
+            weekRange.end,
+          );
+          if (weekCount >= eventType.maxPerWeek) {
+            blockedScheduleDates.add(scheduleDate);
+          }
+        }
+      }
+    }
+
     // 7. Generate time slots
     return this.generateSlots({
       viewerDayStart: viewerDayRange.start,
@@ -161,7 +218,7 @@ export class AvailabilityService {
       duration: eventType.duration,
       bufferBefore: eventType.bufferBefore,
       bufferAfter: eventType.bufferAfter,
-      maxPerDay: eventType.maxPerDay,
+      blockedScheduleDates,
       externalBusySlots: params.externalBusySlots,
     });
   }
@@ -191,7 +248,7 @@ export class AvailabilityService {
     duration: number;
     bufferBefore: number;
     bufferAfter: number;
-    maxPerDay: number | null;
+    blockedScheduleDates: Set<string>;
     externalBusySlots?: Array<{ start: string; end: string }>;
   }): TimeSlot[] {
     const {
@@ -205,7 +262,7 @@ export class AvailabilityService {
       duration,
       bufferBefore,
       bufferAfter,
-      maxPerDay,
+      blockedScheduleDates,
       externalBusySlots,
     } = params;
 
@@ -230,6 +287,7 @@ export class AvailabilityService {
     );
 
     for (const scheduleDate of scheduleDates) {
+      if (blockedScheduleDates.has(scheduleDate)) continue;
       const dayOfWeek = getDayOfWeekForDate(scheduleDate, scheduleTz);
       const override = overridesByDate.get(scheduleDate);
 
@@ -285,10 +343,6 @@ export class AvailabilityService {
     }
 
     slots.sort((left, right) => left.start.localeCompare(right.start));
-
-    if (maxPerDay !== null && slots.length > maxPerDay) {
-      return slots.slice(0, maxPerDay);
-    }
 
     return slots;
   }
