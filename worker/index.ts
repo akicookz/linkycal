@@ -6963,9 +6963,18 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
   if (ct.includes("text/html")) {
     const body = await r.text();
     console.log("[prerender] hit", url, r.status, `${ms}ms`, `${body.length}b`);
-    return new Response(body, {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    const outHeaders = new Headers(r.headers);
+    for (const h of [
+      "content-encoding",
+      "content-length",
+      "transfer-encoding",
+      "connection",
+      "keep-alive",
+    ]) {
+      outHeaders.delete(h);
+    }
+    outHeaders.set("content-type", "text/html; charset=utf-8");
+    return new Response(body, { status: r.status, headers: outHeaders });
   }
   const errBody = await r.text().catch(() => "");
   console.log(
