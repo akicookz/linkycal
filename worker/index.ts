@@ -6930,14 +6930,26 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
     if (v) headers.set(name, v);
   }
 
-  console.log("[prerender] requesting", url);
+  const target = new URL(url);
+  const cacheInvalidate = target.searchParams.get("cache_invalidate");
+  target.searchParams.delete("cache_invalidate");
+  let renderUrl =
+    "https://encited.com/api/prerender/render?url=" +
+    encodeURIComponent(target.toString());
+  if (cacheInvalidate !== null) {
+    renderUrl +=
+      "&cache_invalidate=" + encodeURIComponent(cacheInvalidate || "1");
+  }
+
+  console.log(
+    "[prerender] requesting",
+    url,
+    cacheInvalidate !== null ? "(cache_invalidate)" : "",
+  );
   const started = Date.now();
   let r: Response;
   try {
-    r = await fetch(
-      "https://encited.com/api/prerender/render?url=" + encodeURIComponent(url),
-      { headers },
-    );
+    r = await fetch(renderUrl, { headers });
   } catch (err) {
     console.error("[prerender] fetch failed", url, err);
     return null;
