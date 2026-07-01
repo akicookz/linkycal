@@ -1,6 +1,11 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import {
+  useQuery,
+  useMutation,
+  useInfiniteQuery,
+  type InfiniteData,
+} from "@tanstack/react-query";
 import {
   Plus,
   Users,
@@ -88,6 +93,26 @@ interface Tag {
   name: string;
   color: string | null;
   createdAt: string;
+}
+
+const PAGE_SIZE = 50;
+
+// One page of the paginated contacts list; `total` is the full filtered count.
+interface ContactsPage {
+  contacts: Contact[];
+  total: number;
+}
+type ContactsCache = InfiniteData<ContactsPage, number>;
+
+// The contacts list is an infinite query, so its cache is paged. Optimistic
+// updates map over every page's `contacts` while leaving the page structure
+// (and pageParams) intact.
+function updateContactsCache(
+  old: ContactsCache | undefined,
+  fn: (page: ContactsPage) => ContactsPage,
+): ContactsCache | undefined {
+  if (!old?.pages) return old;
+  return { ...old, pages: old.pages.map(fn) };
 }
 
 interface ContactFormData {
@@ -488,9 +513,13 @@ export default function Contacts() {
     data: contactsData,
     isLoading: loadingContacts,
     isError: errorContacts,
-  } = useQuery<Contact[]>({
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<ContactsPage, Error, ContactsCache, unknown[], number>({
     queryKey: ["projects", projectId, "contacts", queryConfig],
-    queryFn: async () => {
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (queryConfig.search) params.set("search", queryConfig.search);
       if (queryConfig.tagIds) {
@@ -508,12 +537,19 @@ export default function Contacts() {
         );
       if (queryConfig.bookingStatus)
         params.set("bookingStatus", queryConfig.bookingStatus);
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(pageParam));
       const res = await fetch(
         `/api/projects/${projectId}/contacts?${params.toString()}`,
       );
       if (!res.ok) throw new Error("Failed to fetch contacts");
       const data = await res.json();
-      return data.contacts ?? [];
+      return { contacts: data.contacts ?? [], total: data.total ?? 0 };
+    },
+    // Next offset = how many we've loaded, until we've loaded the whole set.
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce((n, p) => n + p.contacts.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
     },
     enabled: !!projectId,
   });
@@ -540,7 +576,11 @@ export default function Contacts() {
     enabled: !!projectId,
   });
 
-  const contacts = contactsData ?? [];
+  const contacts = useMemo(
+    () => contactsData?.pages.flatMap((p) => p.contacts) ?? [],
+    [contactsData],
+  );
+  const totalContacts = contactsData?.pages[0]?.total ?? contacts.length;
 
   const activeView = useMemo(
     () => savedViews.find((v) => v.id === activeViewId) ?? null,
@@ -654,12 +694,29 @@ export default function Contacts() {
       await queryClient.cancelQueries({
         queryKey: ["projects", projectId, "contacts"],
       });
-      const previous = queryClient.getQueriesData<Contact[]>({
+      const previous = queryClient.getQueriesData<ContactsCache>({
         queryKey: ["projects", projectId, "contacts"],
       });
-      queryClient.setQueriesData<Contact[]>(
+      queryClient.setQueriesData<ContactsCache>(
         { queryKey: ["projects", projectId, "contacts"] },
-        (old) => (Array.isArray(old) ? old.filter((c) => c.id !== id) : old),
+        (old) => {
+          if (!old?.pages) return old;
+          // Drop the row from whichever page holds it, then decrement every
+          // page's `total` uniformly so the count stays consistent across pages.
+          let removed = 0;
+          const filtered = old.pages.map((page) => {
+            const contacts = page.contacts.filter((c) => c.id !== id);
+            removed += page.contacts.length - contacts.length;
+            return { ...page, contacts };
+          });
+          return {
+            ...old,
+            pages: filtered.map((page) => ({
+              ...page,
+              total: page.total - removed,
+            })),
+          };
+        },
       );
       return { previous };
     },
@@ -844,23 +901,24 @@ export default function Contacts() {
     },
     onMutate: async (vars) => {
       await queryClient.cancelQueries({ queryKey: ["projects", projectId, "contacts"] });
-      const previous = queryClient.getQueriesData<Contact[]>({
+      const previous = queryClient.getQueriesData<ContactsCache>({
         queryKey: ["projects", projectId, "contacts"],
       });
       const groupSet = new Set(vars.groupTagIds);
-      queryClient.setQueriesData<Contact[]>(
+      queryClient.setQueriesData<ContactsCache>(
         { queryKey: ["projects", projectId, "contacts"] },
         (old) =>
-          Array.isArray(old)
-            ? old.map((ct) => {
-                if (ct.id !== vars.contactId) return ct;
-                const kept = ct.tags.filter((t) => !groupSet.has(t.id));
-                return {
-                  ...ct,
-                  tags: vars.optimisticTag ? [...kept, vars.optimisticTag] : kept,
-                };
-              })
-            : old,
+          updateContactsCache(old, (page) => ({
+            ...page,
+            contacts: page.contacts.map((ct) => {
+              if (ct.id !== vars.contactId) return ct;
+              const kept = ct.tags.filter((t) => !groupSet.has(t.id));
+              return {
+                ...ct,
+                tags: vars.optimisticTag ? [...kept, vars.optimisticTag] : kept,
+              };
+            }),
+          })),
       );
       return { previous };
     },
@@ -1867,6 +1925,30 @@ export default function Contacts() {
           onDeleteStepTag={handleDeleteStepTag}
           onReorderSteps={handleReorderSteps}
         />
+      )}
+
+      {/* Load more — applies to both list and kanban; kanban buckets whatever
+          has been loaded so far. */}
+      {!loadingContacts && !errorContacts && contacts.length > 0 && (
+        <div className="mt-4 flex items-center justify-center gap-3">
+          {hasNextPage && (
+            <Button
+              variant="outline"
+              onClick={() => fetchNextPage()}
+              disabled={isFetchingNextPage}
+            >
+              {isFetchingNextPage ? (
+                <Loader className="h-4 w-4 animate-spin" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+              Load {PAGE_SIZE} more
+            </Button>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {contacts.length} of {totalContacts} loaded
+          </span>
+        </div>
       )}
 
       {/* ─── Import Contacts Dialog ─── */}

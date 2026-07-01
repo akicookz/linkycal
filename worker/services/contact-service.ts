@@ -41,6 +41,18 @@ function normalizeJsonColumn(value: unknown): unknown {
   }
 }
 
+// D1 rejects any query with more than 100 bound parameters, so an `inArray`
+// over the whole contact set breaks once a project passes ~100 contacts. Chunk
+// those lists before binding. 90 leaves headroom for the extra bound params
+// some of these queries carry alongside the id list (status, cutoff).
+const CONTACT_ID_CHUNK = 90;
+
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 // ─── Contact Service ─────────────────────────────────────────────────────────
 
 export class ContactService {
@@ -108,54 +120,59 @@ export class ContactService {
 
     if (opts?.activityType || opts?.activitySinceDays !== undefined) {
       if (projectContactIds.length === 0) return rows;
-      const conditions = [
-        inArray(dbSchema.contactActivity.contactId, projectContactIds),
-      ];
+      const extra = [];
       if (opts.activityType) {
-        conditions.push(eq(dbSchema.contactActivity.type, opts.activityType));
+        extra.push(eq(dbSchema.contactActivity.type, opts.activityType));
       }
       if (opts.activitySinceDays !== undefined && opts.activitySinceDays >= 0) {
         const cutoff = new Date(Date.now() - opts.activitySinceDays * 86400_000);
-        conditions.push(gte(dbSchema.contactActivity.createdAt, cutoff));
+        extra.push(gte(dbSchema.contactActivity.createdAt, cutoff));
       }
-      const activeRows = await this.db
-        .select({ contactId: dbSchema.contactActivity.contactId })
-        .from(dbSchema.contactActivity)
-        .where(and(...conditions));
-      const activeIds = new Set(activeRows.map((r) => r.contactId));
+      const activeIds = new Set<string>();
+      for (const ids of chunk(projectContactIds, CONTACT_ID_CHUNK)) {
+        const activeRows = await this.db
+          .select({ contactId: dbSchema.contactActivity.contactId })
+          .from(dbSchema.contactActivity)
+          .where(and(inArray(dbSchema.contactActivity.contactId, ids), ...extra));
+        for (const r of activeRows) activeIds.add(r.contactId);
+      }
       rows = rows.filter((c) => activeIds.has(c.id));
     }
 
     if (opts?.noActivitySinceDays !== undefined && opts.noActivitySinceDays >= 0) {
       if (projectContactIds.length === 0) return rows;
       const cutoff = new Date(Date.now() - opts.noActivitySinceDays * 86400_000);
-      const recentRows = await this.db
-        .select({ contactId: dbSchema.contactActivity.contactId })
-        .from(dbSchema.contactActivity)
-        .where(
-          and(
-            inArray(dbSchema.contactActivity.contactId, projectContactIds),
-            gte(dbSchema.contactActivity.createdAt, cutoff),
-          ),
-        );
-      const recentIds = new Set(recentRows.map((r) => r.contactId));
+      const recentIds = new Set<string>();
+      for (const ids of chunk(projectContactIds, CONTACT_ID_CHUNK)) {
+        const recentRows = await this.db
+          .select({ contactId: dbSchema.contactActivity.contactId })
+          .from(dbSchema.contactActivity)
+          .where(
+            and(
+              inArray(dbSchema.contactActivity.contactId, ids),
+              gte(dbSchema.contactActivity.createdAt, cutoff),
+            ),
+          );
+        for (const r of recentRows) recentIds.add(r.contactId);
+      }
       rows = rows.filter((c) => !recentIds.has(c.id));
     }
 
     if (opts?.bookingStatus) {
       if (projectContactIds.length === 0) return rows;
-      const bookingRows = await this.db
-        .select({ contactId: dbSchema.bookings.contactId })
-        .from(dbSchema.bookings)
-        .where(
-          and(
-            eq(dbSchema.bookings.status, opts.bookingStatus),
-            inArray(dbSchema.bookings.contactId, projectContactIds),
-          ),
-        );
-      const matched = new Set(
-        bookingRows.map((r) => r.contactId).filter((id): id is string => !!id),
-      );
+      const matched = new Set<string>();
+      for (const ids of chunk(projectContactIds, CONTACT_ID_CHUNK)) {
+        const bookingRows = await this.db
+          .select({ contactId: dbSchema.bookings.contactId })
+          .from(dbSchema.bookings)
+          .where(
+            and(
+              eq(dbSchema.bookings.status, opts.bookingStatus),
+              inArray(dbSchema.bookings.contactId, ids),
+            ),
+          );
+        for (const r of bookingRows) if (r.contactId) matched.add(r.contactId);
+      }
       rows = rows.filter((c) => matched.has(c.id));
     }
 
@@ -457,34 +474,69 @@ export class ContactService {
     }
   }
 
-  // Get all contacts with their tags in one go (for list view)
+  // Get all contacts with their tags in one go (for MCP + non-paginated callers).
   async listWithTags(projectId: string, opts?: ContactListOptions) {
-    const contacts = await this.list(projectId, opts);
+    return this.decorateWithTags(await this.list(projectId, opts));
+  }
+
+  // Paginated slice of the filtered set + the full filtered count, for the
+  // list/kanban "Load more" flow. Only the page is decorated, so the tag/
+  // activity lookups stay small regardless of how many contacts match.
+  async listPage(
+    projectId: string,
+    opts?: ContactListOptions,
+    page?: { limit?: number; offset?: number },
+  ) {
+    const all = await this.list(projectId, opts);
+    const total = all.length;
+    const offset = Math.max(0, page?.offset ?? 0);
+    const limit = page?.limit ?? 50;
+    const contacts = await this.decorateWithTags(all.slice(offset, offset + limit));
+    return { contacts, total };
+  }
+
+  // Attach each contact's tags + newest-activity timestamp.
+  private async decorateWithTags(
+    contacts: Awaited<ReturnType<ContactService["list"]>>,
+  ) {
     if (contacts.length === 0) return [];
 
     const contactIds = contacts.map((c) => c.id);
 
-    const allContactTags = await this.db
-      .select({
-        contactId: dbSchema.contactTags.contactId,
-        tagId: dbSchema.contactTags.tagId,
-        tagName: dbSchema.tags.name,
-        tagColor: dbSchema.tags.color,
-      })
-      .from(dbSchema.contactTags)
-      .innerJoin(dbSchema.tags, eq(dbSchema.contactTags.tagId, dbSchema.tags.id))
-      .where(inArray(dbSchema.contactTags.contactId, contactIds));
+    // Chunked to respect D1's 100-bound-parameter cap (see CONTACT_ID_CHUNK).
+    const allContactTags: {
+      contactId: string;
+      tagId: string;
+      tagName: string;
+      tagColor: string | null;
+    }[] = [];
+    for (const ids of chunk(contactIds, CONTACT_ID_CHUNK)) {
+      const part = await this.db
+        .select({
+          contactId: dbSchema.contactTags.contactId,
+          tagId: dbSchema.contactTags.tagId,
+          tagName: dbSchema.tags.name,
+          tagColor: dbSchema.tags.color,
+        })
+        .from(dbSchema.contactTags)
+        .innerJoin(dbSchema.tags, eq(dbSchema.contactTags.tagId, dbSchema.tags.id))
+        .where(inArray(dbSchema.contactTags.contactId, ids));
+      allContactTags.push(...part);
+    }
 
-    // One batched query (not N+1): newest activity per contact.
-    const lastActivityRows = await this.db
-      .select({
-        contactId: dbSchema.contactActivity.contactId,
-        last: sql<number>`max(${dbSchema.contactActivity.createdAt})`,
-      })
-      .from(dbSchema.contactActivity)
-      .where(inArray(dbSchema.contactActivity.contactId, contactIds))
-      .groupBy(dbSchema.contactActivity.contactId);
-    const lastById = new Map(lastActivityRows.map((r) => [r.contactId, r.last]));
+    // One batched query per chunk (not N+1): newest activity per contact.
+    const lastById = new Map<string, number>();
+    for (const ids of chunk(contactIds, CONTACT_ID_CHUNK)) {
+      const lastActivityRows = await this.db
+        .select({
+          contactId: dbSchema.contactActivity.contactId,
+          last: sql<number>`max(${dbSchema.contactActivity.createdAt})`,
+        })
+        .from(dbSchema.contactActivity)
+        .where(inArray(dbSchema.contactActivity.contactId, ids))
+        .groupBy(dbSchema.contactActivity.contactId);
+      for (const r of lastActivityRows) lastById.set(r.contactId, r.last);
+    }
 
     return contacts.map((contact) => {
       const last = lastById.get(contact.id);

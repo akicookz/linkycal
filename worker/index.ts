@@ -4876,31 +4876,46 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
     ? Number(noActivitySinceDays)
     : NaN;
 
+  // Pagination: default 50/page, clamped so the page-decoration queries stay
+  // well under D1's 100-bound-param cap. Missing params ⇒ first page of 50.
+  const parsedLimit = Number(url.searchParams.get("limit"));
+  const limit =
+    Number.isFinite(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 100)
+      : 50;
+  const parsedOffset = Number(url.searchParams.get("offset"));
+  const offset =
+    Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
+
   const db = c.get("db");
   const service = new ContactService(db);
-  const contacts = await service.listWithTags(projectId, {
-    search,
-    tagId,
-    tagIds: tagIds.length > 0 ? tagIds : undefined,
-    matchAllTags,
-    activityType:
-      activityType && (validActivity as readonly string[]).includes(activityType)
-        ? (activityType as (typeof validActivity)[number])
-        : undefined,
-    activitySinceDays:
-      Number.isFinite(parsedActivitySince) && parsedActivitySince >= 0
-        ? parsedActivitySince
-        : undefined,
-    noActivitySinceDays:
-      Number.isFinite(parsedNoActivitySince) && parsedNoActivitySince >= 0
-        ? parsedNoActivitySince
-        : undefined,
-    bookingStatus:
-      bookingStatus && (validBooking as readonly string[]).includes(bookingStatus)
-        ? (bookingStatus as (typeof validBooking)[number])
-        : undefined,
-  });
-  return c.json({ contacts });
+  const { contacts, total } = await service.listPage(
+    projectId,
+    {
+      search,
+      tagId,
+      tagIds: tagIds.length > 0 ? tagIds : undefined,
+      matchAllTags,
+      activityType:
+        activityType && (validActivity as readonly string[]).includes(activityType)
+          ? (activityType as (typeof validActivity)[number])
+          : undefined,
+      activitySinceDays:
+        Number.isFinite(parsedActivitySince) && parsedActivitySince >= 0
+          ? parsedActivitySince
+          : undefined,
+      noActivitySinceDays:
+        Number.isFinite(parsedNoActivitySince) && parsedNoActivitySince >= 0
+          ? parsedNoActivitySince
+          : undefined,
+      bookingStatus:
+        bookingStatus && (validBooking as readonly string[]).includes(bookingStatus)
+          ? (bookingStatus as (typeof validBooking)[number])
+          : undefined,
+    },
+    { limit, offset },
+  );
+  return c.json({ contacts, total });
 });
 
 // ─── Contact Views (saved filters / kanban configs) ──────────────────────────
@@ -5343,13 +5358,18 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     if (limit !== -1 && used >= limit) {
       return c.json({ error: "Monthly enrichment limit reached", used, limit }, 403);
     }
+    // Run the research inline and return the enriched contact so the client can
+    // show the new fields immediately — no queue, no polling. Usage is only
+    // counted once the enrichment actually succeeds.
+    const execution = new WorkflowExecutionService(db);
+    await execution.enrichContact(projectId, contactId, c.env);
     await incrementEnrichmentUsage(db, ent.ownerUserId, now);
-    await c.env.WORKFLOW_QUEUE.send({ kind: "enrich", projectId, contactId });
+    const contact = await service.getById(contactId);
     const remaining = limit === -1 ? -1 : Math.max(0, limit - (used + 1));
-    return c.json({ success: true, remaining, unlimited: limit === -1 });
+    return c.json({ success: true, contact, remaining, unlimited: limit === -1 });
   } catch (err) {
     console.error("Enrich error:", err);
-    return c.json({ error: "Failed to start enrichment" }, 500);
+    return c.json({ error: "Failed to enrich contact" }, 500);
   }
 });
 
@@ -7045,10 +7065,11 @@ export default {
   },
 
   async queue(
-    batch: MessageBatch<
-      | { workflowRunId: string; stepIndex: number; remainingDelay?: number }
-      | { kind: "enrich"; projectId: string; contactId: string }
-    >,
+    batch: MessageBatch<{
+      workflowRunId: string;
+      stepIndex: number;
+      remainingDelay?: number;
+    }>,
     env: import("./types").AppEnv,
   ) {
     const db = drizzle(env.DB, { schema });
@@ -7056,21 +7077,13 @@ export default {
 
     for (const message of batch.messages) {
       try {
-        const body = message.body;
-        if ("kind" in body && body.kind === "enrich") {
-          // Note: if the queue retries this message (e.g. after a transient failure),
-          // the AI research runs again and appends another dated summary block to notes.
-          // Dedup and quota refunds for retried jobs are out of scope per spec.
-          await executionService.enrichContact(body.projectId, body.contactId, env);
-        } else {
-          const { workflowRunId, stepIndex, remainingDelay } = body as { workflowRunId: string; stepIndex: number; remainingDelay?: number };
+        const { workflowRunId, stepIndex, remainingDelay } = message.body;
 
-          // If this is a chained wait (delay > 12h), re-enqueue without executing
-          if (remainingDelay !== undefined && remainingDelay > 0) {
-            await executionService.continueWait(workflowRunId, stepIndex, remainingDelay, env);
-          } else {
-            await executionService.executeStep(workflowRunId, stepIndex, env);
-          }
+        // If this is a chained wait (delay > 12h), re-enqueue without executing
+        if (remainingDelay !== undefined && remainingDelay > 0) {
+          await executionService.continueWait(workflowRunId, stepIndex, remainingDelay, env);
+        } else {
+          await executionService.executeStep(workflowRunId, stepIndex, env);
         }
         message.ack();
       } catch (err) {

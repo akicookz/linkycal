@@ -287,9 +287,7 @@ export default function ContactDetailPage() {
 
   // ─── Enrichment ───
 
-  const [enriching, setEnriching] = useState(false);
   const [enrichError, setEnrichError] = useState<string | null>(null);
-  const enrichBaselineRef = useRef<number | null>(null);
 
   const { data: enrichUsage } = useQuery<{ used: number; limit: number; remaining: number; unlimited: boolean }>({
     queryKey: ["projects", projectId, "enrichment-usage"],
@@ -302,45 +300,31 @@ export default function ContactDetailPage() {
   });
 
   const enrichMutation = useMutation({
+    // Enrichment runs synchronously server-side (web research + write), so this
+    // request stays open for the whole job and resolves once the contact's
+    // fields are updated. isPending drives the button's loading state.
     mutationFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}/enrich`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw new Error((data as { error?: string }).error ?? "Failed to start enrichment");
+        throw new Error((data as { error?: string }).error ?? "Failed to enrich contact");
       }
       return res.json();
     },
     onSuccess: () => {
       setEnrichError(null);
-      enrichBaselineRef.current = contact?.activity.length ?? 0;
-      setEnriching(true);
+      // The enriched fields + new activity are already persisted; refetch to show them.
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
+      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "enrichment-usage"] });
     },
     onError: (err: Error) => {
       const msg = err.message.includes("Monthly enrichment limit")
         ? "Monthly enrichment limit reached."
-        : (err.message || "Failed to start enrichment.");
+        : (err.message || "Failed to enrich contact.");
       setEnrichError(msg);
     },
   });
-
-  // While enriching, poll the contact until a new activity (the research) lands.
-  useEffect(() => {
-    if (!enriching) return;
-    const interval = setInterval(() => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
-    }, 4000);
-    const timeout = setTimeout(() => setEnriching(false), 90000);
-    return () => { clearInterval(interval); clearTimeout(timeout); };
-  }, [enriching, projectId, contactId, queryClient]);
-
-  useEffect(() => {
-    if (!enriching || enrichBaselineRef.current === null || !contact) return;
-    if (contact.activity.length > enrichBaselineRef.current) {
-      setEnriching(false);
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "enrichment-usage"] });
-    }
-  }, [contact, enriching, projectId, queryClient]);
 
   // ─── Handlers ───
 
@@ -478,7 +462,7 @@ export default function ContactDetailPage() {
         <Button
           onClick={() => enrichMutation.mutate()}
           disabled={
-            enriching || enrichMutation.isPending ||
+            enrichMutation.isPending ||
             (!!enrichUsage && !enrichUsage.unlimited && enrichUsage.remaining <= 0)
           }
           title={
@@ -487,7 +471,7 @@ export default function ContactDetailPage() {
               : undefined
           }
         >
-          {enriching || enrichMutation.isPending ? (
+          {enrichMutation.isPending ? (
             <><Loader className="h-4 w-4 animate-spin" /> Enriching…</>
           ) : (
             <><Sparkles className="h-4 w-4" /> Enrich

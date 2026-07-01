@@ -102,6 +102,101 @@ describe("ContactService.listWithTags lastActivityAt", () => {
     const [contact] = await svc.listWithTags("p");
     expect(contact.lastActivityAt).toBeNull();
   });
+
+  // Regression: projects over ~100 contacts used to 500 because the tag/activity
+  // lookups bound one param per contact and D1 caps queries at 100 params. The
+  // lookups are chunked now; this proves contacts past the first chunk still get
+  // their tags and lastActivityAt merged in. (bun:sqlite has no param cap, so
+  // this guards the chunk-merge logic, not the D1 limit itself.)
+  test("merges tags and activity for contacts beyond the first chunk", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+
+    const N = 150; // > CONTACT_ID_CHUNK (90) → at least two chunks
+    const contactRows = Array.from({ length: N }, (_, i) => ({
+      id: `bulk-${i}`,
+      projectId: "p",
+      name: `Bulk ${i}`,
+      email: `bulk-${i}@x.com`,
+    }));
+    await db.insert(dbSchema.contacts).values(contactRows);
+    await db.insert(dbSchema.contactTags).values(
+      contactRows.map((c) => ({ contactId: c.id, tagId: "lead" })),
+    );
+    await db.insert(dbSchema.contactActivity).values(
+      contactRows.map((c, i) => ({
+        id: `act-${i}`,
+        contactId: c.id,
+        type: "form_submitted" as const,
+        createdAt: new Date("2026-05-01T00:00:00Z"),
+      })),
+    );
+
+    const all = await svc.listWithTags("p");
+    const bulk = all.filter((c) => c.id.startsWith("bulk-"));
+    expect(bulk).toHaveLength(N);
+    for (const c of bulk) {
+      expect(c.tags.map((t) => t.id)).toEqual(["lead"]);
+      expect(c.lastActivityAt).not.toBeNull();
+    }
+  });
+});
+
+describe("ContactService.listPage", () => {
+  async function seedMany(n: number) {
+    const db = await seed(); // project "p" already has 1 contact ("c")
+    const svc = new ContactService(db);
+    const rows = Array.from({ length: n }, (_, i) => ({
+      id: `pg-${String(i).padStart(3, "0")}`,
+      projectId: "p",
+      name: `Paged ${i}`,
+      email: `pg-${i}@x.com`,
+    }));
+    await db.insert(dbSchema.contacts).values(rows);
+    return { db, svc, total: n + 1 };
+  }
+
+  test("returns the first page and the full filtered total", async () => {
+    const { svc, total } = await seedMany(120);
+    const { contacts, total: reported } = await svc.listPage("p", undefined, {
+      limit: 50,
+      offset: 0,
+    });
+    expect(reported).toBe(total); // 121
+    expect(contacts).toHaveLength(50);
+  });
+
+  test("offset walks through the set without overlap; last page is short", async () => {
+    const { svc } = await seedMany(120); // 121 total
+    const page1 = await svc.listPage("p", undefined, { limit: 50, offset: 0 });
+    const page2 = await svc.listPage("p", undefined, { limit: 50, offset: 50 });
+    const page3 = await svc.listPage("p", undefined, { limit: 50, offset: 100 });
+
+    expect(page3.contacts).toHaveLength(21); // 121 - 100
+    const ids = new Set([
+      ...page1.contacts.map((c) => c.id),
+      ...page2.contacts.map((c) => c.id),
+      ...page3.contacts.map((c) => c.id),
+    ]);
+    expect(ids.size).toBe(121); // no dupes, full coverage
+  });
+
+  test("total reflects the filter, not the whole project", async () => {
+    const { db, svc } = await seedMany(10);
+    // Tag exactly 3 of the paged contacts.
+    await db.insert(dbSchema.contactTags).values([
+      { contactId: "pg-000", tagId: "lead" },
+      { contactId: "pg-001", tagId: "lead" },
+      { contactId: "pg-002", tagId: "lead" },
+    ]);
+    const { contacts, total } = await svc.listPage(
+      "p",
+      { tagIds: ["lead"] },
+      { limit: 50, offset: 0 },
+    );
+    expect(total).toBe(3);
+    expect(contacts).toHaveLength(3);
+  });
 });
 
 describe("ContactService ownership guards", () => {
