@@ -74,7 +74,7 @@ const ALTERNATIVES: Record<string, AlternativeData> = {
       "Looking for a Formspree alternative? LinkyCal gives you headless forms that post from plain HTML, plus booking pages, contacts, and workflows in one backend.",
     eyebrow: "The Formspree alternative",
     headline: "The headless form backend",
-    highlightedHeadline: "for vibe coders.",
+    highlightedHeadline: "for everyone.",
     subcopy:
       "Formspree is great at catching form submissions, and if that is all you need it does the job. Most people who come to us also want a booking page, a contact list, and a way to follow up. LinkyCal gives you the headless forms you came for and the scheduling you were about to go buy somewhere else, in one place.",
     checkmarks: [
