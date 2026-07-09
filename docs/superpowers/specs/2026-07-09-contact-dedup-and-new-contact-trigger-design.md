@@ -32,6 +32,18 @@ the AI call works with a valid key (the stubbed unit test already passes).
 The `.dev.vars` key is dead; prod almost certainly shares the cause (same OpenAI
 account, same code path).
 
+**Both providers are currently unhealthy on this account** (verified by driving
+each real call with the `.dev.vars` keys):
+- OpenAI → `AI_APICallError: Incorrect API key provided` (dead/revoked key, 401).
+- Gemini → `AI_RetryError: You exceeded your current quota … check your plan and
+  billing details` (key authenticates, but quota/billing exhausted, 429).
+
+Implication: the Gemini fallback below is correct and worth building, but it is
+**not a substitute for healthy credentials** — with today's keys, enrichment
+fails no matter which provider we pick. At least one provider needs a valid key
+*and* available quota/billing. (Prod secrets are set separately and may differ,
+but the shared account state makes it likely prod is in the same shape.)
+
 ## Goals
 
 - Enrich fails loudly and diagnosably; enrichment works again with a valid key.
@@ -58,10 +70,13 @@ account, same code path).
   (`AI_APICallError`, missing key) and return `502` with a specific, actionable
   message (e.g. `"Enrichment provider unavailable"`) instead of a generic `500`.
   Keep logging the underlying message server-side.
-- **Gemini fallback:** when the ChatGPT path throws a provider/availability
-  error and `GOOGLE_GENERATIVE_AI_API_KEY` is configured, retry once via Gemini
-  before surfacing the error. `enrichContact` uses `provider: "chatgpt"` today;
-  the fallback is contained in the enrich flow.
+- **Gemini fallback (default behavior):** `enrichContact` hardcodes
+  `provider: "chatgpt"` in a single `execute` call with no try/catch. Wrap it: on
+  a ChatGPT provider/availability error, retry once via Gemini when
+  `GOOGLE_GENERATIVE_AI_API_KEY` is configured (`WorkflowAiResearchService`
+  already supports `provider: "gemini"` end-to-end). Only surface an error to the
+  user if **both** providers fail (or neither key is configured). This makes a
+  single dead key non-fatal.
 - Usage is only incremented after success (already true) — keep it that way so a
   provider failure never burns quota.
 
