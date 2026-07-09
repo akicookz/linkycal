@@ -60,7 +60,7 @@ describe("booking confirmation email", () => {
     expect(payload.html).not.toContain("Submitted Details");
   });
 
-  test("renders a join link when meetingUrl is provided", async () => {
+  test("shows the meeting link as the visible URL when provided", async () => {
     const fetchMock = mockFetch();
     const emailService = new EmailService("test-key");
 
@@ -75,8 +75,27 @@ describe("booking confirmation email", () => {
     });
 
     const payload = lastPayload(fetchMock);
-    expect(payload.html).toContain("Join meeting");
-    expect(payload.html).toContain("https://meet.google.com/abc-defg-hij");
+    // The link text is the URL itself, not a generic "Join meeting" label.
+    expect(payload.html).not.toContain("Join meeting");
+    expect(payload.html).toContain(">https://meet.google.com/abc-defg-hij</a>");
+  });
+
+  test("shows the timezone alongside the time", async () => {
+    const fetchMock = mockFetch();
+    const emailService = new EmailService("test-key");
+
+    await emailService.sendBookingConfirmation({
+      to: "guest@example.com",
+      guestName: "Ava",
+      eventTypeName: "Intro Call",
+      startTime: new Date("2026-04-01T13:00:00.000Z"),
+      endTime: new Date("2026-04-01T13:30:00.000Z"),
+      timezone: "Europe/Berlin",
+    });
+
+    const payload = lastPayload(fetchMock);
+    // 13:00 UTC in Berlin (CEST) renders as 3:00 PM with a GMT+2 zone label.
+    expect(payload.html).toContain("GMT+2");
   });
 
   test("omits join link when meetingUrl is absent", async () => {

@@ -246,18 +246,18 @@ export class EmailService {
 
     const p = resolveTheme(theme);
     const dateStr = formatDate(startTime, timezone);
-    const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)}`;
+    const timeStr = `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)} ${formatTimeZoneShort(startTime, timezone)}`;
 
     const rows: Array<{ label: string; value: string; bold?: boolean }> = [
       { label: "Event", value: escapeHtml(eventTypeName), bold: true },
       { label: "Date", value: dateStr },
-      { label: "Time", value: timeStr },
+      { label: "Time", value: escapeHtml(timeStr) },
     ];
     if (location) rows.push({ label: "Location", value: escapeHtml(location) });
     if (meetingUrl) {
       rows.push({
         label: "Join",
-        value: `<a href="${escapeHtml(meetingUrl)}" style="color: ${p.primary}; text-decoration: underline; font-weight: 500;">Join meeting</a>`,
+        value: `<a href="${escapeHtml(meetingUrl)}" style="color: ${p.primary}; text-decoration: underline; font-weight: 500;">${escapeHtml(meetingUrl)}</a>`,
       });
     }
     if (notes) rows.push({ label: "Notes", value: escapeHtml(notes) });
@@ -633,6 +633,14 @@ function formatTime(date: Date, timezone: string): string {
     hour12: true,
     timeZone: timezone,
   }).format(date);
+}
+
+function formatTimeZoneShort(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    timeZoneName: "short",
+  }).formatToParts(date);
+  return parts.find((part) => part.type === "timeZoneName")?.value ?? timezone;
 }
 
 function escapeHtml(str: string): string {
