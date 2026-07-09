@@ -11,13 +11,13 @@ const base = {
 };
 
 describe("buildIcs", () => {
-  test("emits a well-formed VCALENDAR with PUBLISH method", () => {
+  test("emits a well-formed VCALENDAR with REQUEST method", () => {
     const ics = buildIcs(base);
     expect(ics).toContain("BEGIN:VCALENDAR");
     expect(ics).toContain("VERSION:2.0");
     expect(ics).toContain("PRODID:-//LinkyCal//Booking//EN");
     expect(ics).toContain("CALSCALE:GREGORIAN");
-    expect(ics).toContain("METHOD:PUBLISH");
+    expect(ics).toContain("METHOD:REQUEST");
     expect(ics).toContain("BEGIN:VEVENT");
     expect(ics).toContain("END:VEVENT");
     expect(ics.trimEnd().endsWith("END:VCALENDAR")).toBe(true);
@@ -68,6 +68,7 @@ describe("buildIcs", () => {
     expect(ics).toContain("DESCRIPTION:Reminder");
     expect(ics).not.toContain("LOCATION:");
     expect(ics).not.toContain("ORGANIZER");
+    expect(ics).not.toContain("ATTENDEE");
     expect(ics).not.toContain("URL:");
   });
 
@@ -79,10 +80,28 @@ describe("buildIcs", () => {
       url: "https://meet.google.com/abc",
       organizerName: "Owner Name",
       organizerEmail: "owner@example.com",
+      attendeeName: "Guest Name",
+      attendeeEmail: "guest@example.com",
     });
     expect(ics).toContain("DESCRIPTION:notes");
     expect(ics).toContain("LOCATION:https://meet.google.com/abc");
     expect(ics).toContain("URL:https://meet.google.com/abc");
     expect(ics).toContain("ORGANIZER;CN=Owner Name:mailto:owner@example.com");
+    // The ATTENDEE line is long enough to be folded; unfold before matching.
+    const unfolded = ics.replace(/\r\n /g, "");
+    expect(unfolded).toContain(
+      "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Guest Name:mailto:guest@example.com",
+    );
+  });
+
+  test("does not TEXT-escape the URL value", () => {
+    const ics = buildIcs({ ...base, url: "https://maps.example.com/?q=1,2;3" });
+    expect(ics).toContain("URL:https://maps.example.com/?q=1,2;3");
+  });
+
+  test("omits the CN param when the organizer name sanitizes to empty", () => {
+    const ics = buildIcs({ ...base, organizerName: ";", organizerEmail: "o@x.com" });
+    expect(ics).toContain("ORGANIZER:mailto:o@x.com");
+    expect(ics).not.toContain("CN=");
   });
 });

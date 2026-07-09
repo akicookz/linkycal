@@ -281,7 +281,7 @@ export class EmailService {
             {
               filename: "invite.ics",
               content: toBase64(icsContent),
-              contentType: "text/calendar; method=PUBLISH; charset=utf-8",
+              contentType: "text/calendar; method=REQUEST; charset=utf-8",
             },
           ]
         : undefined,

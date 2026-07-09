@@ -380,6 +380,7 @@ export async function createBookingAction(
       (async () => {
         let meetingUrl: string | undefined;
         let gcalICalUid: string | null = null;
+        let gcalOrganizerEmail: string | null = null;
 
         try {
           let calConnection;
@@ -431,6 +432,7 @@ export async function createBookingAction(
 
             meetingUrl = gcalResult.meetingUrl ?? undefined;
             gcalICalUid = gcalResult.iCalUID;
+            gcalOrganizerEmail = calConnection.email;
 
             await db
               .update(dbSchema.bookings)
@@ -457,10 +459,12 @@ export async function createBookingAction(
             description: icsDescriptionParts.length
               ? icsDescriptionParts.join("\n\n")
               : undefined,
-            location: meetingUrl ?? eventType.location ?? undefined,
+            location: eventType.location ?? meetingUrl ?? undefined,
             url: meetingUrl,
             organizerName: owner?.name,
-            organizerEmail: owner?.email,
+            organizerEmail: gcalOrganizerEmail ?? owner?.email,
+            attendeeName: input.name,
+            attendeeEmail: input.email,
           });
 
           await emailService.sendBookingConfirmation({
@@ -737,10 +741,20 @@ export async function confirmBookingAction(
 
   const projectTheme = parseProjectTheme(project?.settings);
 
+  const ownerRows = project
+    ? await db
+        .select()
+        .from(dbSchema.schema.users)
+        .where(eq(dbSchema.schema.users.id, project.userId))
+        .limit(1)
+    : [];
+  const owner = ownerRows[0];
+
   waitUntil(
     (async () => {
       let meetingUrl: string | undefined;
       let gcalICalUid: string | null = null;
+      let gcalOrganizerEmail: string | null = null;
 
       try {
         let calConnection;
@@ -792,6 +806,7 @@ export async function confirmBookingAction(
 
           meetingUrl = gcalResult.meetingUrl ?? undefined;
           gcalICalUid = gcalResult.iCalUID;
+          gcalOrganizerEmail = calConnection.email;
 
           await db
             .update(dbSchema.bookings)
@@ -818,8 +833,12 @@ export async function confirmBookingAction(
           description: icsDescriptionParts.length
             ? icsDescriptionParts.join("\n\n")
             : undefined,
-          location: meetingUrl ?? eventType.location ?? undefined,
+          location: eventType.location ?? meetingUrl ?? undefined,
           url: meetingUrl,
+          organizerName: owner?.name,
+          organizerEmail: gcalOrganizerEmail ?? owner?.email,
+          attendeeName: booking.name,
+          attendeeEmail: booking.email,
         });
 
         await emailService.sendBookingConfirmation({

@@ -8,6 +8,8 @@ export interface IcsInput {
   location?: string;
   organizerName?: string;
   organizerEmail?: string;
+  attendeeName?: string;
+  attendeeEmail?: string;
   url?: string;
 }
 
@@ -27,6 +29,12 @@ function escapeText(value: string): string {
 
 function sanitizeParam(value: string): string {
   return value.replace(/[",;:\r\n]/g, " ").trim();
+}
+
+function cnParam(name?: string): string {
+  if (!name) return "";
+  const cn = sanitizeParam(name);
+  return cn ? `;CN=${cn}` : "";
 }
 
 function foldLine(line: string): string {
@@ -61,7 +69,7 @@ export function buildIcs(input: IcsInput): string {
     "VERSION:2.0",
     "PRODID:-//LinkyCal//Booking//EN",
     "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
+    "METHOD:REQUEST",
     "BEGIN:VEVENT",
     `UID:${input.uid}`,
     `DTSTAMP:${formatUtc(input.dtstamp)}`,
@@ -75,10 +83,16 @@ export function buildIcs(input: IcsInput): string {
 
   if (input.description) lines.push(`DESCRIPTION:${escapeText(input.description)}`);
   if (input.location) lines.push(`LOCATION:${escapeText(input.location)}`);
-  if (input.url) lines.push(`URL:${escapeText(input.url)}`);
+  if (input.url) lines.push(`URL:${input.url.replace(/[\r\n]/g, "")}`);
   if (input.organizerEmail) {
-    const cn = input.organizerName ? `;CN=${sanitizeParam(input.organizerName)}` : "";
-    lines.push(`ORGANIZER${cn}:mailto:${input.organizerEmail}`);
+    lines.push(`ORGANIZER${cnParam(input.organizerName)}:mailto:${input.organizerEmail}`);
+  }
+  if (input.attendeeEmail) {
+    lines.push(
+      `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE${cnParam(
+        input.attendeeName,
+      )}:mailto:${input.attendeeEmail}`,
+    );
   }
 
   lines.push(
