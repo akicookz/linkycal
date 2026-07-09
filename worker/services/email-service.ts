@@ -30,6 +30,7 @@ interface BookingConfirmationParams {
   location?: string;
   notes?: string;
   meetingUrl?: string;
+  icsContent?: string;
   theme?: EmailTheme;
 }
 
@@ -239,6 +240,7 @@ export class EmailService {
       location,
       notes,
       meetingUrl,
+      icsContent,
       theme,
     } = params;
 
@@ -274,6 +276,15 @@ export class EmailService {
       to,
       subject: `Booking Confirmed: ${eventTypeName}`,
       html,
+      attachments: icsContent
+        ? [
+            {
+              filename: "invite.ics",
+              content: toBase64(icsContent),
+              contentType: "text/calendar; method=PUBLISH; charset=utf-8",
+            },
+          ]
+        : undefined,
     });
   }
 
@@ -559,6 +570,7 @@ export class EmailService {
     cc?: string[];
     subject: string;
     html: string;
+    attachments?: Array<{ filename: string; content: string; contentType?: string }>;
   }): Promise<void> {
     const body: Record<string, unknown> = {
       from: FROM_ADDRESS,
@@ -568,6 +580,13 @@ export class EmailService {
     };
     if (params.cc && params.cc.length > 0) {
       body.cc = params.cc;
+    }
+    if (params.attachments && params.attachments.length > 0) {
+      body.attachments = params.attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        ...(a.contentType ? { content_type: a.contentType } : {}),
+      }));
     }
 
     const response = await fetch(RESEND_API_URL, {
@@ -587,6 +606,15 @@ export class EmailService {
 }
 
 // ─── Helper Functions ─────────────────────────────────────────────────────────
+
+function toBase64(input: string): string {
+  const bytes = new TextEncoder().encode(input);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
 
 function formatDate(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("en-US", {
