@@ -12,11 +12,15 @@ import type { AppEnv } from "../../worker/types";
 import { seedTwoProjects } from "./mcp-test-db";
 
 // The actions fire background email tasks; keep the test hermetic by stubbing
-// fetch so no request ever leaves the process.
+// fetch so no request ever leaves the process. Calls are recorded so tests can
+// assert on the outgoing request payloads.
 const realFetch = globalThis.fetch;
+let fetchCalls: Array<{ url: string; body: string }> = [];
 beforeAll(() => {
-  globalThis.fetch = (async () =>
-    new Response("{}", { status: 200 })) as typeof fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    fetchCalls.push({ url: String(input), body: String(init?.body ?? "") });
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
 });
 afterAll(() => {
   globalThis.fetch = realFetch;
@@ -151,5 +155,31 @@ describe("booking actions", () => {
     expect(row.status).toBe("declined");
 
     await settle();
+  });
+
+  test("confirming a booking attaches an invite.ics to the guest email", async () => {
+    fetchCalls = [];
+    const { deps, settle } = await seedFixture();
+
+    const result = await confirmBookingAction(deps, "proj-a", "bk-pending");
+    expect(result.ok).toBe(true);
+    await settle();
+
+    const call = fetchCalls.find(
+      (c) => c.url.includes("api.resend.com") && c.body.includes("Booking Confirmed"),
+    );
+    expect(call).toBeDefined();
+
+    const body = JSON.parse(call!.body) as {
+      attachments?: Array<{ filename: string; content: string }>;
+    };
+    expect(body.attachments).toHaveLength(1);
+    expect(body.attachments![0].filename).toBe("invite.ics");
+
+    const binary = atob(body.attachments![0].content);
+    const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+    const ics = new TextDecoder().decode(bytes);
+    expect(ics).toContain("BEGIN:VCALENDAR");
+    expect(ics).toContain("UID:booking-bk-pending@linkycal.com");
   });
 });

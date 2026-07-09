@@ -17,6 +17,7 @@ import {
   getWeekRangeForLocalDate,
 } from "./timezone";
 import { parseInviteConnectionIds } from "./calendar-refs";
+import { buildIcs } from "./ics";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -378,6 +379,7 @@ export async function createBookingAction(
     waitUntil(
       (async () => {
         let meetingUrl: string | undefined;
+        let gcalICalUid: string | null = null;
 
         try {
           let calConnection;
@@ -428,6 +430,7 @@ export async function createBookingAction(
             );
 
             meetingUrl = gcalResult.meetingUrl ?? undefined;
+            gcalICalUid = gcalResult.iCalUID;
 
             await db
               .update(dbSchema.bookings)
@@ -441,6 +444,25 @@ export async function createBookingAction(
         try {
           const emailService = new EmailService(env.RESEND_API_KEY);
 
+          const icsDescriptionParts: string[] = [];
+          if (input.notes) icsDescriptionParts.push(input.notes);
+          if (meetingUrl) icsDescriptionParts.push(`Join: ${meetingUrl}`);
+
+          const icsContent = buildIcs({
+            uid: gcalICalUid ?? `booking-${booking.id}@linkycal.com`,
+            dtstamp: new Date(),
+            start: startTime,
+            end: endTime,
+            summary: `${eventType.name} with ${input.name}`,
+            description: icsDescriptionParts.length
+              ? icsDescriptionParts.join("\n\n")
+              : undefined,
+            location: meetingUrl ?? eventType.location ?? undefined,
+            url: meetingUrl,
+            organizerName: owner?.name,
+            organizerEmail: owner?.email,
+          });
+
           await emailService.sendBookingConfirmation({
             to: input.email,
             guestName: input.name,
@@ -451,6 +473,7 @@ export async function createBookingAction(
             location: eventType.location ?? undefined,
             notes: input.notes,
             meetingUrl,
+            icsContent,
             theme: projectTheme,
           });
 
@@ -717,6 +740,7 @@ export async function confirmBookingAction(
   waitUntil(
     (async () => {
       let meetingUrl: string | undefined;
+      let gcalICalUid: string | null = null;
 
       try {
         let calConnection;
@@ -767,6 +791,7 @@ export async function confirmBookingAction(
           );
 
           meetingUrl = gcalResult.meetingUrl ?? undefined;
+          gcalICalUid = gcalResult.iCalUID;
 
           await db
             .update(dbSchema.bookings)
@@ -780,6 +805,23 @@ export async function confirmBookingAction(
       try {
         const emailService = new EmailService(env.RESEND_API_KEY);
 
+        const icsDescriptionParts: string[] = [];
+        if (booking.notes) icsDescriptionParts.push(booking.notes);
+        if (meetingUrl) icsDescriptionParts.push(`Join: ${meetingUrl}`);
+
+        const icsContent = buildIcs({
+          uid: gcalICalUid ?? `booking-${booking.id}@linkycal.com`,
+          dtstamp: new Date(),
+          start: new Date(booking.startTime),
+          end: new Date(booking.endTime),
+          summary: `${eventType.name} with ${booking.name}`,
+          description: icsDescriptionParts.length
+            ? icsDescriptionParts.join("\n\n")
+            : undefined,
+          location: meetingUrl ?? eventType.location ?? undefined,
+          url: meetingUrl,
+        });
+
         await emailService.sendBookingConfirmation({
           to: booking.email,
           guestName: booking.name,
@@ -790,6 +832,7 @@ export async function confirmBookingAction(
           location: eventType.location ?? undefined,
           notes: booking.notes ?? undefined,
           meetingUrl,
+          icsContent,
           theme: projectTheme,
         });
       } catch (err) {
