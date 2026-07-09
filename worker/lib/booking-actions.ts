@@ -432,7 +432,7 @@ export async function createBookingAction(
 
             meetingUrl = gcalResult.meetingUrl ?? undefined;
             gcalICalUid = gcalResult.iCalUID;
-            gcalOrganizerEmail = calConnection.email;
+            gcalOrganizerEmail = gcalResult.organizer ?? calConnection.email;
 
             await db
               .update(dbSchema.bookings)
@@ -806,7 +806,7 @@ export async function confirmBookingAction(
 
           meetingUrl = gcalResult.meetingUrl ?? undefined;
           gcalICalUid = gcalResult.iCalUID;
-          gcalOrganizerEmail = calConnection.email;
+          gcalOrganizerEmail = gcalResult.organizer ?? calConnection.email;
 
           await db
             .update(dbSchema.bookings)

@@ -94,6 +94,15 @@ describe("buildIcs", () => {
     );
   });
 
+  test("omits ATTENDEE when there is no organizer", () => {
+    const ics = buildIcs({
+      ...base,
+      attendeeName: "Guest",
+      attendeeEmail: "guest@example.com",
+    });
+    expect(ics).not.toContain("ATTENDEE");
+  });
+
   test("does not TEXT-escape the URL value", () => {
     const ics = buildIcs({ ...base, url: "https://maps.example.com/?q=1,2;3" });
     expect(ics).toContain("URL:https://maps.example.com/?q=1,2;3");

@@ -87,7 +87,8 @@ export function buildIcs(input: IcsInput): string {
   if (input.organizerEmail) {
     lines.push(`ORGANIZER${cnParam(input.organizerName)}:mailto:${input.organizerEmail}`);
   }
-  if (input.attendeeEmail) {
+  // A REQUEST's ATTENDEE is only valid alongside an ORGANIZER; skip it otherwise.
+  if (input.attendeeEmail && input.organizerEmail) {
     lines.push(
       `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE${cnParam(
         input.attendeeName,

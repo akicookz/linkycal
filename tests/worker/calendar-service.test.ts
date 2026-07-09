@@ -16,13 +16,14 @@ function makeService(): CalendarService {
 }
 
 describe("CalendarService.createEvent", () => {
-  test("returns id, meetingUrl and iCalUID from Google's response", async () => {
+  test("returns id, meetingUrl, iCalUID and organizer from Google's response", async () => {
     globalThis.fetch = mock(async () =>
       new Response(
         JSON.stringify({
           id: "evt1",
           hangoutLink: "https://meet.google.com/abc-defg-hij",
           iCalUID: "evt1@google.com",
+          organizer: { email: "host@example.com" },
         }),
         { status: 200 },
       ),
@@ -37,6 +38,7 @@ describe("CalendarService.createEvent", () => {
     expect(result.id).toBe("evt1");
     expect(result.meetingUrl).toBe("https://meet.google.com/abc-defg-hij");
     expect(result.iCalUID).toBe("evt1@google.com");
+    expect(result.organizer).toBe("host@example.com");
   });
 
   test("returns null iCalUID when Google omits it", async () => {
@@ -53,5 +55,6 @@ describe("CalendarService.createEvent", () => {
     expect(result.id).toBe("evt2");
     expect(result.meetingUrl).toBeNull();
     expect(result.iCalUID).toBeNull();
+    expect(result.organizer).toBeNull();
   });
 });
