@@ -32,17 +32,21 @@ the AI call works with a valid key (the stubbed unit test already passes).
 The `.dev.vars` key is dead; prod almost certainly shares the cause (same OpenAI
 account, same code path).
 
-**Both providers are currently unhealthy on this account** (verified by driving
-each real call with the `.dev.vars` keys):
-- OpenAI → `AI_APICallError: Incorrect API key provided` (dead/revoked key, 401).
-- Gemini → `AI_RetryError: You exceeded your current quota … check your plan and
-  billing details` (key authenticates, but quota/billing exhausted, 429).
+**Provider health (re-verified after the owner rotated keys, 2026-07-09):**
+- OpenAI → **now works.** Returns a valid structured research result. The primary
+  enrich path is unblocked at the credential level.
+- Gemini → **now fails with a code bug**, not billing:
+  `AI_APICallError: Tool use with a response mime type: 'application/json' is
+  unsupported`. `executeGeminiResearch` combines `Output.object` (forces
+  `responseMimeType: application/json`) with the `google_search` grounding tool +
+  forced `toolChoice`; Gemini rejects structured-JSON output together with tool
+  use. This also breaks any workflow `ai_research` step configured for Gemini.
 
-Implication: the Gemini fallback below is correct and worth building, but it is
-**not a substitute for healthy credentials** — with today's keys, enrichment
-fails no matter which provider we pick. At least one provider needs a valid key
-*and* available quota/billing. (Prod secrets are set separately and may differ,
-but the shared account state makes it likely prod is in the same shape.)
+Implication: the Gemini fallback only becomes useful once `executeGeminiResearch`
+is restructured. **Decision (2026-07-09): fix it now** via the two-pass approach
+in §1 — call 1 does grounded `google_search` (text out, no `Output.object`);
+call 2 structures that text into `workflowResearchResultSchema` with
+`Output.object` and **no tools**.
 
 ## Goals
 
@@ -61,22 +65,34 @@ but the shared account state makes it likely prod is in the same shape.)
 
 ### 1. Enrich fix
 
-**Operational (owner action, not code):**
-- Set a valid `OPENAI_API_KEY`: `wrangler secret put OPENAI_API_KEY` (prod) and
-  update `.dev.vars` (local). Verify the OpenAI project is not billing-disabled.
+**Operational (owner action):** DONE — keys were rotated 2026-07-09; OpenAI now
+returns valid results locally. Remaining owner step: confirm the same valid
+`OPENAI_API_KEY` (and Gemini key/quota) is set in **prod**
+(`wrangler secret put OPENAI_API_KEY`), since prod secrets are separate from
+`.dev.vars`.
 
 **Code hardening (`worker/index.ts` enrich route + `WorkflowAiResearchService`):**
 - Stop swallowing the provider error. Detect provider auth/config failures
   (`AI_APICallError`, missing key) and return `502` with a specific, actionable
   message (e.g. `"Enrichment provider unavailable"`) instead of a generic `500`.
   Keep logging the underlying message server-side.
+- **Fix the Gemini research path (in scope — decided 2026-07-09).** Restructure
+  `WorkflowAiResearchService.executeGeminiResearch` as **two-pass** to avoid the
+  unsupported "structured JSON + grounding tool" combo:
+  1. Grounded search: `generateText` with the `google_search` tool, **no**
+     `Output.object` — returns grounded text.
+  2. Structure: `generateText` with `Output.object({ schema:
+     workflowResearchResultSchema })` and **no tools** — converts the grounded
+     text into the typed result. Preserve `withFallbackSources` behavior using the
+     search step's sources.
+  This fixes Gemini both for the enrich fallback and for workflow `ai_research`
+  steps configured for Gemini.
 - **Gemini fallback (default behavior):** `enrichContact` hardcodes
   `provider: "chatgpt"` in a single `execute` call with no try/catch. Wrap it: on
   a ChatGPT provider/availability error, retry once via Gemini when
-  `GOOGLE_GENERATIVE_AI_API_KEY` is configured (`WorkflowAiResearchService`
-  already supports `provider: "gemini"` end-to-end). Only surface an error to the
-  user if **both** providers fail (or neither key is configured). This makes a
-  single dead key non-fatal.
+  `GOOGLE_GENERATIVE_AI_API_KEY` is configured. Only surface an error to the user
+  if **both** providers fail (or neither key is configured). With the two-pass fix
+  above, this makes a single dead/over-quota provider non-fatal.
 - Usage is only incremented after success (already true) — keep it that way so a
   provider failure never burns quota.
 
@@ -171,6 +187,15 @@ createBooking (booking-actions.ts, inside waitUntil)
 `tests/worker/contact-actions.test.ts` (new):
 - `ensureContact` dispatches `new_contact_created` only when `created`.
 - Repeat booking (existing contact) does not dispatch.
+
+Enrich fallback (`tests/worker/contact-enrich.test.ts`, extend):
+- Stub `workflowAiResearchService.execute` so the ChatGPT provider throws and the
+  Gemini provider succeeds → `enrichContact` still writes the enriched columns
+  (fallback path). Both providers failing → error surfaces.
+
+Gemini two-pass restructure: unit tests stub at the `execute` boundary (the repo
+does not mock the AI SDK), so the two-pass call itself is verified manually via a
+throwaway repro against the live API (network) — not in `bun test`.
 
 ## Rollout
 
