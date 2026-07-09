@@ -733,11 +733,30 @@ export class WorkflowExecutionService {
       `Return the company name, company website, the person's position/title, ` +
       `the company's size (employee range), an estimated annual revenue range, ` +
       `their LinkedIn URL, and a concise executive summary for sales outreach.`;
-    const record = await this.workflowAiResearchService.execute(
-      { provider: "chatgpt", prompt, resultKey: "enrichment" },
-      env,
-    );
+    const record = await this.researchForEnrichment(prompt, env);
     await this.applyResearchToContact(contactId, record);
+  }
+
+  // Enrichment research with provider fallback: try ChatGPT, and if it fails and
+  // a Gemini key is configured, retry once via Gemini. Only if both providers
+  // fail (or ChatGPT fails with no Gemini key) does the error surface.
+  private async researchForEnrichment(prompt: string, env: AppEnv) {
+    try {
+      return await this.workflowAiResearchService.execute(
+        { provider: "chatgpt", prompt, resultKey: "enrichment" },
+        env,
+      );
+    } catch (chatgptErr) {
+      if (!env.GOOGLE_GENERATIVE_AI_API_KEY) throw chatgptErr;
+      console.error(
+        "Enrichment: ChatGPT provider failed, falling back to Gemini:",
+        chatgptErr,
+      );
+      return await this.workflowAiResearchService.execute(
+        { provider: "gemini", prompt, resultKey: "enrichment" },
+        env,
+      );
+    }
   }
 
   // ─── add_tag ───────────────────────────────────────────────────────────

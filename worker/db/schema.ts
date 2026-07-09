@@ -650,6 +650,7 @@ export const contactActivity = sqliteTable(
       .references(() => contacts.id, { onDelete: "cascade" }),
     type: text("type", {
       enum: [
+        "contact_created",
         "form_submitted",
         "booked",
         "cancelled",
@@ -773,6 +774,7 @@ export const workflows = sqliteTable(
         "booking_cancelled",
         "booking_pending",
         "booking_confirmed",
+        "new_contact_created",
         "tag_added",
         "manual",
         "scheduled",

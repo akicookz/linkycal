@@ -27,6 +27,7 @@ type TriggerType =
   | "booking_pending"
   | "booking_confirmed"
   | "booking_cancelled"
+  | "new_contact_created"
   | "tag_added"
   | "manual"
   | "scheduled";

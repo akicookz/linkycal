@@ -105,3 +105,71 @@ describe("applyResearchToContact (via enrichContact path)", () => {
     expect(acts.some((a) => a.type === "workflow_researched")).toBe(true);
   });
 });
+
+describe("enrichContact provider fallback", () => {
+  const geminiResult = {
+    resultKey: "enrichment", provider: "gemini", model: "gemini-2.5-pro",
+    prompt: "p", executedAt: "2026-07-09T00:00:00Z",
+    result: {
+      summary: "From Gemini.", company: "Beta", role: "CTO", website: "https://beta.com",
+      linkedinUrl: null, location: null, description: null, companySize: null,
+      estimatedRevenue: null, recommendedTags: [], insights: [], sources: [],
+    },
+  };
+
+  async function seedContact(id: string) {
+    const db = createTestDb();
+    await db.insert(dbSchema.schema.users).values({ id: `u-${id}`, name: "U", email: `${id}@x.com` });
+    await db.insert(dbSchema.projects).values({ id: `p-${id}`, userId: `u-${id}`, name: "P", slug: `p-${id}` });
+    await db.insert(dbSchema.contacts).values({ id, projectId: `p-${id}`, name: "Jane" });
+    return db;
+  }
+
+  test("falls back to Gemini when ChatGPT fails and a Gemini key is set", async () => {
+    const db = await seedContact("cf1");
+    const svc = new WorkflowExecutionService(db);
+    (svc as unknown as { workflowAiResearchService: { execute: unknown } }).workflowAiResearchService = {
+      execute: async (config: { provider: string }) => {
+        if (config.provider === "chatgpt") {
+          throw Object.assign(new Error("Incorrect API key"), { name: "AI_APICallError" });
+        }
+        return geminiResult;
+      },
+    };
+
+    await svc.enrichContact("p-cf1", "cf1", { GOOGLE_GENERATIVE_AI_API_KEY: "x" } as never);
+
+    const [c] = await db.select().from(dbSchema.contacts).where(eq(dbSchema.contacts.id, "cf1"));
+    expect(c.company).toBe("Beta");
+    expect(c.position).toBe("CTO");
+  });
+
+  test("surfaces the error when both providers fail", async () => {
+    const db = await seedContact("cf2");
+    const svc = new WorkflowExecutionService(db);
+    (svc as unknown as { workflowAiResearchService: { execute: unknown } }).workflowAiResearchService = {
+      execute: async () => {
+        throw Object.assign(new Error("provider down"), { name: "AI_APICallError" });
+      },
+    };
+
+    await expect(
+      svc.enrichContact("p-cf2", "cf2", { GOOGLE_GENERATIVE_AI_API_KEY: "x" } as never),
+    ).rejects.toThrow("provider down");
+  });
+
+  test("does not attempt Gemini when no Gemini key is configured", async () => {
+    const db = await seedContact("cf3");
+    const svc = new WorkflowExecutionService(db);
+    let calls = 0;
+    (svc as unknown as { workflowAiResearchService: { execute: unknown } }).workflowAiResearchService = {
+      execute: async () => {
+        calls += 1;
+        throw Object.assign(new Error("chatgpt down"), { name: "AI_APICallError" });
+      },
+    };
+
+    await expect(svc.enrichContact("p-cf3", "cf3", {} as never)).rejects.toThrow("chatgpt down");
+    expect(calls).toBe(1);
+  });
+});

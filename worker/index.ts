@@ -104,6 +104,7 @@ import {
 import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
+import { ensureContact } from "./lib/contact-actions";
 import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
 import type { TriggerContext } from "./services/workflow-execution-service";
@@ -872,15 +873,25 @@ async function dispatchFormSubmittedTrigger(
     } catch { /* fall back to defaults */ }
 
     if (resolvedEmail) {
-      const contactService = new ContactService(db);
-      const contact = await contactService.findOrCreate(form.projectId, {
-        name: contactName || resolvedEmail.split("@")[0],
-        email: resolvedEmail,
-      });
+      // Dedupe + create the contact; fires new_contact_created if brand-new.
+      const { contact } = await ensureContact(
+        db,
+        env,
+        form.projectId,
+        {
+          name: contactName || resolvedEmail.split("@")[0],
+          email: resolvedEmail,
+        },
+        "form",
+      );
       contactId = contact.id;
 
       // Log form_submitted activity for the contact
-      await contactService.logActivity(contact.id, "form_submitted", responseId);
+      await new ContactService(db).logActivity(
+        contact.id,
+        "form_submitted",
+        responseId,
+      );
     }
 
     await dispatchWorkflowTrigger(db, env, form.projectId, "form_submitted", {
@@ -4996,7 +5007,14 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
     const planLimits = c.get("planLimits");
     const service = new ContactService(db);
 
-    // Check plan limits
+    // Dedupe first: a matching contact returns the existing row (no duplicate,
+    // no trigger, and it doesn't count against the plan limit).
+    const duplicate = await service.findDuplicate(projectId, data);
+    if (duplicate) {
+      return c.json({ contact: duplicate }, 200);
+    }
+
+    // Enforce the plan limit only when this would create a brand-new contact.
     const existing = await service.list(projectId);
     if (
       planLimits.maxContactsPerProject !== -1 &&
@@ -5010,7 +5028,8 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
       );
     }
 
-    const contact = await service.create(projectId, data);
+    // Creates + fires new_contact_created (no duplicate exists at this point).
+    const { contact } = await ensureContact(db, c.env, projectId, data, "manual");
     return c.json({ contact }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -5369,6 +5388,15 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     return c.json({ success: true, contact, remaining, unlimited: limit === -1 });
   } catch (err) {
     console.error("Enrich error:", err);
+    // AI SDK errors surface as `AI_*` names (e.g. AI_APICallError for a bad key,
+    // AI_RetryError for exhausted quota). Report these as an upstream-provider
+    // failure so it's diagnosable instead of an opaque 500.
+    if (err instanceof Error && err.name.startsWith("AI_")) {
+      return c.json(
+        { error: "Enrichment provider unavailable. Please try again later." },
+        502,
+      );
+    }
     return c.json({ error: "Failed to enrich contact" }, 500);
   }
 });

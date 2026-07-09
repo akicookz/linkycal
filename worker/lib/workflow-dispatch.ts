@@ -11,7 +11,7 @@ export async function dispatchWorkflowTrigger(
   db: DrizzleD1Database<Record<string, unknown>>,
   env: AppEnv,
   projectId: string,
-  trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "tag_added",
+  trigger: "form_submitted" | "booking_created" | "booking_cancelled" | "booking_pending" | "booking_confirmed" | "new_contact_created" | "tag_added",
   context: TriggerContext,
 ) {
   const executionService = new WorkflowExecutionService(db);

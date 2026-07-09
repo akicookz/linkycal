@@ -89,6 +89,10 @@ export class WorkflowAiResearchService {
     });
   }
 
+  // Gemini rejects structured JSON output (`responseMimeType: application/json`)
+  // combined with a grounding tool in the same call, so this runs two passes:
+  // (1) grounded google_search producing text + sources, (2) a tool-free call
+  // that structures that text into the schema.
   private async executeGeminiResearch(
     prompt: string,
     resultKey: string,
@@ -101,16 +105,16 @@ export class WorkflowAiResearchService {
     const google = createGoogleGenerativeAI({
       apiKey: env.GOOGLE_GENERATIVE_AI_API_KEY,
     });
-    const result = await generateText({
+
+    // Pass 1 — grounded search. No `Output.object`; grounding is automatic when
+    // the googleSearch tool is present, so we don't force toolChoice (forcing it
+    // can starve the final text generation).
+    const search = await generateText({
       model: google(GEMINI_MODEL),
       prompt: buildResearchPrompt(prompt),
-      output: Output.object({
-        schema: workflowResearchResultSchema,
-      }),
       tools: {
         google_search: google.tools.googleSearch({}),
       },
-      toolChoice: { type: "tool", toolName: "google_search" },
       stopWhen: stepCountIs(3),
       providerOptions: {
         google: {
@@ -122,14 +126,44 @@ export class WorkflowAiResearchService {
       },
     });
 
+    // If the grounded pass produced no text (e.g. it spent its step budget on
+    // tool calls), structuring would silently yield an all-null result. Fail
+    // instead so the caller's fallback/error handling kicks in.
+    if (search.text.trim().length === 0) {
+      throw new Error("ai_research: gemini grounded search returned no findings");
+    }
+
+    // Pass 2 — structure the grounded findings into the schema. No tools, so the
+    // JSON response format is allowed.
+    const structured = await generateText({
+      model: google(GEMINI_MODEL),
+      prompt: buildStructurePrompt(search.text),
+      output: Output.object({
+        schema: workflowResearchResultSchema,
+      }),
+    });
+
     return buildResearchRecord({
       provider: "gemini",
       model: GEMINI_MODEL,
       resultKey,
       prompt,
-      output: withFallbackSources(result.output, result.sources),
+      output: withFallbackSources(structured.output, search.sources),
     });
   }
+}
+
+// Second Gemini pass: turn grounded free-text findings into the typed schema.
+function buildStructurePrompt(researchText: string): string {
+  return [
+    "Convert the following research notes into the required structured fields.",
+    "Use only what the notes support; if a field is unknown, return null.",
+    "Do not invent companies, roles, or URLs.",
+    "Keep the summary concise and useful for a sales or operations workflow.",
+    "",
+    "Research notes:",
+    researchText.trim().length > 0 ? researchText : "(no findings)",
+  ].join("\n");
 }
 
 function buildResearchPrompt(userPrompt: string): string {

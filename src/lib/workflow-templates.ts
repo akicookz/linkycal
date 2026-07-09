@@ -4,6 +4,7 @@ export type WorkflowTriggerType =
   | "booking_cancelled"
   | "booking_pending"
   | "booking_confirmed"
+  | "new_contact_created"
   | "tag_added"
   | "manual"
   | "scheduled";

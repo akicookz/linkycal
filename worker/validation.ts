@@ -469,6 +469,7 @@ export const setStageSchema = z.object({
 // ─── Contact Views ───────────────────────────────────────────────────────────
 
 const activityTypeEnum = z.enum([
+  "contact_created",
   "form_submitted",
   "booked",
   "cancelled",
@@ -520,6 +521,7 @@ const workflowTriggerEnum = z.enum([
   "booking_cancelled",
   "booking_pending",
   "booking_confirmed",
+  "new_contact_created",
   "tag_added",
   "manual",
   "scheduled",

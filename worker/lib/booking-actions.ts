@@ -19,6 +19,7 @@ import {
 import { parseInviteConnectionIds } from "./calendar-refs";
 import { buildIcs } from "./ics";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
+import { ensureContact } from "./contact-actions";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -551,11 +552,15 @@ export async function createBookingAction(
   waitUntil(
     (async () => {
       try {
+        // Dedupe + create the contact; fires new_contact_created if brand-new.
+        const { contact } = await ensureContact(
+          db,
+          env,
+          project.id,
+          { name: input.name, email: input.email },
+          "booking",
+        );
         const contactService = new ContactService(db);
-        const contact = await contactService.findOrCreate(project.id, {
-          name: input.name,
-          email: input.email,
-        });
 
         // Link contact to the booking row
         await db
@@ -711,7 +716,7 @@ export async function cancelBookingAction(
     (async () => {
       try {
         const contactService = new ContactService(db);
-        const contact = await contactService.findOrCreate(projectId, {
+        const { contact } = await contactService.findOrCreate(projectId, {
           name: booking.name,
           email: booking.email,
         });
@@ -899,7 +904,7 @@ export async function confirmBookingAction(
     (async () => {
       try {
         const contactService = new ContactService(db);
-        const contact = await contactService.findOrCreate(projectId, {
+        const { contact } = await contactService.findOrCreate(projectId, {
           name: booking.name,
           email: booking.email,
         });

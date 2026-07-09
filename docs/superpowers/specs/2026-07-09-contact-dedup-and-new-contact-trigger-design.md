@@ -103,17 +103,19 @@ dispatch here).
 
 - **Normalize on write:** `create()` stores `email` trimmed + lowercased. `name`
   keeps original casing for display.
-- **Lookups (SQLite `lower()`/`trim()`, project-scoped):**
-  - `getByEmailNormalized(projectId, email)` → `WHERE project_id = ? AND
-    lower(email) = ?` (matches existing mixed-case rows too).
-  - `getByNameNormalized(projectId, name)` → `WHERE project_id = ? AND
-    lower(trim(name)) = ?`.
-- **`findOrCreate` returns `{ contact, created }`.** Matching order (per decision):
-  email primary, name fallback.
-  1. Normalize incoming email + name.
-  2. If email present and `getByEmailNormalized` hits → `{ existing, created:false }`.
-  3. Else if no email and `getByNameNormalized` hits → `{ existing, created:false }`.
-  4. Else `create()` (stores normalized email) → `{ contact, created:true }`.
+- **Lookup (SQLite `lower(trim())`, project-scoped):**
+  - `getByEmail(projectId, email)` → `WHERE project_id = ? AND
+    lower(trim(email)) = ?` (matches existing mixed-case/whitespace rows too).
+- **Dedup key — normalized email only (revised 2026-07-09 after code review).**
+  The initial design added a name fallback for emailless records; review showed
+  it merges two different people who share a name and silently drops the second
+  record's data, so it was dropped. Booking/form always carry an email, so
+  email-only fully covers the repeat-booking duplicate case; only emailless
+  manual/MCP adds change (they now always create instead of maybe-merging).
+- **`findOrCreate` returns `{ contact, created }`.**
+  1. `findDuplicate` = normalized-email lookup (null when no email).
+  2. Hit → `{ existing, created:false }`.
+  3. Miss → `create()` (stores normalized email) → `{ contact, created:true }`.
 - **`contact_created` activity:** log it inside `create()` so every new contact
   row gets a timeline entry regardless of path.
 

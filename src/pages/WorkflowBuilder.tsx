@@ -15,6 +15,7 @@ import {
   GitBranch,
   Globe,
   UserCog,
+  UserPlus,
   Zap,
   FileText,
   CalendarPlus,
@@ -98,6 +99,7 @@ type TriggerType =
   | "booking_pending"
   | "booking_confirmed"
   | "booking_cancelled"
+  | "new_contact_created"
   | "tag_added"
   | "manual"
   | "scheduled";
@@ -183,6 +185,7 @@ const TRIGGER_META: Record<TriggerType, { label: string; icon: typeof Zap }> = {
   booking_pending: { label: "Booking Pending", icon: CalendarClock },
   booking_confirmed: { label: "Booking Confirmed", icon: CalendarCheck },
   booking_cancelled: { label: "Booking Cancelled", icon: CalendarX },
+  new_contact_created: { label: "New Contact Created", icon: UserPlus },
   tag_added: { label: "Tag Added", icon: Tag },
   manual: { label: "Manual", icon: Play },
   scheduled: { label: "Scheduled", icon: AlarmClock },

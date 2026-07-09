@@ -4,6 +4,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ContactService } from "../../services/contact-service";
 import { createContactSchema, updateContactSchema, createTagSchema } from "../../validation";
 import { dispatchWorkflowTrigger } from "../../lib/workflow-dispatch";
+import { ensureContact } from "../../lib/contact-actions";
 import type { ToolContext } from "../agent";
 import {
   ok,
@@ -48,6 +49,11 @@ export async function createContact(
   const projectId = ctx.projectId();
   const service = new ContactService(db);
 
+  // Dedupe first: a match returns the existing contact (no duplicate, no
+  // trigger, no plan-limit consumption).
+  const duplicate = await service.findDuplicate(projectId, input);
+  if (duplicate) return ok(duplicate);
+
   const planLimits = await getPlanLimitsForProject(db, projectId);
   const existing = await service.list(projectId);
   if (
@@ -57,7 +63,8 @@ export async function createContact(
     return err(`Plan limit reached: maximum ${planLimits.maxContactsPerProject} contacts`);
   }
 
-  const contact = await service.create(projectId, input);
+  // Creates + fires new_contact_created (no duplicate exists at this point).
+  const { contact } = await ensureContact(db, ctx.env(), projectId, input, "mcp");
   return ok(contact);
 }
 

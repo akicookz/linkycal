@@ -3,12 +3,27 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 
 export type ContactActivityType =
+  | "contact_created"
   | "form_submitted"
   | "booked"
   | "cancelled"
   | "tag_added"
   | "tag_removed"
   | "workflow_researched";
+
+export interface CreateContactInput {
+  name: string;
+  email?: string | null;
+  phone?: string;
+  notes?: string;
+  metadata?: Record<string, unknown>;
+  company?: string | null;
+  companyWebsite?: string | null;
+  position?: string | null;
+  companySize?: string | null;
+  estimatedRevenue?: string | null;
+  linkedinUrl?: string | null;
+}
 
 export interface ContactListOptions {
   search?: string;
@@ -52,6 +67,17 @@ function chunk<T>(arr: T[], size: number): T[][] {
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
 }
+
+// Email is case-insensitive; store and compare a trimmed, lowercased form so
+// `Jane@Acme.com` and `jane@acme.com ` resolve to the same contact.
+export function normalizeEmail(
+  email: string | null | undefined,
+): string | null {
+  if (typeof email !== "string") return null;
+  const t = email.trim().toLowerCase();
+  return t.length > 0 ? t : null;
+}
+
 
 // ─── Contact Service ─────────────────────────────────────────────────────────
 
@@ -190,14 +216,18 @@ export class ContactService {
     return { ...row, metadata: normalizeJsonColumn(row.metadata) };
   }
 
+  // Case-insensitive email lookup — matches existing mixed-case rows too, since
+  // older contacts were stored before write-time normalization.
   async getByEmail(projectId: string, email: string) {
+    const normalized = normalizeEmail(email);
+    if (!normalized) return null;
     const rows = await this.db
       .select()
       .from(dbSchema.contacts)
       .where(
         and(
           eq(dbSchema.contacts.projectId, projectId),
-          eq(dbSchema.contacts.email, email),
+          sql`lower(trim(${dbSchema.contacts.email})) = ${normalized}`,
         ),
       )
       .limit(1);
@@ -206,28 +236,13 @@ export class ContactService {
     return { ...row, metadata: normalizeJsonColumn(row.metadata) };
   }
 
-  async create(
-    projectId: string,
-    data: {
-      name: string;
-      email?: string;
-      phone?: string;
-      notes?: string;
-      metadata?: Record<string, unknown>;
-      company?: string | null;
-      companyWebsite?: string | null;
-      position?: string | null;
-      companySize?: string | null;
-      estimatedRevenue?: string | null;
-      linkedinUrl?: string | null;
-    },
-  ) {
+  async create(projectId: string, data: CreateContactInput) {
     const id = crypto.randomUUID();
     await this.db.insert(dbSchema.contacts).values({
       id,
       projectId,
       name: data.name,
-      email: data.email ?? null,
+      email: normalizeEmail(data.email),
       phone: data.phone ?? null,
       notes: data.notes ?? null,
       metadata: data.metadata ?? null,
@@ -238,6 +253,7 @@ export class ContactService {
       estimatedRevenue: data.estimatedRevenue ?? null,
       linkedinUrl: data.linkedinUrl ?? null,
     });
+    await this.logActivity(id, "contact_created");
     const row = await this.getById(id);
     if (!row) throw new Error("Contact not found after insert");
     return row;
@@ -288,14 +304,32 @@ export class ContactService {
       .where(eq(dbSchema.contacts.id, id));
   }
 
-  // Find or create contact by email (used when booking / form submit)
+  // The existing contact an incoming record would dedupe to, matched strictly by
+  // normalized email. Records with no email are always treated as new (we don't
+  // merge by name, which would conflate two different people who share a name).
+  // Null when it would be a brand-new contact. Shared by findOrCreate and the
+  // create routes so their dedup decision stays identical.
+  async findDuplicate(
+    projectId: string,
+    data: { email?: string | null },
+  ) {
+    const email = normalizeEmail(data.email);
+    return email ? this.getByEmail(projectId, email) : null;
+  }
+
+  // Find or create a contact, deduped by normalized email (records with no email
+  // are always created). Forwards every create field so callers routing through
+  // this path don't lose data. Returns whether a brand-new row was created so
+  // callers can fire a "new contact" trigger. (create() normalizes email.)
   async findOrCreate(
     projectId: string,
-    data: { name: string; email: string; phone?: string },
-  ) {
-    const existing = await this.getByEmail(projectId, data.email);
-    if (existing) return existing;
-    return this.create(projectId, data);
+    data: CreateContactInput,
+  ): Promise<{ contact: NonNullable<Awaited<ReturnType<ContactService["getById"]>>>; created: boolean }> {
+    const existing = await this.findDuplicate(projectId, data);
+    if (existing) return { contact: existing, created: false };
+
+    const contact = await this.create(projectId, data);
+    return { contact, created: true };
   }
 
   // ─── Contact with Tags + Activity ────────────────────────────────────────
