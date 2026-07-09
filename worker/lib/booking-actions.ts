@@ -17,6 +17,7 @@ import {
   getWeekRangeForLocalDate,
 } from "./timezone";
 import { parseInviteConnectionIds } from "./calendar-refs";
+import { buildIcs } from "./ics";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -134,6 +135,52 @@ export async function resolveInviteAttendees(
   }
 
   return Array.from(emails);
+}
+
+// ─── Booking invite (.ics) ───────────────────────────────────────────────────
+// Shared by both confirmed-booking paths so the instant and approved flows emit
+// identical invites.
+function buildBookingIcs(args: {
+  bookingId: string;
+  eventTypeName: string;
+  guestName: string;
+  guestEmail: string;
+  notes: string | null | undefined;
+  start: Date;
+  end: Date;
+  eventLocation: string | null | undefined;
+  meetingUrl: string | undefined;
+  gcalICalUid: string | null;
+  gcalOrganizerEmail: string | null;
+  owner: { name: string | null; email: string } | undefined;
+}): string {
+  const descriptionParts: string[] = [];
+  if (args.notes) descriptionParts.push(args.notes);
+  if (args.meetingUrl) descriptionParts.push(`Join: ${args.meetingUrl}`);
+
+  // Prefer the organizer Google actually assigned (matches its native invite's
+  // UID). Only label it with the owner's name when the address is the owner's —
+  // a teammate's destination calendar would otherwise show the wrong name.
+  const organizerEmail = args.gcalOrganizerEmail ?? args.owner?.email;
+  const organizerName =
+    organizerEmail && organizerEmail === args.owner?.email
+      ? args.owner?.name ?? undefined
+      : undefined;
+
+  return buildIcs({
+    uid: args.gcalICalUid ?? `booking-${args.bookingId}@linkycal.com`,
+    dtstamp: new Date(),
+    start: args.start,
+    end: args.end,
+    summary: `${args.eventTypeName} with ${args.guestName}`,
+    description: descriptionParts.length ? descriptionParts.join("\n\n") : undefined,
+    location: args.eventLocation ?? args.meetingUrl ?? undefined,
+    url: args.meetingUrl,
+    organizerName,
+    organizerEmail: organizerEmail ?? undefined,
+    attendeeName: args.guestName,
+    attendeeEmail: args.guestEmail,
+  });
 }
 
 // ─── Create Booking ──────────────────────────────────────────────────────────
@@ -378,6 +425,8 @@ export async function createBookingAction(
     waitUntil(
       (async () => {
         let meetingUrl: string | undefined;
+        let gcalICalUid: string | null = null;
+        let gcalOrganizerEmail: string | null = null;
 
         try {
           let calConnection;
@@ -428,6 +477,8 @@ export async function createBookingAction(
             );
 
             meetingUrl = gcalResult.meetingUrl ?? undefined;
+            gcalICalUid = gcalResult.iCalUID;
+            gcalOrganizerEmail = gcalResult.organizer ?? calConnection.email;
 
             await db
               .update(dbSchema.bookings)
@@ -441,6 +492,21 @@ export async function createBookingAction(
         try {
           const emailService = new EmailService(env.RESEND_API_KEY);
 
+          const icsContent = buildBookingIcs({
+            bookingId: booking.id,
+            eventTypeName: eventType.name,
+            guestName: input.name,
+            guestEmail: input.email,
+            notes: input.notes,
+            start: startTime,
+            end: endTime,
+            eventLocation: eventType.location,
+            meetingUrl,
+            gcalICalUid,
+            gcalOrganizerEmail,
+            owner,
+          });
+
           await emailService.sendBookingConfirmation({
             to: input.email,
             guestName: input.name,
@@ -451,6 +517,7 @@ export async function createBookingAction(
             location: eventType.location ?? undefined,
             notes: input.notes,
             meetingUrl,
+            icsContent,
             theme: projectTheme,
           });
 
@@ -717,6 +784,17 @@ export async function confirmBookingAction(
   waitUntil(
     (async () => {
       let meetingUrl: string | undefined;
+      let gcalICalUid: string | null = null;
+      let gcalOrganizerEmail: string | null = null;
+
+      const ownerRows = project
+        ? await db
+            .select()
+            .from(dbSchema.schema.users)
+            .where(eq(dbSchema.schema.users.id, project.userId))
+            .limit(1)
+        : [];
+      const owner = ownerRows[0];
 
       try {
         let calConnection;
@@ -767,6 +845,8 @@ export async function confirmBookingAction(
           );
 
           meetingUrl = gcalResult.meetingUrl ?? undefined;
+          gcalICalUid = gcalResult.iCalUID;
+          gcalOrganizerEmail = gcalResult.organizer ?? calConnection.email;
 
           await db
             .update(dbSchema.bookings)
@@ -780,6 +860,21 @@ export async function confirmBookingAction(
       try {
         const emailService = new EmailService(env.RESEND_API_KEY);
 
+        const icsContent = buildBookingIcs({
+          bookingId: booking.id,
+          eventTypeName: eventType.name,
+          guestName: booking.name,
+          guestEmail: booking.email,
+          notes: booking.notes,
+          start: new Date(booking.startTime),
+          end: new Date(booking.endTime),
+          eventLocation: eventType.location,
+          meetingUrl,
+          gcalICalUid,
+          gcalOrganizerEmail,
+          owner,
+        });
+
         await emailService.sendBookingConfirmation({
           to: booking.email,
           guestName: booking.name,
@@ -790,6 +885,7 @@ export async function confirmBookingAction(
           location: eventType.location ?? undefined,
           notes: booking.notes ?? undefined,
           meetingUrl,
+          icsContent,
           theme: projectTheme,
         });
       } catch (err) {

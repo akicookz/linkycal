@@ -27,6 +27,19 @@ function lastPayload(
   };
 }
 
+function lastBody(
+  fetchMock: ReturnType<typeof mockFetch>,
+): Record<string, unknown> {
+  const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
+  return JSON.parse(String(init.body)) as Record<string, unknown>;
+}
+
+function decodeBase64Utf8(b64: string): string {
+  const binary = atob(b64);
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
 describe("booking confirmation email", () => {
   test("omits submitted form fields from guest confirmation", async () => {
     const fetchMock = mockFetch();
@@ -47,7 +60,7 @@ describe("booking confirmation email", () => {
     expect(payload.html).not.toContain("Submitted Details");
   });
 
-  test("renders a join link when meetingUrl is provided", async () => {
+  test("shows the meeting link as the visible URL when provided", async () => {
     const fetchMock = mockFetch();
     const emailService = new EmailService("test-key");
 
@@ -62,8 +75,27 @@ describe("booking confirmation email", () => {
     });
 
     const payload = lastPayload(fetchMock);
-    expect(payload.html).toContain("Join meeting");
-    expect(payload.html).toContain("https://meet.google.com/abc-defg-hij");
+    // The link text is the URL itself, not a generic "Join meeting" label.
+    expect(payload.html).not.toContain("Join meeting");
+    expect(payload.html).toContain(">https://meet.google.com/abc-defg-hij</a>");
+  });
+
+  test("shows the timezone alongside the time", async () => {
+    const fetchMock = mockFetch();
+    const emailService = new EmailService("test-key");
+
+    await emailService.sendBookingConfirmation({
+      to: "guest@example.com",
+      guestName: "Ava",
+      eventTypeName: "Intro Call",
+      startTime: new Date("2026-04-01T13:00:00.000Z"),
+      endTime: new Date("2026-04-01T13:30:00.000Z"),
+      timezone: "Europe/Berlin",
+    });
+
+    const payload = lastPayload(fetchMock);
+    // 13:00 UTC in Berlin (CEST) renders as 3:00 PM with a GMT+2 zone label.
+    expect(payload.html).toContain("GMT+2");
   });
 
   test("omits join link when meetingUrl is absent", async () => {
@@ -194,5 +226,51 @@ describe("owner booking notifications", () => {
     const [, init] = fetchMock.mock.calls[0] as [RequestInfo | URL, RequestInit];
     const body = JSON.parse(String(init.body)) as { cc?: string[] };
     expect(body.cc).toBeUndefined();
+  });
+});
+
+describe("booking confirmation ICS attachment", () => {
+  test("attaches invite.ics when icsContent is provided", async () => {
+    const fetchMock = mockFetch();
+    const emailService = new EmailService("test-key");
+    const ics = "BEGIN:VCALENDAR\r\nSUMMARY:Café ☕\r\nEND:VCALENDAR\r\n";
+
+    await emailService.sendBookingConfirmation({
+      to: "guest@example.com",
+      guestName: "Ava",
+      eventTypeName: "Intro Call",
+      startTime: new Date("2026-04-01T13:00:00.000Z"),
+      endTime: new Date("2026-04-01T13:30:00.000Z"),
+      timezone: "Europe/Berlin",
+      icsContent: ics,
+    });
+
+    const body = lastBody(fetchMock);
+    const attachments = body.attachments as Array<{
+      filename: string;
+      content: string;
+      content_type?: string;
+    }>;
+    expect(attachments).toHaveLength(1);
+    expect(attachments[0].filename).toBe("invite.ics");
+    expect(attachments[0].content_type).toContain("text/calendar");
+    expect(decodeBase64Utf8(attachments[0].content)).toBe(ics);
+  });
+
+  test("sends no attachments key when icsContent is absent", async () => {
+    const fetchMock = mockFetch();
+    const emailService = new EmailService("test-key");
+
+    await emailService.sendBookingConfirmation({
+      to: "guest@example.com",
+      guestName: "Ava",
+      eventTypeName: "Intro Call",
+      startTime: new Date("2026-04-01T13:00:00.000Z"),
+      endTime: new Date("2026-04-01T13:30:00.000Z"),
+      timezone: "Europe/Berlin",
+    });
+
+    const body = lastBody(fetchMock);
+    expect(body.attachments).toBeUndefined();
   });
 });

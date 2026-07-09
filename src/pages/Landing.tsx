@@ -302,7 +302,7 @@ export default function Landing() {
 
           {/* Headline */}
           <h1 className="font-heading font-bold tracking-[-0.035em] leading-[1.03] text-[2.75rem] sm:text-[3.75rem] lg:text-[4.6rem] text-foreground text-center text-balance max-w-5xl mx-auto mt-8">
-            Headless forms and scheduling for vibe coders.
+            Headless forms and scheduling infrastructure for everyone.
           </h1>
           <p className="text-base sm:text-lg text-muted-foreground text-center leading-relaxed max-w-2xl mx-auto mt-6">
             LinkyCal is the{" "}
