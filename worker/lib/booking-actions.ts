@@ -137,6 +137,52 @@ export async function resolveInviteAttendees(
   return Array.from(emails);
 }
 
+// ─── Booking invite (.ics) ───────────────────────────────────────────────────
+// Shared by both confirmed-booking paths so the instant and approved flows emit
+// identical invites.
+function buildBookingIcs(args: {
+  bookingId: string;
+  eventTypeName: string;
+  guestName: string;
+  guestEmail: string;
+  notes: string | null | undefined;
+  start: Date;
+  end: Date;
+  eventLocation: string | null | undefined;
+  meetingUrl: string | undefined;
+  gcalICalUid: string | null;
+  gcalOrganizerEmail: string | null;
+  owner: { name: string | null; email: string } | undefined;
+}): string {
+  const descriptionParts: string[] = [];
+  if (args.notes) descriptionParts.push(args.notes);
+  if (args.meetingUrl) descriptionParts.push(`Join: ${args.meetingUrl}`);
+
+  // Prefer the organizer Google actually assigned (matches its native invite's
+  // UID). Only label it with the owner's name when the address is the owner's —
+  // a teammate's destination calendar would otherwise show the wrong name.
+  const organizerEmail = args.gcalOrganizerEmail ?? args.owner?.email;
+  const organizerName =
+    organizerEmail && organizerEmail === args.owner?.email
+      ? args.owner?.name ?? undefined
+      : undefined;
+
+  return buildIcs({
+    uid: args.gcalICalUid ?? `booking-${args.bookingId}@linkycal.com`,
+    dtstamp: new Date(),
+    start: args.start,
+    end: args.end,
+    summary: `${args.eventTypeName} with ${args.guestName}`,
+    description: descriptionParts.length ? descriptionParts.join("\n\n") : undefined,
+    location: args.eventLocation ?? args.meetingUrl ?? undefined,
+    url: args.meetingUrl,
+    organizerName,
+    organizerEmail: organizerEmail ?? undefined,
+    attendeeName: args.guestName,
+    attendeeEmail: args.guestEmail,
+  });
+}
+
 // ─── Create Booking ──────────────────────────────────────────────────────────
 
 export interface CreateBookingActionInput {
@@ -446,25 +492,19 @@ export async function createBookingAction(
         try {
           const emailService = new EmailService(env.RESEND_API_KEY);
 
-          const icsDescriptionParts: string[] = [];
-          if (input.notes) icsDescriptionParts.push(input.notes);
-          if (meetingUrl) icsDescriptionParts.push(`Join: ${meetingUrl}`);
-
-          const icsContent = buildIcs({
-            uid: gcalICalUid ?? `booking-${booking.id}@linkycal.com`,
-            dtstamp: new Date(),
+          const icsContent = buildBookingIcs({
+            bookingId: booking.id,
+            eventTypeName: eventType.name,
+            guestName: input.name,
+            guestEmail: input.email,
+            notes: input.notes,
             start: startTime,
             end: endTime,
-            summary: `${eventType.name} with ${input.name}`,
-            description: icsDescriptionParts.length
-              ? icsDescriptionParts.join("\n\n")
-              : undefined,
-            location: eventType.location ?? meetingUrl ?? undefined,
-            url: meetingUrl,
-            organizerName: owner?.name,
-            organizerEmail: gcalOrganizerEmail ?? owner?.email,
-            attendeeName: input.name,
-            attendeeEmail: input.email,
+            eventLocation: eventType.location,
+            meetingUrl,
+            gcalICalUid,
+            gcalOrganizerEmail,
+            owner,
           });
 
           await emailService.sendBookingConfirmation({
@@ -741,20 +781,20 @@ export async function confirmBookingAction(
 
   const projectTheme = parseProjectTheme(project?.settings);
 
-  const ownerRows = project
-    ? await db
-        .select()
-        .from(dbSchema.schema.users)
-        .where(eq(dbSchema.schema.users.id, project.userId))
-        .limit(1)
-    : [];
-  const owner = ownerRows[0];
-
   waitUntil(
     (async () => {
       let meetingUrl: string | undefined;
       let gcalICalUid: string | null = null;
       let gcalOrganizerEmail: string | null = null;
+
+      const ownerRows = project
+        ? await db
+            .select()
+            .from(dbSchema.schema.users)
+            .where(eq(dbSchema.schema.users.id, project.userId))
+            .limit(1)
+        : [];
+      const owner = ownerRows[0];
 
       try {
         let calConnection;
@@ -820,25 +860,19 @@ export async function confirmBookingAction(
       try {
         const emailService = new EmailService(env.RESEND_API_KEY);
 
-        const icsDescriptionParts: string[] = [];
-        if (booking.notes) icsDescriptionParts.push(booking.notes);
-        if (meetingUrl) icsDescriptionParts.push(`Join: ${meetingUrl}`);
-
-        const icsContent = buildIcs({
-          uid: gcalICalUid ?? `booking-${booking.id}@linkycal.com`,
-          dtstamp: new Date(),
+        const icsContent = buildBookingIcs({
+          bookingId: booking.id,
+          eventTypeName: eventType.name,
+          guestName: booking.name,
+          guestEmail: booking.email,
+          notes: booking.notes,
           start: new Date(booking.startTime),
           end: new Date(booking.endTime),
-          summary: `${eventType.name} with ${booking.name}`,
-          description: icsDescriptionParts.length
-            ? icsDescriptionParts.join("\n\n")
-            : undefined,
-          location: eventType.location ?? meetingUrl ?? undefined,
-          url: meetingUrl,
-          organizerName: owner?.name,
-          organizerEmail: gcalOrganizerEmail ?? owner?.email,
-          attendeeName: booking.name,
-          attendeeEmail: booking.email,
+          eventLocation: eventType.location,
+          meetingUrl,
+          gcalICalUid,
+          gcalOrganizerEmail,
+          owner,
         });
 
         await emailService.sendBookingConfirmation({

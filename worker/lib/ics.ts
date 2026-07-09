@@ -64,12 +64,15 @@ function foldLine(line: string): string {
 }
 
 export function buildIcs(input: IcsInput): string {
+  // A REQUEST needs an ORGANIZER and at least one ATTENDEE (RFC 5546); without
+  // both, emit a plain PUBLISH so the calendar object is always valid.
+  const isRequest = Boolean(input.organizerEmail && input.attendeeEmail);
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//LinkyCal//Booking//EN",
     "CALSCALE:GREGORIAN",
-    "METHOD:REQUEST",
+    `METHOD:${isRequest ? "REQUEST" : "PUBLISH"}`,
     "BEGIN:VEVENT",
     `UID:${input.uid}`,
     `DTSTAMP:${formatUtc(input.dtstamp)}`,

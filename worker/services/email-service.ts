@@ -257,7 +257,7 @@ export class EmailService {
     if (meetingUrl) {
       rows.push({
         label: "Join",
-        value: `<a href="${escapeHtml(meetingUrl)}" style="color: ${p.primary}; text-decoration: underline; font-weight: 500;">${escapeHtml(meetingUrl)}</a>`,
+        value: `<a href="${escapeHtml(meetingUrl)}" style="color: ${p.primary}; text-decoration: underline; font-weight: 500; word-break: break-all;">${escapeHtml(meetingUrl)}</a>`,
       });
     }
     if (notes) rows.push({ label: "Notes", value: escapeHtml(notes) });

@@ -33,8 +33,19 @@ Outlook — carrying the event time and the meeting link.
 | ICS shape | **One universal `.ics`** carrying time + meeting link | One file works across Apple/Google/Outlook; no per-platform buttons needed. |
 | Google's native invite | **Keep it** (`sendUpdates=all` unchanged) | Belt-and-suspenders: our `.ics` is an additional reliable copy, not a replacement. |
 | Recipient | **Guest / booker only** | The host already has the event on their connected calendar. |
-| ICS `METHOD` | **`PUBLISH`** | Avoids a duelling RSVP card against Google's kept `REQUEST` invite; a clean "add to my calendar" file. |
-| Duplicate prevention | **Share Google's `iCalUID`** as the `.ics` UID | Calendar apps dedupe by UID, so a guest acting on both Google's invite and our file ends up with a single event. |
+| ICS `METHOD` | **`REQUEST`** (revised — see below) | We want the guest to get the Yes/Maybe/No RSVP card from our own inbox-delivered email. `buildIcs` falls back to `PUBLISH` when there is no organizer/attendee so the file is always valid. |
+| Duplicate prevention | **Share Google's `iCalUID`** as the `.ics` UID + match its `ORGANIZER` | Calendar apps dedupe by UID (and treat matching-organizer REQUESTs as the same invitation), so a guest acting on both Google's invite and our file ends up with a single event. The organizer email comes from Google's insert response so it matches even on non-primary destination calendars. |
+
+### Revision: `PUBLISH` → `REQUEST`
+
+The original decision was `PUBLISH` (to avoid a second RSVP card next to Google's).
+During implementation the product owner chose to keep Google's invite **and** make
+our `.ics` a `REQUEST` — two REQUESTs with the same UID + organizer dedupe into one
+event, and ours (from the verified `updates.linkycal.com` domain) reliably reaches
+the inbox with the RSVP card. A live test to Gmail, Apple Mail, and Proton
+**confirmed the RSVP card renders** from the attached `.ics` in all three, refuting
+the concern that an attachment (vs an inline `multipart/alternative` part) would
+suppress it.
 
 ### Accepted trade-off
 
@@ -74,10 +85,11 @@ RFC 5545 requirements the implementation MUST satisfy (Apple Calendar is strict
 and will silently reject a malformed file):
 
 - `BEGIN:VCALENDAR` / `VERSION:2.0` / `PRODID:-//LinkyCal//Booking//EN` /
-  `CALSCALE:GREGORIAN` / `METHOD:PUBLISH`.
+  `CALSCALE:GREGORIAN` / `METHOD:REQUEST` (or `PUBLISH` when no organizer/attendee).
 - One `VEVENT` with `UID`, `DTSTAMP`, `DTSTART`, `DTEND`, `SUMMARY`, `SEQUENCE:0`,
-  `STATUS:CONFIRMED`, optional `DESCRIPTION` / `LOCATION` / `ORGANIZER` / `URL`,
-  and a `VALARM` (`TRIGGER:-PT30M`, display) reminder.
+  `STATUS:CONFIRMED`, `ORGANIZER` + `ATTENDEE` (guest, `RSVP=TRUE`) for the
+  REQUEST, optional `DESCRIPTION` / `LOCATION` / `URL`, and a `VALARM`
+  (`TRIGGER:-PT30M`, display) reminder.
 - `DTSTART`/`DTEND`/`DTSTAMP` in **UTC** (`YYYYMMDDTHHMMSSZ`) — avoids needing a
   `VTIMEZONE` block; the guest's client renders local time. (The HTML body already
   shows local time in the guest's timezone.)
@@ -172,9 +184,10 @@ createBookingAction (confirmed)
 
 ## Residual risks
 
-- Cross-client UID dedupe is best-effort. `PUBLISH` + shared UID is the strongest
-  portable option, but a minority of calendar clients may still show two entries
-  if the guest manually acts on both Google's invite and the `.ics`.
+- Cross-client UID dedupe is best-effort. Two `REQUEST`s sharing UID + organizer
+  are treated as the same invitation by most clients, but a minority may still
+  show two entries, or re-assert `PARTSTAT=NEEDS-ACTION` if they merge our later
+  `DTSTAMP` over a response the guest already gave via Google's invite.
 - Since Google's invite is kept, the underlying spam complaint persists for the
   Google-sent copy; this change guarantees a deliverable copy exists, not that the
   spammy one disappears.

@@ -11,8 +11,12 @@ const base = {
 };
 
 describe("buildIcs", () => {
-  test("emits a well-formed VCALENDAR with REQUEST method", () => {
-    const ics = buildIcs(base);
+  test("emits a well-formed VCALENDAR with REQUEST method when there is an organizer + attendee", () => {
+    const ics = buildIcs({
+      ...base,
+      organizerEmail: "host@example.com",
+      attendeeEmail: "guest@example.com",
+    });
     expect(ics).toContain("BEGIN:VCALENDAR");
     expect(ics).toContain("VERSION:2.0");
     expect(ics).toContain("PRODID:-//LinkyCal//Booking//EN");
@@ -21,6 +25,14 @@ describe("buildIcs", () => {
     expect(ics).toContain("BEGIN:VEVENT");
     expect(ics).toContain("END:VEVENT");
     expect(ics.trimEnd().endsWith("END:VCALENDAR")).toBe(true);
+  });
+
+  test("falls back to PUBLISH when there is no organizer/attendee", () => {
+    const ics = buildIcs(base);
+    expect(ics).toContain("METHOD:PUBLISH");
+    expect(ics).not.toContain("METHOD:REQUEST");
+    expect(ics).not.toContain("ORGANIZER");
+    expect(ics).not.toContain("ATTENDEE");
   });
 
   test("formats timestamps as UTC basic form", () => {
