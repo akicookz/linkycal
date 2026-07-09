@@ -72,6 +72,7 @@ import {
   type FormFieldSource,
   type PriorStepSource,
 } from "@/lib/workflow-variables";
+import { applyTagSelection } from "@/lib/workflow-step-config";
 import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
 import {
   WorkflowConditionEditor,
@@ -1562,11 +1563,7 @@ function StepConfigForm({
             <Label htmlFor="tag-select">Tag</Label>
             <Select
               value={(config.tagId as string) ?? ""}
-              onValueChange={(val) => {
-                const tag = tags.find((t) => t.id === val);
-                set("tagId", val);
-                if (tag) set("tagName", tag.name);
-              }}
+              onValueChange={(val) => onChange(applyTagSelection(config, val, tags))}
             >
               <SelectTrigger id="tag-select">
                 <SelectValue placeholder="Select a tag" />
