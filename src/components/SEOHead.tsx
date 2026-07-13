@@ -9,6 +9,7 @@ interface SEOHeadProps {
   type?: "website" | "article";
   noIndex?: boolean;
   canonical?: string;
+  structuredData?: Record<string, unknown>;
 }
 
 const SITE_URL = "https://linkycal.com";
@@ -28,6 +29,10 @@ function absoluteUrl(value: string): string {
   }
 }
 
+function serializeStructuredData(value: Record<string, unknown>): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
 export function SEOHead({
   title,
   description = DEFAULT_DESCRIPTION,
@@ -37,6 +42,7 @@ export function SEOHead({
   type = "website",
   noIndex = false,
   canonical,
+  structuredData,
 }: SEOHeadProps) {
   const fullTitle = title ? `${title} | ${SITE_NAME}` : DEFAULT_TITLE;
   const pageUrl = absoluteUrl(
@@ -71,6 +77,12 @@ export function SEOHead({
       <meta name="twitter:description" content={description} />
       {imageUrl && <meta name="twitter:image" content={imageUrl} />}
       {imageUrl && <meta name="twitter:image:alt" content={imageAlt} />}
+
+      {structuredData && (
+        <script type="application/ld+json">
+          {serializeStructuredData(structuredData)}
+        </script>
+      )}
     </Helmet>
   );
 }

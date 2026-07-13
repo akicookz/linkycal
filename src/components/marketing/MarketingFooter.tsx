@@ -70,9 +70,9 @@ export function MarketingFooter() {
 
           {/* Quick Links */}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-4">
+            <h2 className="text-sm font-semibold text-white mb-4">
               Quick Links
-            </h4>
+            </h2>
             <ul className="space-y-2.5">
               {pageLinks.map((item) => (
                 <li key={item.label}>
@@ -89,7 +89,7 @@ export function MarketingFooter() {
 
           {/* Features */}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-4">Features</h4>
+            <h2 className="text-sm font-semibold text-white mb-4">Features</h2>
             <ul className="space-y-2.5">
               {featureLinks.map((item) => (
                 <li key={item.label}>
@@ -111,7 +111,7 @@ export function MarketingFooter() {
 
           {/* Compare */}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-4">Compare</h4>
+            <h2 className="text-sm font-semibold text-white mb-4">Compare</h2>
             <ul className="space-y-2.5">
               {compareLinks.map((item) => (
                 <li key={item.label}>
@@ -128,9 +128,9 @@ export function MarketingFooter() {
 
           {/* Information */}
           <div>
-            <h4 className="text-sm font-semibold text-white mb-4">
+            <h2 className="text-sm font-semibold text-white mb-4">
               Information
-            </h4>
+            </h2>
             <ul className="space-y-2.5">
               <li>
                 <a

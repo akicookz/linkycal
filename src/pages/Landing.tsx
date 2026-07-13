@@ -272,7 +272,47 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-clip">
-      <SEOHead canonical="https://linkycal.com/" />
+      <SEOHead
+        canonical="https://linkycal.com/"
+        structuredData={{
+          "@context": "https://schema.org",
+          "@graph": [
+            {
+              "@type": "Organization",
+              "@id": "https://linkycal.com/#organization",
+              name: "LinkyCal",
+              url: "https://linkycal.com/",
+              logo: {
+                "@type": "ImageObject",
+                url: "https://linkycal.com/brand/linkycal-icon.svg",
+              },
+              sameAs: [
+                "https://twitter.com/linkycal",
+                "https://linkedin.com/company/linkycal",
+                "https://github.com/linkycal",
+              ],
+            },
+            {
+              "@type": "WebSite",
+              "@id": "https://linkycal.com/#website",
+              url: "https://linkycal.com/",
+              name: "LinkyCal",
+              publisher: { "@id": "https://linkycal.com/#organization" },
+            },
+            {
+              "@type": "SoftwareApplication",
+              "@id": "https://linkycal.com/#software",
+              name: "LinkyCal",
+              applicationCategory: "BusinessApplication",
+              operatingSystem: "Web",
+              url: "https://linkycal.com/",
+              description:
+                "Form and scheduling infrastructure with multi-step forms, booking links, contacts, workflows, widgets, and APIs.",
+              provider: { "@id": "https://linkycal.com/#organization" },
+            },
+          ],
+        }}
+      />
 
       {/* ── 1. Floating Header ──────────────────────────────────────────── */}
       <MarketingNav onGetStarted={openAuth} />

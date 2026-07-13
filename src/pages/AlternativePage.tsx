@@ -632,6 +632,35 @@ export default function AlternativePage() {
         title={data.seoTitle}
         description={data.seoDescription}
         canonical={`https://linkycal.com/alternatives/${data.slug}`}
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "Article",
+          headline: `${data.seoTitle}: LinkyCal vs ${data.competitor}`,
+          description: data.seoDescription,
+          url: `https://linkycal.com/alternatives/${data.slug}`,
+          mainEntityOfPage: {
+            "@type": "WebPage",
+            "@id": `https://linkycal.com/alternatives/${data.slug}`,
+          },
+          author: {
+            "@type": "Organization",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+            logo: {
+              "@type": "ImageObject",
+              url: "https://linkycal.com/brand/linkycal-icon.svg",
+            },
+          },
+          about: [
+            { "@type": "SoftwareApplication", name: "LinkyCal" },
+            { "@type": "SoftwareApplication", name: data.competitor },
+          ],
+        }}
       />
 
       <MarketingNav onGetStarted={onGetStarted} />

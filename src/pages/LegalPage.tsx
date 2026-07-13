@@ -202,6 +202,24 @@ export default function LegalPage({ kind }: LegalPageProps) {
         title={doc.title}
         description={doc.description}
         canonical={`https://linkycal.com/${kind}`}
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "WebPage",
+          name: doc.title,
+          description: doc.description,
+          url: `https://linkycal.com/${kind}`,
+          dateModified: "2026-06-17",
+          isPartOf: {
+            "@type": "WebSite",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+          },
+        }}
       />
 
       <MarketingNav onGetStarted={onGetStarted} />

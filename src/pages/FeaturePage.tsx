@@ -1081,6 +1081,26 @@ export default function FeaturePage() {
         title={feature.seoTitle}
         description={feature.seoDescription}
         canonical={`https://linkycal.com/features/${feature.slug}`}
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: `LinkyCal ${feature.seoTitle}`,
+          applicationCategory: "BusinessApplication",
+          operatingSystem: "Web",
+          url: `https://linkycal.com/features/${feature.slug}`,
+          description: feature.seoDescription,
+          featureList: [
+            ...feature.checkmarks,
+            ...feature.deepDives.flatMap((deepDive) =>
+              deepDive.points.map((point) => point.title),
+            ),
+          ],
+          provider: {
+            "@type": "Organization",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+          },
+        }}
       />
 
       <MarketingNav onGetStarted={onGetStarted} />

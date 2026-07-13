@@ -17,6 +17,8 @@ import {
   Lightbulb,
   Hash,
   Code2,
+  ArrowLeft,
+  UserPlus,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
@@ -193,9 +195,12 @@ function SectionHeading({
       <a
         href={`#${id}`}
         className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-        aria-label={`Link to ${id}`}
+        aria-label={`Link to the ${id.replace(/-/g, " ")} section`}
       >
-        <Hash className="w-4 h-4" />
+        <span className="sr-only">
+          Link to the {id.replace(/-/g, " ")} section
+        </span>
+        <Hash className="w-4 h-4" aria-hidden="true" />
       </a>
     </Tag>
   );
@@ -353,23 +358,55 @@ export default function Docs() {
         title="Docs"
         description="Explore LinkyCal API docs for forms, booking links, contacts, workflows, widgets, MCP tools, and authentication."
         canonical="https://linkycal.com/docs"
+        structuredData={{
+          "@context": "https://schema.org",
+          "@type": "TechArticle",
+          headline: "LinkyCal API Documentation",
+          description:
+            "Technical documentation for LinkyCal forms, booking links, contacts, workflows, widgets, MCP tools, and authentication.",
+          url: "https://linkycal.com/docs",
+          mainEntityOfPage: {
+            "@type": "WebPage",
+            "@id": "https://linkycal.com/docs",
+          },
+          author: {
+            "@type": "Organization",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+          },
+          publisher: {
+            "@type": "Organization",
+            name: "LinkyCal",
+            url: "https://linkycal.com/",
+          },
+        }}
       />
 
       {/* ── Fixed Header ────────────────────────────────────────────────── */}
       <header className="fixed top-0 z-50 w-full bg-background/80 backdrop-blur-xl border-b border-border h-14">
         <div className="max-w-[1400px] mx-auto px-6 flex items-center justify-between h-full">
           <div className="flex items-center gap-3">
-            <Link to="/" className="hover:opacity-80 transition-opacity">
+            <Link
+              to="/"
+              aria-label="LinkyCal homepage"
+              className="hover:opacity-80 transition-opacity"
+            >
               <Logo size="md" />
             </Link>
             <span className="hidden sm:block text-sm text-muted-foreground">Documentation</span>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="rounded-full h-8" asChild>
-              <Link to="/">Back to site</Link>
+              <Link to="/">
+                <ArrowLeft />
+                LinkyCal home
+              </Link>
             </Button>
             <Button size="sm" className="glow-surface rounded-full h-8" asChild>
-              <Link to="/?show_auth=true">Get Started</Link>
+              <Link to="/?show_auth=true">
+                <UserPlus />
+                Create a LinkyCal account
+              </Link>
             </Button>
           </div>
         </div>
@@ -1577,11 +1614,15 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               </p>
               <div className="flex items-center justify-center gap-3">
                 <Button className="glow-surface rounded-full" asChild>
-                  <Link to="/?show_auth=true">Get API Key</Link>
+                  <Link to="/?show_auth=true">
+                    <Key />
+                    Create account for an API key
+                  </Link>
                 </Button>
                 <Button variant="outline" className="rounded-full" asChild>
                   <a href="https://github.com/linkycal" target="_blank" rel="noopener noreferrer">
-                    View on GitHub
+                    <Code2 />
+                    View LinkyCal on GitHub
                   </a>
                 </Button>
               </div>
