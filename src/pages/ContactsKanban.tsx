@@ -557,8 +557,8 @@ export default function ContactsKanban({
       <Card className="p-12 text-center">
         <p className="text-sm font-medium mb-1">No pipeline yet</p>
         <p className="text-sm text-muted-foreground mb-4">
-          Start a sales pipeline to get Lead, Prospect, First Contact, Follow Up,
-          and Met stages you can drag contacts between.
+          Start a sales pipeline to get Lead, Contacted, Meeting scheduled,
+          Follow up, and Closed stages you can drag contacts between.
         </p>
         {onStartPipeline && (
           <Button size="sm" onClick={onStartPipeline} disabled={seedingPipeline}>

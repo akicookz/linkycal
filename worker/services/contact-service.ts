@@ -38,10 +38,10 @@ export interface ContactListOptions {
 
 export const PIPELINE_STAGES: ReadonlyArray<{ name: string; color: string }> = [
   { name: "Lead", color: "#6b7280" },
-  { name: "Prospect", color: "#3b82f6" },
-  { name: "First Contact", color: "#6366f1" },
-  { name: "Follow Up", color: "#f59e0b" },
-  { name: "Met", color: "#10b981" },
+  { name: "Contacted", color: "#3b82f6" },
+  { name: "Meeting scheduled", color: "#6366f1" },
+  { name: "Follow up", color: "#f59e0b" },
+  { name: "Closed", color: "#10b981" },
 ];
 
 // Drizzle's { mode: "json" } columns already stringify on write and parse on

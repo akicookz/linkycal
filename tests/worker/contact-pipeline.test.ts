@@ -65,7 +65,7 @@ describe("ContactService.seedPipeline", () => {
 
     const tagRows = await db.select().from(dbSchema.tags).where(eq(dbSchema.tags.projectId, "p"));
     const names = tagRows.map((t) => t.name);
-    for (const n of ["Lead", "Prospect", "First Contact", "Follow Up", "Met"]) {
+    for (const n of ["Lead", "Contacted", "Meeting scheduled", "Follow up", "Closed"]) {
       expect(names).toContain(n);
     }
 
@@ -77,7 +77,7 @@ describe("ContactService.seedPipeline", () => {
     // Order matches the canonical stage order.
     const idToName = new Map(tagRows.map((t) => [t.id, t.name]));
     expect(cfg.pivotTagIds.map((id: string) => idToName.get(id))).toEqual([
-      "Lead", "Prospect", "First Contact", "Follow Up", "Met",
+      "Lead", "Contacted", "Meeting scheduled", "Follow up", "Closed",
     ]);
   });
 });
