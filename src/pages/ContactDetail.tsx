@@ -876,7 +876,6 @@ export default function ContactDetailPage() {
                   )}
                   <div className="flex flex-wrap gap-2">
                     <Button
-                      size="sm"
                       onClick={saveNextAction}
                       disabled={
                         !canSaveNextAction || nextActionMutation.isPending
@@ -892,7 +891,6 @@ export default function ContactDetailPage() {
                     <Button
                       type="button"
                       variant="ghost"
-                      size="sm"
                       onClick={cancelNextActionEditor}
                       disabled={nextActionMutation.isPending}
                     >
@@ -904,11 +902,11 @@ export default function ContactDetailPage() {
               ) : hasNextAction ? (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">
+                    <p className="break-words text-pretty text-sm font-medium text-foreground">
                       {contact.nextActionText}
                     </p>
                     {nextActionDeadlineLabel && (
-                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <p className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
                         <CalendarClock className="h-3.5 w-3.5 shrink-0" />
                         {nextActionDeadlineLabel}
                       </p>
@@ -936,7 +934,6 @@ export default function ContactDetailPage() {
                     <Button
                       type="button"
                       variant="outline"
-                      size="sm"
                       onClick={startNextActionEditor}
                       disabled={nextActionMutation.isPending}
                     >
@@ -945,7 +942,6 @@ export default function ContactDetailPage() {
                     </Button>
                     <Button
                       type="button"
-                      size="sm"
                       onClick={completeNextAction}
                       disabled={nextActionMutation.isPending}
                     >
@@ -960,7 +956,7 @@ export default function ContactDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-4">
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-pretty text-sm text-muted-foreground">
                     No next action
                   </p>
                   {nextActionError && (
@@ -972,7 +968,6 @@ export default function ContactDetailPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    size="sm"
                     onClick={startNextActionEditor}
                   >
                     <Plus className="h-4 w-4" />
