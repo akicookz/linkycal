@@ -21,17 +21,25 @@ import {
   ArrowLeft,
   ArrowRight,
   CalendarCheck as CalendarCheckIcon,
-  CalendarPlus,
 } from "lucide-react";
-import { FormFieldRenderer, type FormFieldData } from "@/components/FormFieldRenderer";
-import { RichTextContent } from "@/components/RichTextContent";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  FocusedFieldInput,
+  type FocusedFieldData,
+} from "@/components/FocusedFieldInput";
+import {
+  FormExperience,
+  type FormExperienceCheckpoint,
+} from "@/components/FormExperience";
 import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
-import { cn } from "@/lib/utils";
+import {
+  buildFormExperienceModel,
+  type FormExperienceForm,
+} from "@/lib/form-experience";
 import { track } from "@/lib/track";
+import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -76,6 +84,36 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+
+const BOOKING_NAME_FIELD: FocusedFieldData = {
+  id: "name",
+  type: "text",
+  label: "Name",
+  description: null,
+  placeholder: "Your full name",
+  required: true,
+  options: null,
+};
+
+const BOOKING_EMAIL_FIELD: FocusedFieldData = {
+  id: "email",
+  type: "email",
+  label: "Email",
+  description: null,
+  placeholder: "you@example.com",
+  required: true,
+  options: null,
+};
+
+const BOOKING_NOTES_FIELD: FocusedFieldData = {
+  id: "notes",
+  type: "textarea",
+  label: "Notes",
+  description: null,
+  placeholder: "Anything you'd like us to know",
+  required: false,
+  options: null,
+};
 
 function truncateMetaDescription(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -159,7 +197,7 @@ export default function PublicBooking() {
     return toDateString(new Date());
   }, [searchParams]);
 
-  // step: 1 = date+time, 2 = details, 3 = confirmed
+  // step: 1 = date+time, 2 = details, 3 = attached form, 4 = confirmed
   const [step, setStep] = useState(1);
   const [selectedDate, setSelectedDate] = useState<string | null>(initialDate);
   const [selectedSlot, setSelectedSlot] = useState<TimeSlot | null>(null);
@@ -176,7 +214,6 @@ export default function PublicBooking() {
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingStatus, setBookingStatus] = useState<"confirmed" | "pending">("confirmed");
   const [formValues, setFormValues] = useState<Record<string, string>>({});
-  const [formFieldErrors, setFormFieldErrors] = useState<Record<string, string>>({});
 
   // Spam prevention
   const [spamField, setSpamField] = useState("");
@@ -213,19 +250,7 @@ export default function PublicBooking() {
     project: ProjectInfo;
     owner: { name: string; image: string | null } | null;
     eventType: EventType;
-    bookingForm: {
-      id: string;
-      name: string;
-      type: string;
-      steps: Array<{
-        id: string;
-        sortOrder: number;
-        title: string | null;
-        description: string | null;
-        richDescription: string | null;
-        fields: FormFieldData[];
-      }>;
-    } | null;
+    bookingForm: FormExperienceForm | null;
     availableDays: number[];
     canHideBranding?: boolean;
   }>({
@@ -274,10 +299,6 @@ export default function PublicBooking() {
   const bookingForm = data?.bookingForm;
   const availableDays = data?.availableDays ?? [];
 
-  // Dynamic step calculation:
-  // Step 1: date/time, Step 2: name/email/notes
-  // Step 3..N: custom form steps (if any)
-  // Step N+1: confirmed/pending
   const formSteps = bookingForm?.steps ?? [];
 
   const mappedFields = useMemo(() => {
@@ -298,19 +319,35 @@ export default function PublicBooking() {
     return ids;
   }, [mappedFields]);
 
-  const visibleFormSteps = useMemo(
+  const bookingFormModel = useMemo(
     () =>
-      formSteps
-        .map((s) => ({
-          ...s,
-          fields: s.fields.filter((f) => !mappedFieldIds.has(f.id)),
-        }))
-        .filter((s) => s.fields.length > 0),
-    [formSteps, mappedFieldIds],
+      bookingForm
+        ? buildFormExperienceModel({
+            form: bookingForm,
+            values: formValues,
+            surface: "booking",
+            excludedFieldIds: mappedFieldIds,
+          })
+        : null,
+    [bookingForm, formValues, mappedFieldIds],
   );
+  const hasBookingFormContent = bookingFormModel?.hasDisplayContent ?? false;
+  const confirmationStep = 4;
 
-  const totalSteps = 2 + visibleFormSteps.length + 1;
-  const confirmationStep = totalSteps;
+  useEffect(() => {
+    const hiddenFieldIds = bookingFormModel?.hiddenValueFieldIds;
+    if (!hiddenFieldIds?.length) return;
+
+    setFormValues((previous) => {
+      let next = previous;
+      for (const id of hiddenFieldIds) {
+        if (!Object.prototype.hasOwnProperty.call(previous, id)) continue;
+        if (next === previous) next = { ...previous };
+        delete next[id];
+      }
+      return next;
+    });
+  }, [bookingFormModel]);
 
   useEffect(() => {
     if (mappedFields.nameFieldId && formValues[mappedFields.nameFieldId] && !guestName) {
@@ -462,30 +499,27 @@ export default function PublicBooking() {
     if (isMobile) goMobileSubStep("time");
   }
 
-  function validateFormStep(stepIndex: number): boolean {
-    const formStepIndex = stepIndex - 3; // step 3 = form step 0
-    const formStep = visibleFormSteps[formStepIndex];
-    if (!formStep) return true;
-
-    const errors: Record<string, string> = {};
-    for (const field of formStep.fields) {
-      if (field.required && !formValues[field.id]?.trim()) {
-        errors[field.id] = "This field is required";
-      }
-      if (
-        field.type === "email" &&
-        formValues[field.id]?.trim() &&
-        !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formValues[field.id])
-      ) {
-        errors[field.id] = "Please enter a valid email";
-      }
-    }
-    setFormFieldErrors(errors);
-    return Object.keys(errors).length === 0;
+  function setBookingFormValue(fieldId: string, value: string) {
+    setFormValues((previous) => ({ ...previous, [fieldId]: value }));
+    const currentField = bookingFormModel?.allFields.find(
+      (field) => field.id === fieldId,
+    );
+    if (currentField?.contactMapping === "name") setGuestName(value);
+    if (currentField?.contactMapping === "email") setGuestEmail(value);
   }
 
-  async function handleBook() {
-    if (!selectedSlot || !guestName || !guestEmail || !eventSlug || !projectSlug) return;
+  function clearBookingFormFields(fieldIds: string[]) {
+    setFormValues((previous) => {
+      const next = { ...previous };
+      for (const id of fieldIds) delete next[id];
+      return next;
+    });
+  }
+
+  async function handleBook(): Promise<boolean> {
+    if (!selectedSlot || !guestName || !guestEmail || !eventSlug || !projectSlug) {
+      return false;
+    }
     setSubmitting(true);
     setBookingError(null);
 
@@ -526,24 +560,23 @@ export default function PublicBooking() {
         event_slug: eventSlug,
         event_name: eventType?.name,
         duration: eventType?.duration,
-        start_time: selectedSlot?.start,
+        start_time: selectedSlot.start,
       });
       setStep(confirmationStep);
-    } catch (err) {
-      setBookingError(err instanceof Error ? err.message : "Something went wrong");
+      return true;
+    } catch (caught) {
+      setBookingError(caught instanceof Error ? caught.message : "Something went wrong");
+      return false;
     } finally {
       setSubmitting(false);
     }
   }
 
-  function handleBookAnother() {
-    setStep(1);
-    setMobileSubStep("date");
-    setSelectedDate(null);
-    setSelectedSlot(null);
-    setGuestName(""); setGuestEmail(""); setGuestNotes("");
-    setFormValues({}); setFormFieldErrors({});
-    setBookingError(null);
+  async function checkpointBookingForm(
+    checkpoint: FormExperienceCheckpoint,
+  ): Promise<boolean> {
+    if (!checkpoint.isFinal) return true;
+    return handleBook();
   }
 
   const primaryColorStyle: React.CSSProperties | undefined = theme?.primaryBg
@@ -659,7 +692,7 @@ export default function PublicBooking() {
         {/* ─── Card ─── */}
         <div
           className={cn(
-            "bg-card p-6 sm:p-8 transition-all duration-500",
+            "relative bg-card p-6 sm:p-8 transition-all duration-500",
             showBanner ? "rounded-b-[16px]" : "rounded-[16px]",
           )}
           style={{ borderRadius: showBanner ? undefined : theme?.borderRadius ? `${theme.borderRadius}px` : undefined }}
@@ -667,7 +700,12 @@ export default function PublicBooking() {
 
           {/* ─── Owner Avatar (always visible) ─── */}
           {owner && (
-            <div className={showBanner ? "-mt-14 mb-4" : "mb-4"}>
+            <div
+              className={cn(
+                "relative z-10",
+                showBanner ? "-mt-14 mb-4" : "mb-4",
+              )}
+            >
               {owner.image ? (
                 <img
                   src={owner.image}
@@ -980,24 +1018,33 @@ export default function PublicBooking() {
 
                 <div>
                   <Label htmlFor="name">Name *</Label>
-                  <Input id="name" value={guestName} onChange={(e) => setGuestName(e.target.value)} placeholder="Your full name" />
+                  <FocusedFieldInput
+                    field={BOOKING_NAME_FIELD}
+                    value={guestName}
+                    onChange={setGuestName}
+                    density="compact"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="email">Email *</Label>
-                  <Input id="email" type="email" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} placeholder="you@example.com" />
+                  <FocusedFieldInput
+                    field={BOOKING_EMAIL_FIELD}
+                    value={guestEmail}
+                    onChange={setGuestEmail}
+                    density="compact"
+                  />
                 </div>
                 <div>
                   <Label htmlFor="notes">Notes</Label>
-                  <textarea
-                    id="notes"
+                  <FocusedFieldInput
+                    field={BOOKING_NOTES_FIELD}
                     value={guestNotes}
-                    onChange={(e) => setGuestNotes(e.target.value)}
-                    placeholder="Anything you'd like us to know"
-                    className="w-full min-h-[80px] rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none resize-vertical"
+                    onChange={setGuestNotes}
+                    density="compact"
                   />
                 </div>
 
-                {bookingError && !visibleFormSteps.length && (
+                {bookingError && !hasBookingFormContent && (
                   <p className="text-sm text-destructive">{bookingError}</p>
                 )}
               </div>
@@ -1014,7 +1061,7 @@ export default function PublicBooking() {
                   <ArrowLeft className="h-4 w-4" />
                   Back
                 </button>
-                {visibleFormSteps.length > 0 ? (
+                {hasBookingFormContent ? (
                   <Button
                     disabled={!guestName || !guestEmail}
                     onClick={() => setStep(3)}
@@ -1042,97 +1089,22 @@ export default function PublicBooking() {
             </div>
           )}
 
-          {/* ─── Step 3+: Custom Form Steps ─── */}
-          {step >= 3 && step < confirmationStep && visibleFormSteps.length > 0 && (() => {
-            const formStepIndex = step - 3;
-            const formStep = visibleFormSteps[formStepIndex];
-            if (!formStep) return null;
-            const isLastFormStep = formStepIndex === visibleFormSteps.length - 1;
-
-            return (
-              <div>
-                {formStep.title && (
-                  <h2 className="text-base font-semibold mb-1">{formStep.title}</h2>
-                )}
-                <RichTextContent
-                  value={formStep.richDescription}
-                  fallbackPlainText={formStep.description}
-                  className="mb-5 text-[13px]"
-                />
-
-                <div className="space-y-4">
-                  {formStep.fields
-                    .sort((a, b) => (a as unknown as { sortOrder: number }).sortOrder - (b as unknown as { sortOrder: number }).sortOrder)
-                    .map((field) => (
-                      <FormFieldRenderer
-                        key={field.id}
-                        field={field}
-                        value={formValues[field.id] ?? ""}
-                        onChange={(val) => {
-                          setFormValues((prev) => ({ ...prev, [field.id]: val }));
-                          setFormFieldErrors((prev) => {
-                            const next = { ...prev };
-                            delete next[field.id];
-                            return next;
-                          });
-                          if (field.contactMapping === "name") setGuestName(val);
-                          if (field.contactMapping === "email") setGuestEmail(val);
-                        }}
-                        error={formFieldErrors[field.id]}
-                        themeColor={theme?.primaryBg}
-                        themeTextColor={theme?.primaryText}
-                        themeRadius={theme?.borderRadius}
-                      />
-                    ))}
-
-                  {bookingError && isLastFormStep && (
-                    <p className="text-sm text-destructive">{bookingError}</p>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between mt-6">
-                  <button
-                    onClick={() => setStep(step - 1)}
-                    className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <ArrowLeft className="h-4 w-4" />
-                    Back
-                  </button>
-                  {isLastFormStep ? (
-                    <Button
-                      disabled={submitting}
-                      onClick={() => {
-                        if (validateFormStep(step)) {
-                          handleBook();
-                        }
-                      }}
-                      className="px-10"
-                      style={primaryStyle}
-                    >
-                      {submitting ? (
-                        <><Loader className="h-4 w-4 animate-spin" /> Booking...</>
-                      ) : (
-                        <><CalendarCheckIcon className="h-4 w-4" /> Confirm Booking</>
-                      )}
-                    </Button>
-                  ) : (
-                    <Button
-                      onClick={() => {
-                        if (validateFormStep(step)) {
-                          setStep(step + 1);
-                        }
-                      }}
-                      className="px-10"
-                      style={primaryStyle}
-                    >
-                      Next
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
+          {/* ─── Step 3: Attached Form ─── */}
+          {step === 3 && bookingForm && (
+            <FormExperience
+              form={bookingForm}
+              surface="booking"
+              values={formValues}
+              excludedFieldIds={mappedFieldIds}
+              submitting={submitting}
+              error={bookingError}
+              theme={theme}
+              onValueChange={setBookingFormValue}
+              onClearFields={clearBookingFormFields}
+              onCheckpoint={checkpointBookingForm}
+              onExitBack={() => setStep(2)}
+            />
+          )}
 
           {/* ─── Confirmation Step ─── */}
           {step === confirmationStep && (
@@ -1176,34 +1148,26 @@ export default function PublicBooking() {
                 </div>
               )}
 
-              <p className="text-xs text-muted-foreground mb-5">
+              <p className="text-xs text-muted-foreground">
                 {bookingStatus === "pending"
                   ? `A confirmation will be sent to ${guestEmail} once approved.`
                   : `A confirmation email has been sent to ${guestEmail}.`}
               </p>
-
-              <Button variant="outline" size="sm" onClick={handleBookAnother}>
-                <CalendarPlus className="h-4 w-4" />
-                Book another time
-              </Button>
-            </div>
-          )}
-
-          {/* ─── Footer: Made with LinkyCal ─── */}
-          {showBranding && (
-            <div className="mt-6 pt-4 flex">
-              <a
-                href="https://linkycal.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground transition-colors"
-              >
-                <Logo size="sm" iconOnly />
-                Made with <span className="font-semibold">LinkyCal</span>
-              </a>
             </div>
           )}
         </div>
+
+        {/* ─── Footer: Powered by LinkyCal ─── */}
+        {showBranding && (
+          <div className="flex justify-center px-6 py-4 sm:px-8">
+            <Link
+              to="/"
+              className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Powered by <Logo size="xs" />
+            </Link>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -492,7 +492,7 @@ export default function Landing() {
       >
         <DialogContent className="sm:max-w-[400px]">
           <DialogHeader className="items-start">
-            <Logo size="lg" />
+            <Logo size="md" />
             <DialogTitle className="mt-5">Sign in to LinkyCal</DialogTitle>
             <DialogDescription className="mt-1">
               {authStep === "social"
