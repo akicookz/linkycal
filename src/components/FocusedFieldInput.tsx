@@ -200,8 +200,8 @@ export function FocusedFieldInput({
         className={cn(
           "ring-shadow w-full rounded-[12px] border-0 bg-primary/[0.03] px-4 font-medium tracking-[-0.01em] text-foreground placeholder:text-muted-foreground/45 placeholder:font-normal outline-none transition-[background-color,box-shadow] duration-150 ease-out focus:bg-primary/[0.045] focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
           density === "compact"
-            ? "h-11 text-base sm:text-lg"
-            : "h-12 text-lg sm:text-xl",
+            ? "h-11 text-base"
+            : "h-12 max-w-xl text-lg",
           error &&
             "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)] focus:ring-shadow-[var(--destructive)]",
         )}
@@ -260,7 +260,12 @@ function FocusedFileInput({
           <Upload className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-base font-medium text-foreground">
+          <span
+            className={cn(
+              "block truncate font-medium text-foreground",
+              density === "compact" ? "text-base" : "text-lg",
+            )}
+          >
             {displayName}
           </span>
           <span className="mt-1 block text-xs text-muted-foreground">
@@ -342,8 +347,8 @@ function FocusedTextarea({
         className={cn(
           "ring-shadow w-full resize-none overflow-hidden rounded-[12px] border-0 bg-primary/[0.03] px-4 py-3 font-medium tracking-[-0.01em] text-foreground placeholder:text-muted-foreground/45 placeholder:font-normal outline-none transition-[background-color,box-shadow] duration-150 ease-out focus:bg-primary/[0.045] focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
           density === "compact"
-            ? "min-h-11 text-base sm:text-lg"
-            : "min-h-12 text-lg sm:text-xl",
+            ? "min-h-11 text-base"
+            : "min-h-12 max-w-xl text-lg",
           error &&
             "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)] focus:ring-shadow-[var(--destructive)]",
         )}
@@ -403,7 +408,7 @@ function FocusedChoiceCard({
       <span
         className={cn(
           "min-w-0 flex-1 font-medium leading-snug text-foreground text-pretty",
-          density === "compact" ? "text-sm sm:text-[15px]" : "text-[15px] sm:text-base",
+          density === "compact" ? "text-base" : "text-lg",
         )}
       >
         {label}

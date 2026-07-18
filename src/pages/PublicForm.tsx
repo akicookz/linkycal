@@ -357,14 +357,9 @@ export default function PublicForm() {
 
   if (isLoading) {
     return (
-      <FormExperiencePageShell
-        theme={theme}
-        canHideBranding={canHideBranding}
-      >
-        <div className="flex items-center justify-center py-20">
-          <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      </FormExperiencePageShell>
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 

@@ -47,6 +47,79 @@ function form(type: "multi_step" | "single"): FormExperienceForm {
   };
 }
 
+const TEXTUAL_FOCUSED_FIELD_TYPES = [
+  "text",
+  "email",
+  "phone",
+  "url",
+  "number",
+  "date",
+  "time",
+  "textarea",
+  "select",
+  "multi_select",
+  "radio",
+  "checkbox",
+  "file",
+] as const;
+
+function answerForm(fieldType: string): FormExperienceForm {
+  const current = form("multi_step");
+  const hasOptions = ["select", "multi_select", "radio"].includes(fieldType);
+  current.steps[0].fields = [
+    {
+      ...current.steps[0].fields[0],
+      type: fieldType,
+      options: hasOptions
+        ? [
+            { label: "My company", value: "company" },
+            { label: "Client sites", value: "clients" },
+          ]
+        : null,
+    },
+  ];
+  return current;
+}
+
+function focusedChoiceLabelClasses(html: string): string {
+  const match = html.match(
+    /data-focused-choice="true"[\s\S]*?<span class="([^"]*min-w-0[^"]*)"/,
+  );
+  if (!match) throw new Error("Focused choice label was not rendered");
+  return match[1];
+}
+
+function focusedAnswerClasses(html: string, fieldType: string): string {
+  if (["select", "multi_select", "radio", "checkbox"].includes(fieldType)) {
+    return focusedChoiceLabelClasses(html);
+  }
+
+  const pattern =
+    fieldType === "textarea"
+      ? /<textarea[^>]*id="first"[^>]*class="([^"]+)"/
+      : fieldType === "file"
+        ? /<span class="([^"]*block truncate[^"]*)"/
+        : /<input[^>]*id="first"[^>]*class="([^"]+)"/;
+  const match = html.match(pattern);
+  if (!match) throw new Error(`Focused ${fieldType} answer was not rendered`);
+  return match[1];
+}
+
+function focusedControlClasses(html: string, fieldType: string): string {
+  const pattern = ["select", "multi_select", "radio", "checkbox"].includes(
+    fieldType,
+  )
+    ? /<button[^>]*data-focused-choice="true"[^>]*class="([^"]+)"/
+    : fieldType === "textarea"
+      ? /<textarea[^>]*id="first"[^>]*class="([^"]+)"/
+      : fieldType === "file"
+        ? /<label class="([^"]*ring-shadow flex w-full[^"]*)"/
+        : /<input[^>]*id="first"[^>]*class="([^"]+)"/;
+  const match = html.match(pattern);
+  if (!match) throw new Error(`Focused ${fieldType} control was not rendered`);
+  return match[1];
+}
+
 function renderExperience(
   currentForm: FormExperienceForm,
   overrides: Partial<ComponentProps<typeof FormExperience>> = {},
@@ -155,21 +228,52 @@ describe("FormExperience render contract", () => {
   });
 
   test("focused choice controls use customizable shadow rings", () => {
-    const current = form("multi_step");
-    current.steps[0].fields = [
-      {
-        ...current.steps[0].fields[0],
-        type: "select",
-        options: [
-          { label: "My company", value: "company" },
-          { label: "Client sites", value: "clients" },
-        ],
-      },
-    ];
-    const html = renderExperience(current);
+    const html = renderExperience(answerForm("select"));
     expect(html).toContain('data-focused-choice="true"');
     expect(html).toContain("ring-shadow");
     expect(html).not.toContain("border-primary/30");
+  });
+
+  test("focused booking keeps every textual answer at text-base", () => {
+    for (const fieldType of TEXTUAL_FOCUSED_FIELD_TYPES) {
+      const html = renderExperience(answerForm(fieldType));
+      const classes = focusedAnswerClasses(html, fieldType);
+
+      expect(classes).toContain("text-base");
+      expect(classes).not.toContain("sm:text-lg");
+      expect(classes).not.toContain("sm:text-xl");
+    }
+  });
+
+  test("focused standalone keeps every textual answer at text-lg", () => {
+    for (const fieldType of TEXTUAL_FOCUSED_FIELD_TYPES) {
+      const html = renderExperience(answerForm(fieldType), {
+        surface: "standalone",
+      });
+      const classes = focusedAnswerClasses(html, fieldType);
+
+      expect(classes).toContain("text-lg");
+      expect(classes).not.toContain("sm:text-lg");
+      expect(classes).not.toContain("sm:text-xl");
+    }
+  });
+
+  test("focused standalone caps every textual control at the select width", () => {
+    for (const fieldType of TEXTUAL_FOCUSED_FIELD_TYPES) {
+      const html = renderExperience(answerForm(fieldType), {
+        surface: "standalone",
+      });
+
+      expect(focusedControlClasses(html, fieldType)).toContain("max-w-xl");
+    }
+  });
+
+  test("focused booking keeps textual controls uncapped", () => {
+    for (const fieldType of TEXTUAL_FOCUSED_FIELD_TYPES) {
+      const html = renderExperience(answerForm(fieldType));
+
+      expect(focusedControlClasses(html, fieldType)).not.toContain("max-w-xl");
+    }
   });
 
   test("classic booking keeps the existing section title and both fields", () => {
