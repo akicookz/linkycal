@@ -87,6 +87,38 @@ export async function updateContact(
   return ok(contact);
 }
 
+export async function setContactNextAction(
+  ctx: ToolContext,
+  input: { contactId: string; text: string; deadline: string },
+): Promise<ToolResult> {
+  const service = new ContactService(ctx.db());
+  const existing = inProject(
+    await service.getById(input.contactId),
+    ctx.projectId(),
+  );
+  if (!existing) return err("Not found");
+
+  const contact = await service.setNextAction(input.contactId, {
+    text: input.text,
+    deadline: new Date(input.deadline),
+  });
+  return ok(contact);
+}
+
+export async function completeContactNextAction(
+  ctx: ToolContext,
+  input: { contactId: string },
+): Promise<ToolResult> {
+  const service = new ContactService(ctx.db());
+  const existing = inProject(
+    await service.getById(input.contactId),
+    ctx.projectId(),
+  );
+  if (!existing) return err("Not found");
+
+  return ok(await service.setNextAction(input.contactId, null));
+}
+
 export async function deleteContact(
   ctx: ToolContext,
   input: { contactId: string },
@@ -222,6 +254,44 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
       },
     },
     withToolErrors("update_contact", (input) => updateContact(ctx, input)),
+  );
+
+  server.registerTool(
+    "set_contact_next_action",
+    {
+      description:
+        "Set or replace the contact's single Next Action and exact deadline.",
+      inputSchema: {
+        contactId: z.string().describe("Contact id"),
+        text: z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .describe("Next action text"),
+        deadline: z
+          .string()
+          .datetime()
+          .describe("Exact ISO 8601 deadline"),
+      },
+    },
+    withToolErrors("set_contact_next_action", (input) =>
+      setContactNextAction(ctx, input),
+    ),
+  );
+
+  server.registerTool(
+    "complete_contact_next_action",
+    {
+      description:
+        "Mark the contact's current Next Action complete and clear it.",
+      inputSchema: {
+        contactId: z.string().describe("Contact id"),
+      },
+    },
+    withToolErrors("complete_contact_next_action", (input) =>
+      completeContactNextAction(ctx, input),
+    ),
   );
 
   server.registerTool(

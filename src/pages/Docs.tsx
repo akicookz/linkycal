@@ -1418,7 +1418,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
                 {
                   domain: "Contacts",
                   tools:
-                    "list_contacts · get_contact · create_contact · update_contact · delete_contact · get_contact_activity",
+                    "list_contacts · get_contact · create_contact · update_contact · set_contact_next_action · complete_contact_next_action · delete_contact · get_contact_activity",
                 },
                 {
                   domain: "Tags",

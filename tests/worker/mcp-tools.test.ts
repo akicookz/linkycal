@@ -11,6 +11,8 @@ import {
   createContact,
   updateContact,
   addTagToContact,
+  setContactNextAction,
+  completeContactNextAction,
 } from "../../worker/mcp/tools/contacts";
 import {
   listEventTypes,
@@ -137,6 +139,57 @@ describe("MCP tool project scoping", () => {
 
     const ownTag = await addTagToContact(ctxA, { contactId: "ct-a1", tagId: "tag-a1" });
     expect(ownTag.isError).toBeUndefined();
+  });
+
+  test("sets and completes a Next Action only for an owned contact", async () => {
+    const { ctxA } = await seedFixture();
+
+    const foreign = await setContactNextAction(ctxA, {
+      contactId: "ct-b1",
+      text: "Call",
+      deadline: "2026-07-25T14:30:00.000Z",
+    });
+    expect(foreign.isError).toBe(true);
+
+    const set = await setContactNextAction(ctxA, {
+      contactId: "ct-a1",
+      text: "Call",
+      deadline: "2026-07-25T14:30:00.000Z",
+    });
+    expect(set.isError).toBeUndefined();
+    expect(
+      parsed(set) as {
+        nextActionText: string;
+        nextActionDeadline: string;
+      },
+    ).toEqual(
+      expect.objectContaining({
+        nextActionText: "Call",
+        nextActionDeadline: "2026-07-25T14:30:00.000Z",
+      }),
+    );
+
+    const completed = await completeContactNextAction(ctxA, {
+      contactId: "ct-a1",
+    });
+    expect(completed.isError).toBeUndefined();
+    expect(parsed(completed)).toEqual(
+      expect.objectContaining({
+        nextActionText: null,
+        nextActionDeadline: null,
+      }),
+    );
+  });
+
+  test("complete Next Action hides a foreign contact", async () => {
+    const { ctxA } = await seedFixture();
+
+    const result = await completeContactNextAction(ctxA, {
+      contactId: "ct-b1",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toBe("Not found");
   });
 
   test("get_schedule, get_form, get_workflow hide foreign resources", async () => {
