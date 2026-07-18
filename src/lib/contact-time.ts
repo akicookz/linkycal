@@ -51,6 +51,15 @@ export function formatNextActionRelative(
   return diffMs < 0 ? `Overdue by ${distance}` : `Due in ${distance}`;
 }
 
+export function formatNextActionDeadline(deadline: string): string | null {
+  const deadlineMs = parseTimestamp(deadline);
+  if (deadlineMs === null) return null;
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(deadlineMs));
+}
+
 export function toDatetimeLocalValue(isoValue: string): string {
   const date = new Date(isoValue);
   if (!Number.isFinite(date.getTime())) return "";

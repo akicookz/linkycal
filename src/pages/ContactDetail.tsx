@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import type { CSSProperties } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -22,9 +23,15 @@ import {
   DollarSign,
   Link2,
   Sparkles,
+  CalendarClock,
+  Pencil,
+  Save,
+  CheckCircle2,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +41,13 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { TagPickerContent } from "@/components/TagPicker";
+import { useMinuteNow } from "@/hooks/use-minute-now";
+import {
+  datetimeLocalToIso,
+  formatNextActionDeadline,
+  formatNextActionRelative,
+  toDatetimeLocalValue,
+} from "@/lib/contact-time";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
 
@@ -48,7 +62,16 @@ interface ContactTag {
 interface ContactActivity {
   id: string;
   contactId: string;
-  type: "form_submitted" | "booked" | "cancelled" | "tag_added" | "tag_removed" | "workflow_researched";
+  type:
+    | "contact_created"
+    | "form_submitted"
+    | "booked"
+    | "cancelled"
+    | "tag_added"
+    | "tag_removed"
+    | "workflow_researched"
+    | "next_action_set"
+    | "next_action_completed";
   referenceId: string | null;
   metadata: unknown;
   createdAt: string;
@@ -68,11 +91,17 @@ interface ContactDetail {
   companySize: string | null;
   estimatedRevenue: string | null;
   linkedinUrl: string | null;
+  nextActionText: string | null;
+  nextActionDeadline: string | null;
   createdAt: string;
   updatedAt: string;
   tags: ContactTag[];
   activity: ContactActivity[];
 }
+
+type NextActionMutationInput =
+  | { text: string; deadline: string }
+  | { text: null; deadline: null };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -131,6 +160,10 @@ function activityIcon(type: ContactActivity["type"]) {
       return <Tag className="h-4 w-4 text-violet-600" />;
     case "tag_removed":
       return <Tag className="h-4 w-4 text-muted-foreground" />;
+    case "next_action_set":
+      return <CalendarClock className="h-4 w-4 text-blue-600" />;
+    case "next_action_completed":
+      return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
     default:
       return <Clock className="h-4 w-4 text-muted-foreground" />;
   }
@@ -151,6 +184,10 @@ function activityDescription(activity: ContactActivity): string {
       return `Tag '${meta?.tagName ?? "unknown"}' removed`;
     case "workflow_researched":
       return `Stored ${meta?.provider ?? "AI"} research in '${meta?.resultKey ?? "research"}'`;
+    case "next_action_set":
+      return `Next action set to '${meta?.text ?? "unknown"}'`;
+    case "next_action_completed":
+      return `Completed next action '${meta?.text ?? "unknown"}'`;
     default:
       return "Activity recorded";
   }
@@ -161,20 +198,6 @@ function ensureHttps(url: string): string {
   return `https://${url}`;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function getLatestResearch(contact: ContactDetail): Record<string, unknown> | null {
-  if (!isRecord(contact.metadata)) return null;
-  const workflow = contact.metadata.workflow;
-  if (!isRecord(workflow)) return null;
-  const research = workflow.research;
-  if (!isRecord(research)) return null;
-  const latest = research.latest;
-  return isRecord(latest) ? latest : null;
-}
-
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ContactDetailPage() {
@@ -182,8 +205,13 @@ export default function ContactDetailPage() {
   const navigate = useNavigate();
 
   const [addTagOpen, setAddTagOpen] = useState(false);
+  const [editingNextAction, setEditingNextAction] = useState(false);
+  const [nextActionText, setNextActionText] = useState("");
+  const [nextActionDeadline, setNextActionDeadline] = useState("");
+  const [nextActionError, setNextActionError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "error" | null>(null);
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const now = useMinuteNow();
 
   // ─── Queries ───
 
@@ -285,6 +313,45 @@ export default function ContactDetailPage() {
     },
   });
 
+  const nextActionMutation = useMutation({
+    mutationFn: async (input: NextActionMutationInput) => {
+      const res = await fetch(
+        `/api/projects/${projectId}/contacts/${contactId}/next-action`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(input),
+        },
+      );
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(
+          (data as { error?: string }).error ??
+            "Failed to update next action",
+        );
+      }
+      return res.json() as Promise<{ contact: ContactDetail }>;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<ContactDetail>(
+        ["projects", projectId, "contacts", contactId],
+        (current) =>
+          current ? { ...current, ...data.contact } : data.contact,
+      );
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contacts", contactId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contacts"],
+      });
+      setEditingNextAction(false);
+      setNextActionError(null);
+    },
+    onError: () => {
+      setNextActionError("Failed to update next action.");
+    },
+  });
+
   // ─── Enrichment ───
 
   const [enrichError, setEnrichError] = useState<string | null>(null);
@@ -332,6 +399,34 @@ export default function ContactDetailPage() {
     navigate(`/app/projects/${projectId}/contacts`);
   }
 
+  function startNextActionEditor() {
+    setNextActionText(contact?.nextActionText ?? "");
+    setNextActionDeadline(
+      contact?.nextActionDeadline
+        ? toDatetimeLocalValue(contact.nextActionDeadline)
+        : "",
+    );
+    setNextActionError(null);
+    setEditingNextAction(true);
+  }
+
+  function cancelNextActionEditor() {
+    setEditingNextAction(false);
+    setNextActionError(null);
+  }
+
+  function saveNextAction() {
+    const deadline = datetimeLocalToIso(nextActionDeadline);
+    const text = nextActionText.trim();
+    if (!text || !deadline) return;
+    nextActionMutation.mutate({ text, deadline });
+  }
+
+  function completeNextAction() {
+    setNextActionError(null);
+    nextActionMutation.mutate({ text: null, deadline: null });
+  }
+
   // ─── Loading state ───
 
   if (loadingContact) {
@@ -347,18 +442,17 @@ export default function ContactDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
           <div className="space-y-6">
             <Card>
-              <CardHeader>
-                <Skeleton className="h-6 w-48" />
-              </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-center gap-4">
-                  <Skeleton className="h-16 w-16 rounded-full" />
-                  <div className="space-y-2">
+                <div className="flex items-start gap-4">
+                  <Skeleton className="h-14 w-14 rounded-full shrink-0" />
+                  <div className="flex-1 space-y-3">
                     <Skeleton className="h-6 w-40" />
-                    <Skeleton className="h-4 w-56" />
+                    <div className="flex gap-2">
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                      <Skeleton className="h-6 w-24 rounded-full" />
+                    </div>
                   </div>
                 </div>
-                <div className="pt-4" />
                 <Skeleton className="h-4 w-64" />
                 <Skeleton className="h-4 w-48" />
                 <Skeleton className="h-4 w-80" />
@@ -384,17 +478,6 @@ export default function ContactDetailPage() {
           </div>
 
           <div className="space-y-6">
-            <Card>
-              <CardHeader>
-                <Skeleton className="h-5 w-16" />
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  <Skeleton className="h-6 w-16 rounded-full" />
-                  <Skeleton className="h-6 w-20 rounded-full" />
-                </div>
-              </CardContent>
-            </Card>
             <Card>
               <CardHeader>
                 <Skeleton className="h-5 w-24" />
@@ -445,7 +528,20 @@ export default function ContactDetailPage() {
   const sortedActivity = [...contact.activity].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
-  const latestResearch = getLatestResearch(contact);
+  const hasNextAction = Boolean(
+    contact.nextActionText && contact.nextActionDeadline,
+  );
+  const nextActionDeadlineLabel = contact.nextActionDeadline
+    ? formatNextActionDeadline(contact.nextActionDeadline)
+    : null;
+  const nextActionRelative = contact.nextActionDeadline
+    ? formatNextActionRelative(contact.nextActionDeadline, now)
+    : null;
+  const nextActionIsOverdue = nextActionRelative?.startsWith("Overdue") ?? false;
+  const nextActionDeadlineIso = datetimeLocalToIso(nextActionDeadline);
+  const canSaveNextAction = Boolean(
+    nextActionText.trim() && nextActionDeadlineIso,
+  );
 
   // ─── Render ───
 
@@ -493,57 +589,112 @@ export default function ContactDetailPage() {
         <div className="space-y-6">
           {/* Contact Info Card */}
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Contact Information</span>
-                {saveStatus && (
-                  <span
-                    className={cn(
-                      "flex items-center gap-1 text-[11px] font-normal",
-                      saveStatus === "saving" && "text-muted-foreground",
-                      saveStatus === "saved" && "text-emerald-600",
-                      saveStatus === "error" && "text-destructive",
-                    )}
-                  >
-                    {saveStatus === "saving" && (
-                      <>
-                        <Loader className="h-3 w-3 animate-spin" />
-                        Saving...
-                      </>
-                    )}
-                    {saveStatus === "saved" && (
-                      <>
-                        <Check className="h-3 w-3" />
-                        Saved
-                      </>
-                    )}
-                    {saveStatus === "error" && (
-                      <>
-                        <AlertCircle className="h-3 w-3" />
-                        Failed to save
-                      </>
-                    )}
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
+            <CardContent className="space-y-5 pt-2">
               {/* Avatar & Name (click name to edit) */}
-              <div className="flex items-center gap-4">
+              <div data-contact-identity="true" className="flex items-start gap-4">
                 <div
                   className="h-14 w-14 rounded-full flex items-center justify-center text-white text-xl font-semibold shrink-0"
                   style={{ backgroundColor: getAvatarColor(contact.name) }}
                 >
                   {getInitial(contact.name)}
                 </div>
-                <InlineField
-                  key={`name-${contact.id}`}
-                  value={contact.name}
-                  placeholder="Contact name"
-                  required
-                  className="text-lg font-semibold text-foreground"
-                  onSave={(v) => updateMutation.mutate({ name: v ?? "" })}
-                />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <InlineField
+                      key={`name-${contact.id}`}
+                      value={contact.name}
+                      placeholder="Contact name"
+                      required
+                      className="text-lg font-semibold text-foreground"
+                      onSave={(v) => updateMutation.mutate({ name: v ?? "" })}
+                    />
+                    {saveStatus && (
+                      <span
+                        className={cn(
+                          "flex shrink-0 items-center gap-1 text-[11px] font-normal",
+                          saveStatus === "saving" && "text-muted-foreground",
+                          saveStatus === "saved" && "text-emerald-600",
+                          saveStatus === "error" && "text-destructive",
+                        )}
+                      >
+                        {saveStatus === "saving" && (
+                          <>
+                            <Loader className="h-3 w-3 animate-spin" />
+                            Saving...
+                          </>
+                        )}
+                        {saveStatus === "saved" && (
+                          <>
+                            <Check className="h-3 w-3" />
+                            Saved
+                          </>
+                        )}
+                        {saveStatus === "error" && (
+                          <>
+                            <AlertCircle className="h-3 w-3" />
+                            Failed to save
+                          </>
+                        )}
+                      </span>
+                    )}
+                  </div>
+
+                  <div data-contact-tags="inline" className="flex flex-wrap items-center gap-2">
+                    {contact.tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        className="ring-shadow inline-flex items-center gap-1 rounded-full border-0 py-0.5 pl-2 pr-1 text-[11px] font-medium transition-[background-color,box-shadow,transform] hover:bg-black/5 active:scale-[0.96]"
+                        style={{
+                          backgroundColor: tag.color ? `${tag.color}15` : undefined,
+                          color: tag.color ?? undefined,
+                          "--ring-shadow-color": tag.color ?? "#e2e8f0",
+                        } as CSSProperties}
+                        title={`Remove ${tag.name} tag`}
+                        onClick={() => removeTagMutation.mutate(tag.id)}
+                        disabled={removeTagMutation.isPending}
+                      >
+                        <span
+                          className="h-1.5 w-1.5 shrink-0 rounded-full"
+                          style={{ backgroundColor: tag.color ?? "#94a3b8" }}
+                        />
+                        <span>{tag.name}</span>
+                        <XIcon className="h-3 w-3" />
+                      </button>
+                    ))}
+
+                    <Popover open={addTagOpen} onOpenChange={setAddTagOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 px-1.5 text-[11px] [&_svg]:size-3.5"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Add Tag
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent align="start" className="w-64 p-2">
+                        <TagPickerContent
+                          projectId={projectId!}
+                          assignedTagIds={contact.tags.map((tag) => tag.id)}
+                          pendingTagId={
+                            addTagMutation.isPending
+                              ? addTagMutation.variables
+                              : removeTagMutation.isPending
+                                ? removeTagMutation.variables
+                                : null
+                          }
+                          onToggle={(tag, assigned) =>
+                            assigned
+                              ? removeTagMutation.mutate(tag.id)
+                              : addTagMutation.mutate(tag.id)
+                          }
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
               </div>
 
               {/* Details — edit in place, saved on blur */}
@@ -684,69 +835,149 @@ export default function ContactDetailPage() {
 
         {/* ─── Sidebar ─── */}
         <div className="space-y-6">
-          {/* Tags Section */}
-          <Card>
+          <Card data-next-action-card="true">
             <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Tags</span>
-                <Popover open={addTagOpen} onOpenChange={setAddTagOpen}>
-                  <PopoverTrigger asChild>
-                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs">
-                      <Plus className="h-3.5 w-3.5" />
-                      Add Tag
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="end" className="w-64 p-2">
-                    <TagPickerContent
-                      projectId={projectId!}
-                      assignedTagIds={contact.tags.map((t) => t.id)}
-                      pendingTagId={
-                        addTagMutation.isPending
-                          ? addTagMutation.variables
-                          : removeTagMutation.isPending
-                            ? removeTagMutation.variables
-                            : null
-                      }
-                      onToggle={(tag, assigned) =>
-                        assigned
-                          ? removeTagMutation.mutate(tag.id)
-                          : addTagMutation.mutate(tag.id)
-                      }
-                    />
-                  </PopoverContent>
-                </Popover>
+              <CardTitle className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                Next Action
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {contact.tags.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No tags assigned</p>
-              ) : (
-                <div className="flex flex-wrap gap-2">
-                  {contact.tags.map((tag) => (
-                    <span
-                      key={tag.id}
-                      className="inline-flex items-center gap-1.5 rounded-full pl-2.5 pr-1.5 py-1 text-xs font-medium border group"
-                      style={{
-                        backgroundColor: tag.color ? `${tag.color}15` : undefined,
-                        borderColor: tag.color ?? "#e2e8f0",
-                        color: tag.color ?? undefined,
-                      }}
+              {editingNextAction ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="next-action-text">Action</Label>
+                    <Input
+                      id="next-action-text"
+                      value={nextActionText}
+                      maxLength={500}
+                      placeholder="Send revised proposal"
+                      onChange={(event) =>
+                        setNextActionText(event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="next-action-deadline">Deadline</Label>
+                    <Input
+                      id="next-action-deadline"
+                      type="datetime-local"
+                      value={nextActionDeadline}
+                      onChange={(event) =>
+                        setNextActionDeadline(event.target.value)
+                      }
+                    />
+                  </div>
+                  {nextActionError && (
+                    <p className="flex items-center gap-1.5 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      {nextActionError}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      onClick={saveNextAction}
+                      disabled={
+                        !canSaveNextAction || nextActionMutation.isPending
+                      }
                     >
-                      <span
-                        className="h-1.5 w-1.5 rounded-full shrink-0"
-                        style={{ backgroundColor: tag.color ?? "#94a3b8" }}
-                      />
-                      {tag.name}
-                      <button
-                        type="button"
-                        className="ml-0.5 rounded-full p-0.5 hover:bg-black/10 transition-colors"
-                        onClick={() => removeTagMutation.mutate(tag.id)}
-                        disabled={removeTagMutation.isPending}
+                      {nextActionMutation.isPending ? (
+                        <Loader className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Save className="h-4 w-4" />
+                      )}
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={cancelNextActionEditor}
+                      disabled={nextActionMutation.isPending}
+                    >
+                      <XIcon className="h-4 w-4" />
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : hasNextAction ? (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-foreground">
+                      {contact.nextActionText}
+                    </p>
+                    {nextActionDeadlineLabel && (
+                      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                        {nextActionDeadlineLabel}
+                      </p>
+                    )}
+                    {nextActionRelative && (
+                      <p
+                        className={cn(
+                          "text-xs font-medium tabular-nums",
+                          nextActionIsOverdue
+                            ? "text-destructive"
+                            : "text-muted-foreground",
+                        )}
                       >
-                        <XIcon className="h-3 w-3" />
-                      </button>
-                    </span>
-                  ))}
+                        {nextActionRelative}
+                      </p>
+                    )}
+                  </div>
+                  {nextActionError && (
+                    <p className="flex items-center gap-1.5 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      {nextActionError}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={startNextActionEditor}
+                      disabled={nextActionMutation.isPending}
+                    >
+                      <Pencil className="h-4 w-4" />
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={completeNextAction}
+                      disabled={nextActionMutation.isPending}
+                    >
+                      {nextActionMutation.isPending ? (
+                        <Loader className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4" />
+                      )}
+                      Mark Done
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    No next action
+                  </p>
+                  {nextActionError && (
+                    <p className="flex items-center gap-1.5 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                      {nextActionError}
+                    </p>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={startNextActionEditor}
+                  >
+                    <Plus className="h-4 w-4" />
+                    Add Next Action
+                  </Button>
                 </div>
               )}
             </CardContent>
@@ -776,27 +1007,6 @@ export default function ContactDetailPage() {
               </div>
             </CardContent>
           </Card>
-
-          {latestResearch && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Latest Research</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-sm text-foreground whitespace-pre-wrap">
-                  {String(
-                    isRecord(latestResearch.result) &&
-                      typeof latestResearch.result.summary === "string"
-                      ? latestResearch.result.summary
-                      : "No research summary available.",
-                  )}
-                </p>
-                <pre className="rounded-[12px] bg-muted p-3 text-[11px] text-muted-foreground overflow-x-auto">
-                  {JSON.stringify(latestResearch, null, 2)}
-                </pre>
-              </CardContent>
-            </Card>
-          )}
 
           {/* Metadata */}
           <Card>

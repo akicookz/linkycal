@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   datetimeLocalToIso,
+  formatNextActionDeadline,
   formatNextActionRelative,
   formatTimeInStage,
   toDatetimeLocalValue,
@@ -60,6 +61,23 @@ describe("formatNextActionRelative", () => {
       formatNextActionRelative("2026-07-19T12:00:00.000Z", now),
     ).toBe("Due now");
     expect(formatNextActionRelative("not-a-date", now)).toBeNull();
+  });
+});
+
+describe("formatNextActionDeadline", () => {
+  test("renders the exact deadline in browser-local date and time", () => {
+    const deadline = "2026-07-25T14:30:00.000Z";
+
+    expect(formatNextActionDeadline(deadline)).toBe(
+      new Intl.DateTimeFormat("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(deadline)),
+    );
+  });
+
+  test("returns null for an invalid deadline", () => {
+    expect(formatNextActionDeadline("not-a-date")).toBeNull();
   });
 });
 

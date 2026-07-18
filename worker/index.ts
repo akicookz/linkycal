@@ -33,6 +33,7 @@ import {
   createContactSchema,
   importContactsSchema,
   updateContactSchema,
+  setNextActionSchema,
   createTagSchema,
   updateTagSchema,
   setStageSchema,
@@ -5178,6 +5179,39 @@ app.put("/api/projects/:projectId/contacts/:id", async (c) => {
     return c.json({ error: "Failed to update contact" }, 500);
   }
 });
+
+app.put(
+  "/api/projects/:projectId/contacts/:contactId/next-action",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const contactId = c.req.param("contactId");
+      const data = validate(setNextActionSchema, await c.req.json());
+      const service = new ContactService(c.get("db"));
+
+      if (!(await service.contactInProject(projectId, contactId))) {
+        return c.json({ error: "Contact not found" }, 404);
+      }
+
+      const contact = await service.setNextAction(
+        contactId,
+        data.text === null
+          ? null
+          : {
+              text: data.text,
+              deadline: new Date(data.deadline),
+            },
+      );
+      return c.json({ contact });
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Next action update error:", err);
+      return c.json({ error: "Failed to update next action" }, 500);
+    }
+  },
+);
 
 app.delete("/api/projects/:projectId/contacts/:id", async (c) => {
   try {
