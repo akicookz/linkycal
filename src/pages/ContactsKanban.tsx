@@ -11,6 +11,7 @@ import {
   Trash2,
   Pencil,
   Check,
+  Clock,
   X,
 } from "lucide-react";
 import {
@@ -35,14 +36,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { cn } from "@/lib/utils";
 import CopyContactButton from "@/components/CopyContactButton";
+import { useMinuteNow } from "@/hooks/use-minute-now";
+import { formatTimeInStage } from "@/lib/contact-time";
 import {
   buildKanbanColumns,
   UNTAGGED_COLUMN_ID,
   type ViewContact,
   type ViewTag,
 } from "@/lib/contacts-view";
+import { cn } from "@/lib/utils";
 
 interface ContactsKanbanProps {
   contacts: ViewContact[];
@@ -77,10 +80,12 @@ function KanbanCard({
   contact,
   columnId,
   pivotTagIds,
+  now,
 }: {
   contact: ViewContact;
   columnId: string;
   pivotTagIds: string[] | null;
+  now: Date;
 }) {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
@@ -95,6 +100,10 @@ function KanbanCard({
       ? new Set(pivotTagIds)
       : new Set([columnId]);
   const visibleChips = contact.tags.filter((t) => !stageSet.has(t.id));
+  const timeInStage =
+    columnId === UNTAGGED_COLUMN_ID
+      ? null
+      : formatTimeInStage(contact.enteredAtByTagId?.[columnId], now);
 
   return (
     <div
@@ -136,6 +145,12 @@ function KanbanCard({
             <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
               <Phone className="h-3 w-3 shrink-0" />
               {contact.phone}
+            </p>
+          )}
+          {timeInStage && (
+            <p className="mt-1 flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
+              <Clock className="h-3 w-3 shrink-0" />
+              {timeInStage}
             </p>
           )}
           {visibleChips.length > 0 && (
@@ -527,6 +542,7 @@ export default function ContactsKanban({
 }: ContactsKanbanProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
   const [activeId, setActiveId] = useState<string | null>(null);
+  const now = useMinuteNow();
   const activeContact = useMemo(
     () => (activeId ? contacts.find((c) => c.id === activeId) ?? null : null),
     [activeId, contacts],
@@ -636,7 +652,13 @@ export default function ContactsKanban({
                 <p className="text-xs text-muted-foreground text-center py-6">Drop here</p>
               )}
               {col.contacts.map((contact) => (
-                <KanbanCard key={contact.id} contact={contact} columnId={col.id} pivotTagIds={pivotTagIds} />
+                <KanbanCard
+                  key={contact.id}
+                  contact={contact}
+                  columnId={col.id}
+                  pivotTagIds={pivotTagIds}
+                  now={now}
+                />
               ))}
             </KanbanColumnBox>
           ))}

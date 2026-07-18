@@ -12,6 +12,7 @@ export interface ViewContact {
   phone: string | null;
   createdAt: string;
   lastActivityAt?: string | null;
+  enteredAtByTagId: Record<string, string>;
   tags: ViewTag[];
 }
 

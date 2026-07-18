@@ -16,7 +16,7 @@ const tags: ViewTag[] = [
   { id: "vip", name: "VIP", color: "#ec4899" },
 ];
 const mk = (over: Partial<ViewContact>): ViewContact => ({
-  id: "c", name: "C", email: null, phone: null, createdAt: "2026-01-01", tags: [], ...over,
+  id: "c", name: "C", email: null, phone: null, createdAt: "2026-01-01", enteredAtByTagId: {}, tags: [], ...over,
 });
 
 describe("buildKanbanColumns", () => {

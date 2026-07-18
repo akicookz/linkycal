@@ -85,6 +85,7 @@ interface Contact {
   updatedAt: string;
   tags: ContactTag[];
   lastActivityAt?: string | null;
+  enteredAtByTagId: Record<string, string>;
 }
 
 interface Tag {
