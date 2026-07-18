@@ -72,6 +72,7 @@ import {
   type FormFieldSource,
   type PriorStepSource,
 } from "@/lib/workflow-variables";
+import { buildWorkflowConditionVariableGroups } from "@/lib/workflow-condition-variables";
 import { applyTagSelection } from "@/lib/workflow-step-config";
 import { WorkflowRunDialog } from "@/components/WorkflowRunDialog";
 import {
@@ -348,6 +349,11 @@ export default function WorkflowBuilder() {
     },
     enabled: !!projectId,
   });
+
+  const conditionVariables = buildWorkflowConditionVariableGroups(
+    tags,
+    stepCondition?.rules.map((rule) => rule.source) ?? [],
+  );
 
   // tags is directly available from the query above
 
@@ -1296,6 +1302,7 @@ export default function WorkflowBuilder() {
                   <WorkflowConditionEditor
                     condition={stepCondition}
                     onChange={setStepCondition}
+                    variables={conditionVariables}
                   />
                 </div>
               </>

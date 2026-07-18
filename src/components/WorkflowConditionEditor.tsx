@@ -8,30 +8,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { WORKFLOW_VARIABLES } from "@/lib/workflow-variables";
+import {
+  buildConditionRuleForSource,
+  findWorkflowConditionVariable,
+  operatorsForConditionValueType,
+  type WorkflowCondition,
+  type WorkflowConditionOperator,
+  type WorkflowConditionRule,
+  type WorkflowConditionVariableGroup,
+} from "@/lib/workflow-condition-variables";
 
-export type WorkflowConditionOperator =
-  | "equals"
-  | "not_equals"
-  | "contains"
-  | "not_contains"
-  | "exists"
-  | "not_exists"
-  | "gt"
-  | "lt"
-  | "gte"
-  | "lte";
-
-export type WorkflowConditionRule = {
-  source: string;
-  operator: WorkflowConditionOperator;
-  value?: string | number | null;
-};
-
-export type WorkflowCondition = {
-  when: "all" | "any";
-  rules: WorkflowConditionRule[];
-};
+export type {
+  WorkflowCondition,
+  WorkflowConditionOperator,
+  WorkflowConditionRule,
+} from "@/lib/workflow-condition-variables";
 
 const OPERATOR_LABELS: Record<WorkflowConditionOperator, string> = {
   equals: "equals",
@@ -46,25 +37,14 @@ const OPERATOR_LABELS: Record<WorkflowConditionOperator, string> = {
   lte: "at most",
 };
 
-const ALL_OPERATORS: WorkflowConditionOperator[] = [
-  "equals",
-  "not_equals",
-  "contains",
-  "not_contains",
-  "exists",
-  "not_exists",
-  "gt",
-  "lt",
-  "gte",
-  "lte",
-];
-
 export function WorkflowConditionEditor({
   condition,
   onChange,
+  variables,
 }: {
   condition: WorkflowCondition | null;
   onChange: (next: WorkflowCondition | null) => void;
+  variables: WorkflowConditionVariableGroup[];
 }) {
   const rules = condition?.rules ?? [];
   const when = condition?.when ?? "all";
@@ -90,12 +70,12 @@ export function WorkflowConditionEditor({
   }
 
   function addRule() {
-    const firstVar = WORKFLOW_VARIABLES[0]?.items[0]?.key ?? "contact.email";
+    const firstVar = variables[0]?.items[0]?.key ?? "contact.email";
     emit({
       when,
       rules: [
         ...rules,
-        { source: firstVar, operator: "equals", value: "" } satisfies WorkflowConditionRule,
+        buildConditionRuleForSource(firstVar, variables),
       ],
     });
   }
@@ -136,19 +116,30 @@ export function WorkflowConditionEditor({
 
       <div className="space-y-1.5">
         {rules.map((rule, idx) => {
+          const variable = findWorkflowConditionVariable(
+            variables,
+            rule.source,
+          );
+          const valueType = variable?.valueType ?? "text";
+          const operators = operatorsForConditionValueType(valueType);
           const needsValue =
             rule.operator !== "exists" && rule.operator !== "not_exists";
           return (
             <div key={idx} className="flex items-start gap-1.5 flex-wrap">
               <Select
                 value={rule.source}
-                onValueChange={(v) => updateRule(idx, { source: v })}
+                onValueChange={(source) =>
+                  updateRule(
+                    idx,
+                    buildConditionRuleForSource(source, variables),
+                  )
+                }
               >
                 <SelectTrigger className="h-7 text-[11px] px-2 w-[180px] bg-background">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {WORKFLOW_VARIABLES.flatMap((group) =>
+                  {variables.flatMap((group) =>
                     group.items.map((item) => (
                       <SelectItem key={item.key} value={item.key}>
                         <span className="text-muted-foreground mr-1">
@@ -173,7 +164,7 @@ export function WorkflowConditionEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ALL_OPERATORS.map((op) => (
+                  {operators.map((op) => (
                     <SelectItem key={op} value={op}>
                       {OPERATOR_LABELS[op]}
                     </SelectItem>
@@ -181,9 +172,38 @@ export function WorkflowConditionEditor({
                 </SelectContent>
               </Select>
 
-              {needsValue && (
+              {needsValue && valueType === "boolean" && (
+                <Select
+                  value={String(rule.value ?? "false")}
+                  onValueChange={(value) => updateRule(idx, { value })}
+                >
+                  <SelectTrigger className="h-7 w-[120px] bg-background px-2 text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">True</SelectItem>
+                    <SelectItem value="false">False</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+
+              {needsValue && valueType === "number" && (
                 <Input
-                  className="h-7 text-[11px] w-[160px] bg-background"
+                  type="number"
+                  className="h-7 w-[160px] bg-background text-[11px]"
+                  placeholder="Number"
+                  value={
+                    rule.value === undefined || rule.value === null
+                      ? ""
+                      : String(rule.value)
+                  }
+                  onChange={(e) => updateRule(idx, { value: e.target.value })}
+                />
+              )}
+
+              {needsValue && valueType === "text" && (
+                <Input
+                  className="h-7 w-[160px] bg-background text-[11px]"
                   placeholder="Value"
                   value={
                     rule.value === undefined || rule.value === null
@@ -198,10 +218,11 @@ export function WorkflowConditionEditor({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="h-7 px-1.5 text-destructive hover:text-destructive"
+                className="h-7 gap-1 px-2 text-[11px] text-destructive hover:text-destructive"
                 onClick={() => removeRule(idx)}
               >
                 <X className="h-3 w-3" />
+                Remove
               </Button>
             </div>
           );
