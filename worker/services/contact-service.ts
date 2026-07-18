@@ -1,4 +1,4 @@
-import { eq, and, desc, inArray, gte, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, gte, isNotNull, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 
@@ -36,6 +36,14 @@ export interface ContactListOptions {
   activitySinceDays?: number;
   noActivitySinceDays?: number;
   bookingStatus?: "confirmed" | "cancelled" | "rescheduled" | "pending" | "declined";
+}
+
+export interface ContactOperationalFacts {
+  enteredAtByTagId: Record<string, string>;
+  nextAction: {
+    text: string;
+    deadline: string;
+  } | null;
 }
 
 export const PIPELINE_STAGES: ReadonlyArray<{ name: string; color: string }> = [
@@ -390,6 +398,108 @@ export class ContactService {
     return { ...contact, tags, activity };
   }
 
+  async getOperationalFacts(
+    contactIds: string[],
+  ): Promise<Record<string, ContactOperationalFacts>> {
+    if (contactIds.length === 0) return {};
+
+    const contacts: Array<{
+      id: string;
+      createdAt: Date;
+      nextActionText: string | null;
+      nextActionDeadline: Date | null;
+    }> = [];
+    const assignments: Array<{ contactId: string; tagId: string }> = [];
+    const latestEntries: Array<{
+      contactId: string;
+      tagId: string | null;
+      enteredAt: number;
+    }> = [];
+
+    for (const ids of chunk(contactIds, CONTACT_ID_CHUNK)) {
+      contacts.push(
+        ...(await this.db
+          .select({
+            id: dbSchema.contacts.id,
+            createdAt: dbSchema.contacts.createdAt,
+            nextActionText: dbSchema.contacts.nextActionText,
+            nextActionDeadline: dbSchema.contacts.nextActionDeadline,
+          })
+          .from(dbSchema.contacts)
+          .where(inArray(dbSchema.contacts.id, ids))),
+      );
+      assignments.push(
+        ...(await this.db
+          .select({
+            contactId: dbSchema.contactTags.contactId,
+            tagId: dbSchema.contactTags.tagId,
+          })
+          .from(dbSchema.contactTags)
+          .where(inArray(dbSchema.contactTags.contactId, ids))),
+      );
+      latestEntries.push(
+        ...(await this.db
+          .select({
+            contactId: dbSchema.contactActivity.contactId,
+            tagId: dbSchema.contactActivity.referenceId,
+            enteredAt: sql<number>`max(${dbSchema.contactActivity.createdAt})`,
+          })
+          .from(dbSchema.contactActivity)
+          .where(
+            and(
+              inArray(dbSchema.contactActivity.contactId, ids),
+              eq(dbSchema.contactActivity.type, "tag_added"),
+              isNotNull(dbSchema.contactActivity.referenceId),
+            ),
+          )
+          .groupBy(
+            dbSchema.contactActivity.contactId,
+            dbSchema.contactActivity.referenceId,
+          )),
+      );
+    }
+
+    const contactsById = new Map(
+      contacts.map((contact) => [contact.id, contact]),
+    );
+    const latestByContact = new Map<string, Map<string, number>>();
+    for (const entry of latestEntries) {
+      if (!entry.tagId) continue;
+      const byTag = latestByContact.get(entry.contactId) ?? new Map();
+      byTag.set(entry.tagId, entry.enteredAt);
+      latestByContact.set(entry.contactId, byTag);
+    }
+
+    const facts: Record<string, ContactOperationalFacts> = {};
+    for (const contact of contacts) {
+      facts[contact.id] = {
+        enteredAtByTagId: {},
+        nextAction:
+          contact.nextActionText && contact.nextActionDeadline
+            ? {
+                text: contact.nextActionText,
+                deadline: contact.nextActionDeadline.toISOString(),
+              }
+            : null,
+      };
+    }
+
+    for (const assignment of assignments) {
+      const contact = contactsById.get(assignment.contactId);
+      const contactFacts = facts[assignment.contactId];
+      if (!contact || !contactFacts) continue;
+      const enteredAt = latestByContact
+        .get(assignment.contactId)
+        ?.get(assignment.tagId);
+      contactFacts.enteredAtByTagId[assignment.tagId] =
+        enteredAt === undefined
+          ? contact.createdAt.toISOString()
+          : new Date(Number(enteredAt) * 1000).toISOString();
+    }
+
+    return facts;
+  }
+
   // ─── Tags ────────────────────────────────────────────────────────────────
 
   async listTags(projectId: string) {
@@ -618,6 +728,8 @@ export class ContactService {
       for (const r of lastActivityRows) lastById.set(r.contactId, r.last);
     }
 
+    const operationalFacts = await this.getOperationalFacts(contactIds);
+
     return contacts.map((contact) => {
       const last = lastById.get(contact.id);
       return {
@@ -627,6 +739,8 @@ export class ContactService {
           .map((t) => ({ id: t.tagId, name: t.tagName, color: t.tagColor })),
         // createdAt is unixepoch seconds in D1; convert to ISO for the client.
         lastActivityAt: last != null ? new Date(Number(last) * 1000).toISOString() : null,
+        enteredAtByTagId:
+          operationalFacts[contact.id]?.enteredAtByTagId ?? {},
       };
     });
   }

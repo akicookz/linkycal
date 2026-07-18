@@ -142,6 +142,117 @@ describe("ContactService.listWithTags lastActivityAt", () => {
   });
 });
 
+describe("ContactService operational facts", () => {
+  test("uses the latest tag-added timestamp for a current assignment", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    await db
+      .insert(dbSchema.contactTags)
+      .values({ contactId: "c", tagId: "lead" });
+    await db.insert(dbSchema.contactActivity).values([
+      {
+        id: "stage-old",
+        contactId: "c",
+        type: "tag_added",
+        referenceId: "lead",
+        createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      },
+      {
+        id: "stage-new",
+        contactId: "c",
+        type: "tag_added",
+        referenceId: "lead",
+        createdAt: new Date("2026-07-10T12:00:00.000Z"),
+      },
+    ]);
+
+    const facts = await svc.getOperationalFacts(["c"]);
+
+    expect(facts.c?.enteredAtByTagId.lead).toBe(
+      "2026-07-10T12:00:00.000Z",
+    );
+  });
+
+  test("falls back to contact creation only for currently assigned tags", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    await db
+      .insert(dbSchema.contactTags)
+      .values({ contactId: "c", tagId: "lead" });
+    await db.insert(dbSchema.contactActivity).values({
+      id: "removed-stage-history",
+      contactId: "c",
+      type: "tag_added",
+      referenceId: "prospect",
+      createdAt: new Date("2026-07-10T12:00:00.000Z"),
+    });
+    const contact = await svc.getById("c");
+
+    const facts = await svc.getOperationalFacts(["c"]);
+
+    expect(facts.c?.enteredAtByTagId.lead).toBe(
+      contact?.createdAt.toISOString(),
+    );
+    expect(facts.c?.enteredAtByTagId.prospect).toBeUndefined();
+  });
+
+  test("returns a complete Next Action and suppresses partial stored data", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    await svc.setNextAction("c", {
+      text: "Call",
+      deadline: new Date("2026-07-25T14:30:00.000Z"),
+    });
+
+    const complete = await svc.getOperationalFacts(["c"]);
+    expect(complete.c?.nextAction).toEqual({
+      text: "Call",
+      deadline: "2026-07-25T14:30:00.000Z",
+    });
+
+    await db
+      .update(dbSchema.contacts)
+      .set({ nextActionDeadline: null })
+      .where(eq(dbSchema.contacts.id, "c"));
+    const partial = await svc.getOperationalFacts(["c"]);
+    expect(partial.c?.nextAction).toBeNull();
+  });
+
+  test("decorates stage timestamps beyond the first D1-sized chunk", async () => {
+    const db = await seed();
+    const svc = new ContactService(db);
+    const rows = Array.from({ length: 150 }, (_, index) => ({
+      id: `timed-${index}`,
+      projectId: "p",
+      name: `Timed ${index}`,
+      createdAt: new Date("2026-06-01T00:00:00.000Z"),
+    }));
+    await db.insert(dbSchema.contacts).values(rows);
+    await db.insert(dbSchema.contactTags).values(
+      rows.map((contact) => ({ contactId: contact.id, tagId: "lead" })),
+    );
+    await db.insert(dbSchema.contactActivity).values(
+      rows.map((contact, index) => ({
+        id: `timed-activity-${index}`,
+        contactId: contact.id,
+        type: "tag_added" as const,
+        referenceId: "lead",
+        createdAt: new Date("2026-07-10T12:00:00.000Z"),
+      })),
+    );
+
+    const decorated = await svc.listWithTags("p");
+    const timed = decorated.filter((contact) => contact.id.startsWith("timed-"));
+
+    expect(timed).toHaveLength(150);
+    for (const contact of timed) {
+      expect(contact.enteredAtByTagId.lead).toBe(
+        "2026-07-10T12:00:00.000Z",
+      );
+    }
+  });
+});
+
 describe("ContactService.listPage", () => {
   async function seedMany(n: number) {
     const db = await seed(); // project "p" already has 1 contact ("c")
