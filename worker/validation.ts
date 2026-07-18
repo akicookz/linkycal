@@ -451,7 +451,7 @@ export const updateContactSchema = z.object({
 
 const nextActionValueSchema = z.object({
   text: z.string().trim().min(1).max(500),
-  deadline: z.string().datetime(),
+  deadline: z.string().datetime({ offset: true }),
 });
 
 const clearedNextActionSchema = z.object({

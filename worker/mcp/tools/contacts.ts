@@ -271,7 +271,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
           .describe("Next action text"),
         deadline: z
           .string()
-          .datetime()
+          .datetime({ offset: true })
           .describe("Exact ISO 8601 deadline"),
       },
     },

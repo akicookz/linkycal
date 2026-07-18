@@ -33,6 +33,10 @@ describe("setNextActionSchema", () => {
       text: " Send proposal ",
       deadline: "2026-07-25T14:30:00.000Z",
     });
+    const setWithOffset = setNextActionSchema.safeParse({
+      text: "Call Seoul office",
+      deadline: "2026-07-25T23:30:00+09:00",
+    });
     const clear = setNextActionSchema.safeParse({
       text: null,
       deadline: null,
@@ -40,6 +44,7 @@ describe("setNextActionSchema", () => {
 
     expect(set.success).toBe(true);
     if (set.success) expect(set.data.text).toBe("Send proposal");
+    expect(setWithOffset.success).toBe(true);
     expect(clear.success).toBe(true);
   });
 
