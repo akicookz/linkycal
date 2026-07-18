@@ -9,7 +9,9 @@ export type ContactActivityType =
   | "cancelled"
   | "tag_added"
   | "tag_removed"
-  | "workflow_researched";
+  | "workflow_researched"
+  | "next_action_set"
+  | "next_action_completed";
 
 export interface CreateContactInput {
   name: string;
@@ -302,6 +304,50 @@ export class ContactService {
     await this.db
       .delete(dbSchema.contacts)
       .where(eq(dbSchema.contacts.id, id));
+  }
+
+  async setNextAction(
+    contactId: string,
+    action: { text: string; deadline: Date } | null,
+  ) {
+    const previous = await this.getById(contactId);
+    if (!previous) return null;
+
+    if (action) {
+      const text = action.text.trim();
+      await this.db
+        .update(dbSchema.contacts)
+        .set({
+          nextActionText: text,
+          nextActionDeadline: action.deadline,
+        })
+        .where(eq(dbSchema.contacts.id, contactId));
+      await this.logActivity(contactId, "next_action_set", undefined, {
+        text,
+        deadline: action.deadline.toISOString(),
+      });
+    } else {
+      await this.db
+        .update(dbSchema.contacts)
+        .set({
+          nextActionText: null,
+          nextActionDeadline: null,
+        })
+        .where(eq(dbSchema.contacts.id, contactId));
+      if (previous.nextActionText && previous.nextActionDeadline) {
+        await this.logActivity(
+          contactId,
+          "next_action_completed",
+          undefined,
+          {
+            text: previous.nextActionText,
+            deadline: previous.nextActionDeadline.toISOString(),
+          },
+        );
+      }
+    }
+
+    return this.getById(contactId);
   }
 
   // The existing contact an incoming record would dedupe to, matched strictly by

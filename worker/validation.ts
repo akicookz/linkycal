@@ -449,6 +449,21 @@ export const updateContactSchema = z.object({
   linkedinUrl: z.string().max(500).nullable().optional(),
 });
 
+const nextActionValueSchema = z.object({
+  text: z.string().trim().min(1).max(500),
+  deadline: z.string().datetime(),
+});
+
+const clearedNextActionSchema = z.object({
+  text: z.null(),
+  deadline: z.null(),
+});
+
+export const setNextActionSchema = z.union([
+  nextActionValueSchema,
+  clearedNextActionSchema,
+]);
+
 // ─── Tags ────────────────────────────────────────────────────────────────────
 
 export const createTagSchema = z.object({

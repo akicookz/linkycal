@@ -331,6 +331,10 @@ export const contacts = sqliteTable(
     companySize: text("company_size"),
     estimatedRevenue: text("estimated_revenue"),
     linkedinUrl: text("linkedin_url"),
+    nextActionText: text("next_action_text"),
+    nextActionDeadline: integer("next_action_deadline", {
+      mode: "timestamp",
+    }),
     metadata: text("metadata", { mode: "json" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -657,6 +661,8 @@ export const contactActivity = sqliteTable(
         "tag_added",
         "tag_removed",
         "workflow_researched",
+        "next_action_set",
+        "next_action_completed",
       ],
     }).notNull(),
     referenceId: text("reference_id"),
@@ -665,7 +671,15 @@ export const contactActivity = sqliteTable(
       .notNull()
       .default(sql`(unixepoch())`),
   },
-  (t) => [index("contact_activity_contact_id_idx").on(t.contactId)],
+  (t) => [
+    index("contact_activity_contact_id_idx").on(t.contactId),
+    index("contact_activity_stage_entry_idx").on(
+      t.contactId,
+      t.type,
+      t.referenceId,
+      t.createdAt,
+    ),
+  ],
 );
 
 export type ContactActivityRow = typeof contactActivity.$inferSelect;
