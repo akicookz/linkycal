@@ -76,6 +76,47 @@ describe("evaluateWorkflowCondition", () => {
     expect(evaluateWorkflowCondition(condLow, ctx)).toBe(false);
   });
 
+  test("a missing Next Action does not match overdue equals false", () => {
+    const cond: WorkflowCondition = {
+      when: "all",
+      rules: [
+        {
+          source: "contact.nextAction.overdue",
+          operator: "equals",
+          value: "false",
+        },
+      ],
+    };
+
+    expect(evaluateWorkflowCondition(cond, baseContext())).toBe(false);
+  });
+
+  test("a deleted current-stage source behaves as missing", () => {
+    const context = baseContext();
+    const numeric: WorkflowCondition = {
+      when: "all",
+      rules: [
+        {
+          source: "contact.stage.byTag.deleted.ageHours",
+          operator: "gte",
+          value: 24,
+        },
+      ],
+    };
+    const empty: WorkflowCondition = {
+      when: "all",
+      rules: [
+        {
+          source: "contact.stage.byTag.deleted.ageHours",
+          operator: "not_exists",
+        },
+      ],
+    };
+
+    expect(evaluateWorkflowCondition(numeric, context)).toBe(false);
+    expect(evaluateWorkflowCondition(empty, context)).toBe(true);
+  });
+
   test("when:any requires one match", () => {
     const cond: WorkflowCondition = {
       when: "any",

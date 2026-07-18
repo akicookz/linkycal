@@ -1,5 +1,27 @@
 import { z } from "zod";
 
+import type { ContactOperationalFacts } from "../services/contact-service";
+
+export interface WorkflowContactOperationalContext {
+  stage: {
+    byTag: Record<
+      string,
+      {
+        enteredAt: string;
+        ageHours: number;
+        ageDays: number;
+      }
+    >;
+  };
+  nextAction?: {
+    text: string;
+    deadline: string;
+    overdue: boolean;
+    hoursUntilDeadline: number;
+    daysUntilDeadline: number;
+  };
+}
+
 export interface WorkflowTriggerContext {
   projectId: string;
   contactId?: string;
@@ -10,6 +32,7 @@ export interface WorkflowTriggerContext {
   tagId?: string;
   metadata?: Record<string, unknown>;
   stepInputs?: Record<string, unknown>;
+  contactOperational?: WorkflowContactOperationalContext;
 }
 
 export const workflowContactsInputFormatSchema = z.enum([
@@ -131,6 +154,7 @@ export function buildWorkflowContextView(
       id: context.contactId ?? "",
       email: context.contactEmail ?? "",
       name: context.contactName ?? "",
+      ...(context.contactOperational ?? {}),
     },
     booking: { id: context.bookingId ?? "" },
     formResponse: { id: context.formResponseId ?? "" },
@@ -155,6 +179,40 @@ export function buildWorkflowContextView(
     },
     input: isRecord(context.stepInputs) ? context.stepInputs : {},
   };
+}
+
+export function buildWorkflowContactOperationalContext(
+  facts: ContactOperationalFacts,
+  now: Date,
+): WorkflowContactOperationalContext {
+  const nowMs = now.getTime();
+  const byTag: WorkflowContactOperationalContext["stage"]["byTag"] = {};
+
+  for (const [tagId, enteredAt] of Object.entries(facts.enteredAtByTagId)) {
+    const enteredAtMs = new Date(enteredAt).getTime();
+    if (!Number.isFinite(enteredAtMs)) continue;
+    byTag[tagId] = {
+      enteredAt,
+      ageHours: (nowMs - enteredAtMs) / 3_600_000,
+      ageDays: (nowMs - enteredAtMs) / 86_400_000,
+    };
+  }
+
+  const operational: WorkflowContactOperationalContext = {
+    stage: { byTag },
+  };
+  if (!facts.nextAction) return operational;
+
+  const deadlineMs = new Date(facts.nextAction.deadline).getTime();
+  if (!Number.isFinite(deadlineMs)) return operational;
+  operational.nextAction = {
+    text: facts.nextAction.text,
+    deadline: facts.nextAction.deadline,
+    overdue: deadlineMs < nowMs,
+    hoursUntilDeadline: (deadlineMs - nowMs) / 3_600_000,
+    daysUntilDeadline: (deadlineMs - nowMs) / 86_400_000,
+  };
+  return operational;
 }
 
 export function resolveStepInputs(

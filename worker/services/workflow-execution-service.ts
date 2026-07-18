@@ -7,6 +7,7 @@ import {
   type WorkflowContactFilter,
 } from "../lib/workflow-schedule";
 import {
+  buildWorkflowContactOperationalContext,
   formatContactsInputValue,
   interpolateWorkflowTemplate,
   mergeWorkflowResearchMetadata,
@@ -290,6 +291,8 @@ export class WorkflowExecutionService {
 
     const stepLogs = await this.workflowService.getStepLogs(workflowRunId);
     const config = (step.config ?? {}) as Record<string, unknown>;
+
+    await this.refreshContactOperationalContext(context);
 
     // Resolve per-step inputs into context.stepInputs so executors can
     // reference them via {{input.<key>}}. Each run of executeStep gets a
@@ -974,6 +977,23 @@ export class WorkflowExecutionService {
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────
+
+  private async refreshContactOperationalContext(
+    context: TriggerContext,
+  ): Promise<void> {
+    if (!context.contactId) {
+      delete context.contactOperational;
+      return;
+    }
+
+    const factsByContact = await this.contactService.getOperationalFacts([
+      context.contactId,
+    ]);
+    const facts = factsByContact[context.contactId];
+    context.contactOperational = facts
+      ? buildWorkflowContactOperationalContext(facts, new Date())
+      : { stage: { byTag: {} } };
+  }
 
   /**
    * Dot-path syntax is the primary format, but legacy underscore tokens still

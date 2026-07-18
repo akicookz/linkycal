@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildWorkflowContactOperationalContext,
   formatContactsInputValue,
   interpolateWorkflowTemplate,
   mergeWorkflowResearchMetadata,
@@ -50,6 +51,77 @@ function buildContext(): WorkflowTriggerContext {
 }
 
 describe("workflow runtime helpers", () => {
+  test("exposes exact fractional stage ages and deadline distances", () => {
+    const context = buildContext();
+    context.contactOperational = buildWorkflowContactOperationalContext(
+      {
+        enteredAtByTagId: {
+          lead: "2026-07-19T09:30:00.000Z",
+        },
+        nextAction: {
+          text: "Call",
+          deadline: "2026-07-19T13:00:00.000Z",
+        },
+      },
+      new Date("2026-07-19T12:00:00.000Z"),
+    );
+
+    expect(
+      resolveWorkflowValue(context, "contact.stage.byTag.lead.enteredAt"),
+    ).toBe("2026-07-19T09:30:00.000Z");
+    expect(
+      resolveWorkflowValue(context, "contact.stage.byTag.lead.ageHours"),
+    ).toBe(2.5);
+    expect(
+      resolveWorkflowValue(context, "contact.stage.byTag.lead.ageDays"),
+    ).toBe(2.5 / 24);
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.hoursUntilDeadline"),
+    ).toBe(1);
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.overdue"),
+    ).toBe(false);
+  });
+
+  test("uses negative deadline distance for an overdue Next Action", () => {
+    const context = buildContext();
+    context.contactOperational = buildWorkflowContactOperationalContext(
+      {
+        enteredAtByTagId: {},
+        nextAction: {
+          text: "Call",
+          deadline: "2026-07-19T10:00:00.000Z",
+        },
+      },
+      new Date("2026-07-19T12:00:00.000Z"),
+    );
+
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.hoursUntilDeadline"),
+    ).toBe(-2);
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.daysUntilDeadline"),
+    ).toBe(-2 / 24);
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.overdue"),
+    ).toBe(true);
+  });
+
+  test("omits Next Action fields when no complete action exists", () => {
+    const context = buildContext();
+    context.contactOperational = buildWorkflowContactOperationalContext(
+      { enteredAtByTagId: {}, nextAction: null },
+      new Date("2026-07-19T12:00:00.000Z"),
+    );
+
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.overdue"),
+    ).toBeUndefined();
+    expect(
+      resolveWorkflowValue(context, "contact.nextAction.deadline"),
+    ).toBeUndefined();
+  });
+
   test("interpolates dot syntax and legacy underscore aliases", () => {
     const context = buildContext();
 
