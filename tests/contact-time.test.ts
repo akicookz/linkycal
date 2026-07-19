@@ -120,6 +120,36 @@ describe("NLP deadline preview formatting", () => {
     ).toContain("Sat, Jul 25, 7:00 AM");
   });
 
+  test("returns null for invalid explicit-offset preview inputs", () => {
+    expect(formatDeadlineAtOffset("not-a-date", -300, "EST")).toBeNull();
+    expect(
+      formatDeadlineAtOffset(
+        "2026-07-24T22:00:00.000Z",
+        Number.POSITIVE_INFINITY,
+        "EST",
+      ),
+    ).toBeNull();
+    expect(
+      formatDeadlineAtOffset(
+        "2026-07-24T22:00:00.000Z",
+        Number.MAX_VALUE,
+        "EST",
+      ),
+    ).toBeNull();
+  });
+
+  test("returns null for invalid viewer-timezone preview inputs", () => {
+    expect(
+      formatDeadlineInTimeZone("not-a-date", "Asia/Seoul"),
+    ).toBeNull();
+    expect(
+      formatDeadlineInTimeZone(
+        "2026-07-24T22:00:00.000Z",
+        "Invalid/Zone",
+      ),
+    ).toBeNull();
+  });
+
   test("computes the viewer offset at the deadline instant", () => {
     expect(
       offsetMinutesForTimeZone(

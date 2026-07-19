@@ -118,6 +118,7 @@ export function formatDeadlineAtOffset(
   const deadlineMs = parseTimestamp(deadlineIso);
   if (deadlineMs === null || !Number.isFinite(timezoneOffsetMinutes)) return null;
   const shifted = new Date(deadlineMs + timezoneOffsetMinutes * 60_000);
+  if (!Number.isFinite(shifted.getTime())) return null;
   return `${formatDeadlinePreview(previewFormatter("UTC", false), shifted)} ${timezoneLabel}`;
 }
 
