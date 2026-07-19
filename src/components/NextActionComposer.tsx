@@ -1,4 +1,9 @@
-import { useEffect, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent,
+} from "react";
 import {
   AlertCircle,
   CalendarClock,
@@ -183,14 +188,27 @@ export function NextActionComposer({
   const showManualDeadlineChoice =
     parseResult.status === "missing_deadline" ||
     parseResult.status === "past_deadline";
-  const statusMessage = parseStatusMessage(parseResult);
+  const statusMessage =
+    parserUnavailable && canSave ? null : parseStatusMessage(parseResult);
 
   function save() {
     if (!canSave || !draftDeadlineIso) return;
     onSave({ text: draftAction.trim(), deadline: draftDeadlineIso });
   }
 
-  function handleSentenceKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+  function handleSentenceChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextSentence = event.target.value;
+    setSentence(nextSentence);
+    setParseResult({ status: "empty" });
+    setDraftAction("");
+    setDraftDeadline("");
+    setEditingAction(false);
+    setEditingDeadline(false);
+    setParsing(Boolean(nextSentence.trim()));
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (!(event.target instanceof HTMLInputElement)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       onCancel();
@@ -203,7 +221,7 @@ export function NextActionComposer({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onKeyDown={handleComposerKeyDown}>
       {!initialAction && !parserUnavailable && (
         <div className="space-y-2">
           <Label htmlFor="next-action-sentence">
@@ -214,8 +232,7 @@ export function NextActionComposer({
             value={sentence}
             maxLength={600}
             placeholder="Call Atul by next Friday at 5pm ET"
-            onChange={(event) => setSentence(event.target.value)}
-            onKeyDown={handleSentenceKeyDown}
+            onChange={handleSentenceChange}
           />
         </div>
       )}
@@ -308,24 +325,34 @@ export function NextActionComposer({
         </div>
       )}
 
-      <div role="status" aria-live="polite" className="space-y-1">
+      <div
+        role="status"
+        aria-live="polite"
+        className="min-w-0 space-y-1"
+      >
         {parsing && (
-          <p className="text-xs text-muted-foreground">
+          <p className="break-words text-pretty text-xs text-muted-foreground">
             Understanding deadline…
           </p>
         )}
         {statusMessage && (
-          <p className="flex items-center gap-1.5 text-xs text-destructive">
+          <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
             <AlertCircle className="h-3.5 w-3.5" />
-            {statusMessage}
+            <span className="min-w-0 break-words text-pretty">
+              {statusMessage}
+            </span>
           </p>
         )}
         {draftAction.trim().length > 500 && (
-          <p className="text-xs text-destructive">
+          <p className="break-words text-pretty text-xs text-destructive">
             Keep the action under 500 characters.
           </p>
         )}
-        {error && <p className="text-xs text-destructive">{error}</p>}
+        {error && (
+          <p className="break-words text-pretty text-xs text-destructive">
+            {error}
+          </p>
+        )}
       </div>
 
       {showManualDeadlineChoice && !parserUnavailable && (

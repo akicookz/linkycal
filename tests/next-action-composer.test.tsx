@@ -35,6 +35,12 @@ function deferredResult(): DeferredResult {
   return { promise, resolve };
 }
 
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
+
 describe("NextActionComposer", () => {
   test("previews and saves one natural-language sentence", async () => {
     const onSave = mock(() => undefined);
@@ -131,7 +137,9 @@ describe("NextActionComposer", () => {
       target: { value: "Call Monday and email Friday" },
     });
     expect(await screen.findByText("Choose one deadline.")).not.toBeNull();
-    expect(screen.getByText("Failed to update next action.")).not.toBeNull();
+    expect(
+      screen.getByText("Failed to update next action.").className,
+    ).toContain("break-words");
     expect(screen.getByRole("status").textContent).toContain(
       "Choose one deadline.",
     );
@@ -171,6 +179,11 @@ describe("NextActionComposer", () => {
 
     fireEvent.change(sentence, { target: { value: "Call Atul" } });
     expect(
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.queryByText("Call Atul")).toBeNull();
+    expect(
       await screen.findByText("Add a deadline or choose it manually."),
     ).not.toBeNull();
     expect(
@@ -181,12 +194,11 @@ describe("NextActionComposer", () => {
     fireEvent.change(sentence, { target: { value: "Call Atul Friday" } });
     expect(await screen.findByText("Call Atul")).not.toBeNull();
     fireEvent.change(sentence, { target: { value: "" } });
-    await waitFor(() => {
-      expect(
-        (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
-          .disabled,
-      ).toBe(true);
-    });
+    expect(
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(screen.queryByText("Call Atul")).toBeNull();
   });
 
   test("ignores a late parser result from an older sentence", async () => {
@@ -230,10 +242,34 @@ describe("NextActionComposer", () => {
         actionText: "Call first",
       },
     });
-    await waitFor(() => {
-      expect(screen.queryByText("Call first")).toBeNull();
-      expect(screen.getByText("Call second")).not.toBeNull();
+    await wait(0);
+    expect(screen.queryByText("Call first")).toBeNull();
+    expect(screen.getByText("Call second")).not.toBeNull();
+  });
+
+  test("waits for a real nonzero debounce before parsing", async () => {
+    const parser = mock(validParser);
+    render(
+      <NextActionComposer
+        initialAction={null}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        parseDelayMs={80}
+        parseSentence={parser}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("What should happen, and when?"), {
+      target: { value: "Call Atul Friday" },
     });
+    expect(parser).toHaveBeenCalledTimes(0);
+    await wait(20);
+    expect(parser).toHaveBeenCalledTimes(0);
+    await waitFor(() => expect(parser).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText("Call Atul")).not.toBeNull();
   });
 
   test("offers manual deadline entry for an incomplete sentence", async () => {
@@ -261,6 +297,9 @@ describe("NextActionComposer", () => {
     expect(
       await screen.findByText("Add a deadline or choose it manually."),
     ).not.toBeNull();
+    expect(
+      screen.getByText("Add a deadline or choose it manually.").className,
+    ).toContain("break-words");
     fireEvent.click(
       screen.getByRole("button", { name: "Choose date manually" }),
     );
@@ -293,8 +332,177 @@ describe("NextActionComposer", () => {
     expect(screen.getByLabelText("Deadline (your time)")).not.toBeNull();
   });
 
+  test("saves and cancels from existing structured fields", () => {
+    const onSave = mock(() => undefined);
+    const onCancel = mock(() => undefined);
+    render(
+      <NextActionComposer
+        initialAction={{
+          text: "Send proposal",
+          deadline: "2026-07-24T22:00:00.000Z",
+        }}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        onSave={onSave}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.keyDown(screen.getByLabelText("Action"), { key: "Enter" });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith({
+      text: "Send proposal",
+      deadline: "2026-07-24T22:00:00.000Z",
+    });
+
+    fireEvent.keyDown(screen.getByLabelText("Deadline (your time)"), {
+      key: "Escape",
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  test("uses the shared keyboard contract in opened preview fields", async () => {
+    const onSave = mock(() => undefined);
+    const onCancel = mock(() => undefined);
+    render(
+      <NextActionComposer
+        initialAction={null}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        parseDelayMs={0}
+        parseSentence={validParser}
+        onSave={onSave}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("What should happen, and when?"), {
+      target: { value: "Call Atul Friday" },
+    });
+    await screen.findByText("Call Atul");
+    fireEvent.click(screen.getByRole("button", { name: /Edit action/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Edit deadline/i }));
+
+    fireEvent.keyDown(screen.getByLabelText("Action"), { key: "Enter" });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByLabelText("Deadline (your time)"), {
+      key: "Escape",
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  test("blocks blank and overlong structured actions", () => {
+    render(
+      <NextActionComposer
+        initialAction={{
+          text: "Send proposal",
+          deadline: "2026-07-24T22:00:00.000Z",
+        }}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+
+    const action = screen.getByLabelText("Action");
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    fireEvent.change(action, { target: { value: "  " } });
+    expect(saveButton.disabled).toBe(true);
+
+    fireEvent.change(action, { target: { value: "a".repeat(501) } });
+    expect(saveButton.disabled).toBe(true);
+    expect(
+      screen.getByText("Keep the action under 500 characters.").className,
+    ).toContain("break-words");
+  });
+
+  test("blocks empty and invalid structured deadlines", () => {
+    render(
+      <NextActionComposer
+        initialAction={{
+          text: "Send proposal",
+          deadline: "2026-07-24T22:00:00.000Z",
+        }}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+
+    const deadline = screen.getByLabelText("Deadline (your time)");
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    fireEvent.change(deadline, { target: { value: "" } });
+    expect(saveButton.disabled).toBe(true);
+
+    fireEvent.change(deadline, { target: { value: "2026-07-25T07:00" } });
+    expect(saveButton.disabled).toBe(false);
+    fireEvent.change(deadline, { target: { value: "not-a-deadline" } });
+    expect(saveButton.disabled).toBe(true);
+  });
+
+  test("clears an ambiguous parse error after valid manual correction", async () => {
+    const onSave = mock(() => undefined);
+    const onCancel = mock(() => undefined);
+    const ambiguousParser = mock(() =>
+      Promise.resolve({
+        status: "ambiguous",
+        matches: ["Monday", "Friday"],
+      } satisfies NextActionParseResult),
+    );
+    render(
+      <NextActionComposer
+        initialAction={null}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        parseDelayMs={0}
+        parseSentence={ambiguousParser}
+        onSave={onSave}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("What should happen, and when?"), {
+      target: { value: "Call Monday and email Friday" },
+    });
+    expect(await screen.findByText("Choose one deadline.")).not.toBeNull();
+    fireEvent.change(screen.getByLabelText("Action"), {
+      target: { value: "Call Atul" },
+    });
+    fireEvent.change(screen.getByLabelText("Deadline (your time)"), {
+      target: { value: "2026-07-25T07:00" },
+    });
+
+    expect(
+      (screen.getByRole("button", { name: "Save" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
+    expect(screen.queryByText("Choose one deadline.")).toBeNull();
+    expect(screen.getByRole("status").textContent).not.toContain(
+      "Choose one deadline.",
+    );
+
+    fireEvent.keyDown(screen.getByLabelText("Action"), { key: "Enter" });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(screen.getByLabelText("Deadline (your time)"), {
+      key: "Escape",
+    });
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
   test("cancels on Escape and falls back when parsing cannot load", async () => {
     const onCancel = mock(() => undefined);
+    const onSave = mock(() => undefined);
     const failedParser = mock(() => Promise.reject(new Error("load failed")));
     render(
       <NextActionComposer
@@ -304,7 +512,7 @@ describe("NextActionComposer", () => {
         browserTimeZone="Asia/Seoul"
         parseDelayMs={0}
         parseSentence={failedParser}
-        onSave={() => undefined}
+        onSave={onSave}
         onCancel={onCancel}
       />,
     );
@@ -314,8 +522,13 @@ describe("NextActionComposer", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
 
     fireEvent.change(sentence, { target: { value: "Call Atul tomorrow" } });
-    expect(await screen.findByLabelText("Action")).not.toBeNull();
-    expect(screen.getByLabelText("Deadline (your time)")).not.toBeNull();
+    const action = await screen.findByLabelText("Action");
+    const deadline = screen.getByLabelText("Deadline (your time)");
+    fireEvent.change(deadline, { target: { value: "2026-07-25T07:00" } });
+    fireEvent.keyDown(action, { key: "Enter" });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(deadline, { key: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
   test("shows parsing progress and swaps the pending save icon", async () => {
