@@ -82,3 +82,57 @@ export function datetimeLocalToIso(localValue: string): string | null {
   if (!Number.isFinite(date.getTime())) return null;
   return date.toISOString();
 }
+
+function previewFormatter(timeZone: string, includeZone: boolean) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hourCycle: "h12",
+    ...(includeZone ? { timeZoneName: "short" as const } : {}),
+  });
+}
+
+function formatDeadlinePreview(
+  formatter: Intl.DateTimeFormat,
+  deadline: Date,
+): string {
+  return formatter
+    .formatToParts(deadline)
+    .map((part) =>
+      part.type === "literal" && part.value.includes(" at ")
+        ? part.value.replace(" at ", ", ")
+        : part.value,
+    )
+    .join("");
+}
+
+export function formatDeadlineAtOffset(
+  deadlineIso: string,
+  timezoneOffsetMinutes: number,
+  timezoneLabel: string,
+): string | null {
+  const deadlineMs = parseTimestamp(deadlineIso);
+  if (deadlineMs === null || !Number.isFinite(timezoneOffsetMinutes)) return null;
+  const shifted = new Date(deadlineMs + timezoneOffsetMinutes * 60_000);
+  return `${formatDeadlinePreview(previewFormatter("UTC", false), shifted)} ${timezoneLabel}`;
+}
+
+export function formatDeadlineInTimeZone(
+  deadlineIso: string,
+  timeZone: string,
+): string | null {
+  const deadlineMs = parseTimestamp(deadlineIso);
+  if (deadlineMs === null) return null;
+  try {
+    return formatDeadlinePreview(
+      previewFormatter(timeZone, true),
+      new Date(deadlineMs),
+    );
+  } catch {
+    return null;
+  }
+}
