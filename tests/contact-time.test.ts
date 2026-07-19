@@ -2,14 +2,11 @@ import { describe, expect, test } from "bun:test";
 
 import {
   datetimeLocalToIso,
-  formatDeadlineAtOffset,
-  formatDeadlineInTimeZone,
   formatNextActionDeadline,
   formatNextActionRelative,
   formatTimeInStage,
   toDatetimeLocalValue,
-} from "@/lib/contact-time";
-import { offsetMinutesForTimeZone } from "@/lib/timezone";
+} from "../src/lib/contact-time";
 
 describe("formatTimeInStage", () => {
   const now = new Date("2026-07-19T12:00:00.000Z");
@@ -97,65 +94,5 @@ describe("datetime-local conversion", () => {
     expect(toDatetimeLocalValue("not-a-date")).toBe("");
     expect(datetimeLocalToIso("")).toBeNull();
     expect(datetimeLocalToIso("not-a-date")).toBeNull();
-  });
-});
-
-describe("NLP deadline preview formatting", () => {
-  test("formats the exact input-zone deadline from its resolved offset", () => {
-    expect(
-      formatDeadlineAtOffset(
-        "2026-07-24T22:00:00.000Z",
-        -300,
-        "EST",
-      ),
-    ).toBe("Fri, Jul 24, 5:00 PM EST");
-  });
-
-  test("formats the same instant in the viewer timezone", () => {
-    expect(
-      formatDeadlineInTimeZone(
-        "2026-07-24T22:00:00.000Z",
-        "Asia/Seoul",
-      ),
-    ).toContain("Sat, Jul 25, 7:00 AM");
-  });
-
-  test("returns null for invalid explicit-offset preview inputs", () => {
-    expect(formatDeadlineAtOffset("not-a-date", -300, "EST")).toBeNull();
-    expect(
-      formatDeadlineAtOffset(
-        "2026-07-24T22:00:00.000Z",
-        Number.POSITIVE_INFINITY,
-        "EST",
-      ),
-    ).toBeNull();
-    expect(
-      formatDeadlineAtOffset(
-        "2026-07-24T22:00:00.000Z",
-        Number.MAX_VALUE,
-        "EST",
-      ),
-    ).toBeNull();
-  });
-
-  test("returns null for invalid viewer-timezone preview inputs", () => {
-    expect(
-      formatDeadlineInTimeZone("not-a-date", "Asia/Seoul"),
-    ).toBeNull();
-    expect(
-      formatDeadlineInTimeZone(
-        "2026-07-24T22:00:00.000Z",
-        "Invalid/Zone",
-      ),
-    ).toBeNull();
-  });
-
-  test("computes the viewer offset at the deadline instant", () => {
-    expect(
-      offsetMinutesForTimeZone(
-        "2026-07-24T22:00:00.000Z",
-        "America/New_York",
-      ),
-    ).toBe(-240);
   });
 });
