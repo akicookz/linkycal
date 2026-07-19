@@ -89,7 +89,7 @@ rows or chips:
 
 - **Action:** Call Atul
 - **Deadline:** Fri, Jul 24 · 5:00 PM EST
-- **Your time:** Sat, Jul 25 · 6:00 AM KST, when an explicit input timezone
+- **Your time:** Sat, Jul 25 · 7:00 AM KST, when an explicit input timezone
   differs from the browser timezone
 
 Clicking the action preview reveals a normal text input. Clicking the deadline
