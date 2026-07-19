@@ -116,6 +116,25 @@ function explicitTimezoneLabel(text: string): string | null {
   );
 }
 
+function dateFromWallClockInTimeZone(
+  wallClockAsUtc: number,
+  initialDeadline: Date,
+  timeZone: string,
+): Date {
+  let deadline = initialDeadline;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const offsetMinutes = offsetMinutesForTimeZone(
+      deadline.toISOString(),
+      timeZone,
+    );
+    if (offsetMinutes === null) return initialDeadline;
+    const adjusted = new Date(wallClockAsUtc - offsetMinutes * 60_000);
+    if (adjusted.getTime() === deadline.getTime()) return deadline;
+    deadline = adjusted;
+  }
+  return deadline;
+}
+
 export async function parseNextActionSentence(
   sentence: string,
   context: NextActionParserContext,
@@ -160,7 +179,24 @@ export async function parseNextActionSentence(
     result.start.assign("millisecond", 0);
   }
 
-  const deadline = result.start.date();
+  const parsedDeadline = result.start.date();
+  const hasExplicitTimezone = result.start.isCertain("timezoneOffset");
+  const wallClockAsUtc = Date.UTC(
+    result.start.get("year") ?? 0,
+    (result.start.get("month") ?? 1) - 1,
+    result.start.get("day") ?? 1,
+    result.start.get("hour") ?? 0,
+    result.start.get("minute") ?? 0,
+    result.start.get("second") ?? 0,
+    result.start.get("millisecond") ?? 0,
+  );
+  const deadline = hasExplicitTimezone
+    ? parsedDeadline
+    : dateFromWallClockInTimeZone(
+        wallClockAsUtc,
+        parsedDeadline,
+        timeZone,
+      );
   if (deadline.getTime() <= context.now.getTime()) {
     return { status: "past_deadline" };
   }
@@ -169,10 +205,10 @@ export async function parseNextActionSentence(
   const actionText = cleanActionText(sentence, range.start, range.end);
   if (!actionText) return { status: "missing_action" };
 
-  const timezoneOffsetMinutes =
-    result.start.get("timezoneOffset") ??
-    offsetMinutesForTimeZone(deadline.toISOString(), timeZone) ??
-    0;
+  const timezoneOffsetMinutes = hasExplicitTimezone
+    ? (result.start.get("timezoneOffset") ?? 0)
+    : (offsetMinutesForTimeZone(deadline.toISOString(), timeZone) ??
+      referenceTimezoneOffset);
   const timezoneLabel = explicitTimezoneLabel(matchedDateText) ?? timeZone;
 
   return {

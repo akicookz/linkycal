@@ -189,4 +189,20 @@ describe("parseNextActionSentence", () => {
       value: { timezoneLabel: "UTC", timezoneOffsetMinutes: 0 },
     });
   });
+
+  test("uses the deadline-date browser offset across a DST transition", async () => {
+    const result = await parseNextActionSentence("Call Atul March 9 at 5pm", {
+      now: new Date("2026-03-01T17:00:00.000Z"),
+      timeZone: "America/New_York",
+    });
+
+    expect(result).toMatchObject({
+      status: "valid",
+      value: {
+        deadlineIso: "2026-03-09T21:00:00.000Z",
+        timezoneLabel: "America/New_York",
+        timezoneOffsetMinutes: -240,
+      },
+    });
+  });
 });
