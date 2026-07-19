@@ -128,6 +128,7 @@ interface ParsedNextAction {
   deadlineIso: string;
   matchedDateText: string;
   timezoneLabel: string;
+  timezoneOffsetMinutes: number;
   assumedTime: boolean;
 }
 
