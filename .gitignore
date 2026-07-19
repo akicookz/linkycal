@@ -10,3 +10,4 @@ worker-configuration.d.ts
 
 # Subagent-driven-dev scratch/ledger
 .superpowers/
+.worktrees/
