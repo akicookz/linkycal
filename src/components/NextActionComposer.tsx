@@ -75,9 +75,27 @@ function parseStatusMessage(result: NextActionParseResult): string | null {
       return "Choose one deadline.";
     case "past_deadline":
       return "Choose a future deadline.";
+    case "invalid_deadline":
+      return "Choose a valid local time.";
     default:
       return null;
   }
+}
+
+function isPastStructuredDeadline(
+  draftDeadlineIso: string | null,
+  draftDeadline: string,
+  initialAction: NextActionValue | null,
+  now: Date,
+): boolean {
+  if (!draftDeadlineIso) return false;
+  if (
+    initialAction &&
+    draftDeadline === toDatetimeLocalValue(initialAction.deadline)
+  ) {
+    return false;
+  }
+  return new Date(draftDeadlineIso).getTime() <= now.getTime();
 }
 
 export function NextActionComposer({
@@ -163,10 +181,17 @@ export function NextActionComposer({
   ]);
 
   const draftDeadlineIso = datetimeLocalToIso(draftDeadline);
+  const draftDeadlineIsPast = isPastStructuredDeadline(
+    draftDeadlineIso,
+    draftDeadline,
+    initialAction,
+    referenceNow(),
+  );
   const draftIsValid = Boolean(
     draftAction.trim() &&
       draftAction.trim().length <= 500 &&
-      draftDeadlineIso,
+      draftDeadlineIso &&
+      !draftDeadlineIsPast,
   );
   const canSave = draftIsValid && !parsing && !pending;
   const parsed = parseResult.status === "valid" ? parseResult.value : null;
@@ -177,18 +202,35 @@ export function NextActionComposer({
         parsed.timezoneLabel,
       )
     : null;
-  const viewerOffset = parsed
-    ? offsetMinutesForTimeZone(parsed.deadlineIso, resolvedBrowserTimeZone)
+  const parsedDeadlineGuidance =
+    parsed &&
+    !editingDeadline &&
+    draftDeadlineIso === parsed.deadlineIso
+      ? parsed
+      : null;
+  const viewerOffset = parsedDeadlineGuidance
+    ? offsetMinutesForTimeZone(
+        parsedDeadlineGuidance.deadlineIso,
+        resolvedBrowserTimeZone,
+      )
     : null;
   const viewerPreview =
-    parsed && viewerOffset !== parsed.timezoneOffsetMinutes
-      ? formatDeadlineInTimeZone(parsed.deadlineIso, resolvedBrowserTimeZone)
+    parsedDeadlineGuidance &&
+    viewerOffset !== parsedDeadlineGuidance.timezoneOffsetMinutes
+      ? formatDeadlineInTimeZone(
+          parsedDeadlineGuidance.deadlineIso,
+          resolvedBrowserTimeZone,
+        )
       : null;
   const showManualDeadlineChoice =
     parseResult.status === "missing_deadline" ||
-    parseResult.status === "past_deadline";
-  const statusMessage =
-    parserUnavailable && draftIsValid ? null : parseStatusMessage(parseResult);
+    parseResult.status === "past_deadline" ||
+    parseResult.status === "invalid_deadline";
+  const statusMessage = draftDeadlineIsPast
+    ? "Choose a future deadline."
+    : parserUnavailable && draftIsValid
+      ? null
+      : parseStatusMessage(parseResult);
 
   function save() {
     if (!canSave || !draftDeadlineIso) return;
@@ -286,7 +328,7 @@ export function NextActionComposer({
             </Button>
           )}
 
-          {parsed.assumedTime && (
+          {parsedDeadlineGuidance?.assumedTime && (
             <p className="text-xs font-medium text-muted-foreground">
               time assumed
             </p>

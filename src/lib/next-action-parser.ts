@@ -17,7 +17,8 @@ export type NextActionParseResult =
   | { status: "missing_action" }
   | { status: "missing_deadline" }
   | { status: "ambiguous"; matches: string[] }
-  | { status: "past_deadline" };
+  | { status: "past_deadline" }
+  | { status: "invalid_deadline" };
 
 export interface NextActionParserContext {
   now: Date;
@@ -91,6 +92,18 @@ function normalizeSentence(sentence: string): NormalizedSentence {
     () => "5pm",
     replacements,
   );
+  text = replaceSameWidth(
+    text,
+    /\bEastern\s+time\b/gi,
+    () => "ET",
+    replacements,
+  );
+  text = replaceSameWidth(
+    text,
+    /\bPacific\s+time\b/gi,
+    () => "PT",
+    replacements,
+  );
   return { text, replacements };
 }
 
@@ -118,23 +131,86 @@ function explicitTimezoneLabel(text: string): string | null {
   );
 }
 
+function wallClockSignatureInTimeZone(
+  deadline: Date,
+  timeZone: string,
+): string | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(deadline);
+    const values = new Map(
+      parts
+        .filter((part) => part.type !== "literal")
+        .map((part) => [part.type, Number(part.value)]),
+    );
+    const signatureParts = [
+      "year",
+      "month",
+      "day",
+      "hour",
+      "minute",
+      "second",
+    ] as const;
+    const signature = signatureParts.map((part) => values.get(part));
+    if (signature.some((value) => value === undefined)) return null;
+    return signature.join("|");
+  } catch {
+    return null;
+  }
+}
+
+function wallClockSignatureFromUtc(timestamp: number): string {
+  const deadline = new Date(timestamp);
+  return [
+    deadline.getUTCFullYear(),
+    deadline.getUTCMonth() + 1,
+    deadline.getUTCDate(),
+    deadline.getUTCHours(),
+    deadline.getUTCMinutes(),
+    deadline.getUTCSeconds(),
+  ].join("|");
+}
+
 function dateFromWallClockInTimeZone(
   wallClockAsUtc: number,
   initialDeadline: Date,
   timeZone: string,
-): Date {
-  let deadline = initialDeadline;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const offsetMinutes = offsetMinutesForTimeZone(
-      deadline.toISOString(),
+): Date | null {
+  const dayMs = 86_400_000;
+  const sampleTimestamps = [
+    initialDeadline.getTime(),
+    wallClockAsUtc - dayMs * 2,
+    wallClockAsUtc - dayMs,
+    wallClockAsUtc,
+    wallClockAsUtc + dayMs,
+    wallClockAsUtc + dayMs * 2,
+  ];
+  const offsets = new Set<number>();
+  for (const timestamp of sampleTimestamps) {
+    const offset = offsetMinutesForTimeZone(
+      new Date(timestamp).toISOString(),
       timeZone,
     );
-    if (offsetMinutes === null) return initialDeadline;
-    const adjusted = new Date(wallClockAsUtc - offsetMinutes * 60_000);
-    if (adjusted.getTime() === deadline.getTime()) return deadline;
-    deadline = adjusted;
+    if (offset !== null) offsets.add(offset);
   }
-  return deadline;
+
+  const intendedSignature = wallClockSignatureFromUtc(wallClockAsUtc);
+  const candidates = Array.from(offsets)
+    .map((offset) => new Date(wallClockAsUtc - offset * 60_000))
+    .filter(
+      (candidate) =>
+        wallClockSignatureInTimeZone(candidate, timeZone) === intendedSignature,
+    )
+    .sort((left, right) => left.getTime() - right.getTime());
+  return candidates[0] ?? null;
 }
 
 export async function parseNextActionSentence(
@@ -200,6 +276,7 @@ export async function parseNextActionSentence(
         parsedDeadline,
         timeZone,
       );
+  if (!deadline) return { status: "invalid_deadline" };
   if (deadline.getTime() <= context.now.getTime()) {
     return { status: "past_deadline" };
   }

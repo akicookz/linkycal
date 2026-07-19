@@ -72,6 +72,61 @@ describe("parseNextActionSentence", () => {
     });
   });
 
+  test("normalizes long Eastern and Pacific aliases across daylight time", async () => {
+    const cases = [
+      {
+        now: "2026-07-19T00:00:00.000Z",
+        sentence: "Call Atul Friday at 5pm Eastern time",
+        deadlineIso: "2026-07-24T21:00:00.000Z",
+        label: "Eastern time",
+        offset: -240,
+        matchedDateText: "Friday at 5pm Eastern time",
+      },
+      {
+        now: "2026-01-04T00:00:00.000Z",
+        sentence: "Call Atul Friday at 5pm Eastern time",
+        deadlineIso: "2026-01-09T22:00:00.000Z",
+        label: "Eastern time",
+        offset: -300,
+        matchedDateText: "Friday at 5pm Eastern time",
+      },
+      {
+        now: "2026-07-19T00:00:00.000Z",
+        sentence: "Call Atul Friday at 5pm Pacific time",
+        deadlineIso: "2026-07-25T00:00:00.000Z",
+        label: "Pacific time",
+        offset: -420,
+        matchedDateText: "Friday at 5pm Pacific time",
+      },
+      {
+        now: "2026-01-04T00:00:00.000Z",
+        sentence: "Call Atul Friday at 5pm Pacific time",
+        deadlineIso: "2026-01-10T01:00:00.000Z",
+        label: "Pacific time",
+        offset: -480,
+        matchedDateText: "Friday at 5pm Pacific time",
+      },
+    ];
+
+    for (const item of cases) {
+      const result = await parseNextActionSentence(item.sentence, {
+        now: new Date(item.now),
+        timeZone: "Asia/Seoul",
+      });
+      expect(result).toEqual({
+        status: "valid",
+        value: {
+          actionText: "Call Atul",
+          deadlineIso: item.deadlineIso,
+          matchedDateText: item.matchedDateText,
+          timezoneLabel: item.label,
+          timezoneOffsetMinutes: item.offset,
+          assumedTime: false,
+        },
+      });
+    }
+  });
+
   test("supports business aliases and fixed versus daylight-aware Pacific time", async () => {
     const cases = [
       {
@@ -202,6 +257,40 @@ describe("parseNextActionSentence", () => {
         deadlineIso: "2026-03-09T21:00:00.000Z",
         timezoneLabel: "America/New_York",
         timezoneOffsetMinutes: -240,
+      },
+    });
+  });
+
+  test("rejects a nonexistent browser-zone wall time during a DST gap", async () => {
+    const result = await parseNextActionSentence(
+      "Call Atul March 8 at 2:30am",
+      {
+        now: new Date("2026-03-01T17:00:00.000Z"),
+        timeZone: "America/New_York",
+      },
+    );
+
+    expect(result).toEqual({ status: "invalid_deadline" });
+  });
+
+  test("chooses the earlier occurrence of a repeated browser-zone wall time", async () => {
+    const result = await parseNextActionSentence(
+      "Call Atul November 1 at 1:30am",
+      {
+        now: new Date("2026-03-01T17:00:00.000Z"),
+        timeZone: "America/New_York",
+      },
+    );
+
+    expect(result).toEqual({
+      status: "valid",
+      value: {
+        actionText: "Call Atul",
+        deadlineIso: "2026-11-01T05:30:00.000Z",
+        matchedDateText: "November 1 at 1:30am",
+        timezoneLabel: "America/New_York",
+        timezoneOffsetMinutes: -240,
+        assumedTime: false,
       },
     });
   });

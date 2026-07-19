@@ -96,6 +96,7 @@ describe("NextActionComposer", () => {
         pending={false}
         error={null}
         browserTimeZone="Asia/Seoul"
+        referenceNow={() => new Date("2026-07-19T00:00:00.000Z")}
         parseDelayMs={0}
         parseSentence={assumedParser}
         onSave={() => undefined}
@@ -110,7 +111,10 @@ describe("NextActionComposer", () => {
     fireEvent.click(screen.getByRole("button", { name: /Edit action/i }));
     expect(screen.getByLabelText("Action")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /Edit deadline/i }));
-    expect(screen.getByLabelText("Deadline (your time)")).not.toBeNull();
+    const deadline = screen.getByLabelText("Deadline (your time)");
+    fireEvent.change(deadline, { target: { value: "2026-07-25T08:00" } });
+    expect(screen.queryByText("time assumed")).toBeNull();
+    expect(screen.queryByText(/^Your time:/)).toBeNull();
   });
 
   test("blocks ambiguous input and keeps mutation errors visible", async () => {
@@ -310,6 +314,48 @@ describe("NextActionComposer", () => {
     expect(screen.getByLabelText("Deadline (your time)")).not.toBeNull();
   });
 
+  test("guides an invalid local wall time into structured correction", async () => {
+    const invalidDeadlineParser = mock(() =>
+      Promise.resolve({
+        status: "invalid_deadline",
+      } satisfies NextActionParseResult),
+    );
+    render(
+      <NextActionComposer
+        initialAction={null}
+        pending={false}
+        error={null}
+        browserTimeZone="America/New_York"
+        referenceNow={() => new Date("2026-03-01T17:00:00.000Z")}
+        parseDelayMs={0}
+        parseSentence={invalidDeadlineParser}
+        onSave={() => undefined}
+        onCancel={() => undefined}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("What should happen, and when?"), {
+      target: { value: "Call Atul March 8 at 2:30am" },
+    });
+    expect(await screen.findByText("Choose a valid local time.")).not.toBeNull();
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose date manually" }),
+    );
+    expect((screen.getByLabelText("Action") as HTMLInputElement).value).toBe(
+      "Call Atul March 8 at 2:30am",
+    );
+    fireEvent.change(screen.getByLabelText("Deadline (your time)"), {
+      target: { value: "2026-03-08T03:30" },
+    });
+    expect(screen.queryByText("Choose a valid local time.")).toBeNull();
+    expect(saveButton.disabled).toBe(false);
+  });
+
   test("opens an existing action in structured mode", () => {
     render(
       <NextActionComposer
@@ -448,6 +494,83 @@ describe("NextActionComposer", () => {
     expect(saveButton.disabled).toBe(false);
     fireEvent.change(deadline, { target: { value: "not-a-deadline" } });
     expect(saveButton.disabled).toBe(true);
+  });
+
+  test("rejects a past deadline entered for a new manual action", async () => {
+    const onSave = mock(() => undefined);
+    const missingDeadlineParser = mock(() =>
+      Promise.resolve({
+        status: "missing_deadline",
+      } satisfies NextActionParseResult),
+    );
+    render(
+      <NextActionComposer
+        initialAction={null}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        referenceNow={() => new Date("2026-07-19T00:00:00.000Z")}
+        parseDelayMs={0}
+        parseSentence={missingDeadlineParser}
+        onSave={onSave}
+        onCancel={() => undefined}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("What should happen, and when?"), {
+      target: { value: "Call Atul" },
+    });
+    await screen.findByText("Add a deadline or choose it manually.");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose date manually" }),
+    );
+    fireEvent.change(screen.getByLabelText("Deadline (your time)"), {
+      target: { value: "2026-07-17T12:00" },
+    });
+
+    expect(screen.getByText("Choose a future deadline.")).not.toBeNull();
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+    fireEvent.click(saveButton);
+    expect(onSave).toHaveBeenCalledTimes(0);
+  });
+
+  test("allows an unchanged legacy overdue deadline but rejects another past value", () => {
+    const onSave = mock(() => undefined);
+    render(
+      <NextActionComposer
+        initialAction={{
+          text: "Send proposal",
+          deadline: "2026-07-18T00:00:00.000Z",
+        }}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        referenceNow={() => new Date("2026-07-19T00:00:00.000Z")}
+        onSave={onSave}
+        onCancel={() => undefined}
+      />,
+    );
+
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(false);
+    fireEvent.click(saveButton);
+    expect(onSave).toHaveBeenCalledWith({
+      text: "Send proposal",
+      deadline: "2026-07-18T00:00:00.000Z",
+    });
+
+    fireEvent.change(screen.getByLabelText("Deadline (your time)"), {
+      target: { value: "2026-07-16T12:00" },
+    });
+    expect(screen.getByText("Choose a future deadline.")).not.toBeNull();
+    expect(saveButton.disabled).toBe(true);
+    fireEvent.click(saveButton);
+    expect(onSave).toHaveBeenCalledTimes(1);
   });
 
   test("clears an ambiguous parse error after valid manual correction", async () => {
