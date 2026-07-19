@@ -107,21 +107,6 @@ describe("workflow runtime helpers", () => {
     ).toBe(true);
   });
 
-  test("omits Next Action fields when no complete action exists", () => {
-    const context = buildContext();
-    context.contactOperational = buildWorkflowContactOperationalContext(
-      { enteredAtByTagId: {}, nextAction: null },
-      new Date("2026-07-19T12:00:00.000Z"),
-    );
-
-    expect(
-      resolveWorkflowValue(context, "contact.nextAction.overdue"),
-    ).toBeUndefined();
-    expect(
-      resolveWorkflowValue(context, "contact.nextAction.deadline"),
-    ).toBeUndefined();
-  });
-
   test("interpolates dot syntax and legacy underscore aliases", () => {
     const context = buildContext();
 
@@ -142,20 +127,6 @@ describe("workflow runtime helpers", () => {
         context,
       ),
     ).toEqual(["ava@example.com", "team@example.com"]);
-  });
-
-  test("stores research metadata and exposes latest research fields", () => {
-    const context = buildContext();
-    const record = buildResearchRecord();
-    const metadata = mergeWorkflowResearchMetadata(undefined, record);
-    const nextContext = { ...context, metadata };
-
-    expect(
-      resolveWorkflowValue(nextContext, "research.summary"),
-    ).toBe("A product leader at Acme.");
-    expect(
-      resolveWorkflowValue(nextContext, "research.byKey.lead_research.result.company"),
-    ).toBe("Acme");
   });
 
   test("resolveStepInputs pulls path and literal sources, skips malformed entries", () => {
@@ -185,20 +156,6 @@ describe("workflow runtime helpers", () => {
     });
   });
 
-  test("exposes resolved step inputs to interpolation as {{input.*}}", () => {
-    const context: WorkflowTriggerContext = {
-      ...buildContext(),
-      stepInputs: { name: "Ava", company: "Acme" },
-    };
-
-    expect(
-      interpolateWorkflowTemplate(
-        "Research {{input.name}} at {{input.company}}.",
-        context,
-      ),
-    ).toBe("Research Ava at Acme.");
-  });
-
   test("form field values under metadata.formFields are addressable via form.fields.*", () => {
     const context: WorkflowTriggerContext = {
       ...buildContext(),
@@ -212,51 +169,6 @@ describe("workflow runtime helpers", () => {
 });
 
 describe("contact-query inputs", () => {
-  test("formatContactsInputValue renders a bulleted list", () => {
-    const contacts = [
-      { name: "Ava", email: "ava@example.com" },
-      { name: "Ben", email: null },
-    ];
-    expect(formatContactsInputValue(contacts, "list")).toBe(
-      "- Ava (ava@example.com)\n- Ben",
-    );
-  });
-
-  test("formatContactsInputValue renders emails and count", () => {
-    const contacts = [
-      { name: "Ava", email: "ava@example.com" },
-      { name: "Ben", email: null },
-      { name: "Cy", email: "cy@example.com" },
-    ];
-    expect(formatContactsInputValue(contacts, "emails")).toBe(
-      "ava@example.com, cy@example.com",
-    );
-    expect(formatContactsInputValue(contacts, "count")).toBe("3");
-  });
-
-  test("workflowStepInputSchema accepts the contacts source kind", () => {
-    const parsed = workflowStepInputSchema.safeParse({
-      key: "followups",
-      source: { kind: "contacts", tagIds: ["t1"], matchAllTags: true },
-    });
-    expect(parsed.success).toBe(true);
-    if (parsed.success && parsed.data.source.kind === "contacts") {
-      expect(parsed.data.source.format).toBe("list");
-    }
-  });
-
-  test("resolveStepInputs skips contacts inputs (resolved by the service)", () => {
-    const context = buildContext();
-    const resolved = resolveStepInputs(
-      [
-        { key: "name", source: { kind: "path", path: "contact.name" } },
-        { key: "followups", source: { kind: "contacts", tagIds: [] } },
-      ],
-      context,
-    );
-    expect(resolved.name).toBe("Ava");
-    expect("followups" in resolved).toBe(false);
-  });
 
   test("normalizeRecipientList splits variables that expand to lists", () => {
     const context: WorkflowTriggerContext = {

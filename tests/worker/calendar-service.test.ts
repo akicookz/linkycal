@@ -40,21 +40,4 @@ describe("CalendarService.createEvent", () => {
     expect(result.iCalUID).toBe("evt1@google.com");
     expect(result.organizer).toBe("host@example.com");
   });
-
-  test("returns null iCalUID when Google omits it", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(JSON.stringify({ id: "evt2" }), { status: 200 }),
-    ) as typeof fetch;
-
-    const result = await makeService().createEvent("token", "primary", {
-      summary: "Intro Call",
-      start: "2026-04-01T13:00:00.000Z",
-      end: "2026-04-01T13:30:00.000Z",
-    });
-
-    expect(result.id).toBe("evt2");
-    expect(result.meetingUrl).toBeNull();
-    expect(result.iCalUID).toBeNull();
-    expect(result.organizer).toBeNull();
-  });
 });

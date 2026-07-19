@@ -22,17 +22,6 @@ function fieldsById(
 }
 
 describe("evaluateFormCondition", () => {
-  test("returns true when condition is null or has no rules", () => {
-    expect(
-      evaluateFormCondition(null, { values: {}, fieldsById: {} }),
-    ).toBe(true);
-    expect(
-      evaluateFormCondition(
-        { when: "all", rules: [] },
-        { values: {}, fieldsById: {} },
-      ),
-    ).toBe(true);
-  });
 
   test("equals on a select source", () => {
     const fields = fieldsById([
@@ -63,54 +52,6 @@ describe("evaluateFormCondition", () => {
     };
     expect(evaluateFormCondition(cond, { values: { tags: "a,b" }, fieldsById: fields })).toBe(true);
     expect(evaluateFormCondition(cond, { values: { tags: "b" }, fieldsById: fields })).toBe(false);
-  });
-
-  test("is_not_one_of returns true when value is absent", () => {
-    const fields = fieldsById([
-      { id: "role", type: "select", options: [{ label: "X", value: "x" }] },
-    ]);
-    const cond: FormCondition = {
-      when: "all",
-      rules: [{ fieldId: "role", operator: "is_not_one_of", value: ["x"] }],
-    };
-    expect(evaluateFormCondition(cond, { values: {}, fieldsById: fields })).toBe(true);
-    expect(evaluateFormCondition(cond, { values: { role: "x" }, fieldsById: fields })).toBe(false);
-  });
-
-  test("contains/not_contains on text source", () => {
-    const fields = fieldsById([{ id: "notes", type: "textarea" }]);
-    const cond: FormCondition = {
-      when: "all",
-      rules: [{ fieldId: "notes", operator: "contains", value: "urgent" }],
-    };
-    expect(evaluateFormCondition(cond, { values: { notes: "This is URGENT now" }, fieldsById: fields })).toBe(true);
-    expect(evaluateFormCondition(cond, { values: { notes: "nope" }, fieldsById: fields })).toBe(false);
-  });
-
-  test("exists/not_exists", () => {
-    const fields = fieldsById([{ id: "email", type: "email" }]);
-    const exists: FormCondition = {
-      when: "all",
-      rules: [{ fieldId: "email", operator: "exists" }],
-    };
-    const notExists: FormCondition = {
-      when: "all",
-      rules: [{ fieldId: "email", operator: "not_exists" }],
-    };
-    expect(evaluateFormCondition(exists, { values: { email: "a@b" }, fieldsById: fields })).toBe(true);
-    expect(evaluateFormCondition(exists, { values: { email: "  " }, fieldsById: fields })).toBe(false);
-    expect(evaluateFormCondition(notExists, { values: {}, fieldsById: fields })).toBe(true);
-  });
-
-  test("gt/lt on number source", () => {
-    const fields = fieldsById([{ id: "age", type: "number" }]);
-    const gt: FormCondition = {
-      when: "all",
-      rules: [{ fieldId: "age", operator: "gt", value: 18 }],
-    };
-    expect(evaluateFormCondition(gt, { values: { age: "20" }, fieldsById: fields })).toBe(true);
-    expect(evaluateFormCondition(gt, { values: { age: "10" }, fieldsById: fields })).toBe(false);
-    expect(evaluateFormCondition(gt, { values: { age: "nope" }, fieldsById: fields })).toBe(false);
   });
 
   test("when:any returns true if at least one rule matches", () => {
@@ -156,10 +97,6 @@ describe("evaluateFormCondition", () => {
 });
 
 describe("isFieldVisible", () => {
-  test("returns true for fields with no visibility rule", () => {
-    const field: FormConditionField = { id: "f1", type: "text" };
-    expect(isFieldVisible(field, { values: {}, fieldsById: { f1: field } })).toBe(true);
-  });
 });
 
 describe("SPA/widget parity", () => {

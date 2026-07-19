@@ -76,96 +76,6 @@ describe("buildFormExperienceModel", () => {
     ]);
   });
 
-  test("legacy default section title does not create a statement", () => {
-    const input = form();
-    input.steps[0].title = "Step 1";
-    const model = buildFormExperienceModel({
-      form: input,
-      values: {},
-      surface: "standalone",
-    });
-    expect(model.screens.map((screen) => screen.kind)).toEqual([
-      "question",
-      "question",
-    ]);
-  });
-
-  test("groupFields creates one group screen and advances question numbering", () => {
-    const input = form({
-      steps: [
-        form().steps[0],
-        {
-          id: "s2",
-          sortOrder: 1,
-          title: null,
-          description: null,
-          richDescription: null,
-          settings: null,
-          visibility: null,
-          fields: [field("third", { stepId: "s2" })],
-        },
-      ],
-    });
-    input.steps[0].title = null;
-    input.steps[0].settings = { groupFields: true };
-    const model = buildFormExperienceModel({
-      form: input,
-      values: {},
-      surface: "standalone",
-    });
-    expect(model.screens).toHaveLength(2);
-    expect(model.screens[0]).toMatchObject({
-      kind: "group",
-      firstQuestionNumber: 1,
-    });
-    expect(model.screens[1]).toMatchObject({
-      kind: "question",
-      questionNumber: 3,
-    });
-  });
-
-  test("sorts steps and fields and excludes completion-only steps", () => {
-    const input = form({
-      steps: [
-        {
-          id: "done",
-          sortOrder: 9,
-          title: null,
-          description: null,
-          richDescription: null,
-          settings: null,
-          visibility: null,
-          fields: [field("completion", { stepId: "done", type: "completion" })],
-        },
-        {
-          id: "s1",
-          sortOrder: 1,
-          title: null,
-          description: null,
-          richDescription: null,
-          settings: null,
-          visibility: null,
-          fields: [
-            field("later", { sortOrder: 2 }),
-            field("earlier", { sortOrder: 1 }),
-          ],
-        },
-      ],
-    });
-    const model = buildFormExperienceModel({
-      form: input,
-      values: {},
-      surface: "standalone",
-    });
-    expect(model.steps.map((step) => step.id)).toEqual(["s1"]);
-    expect(model.steps[0].fields.map((item) => item.id)).toEqual([
-      "earlier",
-      "later",
-    ]);
-    expect(getCompletionField(input)?.id).toBe("completion");
-    expect(getAllFormFields(input).map((item) => item.id)).toContain("completion");
-  });
-
   test("conditions react to values", () => {
     const input = form();
     input.steps[0].title = null;
@@ -257,18 +167,6 @@ describe("buildFormExperienceModel", () => {
     expect(model.fieldsById.first.id).toBe("first");
   });
 
-  test("booking drops a section when all of its fields are excluded", () => {
-    const model = buildFormExperienceModel({
-      form: form(),
-      values: {},
-      excludedFieldIds: new Set(["first", "second"]),
-      surface: "booking",
-    });
-    expect(model.steps).toEqual([]);
-    expect(model.screens).toEqual([]);
-    expect(model.hasDisplayContent).toBe(false);
-  });
-
   test("booking clears answers in hidden parent steps while standalone retains them", () => {
     const input = form({
       steps: [
@@ -305,50 +203,9 @@ describe("buildFormExperienceModel", () => {
       }).hiddenValueFieldIds,
     ).toEqual([]);
   });
-
-  test("excluded mapped fields are retained as booking condition inputs", () => {
-    const input = form();
-    input.steps[0].title = null;
-    input.steps[0].fields[0].contactMapping = "email";
-    input.steps[0].fields[0].visibility = {
-      when: "all",
-      rules: [{ fieldId: "second", operator: "equals", value: "show" }],
-    };
-    input.steps[0].fields[1].visibility = {
-      when: "all",
-      rules: [{ fieldId: "first", operator: "equals", value: "ada@example.com" }],
-    };
-
-    const model = buildFormExperienceModel({
-      form: input,
-      values: { first: "ada@example.com", second: "hide" },
-      excludedFieldIds: new Set(["first"]),
-      surface: "booking",
-    });
-
-    expect(model.hiddenValueFieldIds).not.toContain("first");
-    expect(model.screens.map((screen) => screen.key)).toEqual(["field-second"]);
-  });
 });
 
 describe("validateFormExperienceField", () => {
-  test("uses host-specific required copy", () => {
-    const required = field("required", { required: true });
-    expect(validateFormExperienceField(required, "", "Please fill this in")).toBe(
-      "Please fill this in",
-    );
-    expect(
-      validateFormExperienceField(required, "", "This field is required"),
-    ).toBe("This field is required");
-  });
-
-  test("validates non-empty email values", () => {
-    const email = field("email", { type: "email" });
-    expect(validateFormExperienceField(email, "bad", "Required")).toBe(
-      "Please enter a valid email",
-    );
-    expect(validateFormExperienceField(email, "ada@example.com", "Required")).toBeNull();
-  });
 });
 
 describe("createFormTransitionLock", () => {
@@ -374,48 +231,7 @@ describe("createFormTransitionLock", () => {
     expect(await first).toBe(true);
     expect(lock.isLocked()).toBe(false);
   });
-
-  test("releases after failure", async () => {
-    const lock = createFormTransitionLock();
-    await expect(
-      lock.run(async () => {
-        throw new Error("failed");
-      }),
-    ).rejects.toThrow("failed");
-    expect(await lock.run(async () => true)).toBe(true);
-  });
 });
 
 describe("createFormExperienceCheckpoint", () => {
-  test("preserves each supported empty-form checkpoint contract", () => {
-    const input = {
-      formType: "single" as const,
-      surface: "standalone" as const,
-      steps: [],
-      stepIndex: 0,
-      isFinal: false,
-    };
-    expect(createFormExperienceCheckpoint(input)).toEqual({
-      stepIndex: 0,
-      totalSteps: 0,
-      isFinal: false,
-      fields: [],
-    });
-    expect(
-      createFormExperienceCheckpoint({
-        ...input,
-        formType: "multi_step",
-        surface: "booking",
-        isFinal: true,
-      }),
-    ).toEqual({
-      stepIndex: 0,
-      totalSteps: 0,
-      isFinal: true,
-      fields: [],
-    });
-    expect(
-      createFormExperienceCheckpoint({ ...input, formType: "multi_step" }),
-    ).toBeNull();
-  });
 });

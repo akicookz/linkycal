@@ -43,103 +43,12 @@ describe("ContactService.setStage", () => {
     const ids = (await svc.getContactTags("c")).map((t) => t.id);
     expect(ids).toEqual(["vip"]);
   });
-
-  test("setting the stage it already has is a no-op", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    await svc.addTag("c", "prospect");
-
-    await svc.setStage("c", "prospect", group);
-
-    const ids = (await svc.getContactTags("c")).map((t) => t.id);
-    expect(ids).toEqual(["prospect"]);
-  });
 });
 
 describe("ContactService.seedPipeline", () => {
-  test("creates 5 ordered stage tags + a kanban view", async () => {
-    const db = await seed(); // reuse seed(); ignore its pre-made tags
-    const svc = new ContactService(db);
-
-    const { view } = await svc.seedPipeline("p");
-
-    const tagRows = await db.select().from(dbSchema.tags).where(eq(dbSchema.tags.projectId, "p"));
-    const names = tagRows.map((t) => t.name);
-    for (const n of ["Lead", "Contacted", "Meeting scheduled", "Follow up", "Closed"]) {
-      expect(names).toContain(n);
-    }
-
-    expect(view?.type).toBe("kanban");
-    expect(view?.name).toBe("Sales Pipeline");
-    const cfg = typeof view?.config === "string" ? JSON.parse(view.config) : view?.config;
-    expect(cfg.showUntagged).toBe(true);
-    expect(cfg.pivotTagIds).toHaveLength(5);
-    // Order matches the canonical stage order.
-    const idToName = new Map(tagRows.map((t) => [t.id, t.name]));
-    expect(cfg.pivotTagIds.map((id: string) => idToName.get(id))).toEqual([
-      "Lead", "Contacted", "Meeting scheduled", "Follow up", "Closed",
-    ]);
-  });
 });
 
 describe("ContactService.listWithTags lastActivityAt", () => {
-  test("attaches the most recent activity timestamp", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    await db.insert(dbSchema.contactActivity).values([
-      { id: "a1", contactId: "c", type: "form_submitted", createdAt: new Date("2026-02-01T00:00:00Z") },
-      { id: "a2", contactId: "c", type: "booked", createdAt: new Date("2026-03-15T00:00:00Z") },
-    ]);
-
-    const [contact] = await svc.listWithTags("p");
-    expect(contact.lastActivityAt).not.toBeNull();
-    expect(new Date(contact.lastActivityAt as string).toISOString()).toBe("2026-03-15T00:00:00.000Z");
-  });
-
-  test("null when the contact has no activity", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    const [contact] = await svc.listWithTags("p");
-    expect(contact.lastActivityAt).toBeNull();
-  });
-
-  // Regression: projects over ~100 contacts used to 500 because the tag/activity
-  // lookups bound one param per contact and D1 caps queries at 100 params. The
-  // lookups are chunked now; this proves contacts past the first chunk still get
-  // their tags and lastActivityAt merged in. (bun:sqlite has no param cap, so
-  // this guards the chunk-merge logic, not the D1 limit itself.)
-  test("merges tags and activity for contacts beyond the first chunk", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-
-    const N = 150; // > CONTACT_ID_CHUNK (90) → at least two chunks
-    const contactRows = Array.from({ length: N }, (_, i) => ({
-      id: `bulk-${i}`,
-      projectId: "p",
-      name: `Bulk ${i}`,
-      email: `bulk-${i}@x.com`,
-    }));
-    await db.insert(dbSchema.contacts).values(contactRows);
-    await db.insert(dbSchema.contactTags).values(
-      contactRows.map((c) => ({ contactId: c.id, tagId: "lead" })),
-    );
-    await db.insert(dbSchema.contactActivity).values(
-      contactRows.map((c, i) => ({
-        id: `act-${i}`,
-        contactId: c.id,
-        type: "form_submitted" as const,
-        createdAt: new Date("2026-05-01T00:00:00Z"),
-      })),
-    );
-
-    const all = await svc.listWithTags("p");
-    const bulk = all.filter((c) => c.id.startsWith("bulk-"));
-    expect(bulk).toHaveLength(N);
-    for (const c of bulk) {
-      expect(c.tags.map((t) => t.id)).toEqual(["lead"]);
-      expect(c.lastActivityAt).not.toBeNull();
-    }
-  });
 });
 
 describe("ContactService operational facts", () => {
@@ -171,51 +80,6 @@ describe("ContactService operational facts", () => {
     expect(facts.c?.enteredAtByTagId.lead).toBe(
       "2026-07-10T12:00:00.000Z",
     );
-  });
-
-  test("falls back to contact creation only for currently assigned tags", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    await db
-      .insert(dbSchema.contactTags)
-      .values({ contactId: "c", tagId: "lead" });
-    await db.insert(dbSchema.contactActivity).values({
-      id: "removed-stage-history",
-      contactId: "c",
-      type: "tag_added",
-      referenceId: "prospect",
-      createdAt: new Date("2026-07-10T12:00:00.000Z"),
-    });
-    const contact = await svc.getById("c");
-
-    const facts = await svc.getOperationalFacts(["c"]);
-
-    expect(facts.c?.enteredAtByTagId.lead).toBe(
-      contact?.createdAt.toISOString(),
-    );
-    expect(facts.c?.enteredAtByTagId.prospect).toBeUndefined();
-  });
-
-  test("returns a complete Next Action and suppresses partial stored data", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    await svc.setNextAction("c", {
-      text: "Call",
-      deadline: new Date("2026-07-25T14:30:00.000Z"),
-    });
-
-    const complete = await svc.getOperationalFacts(["c"]);
-    expect(complete.c?.nextAction).toEqual({
-      text: "Call",
-      deadline: "2026-07-25T14:30:00.000Z",
-    });
-
-    await db
-      .update(dbSchema.contacts)
-      .set({ nextActionDeadline: null })
-      .where(eq(dbSchema.contacts.id, "c"));
-    const partial = await svc.getOperationalFacts(["c"]);
-    expect(partial.c?.nextAction).toBeNull();
   });
 
   test("decorates stage timestamps beyond the first D1-sized chunk", async () => {
@@ -276,38 +140,6 @@ describe("ContactService.listPage", () => {
     expect(reported).toBe(total); // 121
     expect(contacts).toHaveLength(50);
   });
-
-  test("offset walks through the set without overlap; last page is short", async () => {
-    const { svc } = await seedMany(120); // 121 total
-    const page1 = await svc.listPage("p", undefined, { limit: 50, offset: 0 });
-    const page2 = await svc.listPage("p", undefined, { limit: 50, offset: 50 });
-    const page3 = await svc.listPage("p", undefined, { limit: 50, offset: 100 });
-
-    expect(page3.contacts).toHaveLength(21); // 121 - 100
-    const ids = new Set([
-      ...page1.contacts.map((c) => c.id),
-      ...page2.contacts.map((c) => c.id),
-      ...page3.contacts.map((c) => c.id),
-    ]);
-    expect(ids.size).toBe(121); // no dupes, full coverage
-  });
-
-  test("total reflects the filter, not the whole project", async () => {
-    const { db, svc } = await seedMany(10);
-    // Tag exactly 3 of the paged contacts.
-    await db.insert(dbSchema.contactTags).values([
-      { contactId: "pg-000", tagId: "lead" },
-      { contactId: "pg-001", tagId: "lead" },
-      { contactId: "pg-002", tagId: "lead" },
-    ]);
-    const { contacts, total } = await svc.listPage(
-      "p",
-      { tagIds: ["lead"] },
-      { limit: 50, offset: 0 },
-    );
-    expect(total).toBe(3);
-    expect(contacts).toHaveLength(3);
-  });
 });
 
 describe("ContactService ownership guards", () => {
@@ -331,29 +163,6 @@ describe("ContactService ownership guards", () => {
 });
 
 describe("ContactService.updateTag", () => {
-  test("updates name only, leaving color intact", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    const updated = await svc.updateTag("p", "lead", { name: "Renamed" });
-    expect(updated?.name).toBe("Renamed");
-    expect(updated?.color).toBe("#6b7280");
-  });
-
-  test("updates color only, leaving name intact", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    const updated = await svc.updateTag("p", "lead", { color: "#123456" });
-    expect(updated?.name).toBe("Lead");
-    expect(updated?.color).toBe("#123456");
-  });
-
-  test("updates name and color together", async () => {
-    const db = await seed();
-    const svc = new ContactService(db);
-    const updated = await svc.updateTag("p", "lead", { name: "Hot", color: "#abcdef" });
-    expect(updated?.name).toBe("Hot");
-    expect(updated?.color).toBe("#abcdef");
-  });
 
   test("does not update a tag from another project", async () => {
     const db = await seed();

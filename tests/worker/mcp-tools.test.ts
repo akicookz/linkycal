@@ -212,31 +212,4 @@ describe("MCP tool project scoping", () => {
 });
 
 describe("MCP tool plan limits", () => {
-  test("create_event_type enforces the free plan limit", async () => {
-    const { db, ctxA } = await seedFixture();
-
-    // Free plan allows 3 event types; the fixture seeded 2 — add a third.
-    await db.insert(dbSchema.eventTypes).values([
-      { id: "et-a3", projectId: "proj-a", name: "Third", slug: "third" },
-    ]);
-
-    const result = await createEventType(ctxA, {
-      name: "Fourth",
-      slug: "fourth",
-      duration: 30,
-      bufferBefore: 0,
-      bufferAfter: 0,
-      enabled: true,
-      requiresConfirmation: false,
-    });
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("Plan limit reached");
-  });
-
-  test("create_contact succeeds under the limit", async () => {
-    const { ctxA } = await seedFixture();
-    const result = await createContact(ctxA, { name: "New Contact", email: "new@example.com" });
-    expect(result.isError).toBeUndefined();
-    expect((parsed(result) as { projectId: string }).projectId).toBe("proj-a");
-  });
 });

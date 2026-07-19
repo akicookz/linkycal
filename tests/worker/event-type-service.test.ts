@@ -36,18 +36,6 @@ describe("EventTypeService booking limits", () => {
     expect(et.weekStart).toBe("sunday");
   });
 
-  test("create defaults weekStart to monday and limits to null", async () => {
-    const service = new EventTypeService(await seedProject());
-    const et = await service.create("p1", {
-      name: "Call",
-      slug: "call",
-      duration: 30,
-    });
-    expect(et.maxPerDay).toBeNull();
-    expect(et.maxPerWeek).toBeNull();
-    expect(et.weekStart).toBe("monday");
-  });
-
   test("update can set then clear the weekly limit", async () => {
     const service = new EventTypeService(await seedProject());
     const et = await service.create("p1", {

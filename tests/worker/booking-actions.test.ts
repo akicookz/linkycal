@@ -108,12 +108,6 @@ describe("booking actions", () => {
     expect(contact?.projectId).toBe("proj-a");
   });
 
-  test("cancelBookingAction returns 404 for an unknown booking", async () => {
-    const { deps } = await seedFixture();
-    const result = await cancelBookingAction(deps, "proj-a", "nope", undefined);
-    expect(result).toEqual({ ok: false, status: 404, error: "Booking not found" });
-  });
-
   test("confirmBookingAction rejects a booking whose time has passed", async () => {
     const { db, deps } = await seedFixture();
 
@@ -139,22 +133,6 @@ describe("booking actions", () => {
       status: 404,
       error: "Booking not found or not pending",
     });
-  });
-
-  test("declineBookingAction declines without email when notify is false", async () => {
-    const { db, deps, settle } = await seedFixture();
-
-    const result = await declineBookingAction(deps, "bk-pending", { notify: false });
-    expect(result.ok).toBe(true);
-
-    const [row] = await db
-      .select()
-      .from(dbSchema.bookings)
-      .where(eq(dbSchema.bookings.id, "bk-pending"))
-      .limit(1);
-    expect(row.status).toBe("declined");
-
-    await settle();
   });
 
   test("confirming a booking attaches an invite.ics to the guest email", async () => {

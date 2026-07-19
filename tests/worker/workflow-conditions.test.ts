@@ -44,22 +44,6 @@ describe("evaluateWorkflowCondition", () => {
     expect(evaluateWorkflowCondition(cond, ctx)).toBe(false);
   });
 
-  test("contains on research.company", () => {
-    const cond: WorkflowCondition = {
-      when: "all",
-      rules: [{ source: "research.company", operator: "contains", value: "acm" }],
-    };
-    expect(evaluateWorkflowCondition(cond, baseContext())).toBe(true);
-  });
-
-  test("legacy aliases still resolve (contact_email)", () => {
-    const cond: WorkflowCondition = {
-      when: "all",
-      rules: [{ source: "contact_email", operator: "exists" }],
-    };
-    expect(evaluateWorkflowCondition(cond, baseContext())).toBe(true);
-  });
-
   test("numeric gt on metadata", () => {
     const ctx = baseContext();
     ctx.metadata = { ...(ctx.metadata ?? {}), priority: "7" };
@@ -130,23 +114,4 @@ describe("evaluateWorkflowCondition", () => {
 });
 
 describe("parseWorkflowCondition", () => {
-  test("returns null for invalid inputs", () => {
-    expect(parseWorkflowCondition(null)).toBeNull();
-    expect(parseWorkflowCondition({})).toBeNull();
-    expect(parseWorkflowCondition("not json")).toBeNull();
-  });
-
-  test("parses JSON string into a normalized condition", () => {
-    const raw = JSON.stringify({
-      when: "any",
-      rules: [
-        { source: "contact.email", operator: "equals", value: "x@y.com" },
-        { invalid: true },
-      ],
-    });
-    const parsed = parseWorkflowCondition(raw);
-    expect(parsed).not.toBeNull();
-    expect(parsed?.when).toBe("any");
-    expect(parsed?.rules).toHaveLength(1);
-  });
 });

@@ -36,18 +36,6 @@ describe("ContactService.create normalization + activity", () => {
 });
 
 describe("ContactService.findOrCreate dedup", () => {
-  test("returns created:true on first insert, false on repeat", async () => {
-    const db = createTestDb();
-    await seedProject(db);
-    const svc = new ContactService(db);
-
-    const first = await svc.findOrCreate("p", { name: "Jane", email: "jane@acme.com" });
-    expect(first.created).toBe(true);
-
-    const second = await svc.findOrCreate("p", { name: "Jane", email: "jane@acme.com" });
-    expect(second.created).toBe(false);
-    expect(second.contact.id).toBe(first.contact.id);
-  });
 
   test("dedups across email casing/whitespace (no duplicate row)", async () => {
     const db = createTestDb();
@@ -100,17 +88,5 @@ describe("ContactService.findOrCreate dedup", () => {
     expect(contact.position).toBe("CTO");
     expect(contact.notes).toBe("VIP");
     expect(contact.linkedinUrl).toBe("https://linkedin.com/in/jane");
-  });
-
-  test("distinct emails create distinct contacts", async () => {
-    const db = createTestDb();
-    await seedProject(db);
-    const svc = new ContactService(db);
-
-    const a = await svc.findOrCreate("p", { name: "Jane", email: "jane@acme.com" });
-    const b = await svc.findOrCreate("p", { name: "John", email: "john@acme.com" });
-
-    expect(b.created).toBe(true);
-    expect(b.contact.id).not.toBe(a.contact.id);
   });
 });

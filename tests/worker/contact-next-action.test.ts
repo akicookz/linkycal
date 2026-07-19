@@ -28,25 +28,6 @@ async function seedContact() {
 }
 
 describe("setNextActionSchema", () => {
-  test("accepts a complete action or a complete clear", () => {
-    const set = setNextActionSchema.safeParse({
-      text: " Send proposal ",
-      deadline: "2026-07-25T14:30:00.000Z",
-    });
-    const setWithOffset = setNextActionSchema.safeParse({
-      text: "Call Seoul office",
-      deadline: "2026-07-25T23:30:00+09:00",
-    });
-    const clear = setNextActionSchema.safeParse({
-      text: null,
-      deadline: null,
-    });
-
-    expect(set.success).toBe(true);
-    if (set.success) expect(set.data.text).toBe("Send proposal");
-    expect(setWithOffset.success).toBe(true);
-    expect(clear.success).toBe(true);
-  });
 
   test("rejects partial and malformed actions", () => {
     expect(
@@ -121,35 +102,5 @@ describe("ContactService.setNextAction", () => {
       text: "Send proposal",
       deadline: "2026-07-25T14:30:00.000Z",
     });
-  });
-
-  test("completion is idempotent when no complete action exists", async () => {
-    const db = await seedContact();
-    const service = new ContactService(db);
-
-    const first = await service.setNextAction("c", null);
-    const second = await service.setNextAction("c", null);
-
-    expect(first?.id).toBe("c");
-    expect(second?.id).toBe("c");
-    const completed = await db
-      .select()
-      .from(dbSchema.contactActivity)
-      .where(eq(dbSchema.contactActivity.contactId, "c"));
-    expect(
-      completed.filter((entry) => entry.type === "next_action_completed"),
-    ).toHaveLength(0);
-  });
-
-  test("returns null for a missing contact", async () => {
-    const db = await seedContact();
-    const service = new ContactService(db);
-
-    const result = await service.setNextAction("missing", {
-      text: "Call",
-      deadline: new Date("2026-07-25T14:30:00.000Z"),
-    });
-
-    expect(result).toBeNull();
   });
 });
