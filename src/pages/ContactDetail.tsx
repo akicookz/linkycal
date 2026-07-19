@@ -25,13 +25,10 @@ import {
   Sparkles,
   CalendarClock,
   Pencil,
-  Save,
   CheckCircle2,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -40,13 +37,15 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from "@/components/ui/popover";
+import {
+  NextActionComposer,
+  type NextActionValue,
+} from "@/components/NextActionComposer";
 import { TagPickerContent } from "@/components/TagPicker";
 import { useMinuteNow } from "@/hooks/use-minute-now";
 import {
-  datetimeLocalToIso,
   formatNextActionDeadline,
   formatNextActionRelative,
-  toDatetimeLocalValue,
 } from "@/lib/contact-time";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
@@ -206,8 +205,6 @@ export default function ContactDetailPage() {
 
   const [addTagOpen, setAddTagOpen] = useState(false);
   const [editingNextAction, setEditingNextAction] = useState(false);
-  const [nextActionText, setNextActionText] = useState("");
-  const [nextActionDeadline, setNextActionDeadline] = useState("");
   const [nextActionError, setNextActionError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "error" | null>(null);
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -400,12 +397,6 @@ export default function ContactDetailPage() {
   }
 
   function startNextActionEditor() {
-    setNextActionText(contact?.nextActionText ?? "");
-    setNextActionDeadline(
-      contact?.nextActionDeadline
-        ? toDatetimeLocalValue(contact.nextActionDeadline)
-        : "",
-    );
     setNextActionError(null);
     setEditingNextAction(true);
   }
@@ -415,11 +406,9 @@ export default function ContactDetailPage() {
     setNextActionError(null);
   }
 
-  function saveNextAction() {
-    const deadline = datetimeLocalToIso(nextActionDeadline);
-    const text = nextActionText.trim();
-    if (!text || !deadline) return;
-    nextActionMutation.mutate({ text, deadline });
+  function saveNextAction(value: NextActionValue) {
+    setNextActionError(null);
+    nextActionMutation.mutate(value);
   }
 
   function completeNextAction() {
@@ -538,10 +527,6 @@ export default function ContactDetailPage() {
     ? formatNextActionRelative(contact.nextActionDeadline, now)
     : null;
   const nextActionIsOverdue = nextActionRelative?.startsWith("Overdue") ?? false;
-  const nextActionDeadlineIso = datetimeLocalToIso(nextActionDeadline);
-  const canSaveNextAction = Boolean(
-    nextActionText.trim() && nextActionDeadlineIso,
-  );
 
   // ─── Render ───
 
@@ -844,61 +829,20 @@ export default function ContactDetailPage() {
             </CardHeader>
             <CardContent>
               {editingNextAction ? (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="next-action-text">Action</Label>
-                    <Input
-                      id="next-action-text"
-                      value={nextActionText}
-                      maxLength={500}
-                      placeholder="Send revised proposal"
-                      onChange={(event) =>
-                        setNextActionText(event.target.value)
-                      }
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="next-action-deadline">Deadline</Label>
-                    <Input
-                      id="next-action-deadline"
-                      type="datetime-local"
-                      value={nextActionDeadline}
-                      onChange={(event) =>
-                        setNextActionDeadline(event.target.value)
-                      }
-                    />
-                  </div>
-                  {nextActionError && (
-                    <p className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      {nextActionError}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      onClick={saveNextAction}
-                      disabled={
-                        !canSaveNextAction || nextActionMutation.isPending
-                      }
-                    >
-                      {nextActionMutation.isPending ? (
-                        <Loader className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Save className="h-4 w-4" />
-                      )}
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={cancelNextActionEditor}
-                      disabled={nextActionMutation.isPending}
-                    >
-                      <XIcon className="h-4 w-4" />
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
+                <NextActionComposer
+                  initialAction={
+                    contact.nextActionText && contact.nextActionDeadline
+                      ? {
+                          text: contact.nextActionText,
+                          deadline: contact.nextActionDeadline,
+                        }
+                      : null
+                  }
+                  pending={nextActionMutation.isPending}
+                  error={nextActionError}
+                  onSave={saveNextAction}
+                  onCancel={cancelNextActionEditor}
+                />
               ) : hasNextAction ? (
                 <div className="space-y-4">
                   <div className="space-y-2">
