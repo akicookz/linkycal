@@ -163,13 +163,12 @@ export function NextActionComposer({
   ]);
 
   const draftDeadlineIso = datetimeLocalToIso(draftDeadline);
-  const canSave = Boolean(
+  const draftIsValid = Boolean(
     draftAction.trim() &&
       draftAction.trim().length <= 500 &&
-      draftDeadlineIso &&
-      !parsing &&
-      !pending,
+      draftDeadlineIso,
   );
+  const canSave = draftIsValid && !parsing && !pending;
   const parsed = parseResult.status === "valid" ? parseResult.value : null;
   const deadlinePreview = parsed
     ? formatDeadlineAtOffset(
@@ -189,7 +188,7 @@ export function NextActionComposer({
     parseResult.status === "missing_deadline" ||
     parseResult.status === "past_deadline";
   const statusMessage =
-    parserUnavailable && canSave ? null : parseStatusMessage(parseResult);
+    parserUnavailable && draftIsValid ? null : parseStatusMessage(parseResult);
 
   function save() {
     if (!canSave || !draftDeadlineIso) return;

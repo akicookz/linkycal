@@ -500,6 +500,64 @@ describe("NextActionComposer", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
+  test("keeps corrected parser guidance cleared while saving", async () => {
+    const onSave = mock(() => undefined);
+    const ambiguousParser = mock(() =>
+      Promise.resolve({
+        status: "ambiguous",
+        matches: ["Monday", "Friday"],
+      } satisfies NextActionParseResult),
+    );
+    const { rerender } = render(
+      <NextActionComposer
+        initialAction={null}
+        pending={false}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        parseDelayMs={0}
+        parseSentence={ambiguousParser}
+        onSave={onSave}
+        onCancel={() => undefined}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("What should happen, and when?"), {
+      target: { value: "Call Monday and email Friday" },
+    });
+    expect(await screen.findByText("Choose one deadline.")).not.toBeNull();
+    fireEvent.change(screen.getByLabelText("Action"), {
+      target: { value: "Call Atul" },
+    });
+    fireEvent.change(screen.getByLabelText("Deadline (your time)"), {
+      target: { value: "2026-07-25T07:00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    rerender(
+      <NextActionComposer
+        initialAction={null}
+        pending={true}
+        error={null}
+        browserTimeZone="Asia/Seoul"
+        parseDelayMs={0}
+        parseSentence={ambiguousParser}
+        onSave={onSave}
+        onCancel={() => undefined}
+      />,
+    );
+
+    const saveButton = screen.getByRole("button", {
+      name: "Save",
+    }) as HTMLButtonElement;
+    expect(saveButton.disabled).toBe(true);
+    expect(saveButton.querySelector(".animate-spin")).not.toBeNull();
+    expect(screen.queryByText("Choose one deadline.")).toBeNull();
+    expect(screen.getByRole("status").textContent).not.toContain(
+      "Choose one deadline.",
+    );
+  });
+
   test("cancels on Escape and falls back when parsing cannot load", async () => {
     const onCancel = mock(() => undefined);
     const onSave = mock(() => undefined);
