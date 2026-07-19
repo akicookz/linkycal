@@ -1,3 +1,5 @@
+import type { ParsingComponents } from "chrono-node/en";
+
 import { offsetMinutesForTimeZone } from "@/lib/timezone";
 
 export interface ParsedNextAction {
@@ -171,24 +173,25 @@ export async function parseNextActionSentence(
 
   const result = results[0];
   const range = ranges[0];
-  const assumedTime = !result.start.isCertain("hour");
+  const components = result.start as ParsingComponents;
+  const assumedTime = !components.isCertain("hour");
   if (assumedTime) {
-    result.start.assign("hour", 17);
-    result.start.assign("minute", 0);
-    result.start.assign("second", 0);
-    result.start.assign("millisecond", 0);
+    components.assign("hour", 17);
+    components.assign("minute", 0);
+    components.assign("second", 0);
+    components.assign("millisecond", 0);
   }
 
-  const parsedDeadline = result.start.date();
-  const hasExplicitTimezone = result.start.isCertain("timezoneOffset");
+  const parsedDeadline = components.date();
+  const hasExplicitTimezone = components.isCertain("timezoneOffset");
   const wallClockAsUtc = Date.UTC(
-    result.start.get("year") ?? 0,
-    (result.start.get("month") ?? 1) - 1,
-    result.start.get("day") ?? 1,
-    result.start.get("hour") ?? 0,
-    result.start.get("minute") ?? 0,
-    result.start.get("second") ?? 0,
-    result.start.get("millisecond") ?? 0,
+    components.get("year") ?? 0,
+    (components.get("month") ?? 1) - 1,
+    components.get("day") ?? 1,
+    components.get("hour") ?? 0,
+    components.get("minute") ?? 0,
+    components.get("second") ?? 0,
+    components.get("millisecond") ?? 0,
   );
   const deadline = hasExplicitTimezone
     ? parsedDeadline
@@ -206,7 +209,7 @@ export async function parseNextActionSentence(
   if (!actionText) return { status: "missing_action" };
 
   const timezoneOffsetMinutes = hasExplicitTimezone
-    ? (result.start.get("timezoneOffset") ?? 0)
+    ? (components.get("timezoneOffset") ?? 0)
     : (offsetMinutesForTimeZone(deadline.toISOString(), timeZone) ??
       referenceTimezoneOffset);
   const timezoneLabel = explicitTimezoneLabel(matchedDateText) ?? timeZone;
