@@ -235,29 +235,27 @@ export function buildFormExperienceModel(
   const conditionallyVisibleStepIds = new Set(
     conditionallyVisibleSteps.map((step) => step.id),
   );
-  let steps = conditionallyVisibleSteps.map<VisibleFormExperienceStep>((step) => ({
-    ...step,
-    fields: [...step.fields]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .filter(
-        (currentField) =>
-          currentField.type !== "completion" &&
-          isFieldVisible(
-            {
-              id: currentField.id,
-              type: currentField.type,
-              options: currentField.options,
-              visibility: currentField.visibility ?? null,
-            },
-            conditionInputs,
-          ) &&
-          !excludedFieldIds.has(currentField.id),
-      ),
-  }));
-
-  if (surface === "booking") {
-    steps = steps.filter((step) => step.fields.length > 0);
-  }
+  const steps = conditionallyVisibleSteps
+    .map<VisibleFormExperienceStep>((step) => ({
+      ...step,
+      fields: [...step.fields]
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .filter(
+          (currentField) =>
+            currentField.type !== "completion" &&
+            isFieldVisible(
+              {
+                id: currentField.id,
+                type: currentField.type,
+                options: currentField.options,
+                visibility: currentField.visibility ?? null,
+              },
+              conditionInputs,
+            ) &&
+            !excludedFieldIds.has(currentField.id),
+        ),
+    }))
+    .filter((step) => step.fields.length > 0);
 
   const screens = form.type === "multi_step" ? buildFocusedScreens(steps) : [];
   const hiddenValueFieldIds = allFields

@@ -2,11 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   buildFormExperienceModel,
-  createFormExperienceCheckpoint,
   createFormTransitionLock,
-  getAllFormFields,
-  getCompletionField,
-  validateFormExperienceField,
   type FormExperienceField,
   type FormExperienceForm,
 } from "../src/lib/form-experience";
@@ -167,6 +163,42 @@ describe("buildFormExperienceModel", () => {
     expect(model.fieldsById.first.id).toBe("first");
   });
 
+  test("drops titled steps whose fields are all hidden on standalone", () => {
+    const input = form({
+      steps: [
+        { ...form().steps[0], title: null },
+        {
+          id: "s2",
+          sortOrder: 1,
+          title: "Extras",
+          description: null,
+          richDescription: null,
+          settings: null,
+          visibility: null,
+          fields: [
+            field("third", {
+              stepId: "s2",
+              visibility: {
+                when: "all",
+                rules: [{ fieldId: "first", operator: "equals", value: "show" }],
+              },
+            }),
+          ],
+        },
+      ],
+    });
+    const model = buildFormExperienceModel({
+      form: input,
+      values: { first: "hide" },
+      surface: "standalone",
+    });
+    expect(model.steps.map((step) => step.id)).toEqual(["s1"]);
+    expect(model.screens.map((screen) => screen.key)).toEqual([
+      "field-first",
+      "field-second",
+    ]);
+  });
+
   test("booking clears answers in hidden parent steps while standalone retains them", () => {
     const input = form({
       steps: [
@@ -205,9 +237,6 @@ describe("buildFormExperienceModel", () => {
   });
 });
 
-describe("validateFormExperienceField", () => {
-});
-
 describe("createFormTransitionLock", () => {
   test("admits only one overlapping async transition", async () => {
     let release!: (value: boolean) => void;
@@ -231,7 +260,4 @@ describe("createFormTransitionLock", () => {
     expect(await first).toBe(true);
     expect(lock.isLocked()).toBe(false);
   });
-});
-
-describe("createFormExperienceCheckpoint", () => {
 });
