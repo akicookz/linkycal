@@ -274,7 +274,9 @@ function isSpam(body: Record<string, unknown>): boolean {
       if (!isNaN(loadedAt) && Date.now() - loadedAt < MIN_SUBMISSION_TIME_MS) {
         return true;
       }
-    } catch { /* invalid token, skip check */ }
+    } catch {
+      /* invalid token, skip check */
+    }
   }
 
   return false;
@@ -363,7 +365,7 @@ function sanitizeUploadFilename(filename: string): string {
     .split("")
     .filter((char) => {
       const code = char.charCodeAt(0);
-      return code >= 32 && code !== 127 && char !== "\"";
+      return code >= 32 && code !== 127 && char !== '"';
     })
     .join("")
     .replace(/[<>:|?*]+/g, "_")
@@ -380,7 +382,9 @@ function validateFormUploadFile(file: File): string | null {
   }
 
   const extension = getFileExtension(file.name);
-  const hasAllowedType = file.type ? ALLOWED_FORM_FILE_TYPES.has(file.type) : false;
+  const hasAllowedType = file.type
+    ? ALLOWED_FORM_FILE_TYPES.has(file.type)
+    : false;
   const hasAllowedExtension = extension
     ? ALLOWED_FORM_FILE_EXTENSIONS.has(extension)
     : false;
@@ -437,7 +441,10 @@ async function storePrivateFormUpload(
   };
 }
 
-function uploadedFileDisplayValue(value: string | null, fileUrl: string | null): string {
+function uploadedFileDisplayValue(
+  value: string | null,
+  fileUrl: string | null,
+): string {
   if (value?.trim()) return value.trim();
   if (isPrivateFormUploadKey(fileUrl)) return "Uploaded file";
   return fileUrl?.trim() ?? "";
@@ -475,7 +482,10 @@ async function getPrivateFormFileObject(
       dbSchema.formResponses,
       eq(dbSchema.formFieldValues.responseId, dbSchema.formResponses.id),
     )
-    .innerJoin(dbSchema.forms, eq(dbSchema.formFieldValues.formId, dbSchema.forms.id))
+    .innerJoin(
+      dbSchema.forms,
+      eq(dbSchema.formFieldValues.formId, dbSchema.forms.id),
+    )
     .where(
       and(
         eq(dbSchema.formFieldValues.id, input.valueId),
@@ -502,11 +512,16 @@ async function getPrivateFormFileObject(
   return {
     ok: true,
     object,
-    filename: sanitizeUploadFilename(row.value ?? object.customMetadata?.filename ?? "upload"),
+    filename: sanitizeUploadFilename(
+      row.value ?? object.customMetadata?.filename ?? "upload",
+    ),
   };
 }
 
-function createPrivateFileResponse(object: R2ObjectBody, filename: string): Response {
+function createPrivateFileResponse(
+  object: R2ObjectBody,
+  filename: string,
+): Response {
   const headers = new Headers();
   headers.set(
     "Content-Type",
@@ -682,7 +697,11 @@ function createNativeFormSuccessResponse(settings: unknown): Response {
     }
   }
 
-  return createHtmlPageResponse("Thanks, your response has been sent.", nativeSettings.successMessage, 200);
+  return createHtmlPageResponse(
+    "Thanks, your response has been sent.",
+    nativeSettings.successMessage,
+    200,
+  );
 }
 
 function getNativeFormStringValues(
@@ -697,7 +716,13 @@ function getNativeFormStringValues(
 function parseNativeFormFieldValue(
   formData: FormData,
   field: NativePublicFormField,
-): { field: NativeFormFieldValue; respondentEmail?: string | null; file?: File } | { error: string } {
+):
+  | {
+      field: NativeFormFieldValue;
+      respondentEmail?: string | null;
+      file?: File;
+    }
+  | { error: string } {
   const allEntries = formData.getAll(field.id);
 
   if (field.type === "file") {
@@ -731,7 +756,9 @@ function parseNativeFormFieldValue(
     return { error: `${field.label} does not accept file uploads.` };
   }
 
-  const optionValues = new Set((field.options ?? []).map((option) => option.value));
+  const optionValues = new Set(
+    (field.options ?? []).map((option) => option.value),
+  );
   const rawValues = getNativeFormStringValues(formData, field.id);
   const trimmedValues = rawValues.map((value) => value.trim());
 
@@ -779,13 +806,20 @@ function parseNativeFormFieldValue(
     }
   }
 
-  if (field.type === "rating" && value && !["1", "2", "3", "4", "5"].includes(value)) {
+  if (
+    field.type === "rating" &&
+    value &&
+    !["1", "2", "3", "4", "5"].includes(value)
+  ) {
     return { error: `${field.label} must be between 1 and 5.` };
   }
 
   return {
     field: { fieldId: field.id, value },
-    respondentEmail: (field.contactMapping === "email" || field.type === "email") && value ? value : null,
+    respondentEmail:
+      (field.contactMapping === "email" || field.type === "email") && value
+        ? value
+        : null,
   };
 }
 
@@ -867,11 +901,16 @@ async function dispatchFormSubmittedTrigger(
           contactName = fieldValue;
         } else if (!resolvedEmail && row.type === "email") {
           resolvedEmail = fieldValue;
-        } else if ((!contactName || contactName === resolvedEmail?.split("@")[0]) && row.type === "name") {
+        } else if (
+          (!contactName || contactName === resolvedEmail?.split("@")[0]) &&
+          row.type === "name"
+        ) {
           contactName = fieldValue;
         }
       }
-    } catch { /* fall back to defaults */ }
+    } catch {
+      /* fall back to defaults */
+    }
 
     if (resolvedEmail) {
       // Dedupe + create the contact; fires new_contact_created if brand-new.
@@ -947,7 +986,10 @@ async function notifyFormResponseCompleted(
 
     // Get owner details
     const [owner] = await db
-      .select({ name: dbSchema.schema.users.name, email: dbSchema.schema.users.email })
+      .select({
+        name: dbSchema.schema.users.name,
+        email: dbSchema.schema.users.email,
+      })
       .from(dbSchema.schema.users)
       .where(eq(dbSchema.schema.users.id, project.userId))
       .limit(1);
@@ -1003,8 +1045,14 @@ async function notifyFormResponseCompleted(
 // ─── Timestamp Normalization ─────────────────────────────────────────────────
 
 const TIMESTAMP_KEYS = new Set([
-  "createdAt", "updatedAt", "startTime", "endTime",
-  "expiresAt", "lastUsedAt", "startedAt", "completedAt",
+  "createdAt",
+  "updatedAt",
+  "startTime",
+  "endTime",
+  "expiresAt",
+  "lastUsedAt",
+  "startedAt",
+  "completedAt",
 ]);
 
 function normTs(d: unknown): string | null {
@@ -1159,7 +1207,8 @@ app.get("/api/v1/availability/:slug", async (c) => {
             );
             const calendarService = new CalendarService(db, {
               GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-              GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
+              GOOGLE_CALENDAR_CLIENT_SECRET:
+                c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
             });
 
             // Group by connectionId
@@ -1182,7 +1231,9 @@ app.get("/api/v1/availability/:slug", async (c) => {
                   .limit(1);
 
                 if (conn) {
-                  const accessToken = await calendarService.refreshAccessToken(conn.refreshToken);
+                  const accessToken = await calendarService.refreshAccessToken(
+                    conn.refreshToken,
+                  );
                   const busySlots = await calendarService.getFreeBusy(
                     accessToken,
                     calendarIds,
@@ -1192,7 +1243,10 @@ app.get("/api/v1/availability/:slug", async (c) => {
                   externalBusySlots.push(...busySlots);
                 }
               } catch (err) {
-                console.error(`FreeBusy check failed for connection ${connectionId}:`, err);
+                console.error(
+                  `FreeBusy check failed for connection ${connectionId}:`,
+                  err,
+                );
                 // Don't block availability if calendar check fails
               }
             }
@@ -1236,7 +1290,8 @@ app.post("/api/v1/t", async (c) => {
     if (!project) return c.body(null, 204);
 
     const cf = c.req.raw.cf as Record<string, unknown> | undefined;
-    const country = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? "";
+    const country =
+      (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? "";
     const city = (cf?.city as string) ?? "";
 
     writeAnalyticsEvent(c.env.ANALYTICS, {
@@ -1274,14 +1329,18 @@ app.post("/api/v1/bookings", async (c) => {
 
     // Spam prevention — return fake success to fool bots
     if (isSpam(body as Record<string, unknown>)) {
-      return c.json({ booking: { id: crypto.randomUUID(), status: "confirmed" } }, 201);
+      return c.json(
+        { booking: { id: crypto.randomUUID(), status: "confirmed" } },
+        201,
+      );
     }
 
     const data = validate(createBookingSchema, body);
 
     const cf = c.req.raw.cf as Record<string, unknown> | undefined;
     const geoIp = c.req.header("cf-connecting-ip") ?? null;
-    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCountry =
+      (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
     const db = drizzle(c.env.DB, { schema });
@@ -1308,7 +1367,9 @@ app.post("/api/v1/bookings", async (c) => {
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
-    } catch { /* tracking should never fail the request */ }
+    } catch {
+      /* tracking should never fail the request */
+    }
 
     return c.json({ booking: result.booking }, 201);
   } catch (err) {
@@ -1352,18 +1413,32 @@ app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
 
     // Spam prevention — return fake success to fool bots
     if (isSpam(body as Record<string, unknown>)) {
-      return c.json({ response: { id: crypto.randomUUID(), formId: form.id, status: "in_progress", currentStepIndex: 0 } }, 201);
+      return c.json(
+        {
+          response: {
+            id: crypto.randomUUID(),
+            formId: form.id,
+            status: "in_progress",
+            currentStepIndex: 0,
+          },
+        },
+        201,
+      );
     }
 
     const cf = c.req.raw.cf as Record<string, unknown> | undefined;
     const geoIp = c.req.header("cf-connecting-ip") ?? null;
-    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCountry =
+      (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
     const response = await service.createResponse(form.id, body.metadata);
 
     if (geoIp || geoCountry || geoCity) {
-      await db.update(dbSchema.formResponses).set({ ipAddress: geoIp, country: geoCountry, city: geoCity }).where(eq(dbSchema.formResponses.id, response.id));
+      await db
+        .update(dbSchema.formResponses)
+        .set({ ipAddress: geoIp, country: geoCountry, city: geoCity })
+        .where(eq(dbSchema.formResponses.id, response.id));
     }
 
     const fullForm = await service.getFullForm(form.id);
@@ -1377,7 +1452,9 @@ app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
-    } catch { /* tracking should never fail the request */ }
+    } catch {
+      /* tracking should never fail the request */
+    }
 
     return c.json({ response, form: fullForm }, 201);
   } catch (err) {
@@ -1566,13 +1643,22 @@ app.patch(
           notifyFormResponseCompleted(db, c.env, response.id, response.formId),
         );
         c.executionCtx.waitUntil(
-          dispatchFormSubmittedTrigger(db, c.env as AppEnv, response.id, response.formId),
+          dispatchFormSubmittedTrigger(
+            db,
+            c.env as AppEnv,
+            response.id,
+            response.formId,
+          ),
         );
 
         // Track form_completed event
         try {
           const formSlug = c.req.param("formSlug");
-          const [form] = await db.select({ projectId: dbSchema.forms.projectId }).from(dbSchema.forms).where(eq(dbSchema.forms.id, response.formId)).limit(1);
+          const [form] = await db
+            .select({ projectId: dbSchema.forms.projectId })
+            .from(dbSchema.forms)
+            .where(eq(dbSchema.forms.id, response.formId))
+            .limit(1);
           if (form) {
             const cf = c.req.raw.cf as Record<string, unknown> | undefined;
             writeAnalyticsEvent(c.env.ANALYTICS, {
@@ -1583,7 +1669,9 @@ app.patch(
               city: (cf?.city as string) ?? "",
             });
           }
-        } catch { /* tracking should never fail */ }
+        } catch {
+          /* tracking should never fail */
+        }
       }
 
       return c.json({ response });
@@ -1665,7 +1753,10 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
 
     // Fetch project owner info for display
     const [owner] = await db
-      .select({ name: dbSchema.schema.users.name, image: dbSchema.schema.users.image })
+      .select({
+        name: dbSchema.schema.users.name,
+        image: dbSchema.schema.users.image,
+      })
       .from(dbSchema.schema.users)
       .where(eq(dbSchema.schema.users.id, project.userId))
       .limit(1);
@@ -1716,8 +1807,7 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
           }
         }
       }
-      availableDays =
-        projected ?? [...new Set(rules.map((r) => r.dayOfWeek))];
+      availableDays = projected ?? [...new Set(rules.map((r) => r.dayOfWeek))];
     }
 
     const entitlements = await resolveProjectEntitlements(db, project.id);
@@ -1808,7 +1898,10 @@ app.get("/api/public/resolve/:projectSlug/:slug", async (c) => {
     }
 
     const [eventRow] = await db
-      .select({ id: dbSchema.eventTypes.id, enabled: dbSchema.eventTypes.enabled })
+      .select({
+        id: dbSchema.eventTypes.id,
+        enabled: dbSchema.eventTypes.enabled,
+      })
       .from(dbSchema.eventTypes)
       .where(
         and(
@@ -1880,9 +1973,7 @@ app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
       id: project.id,
       name: project.name,
       slug: project.slug,
-      settings: project.settings
-        ? JSON.parse(project.settings as string)
-        : {},
+      settings: project.settings ? JSON.parse(project.settings as string) : {},
     };
 
     const entitlements = await resolveProjectEntitlements(db, project.id);
@@ -1929,18 +2020,32 @@ app.post("/api/public/forms/:projectSlug/:formSlug/responses", async (c) => {
 
     // Spam prevention — return fake success to fool bots
     if (isSpam(body as Record<string, unknown>)) {
-      return c.json({ response: { id: crypto.randomUUID(), formId: form.id, status: "in_progress", currentStepIndex: 0 } }, 201);
+      return c.json(
+        {
+          response: {
+            id: crypto.randomUUID(),
+            formId: form.id,
+            status: "in_progress",
+            currentStepIndex: 0,
+          },
+        },
+        201,
+      );
     }
 
     const cf = c.req.raw.cf as Record<string, unknown> | undefined;
     const geoIp = c.req.header("cf-connecting-ip") ?? null;
-    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCountry =
+      (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
     const response = await service.createResponse(form.id, body.metadata);
 
     if (geoIp || geoCountry || geoCity) {
-      await db.update(dbSchema.formResponses).set({ ipAddress: geoIp, country: geoCountry, city: geoCity }).where(eq(dbSchema.formResponses.id, response.id));
+      await db
+        .update(dbSchema.formResponses)
+        .set({ ipAddress: geoIp, country: geoCountry, city: geoCity })
+        .where(eq(dbSchema.formResponses.id, response.id));
     }
 
     // Track form_started event
@@ -1952,7 +2057,9 @@ app.post("/api/public/forms/:projectSlug/:formSlug/responses", async (c) => {
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
-    } catch { /* tracking should never fail the request */ }
+    } catch {
+      /* tracking should never fail the request */
+    }
 
     return c.json({ response }, 201);
   } catch (err) {
@@ -1996,13 +2103,22 @@ app.patch(
           notifyFormResponseCompleted(db, c.env, response.id, response.formId),
         );
         c.executionCtx.waitUntil(
-          dispatchFormSubmittedTrigger(db, c.env as AppEnv, response.id, response.formId),
+          dispatchFormSubmittedTrigger(
+            db,
+            c.env as AppEnv,
+            response.id,
+            response.formId,
+          ),
         );
 
         // Track form_completed event
         try {
           const formSlug = c.req.param("formSlug");
-          const [form] = await db.select({ projectId: dbSchema.forms.projectId }).from(dbSchema.forms).where(eq(dbSchema.forms.id, response.formId)).limit(1);
+          const [form] = await db
+            .select({ projectId: dbSchema.forms.projectId })
+            .from(dbSchema.forms)
+            .where(eq(dbSchema.forms.id, response.formId))
+            .limit(1);
           if (form) {
             const cf = c.req.raw.cf as Record<string, unknown> | undefined;
             writeAnalyticsEvent(c.env.ANALYTICS, {
@@ -2013,7 +2129,9 @@ app.patch(
               city: (cf?.city as string) ?? "",
             });
           }
-        } catch { /* tracking should never fail */ }
+        } catch {
+          /* tracking should never fail */
+        }
       }
 
       return c.json({ response });
@@ -2081,7 +2199,13 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
 
     const steps = [...form.steps]
       .sort((a, b) => a.sortOrder - b.sortOrder)
-      .filter((step) => !(step.fields.length > 0 && step.fields.every((f) => f.type === "completion")));
+      .filter(
+        (step) =>
+          !(
+            step.fields.length > 0 &&
+            step.fields.every((f) => f.type === "completion")
+          ),
+      );
     const fieldConfigs: NativePublicFormField[] = steps.flatMap((step) =>
       step.fields.map((field) => ({
         id: field.id,
@@ -2125,7 +2249,8 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
 
     const cf = c.req.raw.cf as Record<string, unknown> | undefined;
     const geoIp = c.req.header("cf-connecting-ip") ?? null;
-    const geoCountry = (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
+    const geoCountry =
+      (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
     const response = await service.createResponse(form.id, {
@@ -2190,10 +2315,20 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
 
     if (latestResponse?.status === "completed" && latestResponse.formId) {
       c.executionCtx.waitUntil(
-        notifyFormResponseCompleted(db, c.env, latestResponse.id, latestResponse.formId),
+        notifyFormResponseCompleted(
+          db,
+          c.env,
+          latestResponse.id,
+          latestResponse.formId,
+        ),
       );
       c.executionCtx.waitUntil(
-        dispatchFormSubmittedTrigger(db, c.env as AppEnv, latestResponse.id, latestResponse.formId),
+        dispatchFormSubmittedTrigger(
+          db,
+          c.env as AppEnv,
+          latestResponse.id,
+          latestResponse.formId,
+        ),
       );
     }
 
@@ -2465,7 +2600,11 @@ app.use("/api/*", async (c, next) => {
   });
 
   // Load account subscription for account-level pages and new-team defaults.
-  const sub = await ensureTeamSubscriptionRecord(db, session.user.id, accountTeam.id);
+  const sub = await ensureTeamSubscriptionRecord(
+    db,
+    session.user.id,
+    accountTeam.id,
+  );
 
   const { plan, status } = resolveSubscriptionPlan(sub);
 
@@ -2658,322 +2797,387 @@ app.use("/api/projects/:projectId/*", projectAccessMiddleware);
 
 const teamRoutes = app
   .get("/api/teams", async (c) => {
-  const db = c.get("db");
-  const userId = c.get("effectiveUserId");
+    const db = c.get("db");
+    const userId = c.get("effectiveUserId");
 
-  const rows = await db
-    .select({
-      memberId: dbSchema.teamMembers.id,
-      role: dbSchema.teamMembers.role,
-      team: dbSchema.teams,
-    })
-    .from(dbSchema.teamMembers)
-    .innerJoin(dbSchema.teams, eq(dbSchema.teamMembers.teamId, dbSchema.teams.id))
-    .where(eq(dbSchema.teamMembers.userId, userId));
+    const rows = await db
+      .select({
+        memberId: dbSchema.teamMembers.id,
+        role: dbSchema.teamMembers.role,
+        team: dbSchema.teams,
+      })
+      .from(dbSchema.teamMembers)
+      .innerJoin(
+        dbSchema.teams,
+        eq(dbSchema.teamMembers.teamId, dbSchema.teams.id),
+      )
+      .where(eq(dbSchema.teamMembers.userId, userId));
 
-  return c.json({
-    teams: rows.map((row) => ({ ...row.team, role: row.role, memberId: row.memberId })),
-  });
-})
+    return c.json({
+      teams: rows.map((row) => ({
+        ...row.team,
+        role: row.role,
+        memberId: row.memberId,
+      })),
+    });
+  })
 
   .patch("/api/teams/:teamId", async (c) => {
-  try {
+    try {
+      const teamId = c.req.param("teamId");
+      const db = c.get("db");
+      const userId = c.get("effectiveUserId");
+      const context = await getTeamAdminContext(db, teamId, userId);
+      if (!context) return c.json({ error: "Forbidden" }, 403);
+
+      const data = validate(updateTeamSchema, await c.req.json());
+      const values: Record<string, unknown> = {};
+      if (data.name !== undefined) values.name = data.name;
+      if (data.slug !== undefined) {
+        const [clash] = await db
+          .select({ id: dbSchema.teams.id })
+          .from(dbSchema.teams)
+          .where(
+            and(
+              eq(dbSchema.teams.slug, data.slug),
+              ne(dbSchema.teams.id, teamId),
+            ),
+          )
+          .limit(1);
+        if (clash) return c.json({ error: "Team slug is already taken" }, 409);
+        values.slug = data.slug;
+      }
+      if (Object.keys(values).length === 0) {
+        return c.json({ error: "No fields to update" }, 400);
+      }
+
+      await db
+        .update(dbSchema.teams)
+        .set(values)
+        .where(eq(dbSchema.teams.id, teamId));
+      const [team] = await db
+        .select()
+        .from(dbSchema.teams)
+        .where(eq(dbSchema.teams.id, teamId))
+        .limit(1);
+      return c.json({ team });
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Team update error:", err);
+      return c.json({ error: "Failed to update team" }, 500);
+    }
+  })
+
+  .get("/api/teams/:teamId/members", async (c) => {
     const teamId = c.req.param("teamId");
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
     const context = await getTeamAdminContext(db, teamId, userId);
     if (!context) return c.json({ error: "Forbidden" }, 403);
 
-    const data = validate(updateTeamSchema, await c.req.json());
-    const values: Record<string, unknown> = {};
-    if (data.name !== undefined) values.name = data.name;
-    if (data.slug !== undefined) {
-      const [clash] = await db
-        .select({ id: dbSchema.teams.id })
-        .from(dbSchema.teams)
-        .where(and(eq(dbSchema.teams.slug, data.slug), ne(dbSchema.teams.id, teamId)))
-        .limit(1);
-      if (clash) return c.json({ error: "Team slug is already taken" }, 409);
-      values.slug = data.slug;
-    }
-    if (Object.keys(values).length === 0) {
-      return c.json({ error: "No fields to update" }, 400);
-    }
-
-    await db.update(dbSchema.teams).set(values).where(eq(dbSchema.teams.id, teamId));
-    const [team] = await db
-      .select()
-      .from(dbSchema.teams)
-      .where(eq(dbSchema.teams.id, teamId))
-      .limit(1);
-    return c.json({ team });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Team update error:", err);
-    return c.json({ error: "Failed to update team" }, 500);
-  }
-})
-
-  .get("/api/teams/:teamId/members", async (c) => {
-  const teamId = c.req.param("teamId");
-  const db = c.get("db");
-  const userId = c.get("effectiveUserId");
-  const context = await getTeamAdminContext(db, teamId, userId);
-  if (!context) return c.json({ error: "Forbidden" }, 403);
-
-  const members = await db
-    .select({
-      id: dbSchema.teamMembers.id,
-      role: dbSchema.teamMembers.role,
-      joinedAt: dbSchema.teamMembers.joinedAt,
-      user: {
-        id: dbSchema.schema.users.id,
-        name: dbSchema.schema.users.name,
-        email: dbSchema.schema.users.email,
-        image: dbSchema.schema.users.image,
-      },
-    })
-    .from(dbSchema.teamMembers)
-    .innerJoin(
-      dbSchema.schema.users,
-      eq(dbSchema.teamMembers.userId, dbSchema.schema.users.id),
-    )
-    .where(eq(dbSchema.teamMembers.teamId, teamId));
-
-  const invites = await db
-    .select()
-    .from(dbSchema.teamInvites)
-    .where(
-      and(
-        eq(dbSchema.teamInvites.teamId, teamId),
-        eq(dbSchema.teamInvites.status, "pending"),
-      ),
-    );
-
-  return c.json({ members, invites });
-})
-
-  .post("/api/teams/:teamId/invites", async (c) => {
-  try {
-    const teamId = c.req.param("teamId");
-    const db = c.get("db");
-    const user = c.get("user");
-    const context = await getTeamAdminContext(db, teamId, user.id);
-    if (!context) return c.json({ error: "Forbidden" }, 403);
-
-    const subscription = await ensureTeamSubscriptionRecord(
-      db,
-      context.team.ownerUserId,
-      teamId,
-    );
-    const { plan } = resolveSubscriptionPlan(subscription);
-    const planLimits = PLAN_LIMITS[plan];
-    if (planLimits.maxTeamMembers === 0) {
-      return c.json(
-        {
-          error: "Team collaboration requires a paid plan",
-          code: "teams_requires_paid_plan",
+    const members = await db
+      .select({
+        id: dbSchema.teamMembers.id,
+        role: dbSchema.teamMembers.role,
+        joinedAt: dbSchema.teamMembers.joinedAt,
+        user: {
+          id: dbSchema.schema.users.id,
+          name: dbSchema.schema.users.name,
+          email: dbSchema.schema.users.email,
+          image: dbSchema.schema.users.image,
         },
-        403,
-      );
-    }
+      })
+      .from(dbSchema.teamMembers)
+      .innerJoin(
+        dbSchema.schema.users,
+        eq(dbSchema.teamMembers.userId, dbSchema.schema.users.id),
+      )
+      .where(eq(dbSchema.teamMembers.teamId, teamId));
 
-    const data = validate(createTeamInviteSchema, await c.req.json());
-    const email = data.email.trim().toLowerCase();
-
-    if (data.projectRole && !data.projectId) {
-      return c.json({ error: "projectId is required when projectRole is set" }, 400);
-    }
-    if (data.projectId) {
-      const [project] = await db
-        .select({ id: dbSchema.projects.id })
-        .from(dbSchema.projects)
-        .where(
-          and(
-            eq(dbSchema.projects.id, data.projectId),
-            eq(dbSchema.projects.teamId, teamId),
-          ),
-        )
-        .limit(1);
-      if (!project) return c.json({ error: "Project not found" }, 404);
-    }
-
-    const [existingUser] = await db
-      .select({ id: dbSchema.schema.users.id })
-      .from(dbSchema.schema.users)
-      .where(eq(dbSchema.schema.users.email, email))
-      .limit(1);
-
-    if (existingUser) {
-      const member = await getTeamMembership(db, teamId, existingUser.id);
-      if (member) return c.json({ error: "User is already a team member" }, 409);
-    }
-
-    const token = generateInviteToken();
-    const tokenHash = await hashSecret(token);
-    const expiresAt = new Date(Date.now() + TEAM_INVITE_TTL_MS);
-
-    const [existingInvite] = await db
+    const invites = await db
       .select()
       .from(dbSchema.teamInvites)
       .where(
         and(
           eq(dbSchema.teamInvites.teamId, teamId),
-          eq(dbSchema.teamInvites.email, email),
           eq(dbSchema.teamInvites.status, "pending"),
         ),
-      )
-      .limit(1);
+      );
 
-    const inviteId = existingInvite?.id ?? crypto.randomUUID();
-    if (!existingInvite && planLimits.maxTeamMembers !== -1) {
-      const usage = await getTeamMemberUsage(db, teamId);
-      if (usage.members + usage.pendingInvites >= planLimits.maxTeamMembers) {
+    return c.json({ members, invites });
+  })
+
+  .post("/api/teams/:teamId/invites", async (c) => {
+    try {
+      const teamId = c.req.param("teamId");
+      const db = c.get("db");
+      const user = c.get("user");
+      const context = await getTeamAdminContext(db, teamId, user.id);
+      if (!context) return c.json({ error: "Forbidden" }, 403);
+
+      const subscription = await ensureTeamSubscriptionRecord(
+        db,
+        context.team.ownerUserId,
+        teamId,
+      );
+      const { plan } = resolveSubscriptionPlan(subscription);
+      const planLimits = PLAN_LIMITS[plan];
+      if (planLimits.maxTeamMembers === 0) {
         return c.json(
           {
-            error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
-            code: "team_member_limit_reached",
+            error: "Team collaboration requires a paid plan",
+            code: "teams_requires_paid_plan",
           },
           403,
         );
       }
-    }
 
-    if (existingInvite) {
-      await db
-        .update(dbSchema.teamInvites)
-        .set({
+      const data = validate(createTeamInviteSchema, await c.req.json());
+      const email = data.email.trim().toLowerCase();
+
+      if (data.projectRole && !data.projectId) {
+        return c.json(
+          { error: "projectId is required when projectRole is set" },
+          400,
+        );
+      }
+      if (data.projectId) {
+        const [project] = await db
+          .select({ id: dbSchema.projects.id })
+          .from(dbSchema.projects)
+          .where(
+            and(
+              eq(dbSchema.projects.id, data.projectId),
+              eq(dbSchema.projects.teamId, teamId),
+            ),
+          )
+          .limit(1);
+        if (!project) return c.json({ error: "Project not found" }, 404);
+      }
+
+      const [existingUser] = await db
+        .select({ id: dbSchema.schema.users.id })
+        .from(dbSchema.schema.users)
+        .where(eq(dbSchema.schema.users.email, email))
+        .limit(1);
+
+      if (existingUser) {
+        const member = await getTeamMembership(db, teamId, existingUser.id);
+        if (member)
+          return c.json({ error: "User is already a team member" }, 409);
+      }
+
+      const token = generateInviteToken();
+      const tokenHash = await hashSecret(token);
+      const expiresAt = new Date(Date.now() + TEAM_INVITE_TTL_MS);
+
+      const [existingInvite] = await db
+        .select()
+        .from(dbSchema.teamInvites)
+        .where(
+          and(
+            eq(dbSchema.teamInvites.teamId, teamId),
+            eq(dbSchema.teamInvites.email, email),
+            eq(dbSchema.teamInvites.status, "pending"),
+          ),
+        )
+        .limit(1);
+
+      const inviteId = existingInvite?.id ?? crypto.randomUUID();
+      if (!existingInvite && planLimits.maxTeamMembers !== -1) {
+        const usage = await getTeamMemberUsage(db, teamId);
+        if (usage.members + usage.pendingInvites >= planLimits.maxTeamMembers) {
+          return c.json(
+            {
+              error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
+              code: "team_member_limit_reached",
+            },
+            403,
+          );
+        }
+      }
+
+      if (existingInvite) {
+        await db
+          .update(dbSchema.teamInvites)
+          .set({
+            teamRole: data.teamRole,
+            projectId: data.projectId ?? null,
+            projectRole: data.projectRole ?? null,
+            tokenHash,
+            invitedByUserId: user.id,
+            expiresAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(dbSchema.teamInvites.id, existingInvite.id));
+      } else {
+        await db.insert(dbSchema.teamInvites).values({
+          id: inviteId,
+          teamId,
+          email,
           teamRole: data.teamRole,
           projectId: data.projectId ?? null,
           projectRole: data.projectRole ?? null,
           tokenHash,
           invitedByUserId: user.id,
           expiresAt,
-          updatedAt: new Date(),
-        })
-        .where(eq(dbSchema.teamInvites.id, existingInvite.id));
-    } else {
-      await db.insert(dbSchema.teamInvites).values({
-        id: inviteId,
-        teamId,
-        email,
-        teamRole: data.teamRole,
-        projectId: data.projectId ?? null,
-        projectRole: data.projectRole ?? null,
-        tokenHash,
-        invitedByUserId: user.id,
-        expiresAt,
+        });
+      }
+
+      await sendTeamInviteEmail(c.env, {
+        to: email,
+        teamName: context.team.name,
+        inviterName: user.name,
+        inviteUrl: `${c.env.BETTER_AUTH_URL}/invite/${token}`,
       });
+
+      const [invite] = await db
+        .select()
+        .from(dbSchema.teamInvites)
+        .where(eq(dbSchema.teamInvites.id, inviteId))
+        .limit(1);
+
+      return c.json({ invite }, existingInvite ? 200 : 201);
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Team invite error:", err);
+      return c.json({ error: "Failed to send invite" }, 500);
     }
-
-    await sendTeamInviteEmail(c.env, {
-      to: email,
-      teamName: context.team.name,
-      inviterName: user.name,
-      inviteUrl: `${c.env.BETTER_AUTH_URL}/invite/${token}`,
-    });
-
-    const [invite] = await db
-      .select()
-      .from(dbSchema.teamInvites)
-      .where(eq(dbSchema.teamInvites.id, inviteId))
-      .limit(1);
-
-    return c.json({ invite }, existingInvite ? 200 : 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Team invite error:", err);
-    return c.json({ error: "Failed to send invite" }, 500);
-  }
-})
+  })
 
   .post("/api/teams/:teamId/invites/:inviteId/resend", async (c) => {
-  try {
+    try {
+      const teamId = c.req.param("teamId");
+      const inviteId = c.req.param("inviteId");
+      const db = c.get("db");
+      const user = c.get("user");
+      const context = await getTeamAdminContext(db, teamId, user.id);
+      if (!context) return c.json({ error: "Forbidden" }, 403);
+
+      const subscription = await ensureTeamSubscriptionRecord(
+        db,
+        context.team.ownerUserId,
+        teamId,
+      );
+      const { plan } = resolveSubscriptionPlan(subscription);
+      const planLimits = PLAN_LIMITS[plan];
+      if (planLimits.maxTeamMembers === 0) {
+        return c.json(
+          {
+            error: "Team collaboration requires a paid plan",
+            code: "teams_requires_paid_plan",
+          },
+          403,
+        );
+      }
+
+      const [invite] = await db
+        .select()
+        .from(dbSchema.teamInvites)
+        .where(
+          and(
+            eq(dbSchema.teamInvites.id, inviteId),
+            eq(dbSchema.teamInvites.teamId, teamId),
+            eq(dbSchema.teamInvites.status, "pending"),
+          ),
+        )
+        .limit(1);
+      if (!invite) return c.json({ error: "Invite not found" }, 404);
+
+      const token = generateInviteToken();
+      const tokenHash = await hashSecret(token);
+      const expiresAt = new Date(Date.now() + TEAM_INVITE_TTL_MS);
+      await db
+        .update(dbSchema.teamInvites)
+        .set({
+          tokenHash,
+          expiresAt,
+          invitedByUserId: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(dbSchema.teamInvites.id, invite.id));
+
+      await sendTeamInviteEmail(c.env, {
+        to: invite.email,
+        teamName: context.team.name,
+        inviterName: user.name,
+        inviteUrl: `${c.env.BETTER_AUTH_URL}/invite/${token}`,
+      });
+
+      return c.json({ success: true });
+    } catch (err) {
+      console.error("Team invite resend error:", err);
+      return c.json({ error: "Failed to resend invite" }, 500);
+    }
+  })
+
+  .delete("/api/teams/:teamId/invites/:inviteId", async (c) => {
     const teamId = c.req.param("teamId");
     const inviteId = c.req.param("inviteId");
     const db = c.get("db");
-    const user = c.get("user");
-    const context = await getTeamAdminContext(db, teamId, user.id);
+    const userId = c.get("effectiveUserId");
+    const context = await getTeamAdminContext(db, teamId, userId);
     if (!context) return c.json({ error: "Forbidden" }, 403);
 
-    const subscription = await ensureTeamSubscriptionRecord(
-      db,
-      context.team.ownerUserId,
-      teamId,
-    );
-    const { plan } = resolveSubscriptionPlan(subscription);
-    const planLimits = PLAN_LIMITS[plan];
-    if (planLimits.maxTeamMembers === 0) {
-      return c.json(
-        {
-          error: "Team collaboration requires a paid plan",
-          code: "teams_requires_paid_plan",
-        },
-        403,
-      );
-    }
-
-    const [invite] = await db
-      .select()
-      .from(dbSchema.teamInvites)
+    await db
+      .update(dbSchema.teamInvites)
+      .set({ status: "revoked", updatedAt: new Date() })
       .where(
         and(
           eq(dbSchema.teamInvites.id, inviteId),
           eq(dbSchema.teamInvites.teamId, teamId),
-          eq(dbSchema.teamInvites.status, "pending"),
         ),
-      )
-      .limit(1);
-    if (!invite) return c.json({ error: "Invite not found" }, 404);
-
-    const token = generateInviteToken();
-    const tokenHash = await hashSecret(token);
-    const expiresAt = new Date(Date.now() + TEAM_INVITE_TTL_MS);
-    await db
-      .update(dbSchema.teamInvites)
-      .set({ tokenHash, expiresAt, invitedByUserId: user.id, updatedAt: new Date() })
-      .where(eq(dbSchema.teamInvites.id, invite.id));
-
-    await sendTeamInviteEmail(c.env, {
-      to: invite.email,
-      teamName: context.team.name,
-      inviterName: user.name,
-      inviteUrl: `${c.env.BETTER_AUTH_URL}/invite/${token}`,
-    });
-
+      );
     return c.json({ success: true });
-  } catch (err) {
-    console.error("Team invite resend error:", err);
-    return c.json({ error: "Failed to resend invite" }, 500);
-  }
-})
-
-  .delete("/api/teams/:teamId/invites/:inviteId", async (c) => {
-  const teamId = c.req.param("teamId");
-  const inviteId = c.req.param("inviteId");
-  const db = c.get("db");
-  const userId = c.get("effectiveUserId");
-  const context = await getTeamAdminContext(db, teamId, userId);
-  if (!context) return c.json({ error: "Forbidden" }, 403);
-
-  await db
-    .update(dbSchema.teamInvites)
-    .set({ status: "revoked", updatedAt: new Date() })
-    .where(
-      and(
-        eq(dbSchema.teamInvites.id, inviteId),
-        eq(dbSchema.teamInvites.teamId, teamId),
-      ),
-    );
-  return c.json({ success: true });
-})
+  })
 
   .patch("/api/teams/:teamId/members/:memberId", async (c) => {
-  try {
+    try {
+      const teamId = c.req.param("teamId");
+      const memberId = c.req.param("memberId");
+      const db = c.get("db");
+      const userId = c.get("effectiveUserId");
+      const context = await getTeamAdminContext(db, teamId, userId);
+      if (!context) return c.json({ error: "Forbidden" }, 403);
+
+      const data = validate(updateTeamMemberSchema, await c.req.json());
+      const [target] = await db
+        .select()
+        .from(dbSchema.teamMembers)
+        .where(
+          and(
+            eq(dbSchema.teamMembers.id, memberId),
+            eq(dbSchema.teamMembers.teamId, teamId),
+          ),
+        )
+        .limit(1);
+      if (!target) return c.json({ error: "Member not found" }, 404);
+      if (target.role === "owner") {
+        return c.json({ error: "Team owner cannot be changed" }, 403);
+      }
+      if (context.member.role !== "owner" && target.role === "admin") {
+        return c.json({ error: "Only the owner can change admins" }, 403);
+      }
+
+      await db
+        .update(dbSchema.teamMembers)
+        .set({ role: data.role })
+        .where(eq(dbSchema.teamMembers.id, target.id));
+      return c.json({ success: true });
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Team member update error:", err);
+      return c.json({ error: "Failed to update member" }, 500);
+    }
+  })
+
+  .delete("/api/teams/:teamId/members/:memberId", async (c) => {
     const teamId = c.req.param("teamId");
     const memberId = c.req.param("memberId");
     const db = c.get("db");
@@ -2981,7 +3185,6 @@ const teamRoutes = app
     const context = await getTeamAdminContext(db, teamId, userId);
     if (!context) return c.json({ error: "Forbidden" }, 403);
 
-    const data = validate(updateTeamMemberSchema, await c.req.json());
     const [target] = await db
       .select()
       .from(dbSchema.teamMembers)
@@ -2994,148 +3197,261 @@ const teamRoutes = app
       .limit(1);
     if (!target) return c.json({ error: "Member not found" }, 404);
     if (target.role === "owner") {
-      return c.json({ error: "Team owner cannot be changed" }, 403);
+      return c.json({ error: "Team owner cannot be removed" }, 403);
     }
     if (context.member.role !== "owner" && target.role === "admin") {
-      return c.json({ error: "Only the owner can change admins" }, 403);
+      return c.json({ error: "Only the owner can remove admins" }, 403);
     }
 
     await db
-      .update(dbSchema.teamMembers)
-      .set({ role: data.role })
+      .delete(dbSchema.teamMembers)
       .where(eq(dbSchema.teamMembers.id, target.id));
     return c.json({ success: true });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Team member update error:", err);
-    return c.json({ error: "Failed to update member" }, 500);
-  }
-})
+  })
 
-  .delete("/api/teams/:teamId/members/:memberId", async (c) => {
-  const teamId = c.req.param("teamId");
-  const memberId = c.req.param("memberId");
-  const db = c.get("db");
-  const userId = c.get("effectiveUserId");
-  const context = await getTeamAdminContext(db, teamId, userId);
-  if (!context) return c.json({ error: "Forbidden" }, 403);
-
-  const [target] = await db
-    .select()
-    .from(dbSchema.teamMembers)
-    .where(
-      and(
-        eq(dbSchema.teamMembers.id, memberId),
-        eq(dbSchema.teamMembers.teamId, teamId),
-      ),
-    )
-    .limit(1);
-  if (!target) return c.json({ error: "Member not found" }, 404);
-  if (target.role === "owner") {
-    return c.json({ error: "Team owner cannot be removed" }, 403);
-  }
-  if (context.member.role !== "owner" && target.role === "admin") {
-    return c.json({ error: "Only the owner can remove admins" }, 403);
-  }
-
-  await db.delete(dbSchema.teamMembers).where(eq(dbSchema.teamMembers.id, target.id));
-  return c.json({ success: true });
-})
-
-// ─── Public Invite Acceptance ───────────────────────────────────────────────
+  // ─── Public Invite Acceptance ───────────────────────────────────────────────
 
   .get("/api/invites/:token", async (c) => {
-  const token = c.req.param("token");
-  const tokenHash = await hashSecret(token);
-  const db = drizzle(c.env.DB, { schema });
-
-  const [invite] = await db
-    .select({
-      id: dbSchema.teamInvites.id,
-      email: dbSchema.teamInvites.email,
-      teamRole: dbSchema.teamInvites.teamRole,
-      projectRole: dbSchema.teamInvites.projectRole,
-      status: dbSchema.teamInvites.status,
-      expiresAt: dbSchema.teamInvites.expiresAt,
-      team: {
-        id: dbSchema.teams.id,
-        name: dbSchema.teams.name,
-      },
-      project: {
-        id: dbSchema.projects.id,
-        name: dbSchema.projects.name,
-      },
-    })
-    .from(dbSchema.teamInvites)
-    .innerJoin(dbSchema.teams, eq(dbSchema.teamInvites.teamId, dbSchema.teams.id))
-    .leftJoin(dbSchema.projects, eq(dbSchema.teamInvites.projectId, dbSchema.projects.id))
-    .where(eq(dbSchema.teamInvites.tokenHash, tokenHash))
-    .limit(1);
-
-  if (!invite || invite.status !== "pending" || invite.expiresAt < new Date()) {
-    return c.json({ error: "Invite not found or expired" }, 404);
-  }
-
-  const auth = createAuth(c.env);
-  const session = await auth.api.getSession({ headers: c.req.raw.headers });
-  const sessionEmail = session?.user?.email?.toLowerCase();
-
-  return c.json({
-    invite: {
-      id: invite.id,
-      teamRole: invite.teamRole,
-      projectRole: invite.projectRole,
-      status: invite.status,
-      expiresAt: invite.expiresAt,
-      team: invite.team,
-      project: invite.project,
-      emailMatchesSignedInUser: sessionEmail
-        ? sessionEmail === invite.email.toLowerCase()
-        : null,
-    },
-  });
-})
-
-  .post("/api/invites/:token/accept", async (c) => {
-  try {
     const token = c.req.param("token");
-    const auth = createAuth(c.env);
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (!session?.user) return c.json({ error: "Unauthorized" }, 401);
-
-    const db = drizzle(c.env.DB, { schema });
     const tokenHash = await hashSecret(token);
+    const db = drizzle(c.env.DB, { schema });
+
     const [invite] = await db
-      .select()
+      .select({
+        id: dbSchema.teamInvites.id,
+        email: dbSchema.teamInvites.email,
+        teamRole: dbSchema.teamInvites.teamRole,
+        projectRole: dbSchema.teamInvites.projectRole,
+        status: dbSchema.teamInvites.status,
+        expiresAt: dbSchema.teamInvites.expiresAt,
+        team: {
+          id: dbSchema.teams.id,
+          name: dbSchema.teams.name,
+        },
+        project: {
+          id: dbSchema.projects.id,
+          name: dbSchema.projects.name,
+        },
+      })
       .from(dbSchema.teamInvites)
+      .innerJoin(
+        dbSchema.teams,
+        eq(dbSchema.teamInvites.teamId, dbSchema.teams.id),
+      )
+      .leftJoin(
+        dbSchema.projects,
+        eq(dbSchema.teamInvites.projectId, dbSchema.projects.id),
+      )
       .where(eq(dbSchema.teamInvites.tokenHash, tokenHash))
       .limit(1);
-    if (!invite || invite.status !== "pending" || invite.expiresAt < new Date()) {
+
+    if (
+      !invite ||
+      invite.status !== "pending" ||
+      invite.expiresAt < new Date()
+    ) {
       return c.json({ error: "Invite not found or expired" }, 404);
     }
-    if (session.user.email.toLowerCase() !== invite.email.toLowerCase()) {
-      return c.json({ error: "Invite email does not match signed-in user" }, 403);
+
+    const auth = createAuth(c.env);
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    const sessionEmail = session?.user?.email?.toLowerCase();
+
+    return c.json({
+      invite: {
+        id: invite.id,
+        teamRole: invite.teamRole,
+        projectRole: invite.projectRole,
+        status: invite.status,
+        expiresAt: invite.expiresAt,
+        team: invite.team,
+        project: invite.project,
+        emailMatchesSignedInUser: sessionEmail
+          ? sessionEmail === invite.email.toLowerCase()
+          : null,
+      },
+    });
+  })
+
+  .post("/api/invites/:token/accept", async (c) => {
+    try {
+      const token = c.req.param("token");
+      const auth = createAuth(c.env);
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (!session?.user) return c.json({ error: "Unauthorized" }, 401);
+
+      const db = drizzle(c.env.DB, { schema });
+      const tokenHash = await hashSecret(token);
+      const [invite] = await db
+        .select()
+        .from(dbSchema.teamInvites)
+        .where(eq(dbSchema.teamInvites.tokenHash, tokenHash))
+        .limit(1);
+      if (
+        !invite ||
+        invite.status !== "pending" ||
+        invite.expiresAt < new Date()
+      ) {
+        return c.json({ error: "Invite not found or expired" }, 404);
+      }
+      if (session.user.email.toLowerCase() !== invite.email.toLowerCase()) {
+        return c.json(
+          { error: "Invite email does not match signed-in user" },
+          403,
+        );
+      }
+
+      const [team] = await db
+        .select({ ownerUserId: dbSchema.teams.ownerUserId })
+        .from(dbSchema.teams)
+        .where(eq(dbSchema.teams.id, invite.teamId))
+        .limit(1);
+      if (!team) return c.json({ error: "Invite not found or expired" }, 404);
+
+      const subscription = await ensureTeamSubscriptionRecord(
+        db,
+        team.ownerUserId,
+        invite.teamId,
+      );
+      const { plan } = resolveSubscriptionPlan(subscription);
+      const planLimits = PLAN_LIMITS[plan];
+
+      let member = await getTeamMembership(db, invite.teamId, session.user.id);
+      if (!member) {
+        if (planLimits.maxTeamMembers === 0) {
+          return c.json(
+            {
+              error: "Team collaboration requires a paid plan",
+              code: "teams_requires_paid_plan",
+            },
+            403,
+          );
+        }
+        if (planLimits.maxTeamMembers !== -1) {
+          const usage = await getTeamMemberUsage(db, invite.teamId);
+          if (usage.members >= planLimits.maxTeamMembers) {
+            return c.json(
+              {
+                error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
+                code: "team_member_limit_reached",
+              },
+              403,
+            );
+          }
+        }
+
+        const memberId = crypto.randomUUID();
+        await db.insert(dbSchema.teamMembers).values({
+          id: memberId,
+          teamId: invite.teamId,
+          userId: session.user.id,
+          role: invite.teamRole,
+          invitedByUserId: invite.invitedByUserId,
+        });
+        member = await getTeamMembership(db, invite.teamId, session.user.id);
+      }
+
+      if (member && invite.projectId && invite.projectRole) {
+        const [existingGrant] = await db
+          .select()
+          .from(dbSchema.projectMembers)
+          .where(
+            and(
+              eq(dbSchema.projectMembers.projectId, invite.projectId),
+              eq(dbSchema.projectMembers.teamMemberId, member.id),
+            ),
+          )
+          .limit(1);
+        if (existingGrant) {
+          await db
+            .update(dbSchema.projectMembers)
+            .set({ role: invite.projectRole })
+            .where(eq(dbSchema.projectMembers.id, existingGrant.id));
+        } else {
+          await db.insert(dbSchema.projectMembers).values({
+            id: crypto.randomUUID(),
+            projectId: invite.projectId,
+            teamMemberId: member.id,
+            role: invite.projectRole,
+          });
+        }
+      }
+
+      await db
+        .update(dbSchema.teamInvites)
+        .set({
+          status: "accepted",
+          acceptedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(dbSchema.teamInvites.id, invite.id));
+
+      return c.json({
+        success: true,
+        teamId: invite.teamId,
+        projectId: invite.projectId,
+      });
+    } catch (err) {
+      console.error("Invite accept error:", err);
+      return c.json({ error: "Failed to accept invite" }, 500);
     }
+  })
 
-    const [team] = await db
-      .select({ ownerUserId: dbSchema.teams.ownerUserId })
-      .from(dbSchema.teams)
-      .where(eq(dbSchema.teams.id, invite.teamId))
-      .limit(1);
-    if (!team) return c.json({ error: "Invite not found or expired" }, 404);
+  // ─── Project Members ────────────────────────────────────────────────────────
 
-    const subscription = await ensureTeamSubscriptionRecord(
-      db,
-      team.ownerUserId,
-      invite.teamId,
+  .get("/api/projects/:projectId/members", async (c) => {
+    const projectId = c.req.param("projectId");
+    const access = c.get("projectAccess");
+    const db = c.get("db");
+    if (!access?.teamId) return c.json({ members: [] });
+
+    const members = await db
+      .select({
+        teamMemberId: dbSchema.teamMembers.id,
+        teamRole: dbSchema.teamMembers.role,
+        joinedAt: dbSchema.teamMembers.joinedAt,
+        user: {
+          id: dbSchema.schema.users.id,
+          name: dbSchema.schema.users.name,
+          email: dbSchema.schema.users.email,
+          image: dbSchema.schema.users.image,
+        },
+      })
+      .from(dbSchema.teamMembers)
+      .innerJoin(
+        dbSchema.schema.users,
+        eq(dbSchema.teamMembers.userId, dbSchema.schema.users.id),
+      )
+      .where(eq(dbSchema.teamMembers.teamId, access.teamId));
+
+    const grants = await db
+      .select()
+      .from(dbSchema.projectMembers)
+      .where(eq(dbSchema.projectMembers.projectId, projectId));
+    const grantByTeamMemberId = new Map(
+      grants.map((grant) => [grant.teamMemberId, grant]),
     );
-    const { plan } = resolveSubscriptionPlan(subscription);
-    const planLimits = PLAN_LIMITS[plan];
+    const planLimits = c.get("planLimits");
 
-    let member = await getTeamMembership(db, invite.teamId, session.user.id);
-    if (!member) {
+    return c.json({
+      planLimits: {
+        maxTeamMembers: planLimits.maxTeamMembers,
+        maxCalendarConnections: planLimits.maxCalendarConnections,
+      },
+      members: members.map((member) => ({
+        ...member,
+        projectMember: grantByTeamMemberId.get(member.teamMemberId) ?? null,
+      })),
+    });
+  })
+
+  .post("/api/projects/:projectId/members", async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const access = c.get("projectAccess");
+      const db = c.get("db");
+      if (!access?.teamId) return c.json({ error: "Project has no team" }, 400);
+      const planLimits = c.get("planLimits");
       if (planLimits.maxTeamMembers === 0) {
         return c.json(
           {
@@ -3145,237 +3461,111 @@ const teamRoutes = app
           403,
         );
       }
-      if (planLimits.maxTeamMembers !== -1) {
-        const usage = await getTeamMemberUsage(db, invite.teamId);
-        if (usage.members >= planLimits.maxTeamMembers) {
-          return c.json(
-            {
-              error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
-              code: "team_member_limit_reached",
-            },
-            403,
-          );
-        }
-      }
 
-      const memberId = crypto.randomUUID();
-      await db.insert(dbSchema.teamMembers).values({
-        id: memberId,
-        teamId: invite.teamId,
-        userId: session.user.id,
-        role: invite.teamRole,
-        invitedByUserId: invite.invitedByUserId,
-      });
-      member = await getTeamMembership(db, invite.teamId, session.user.id);
-    }
+      const data = validate(upsertProjectMemberSchema, await c.req.json());
+      const [teamMember] = await db
+        .select()
+        .from(dbSchema.teamMembers)
+        .where(
+          and(
+            eq(dbSchema.teamMembers.id, data.teamMemberId),
+            eq(dbSchema.teamMembers.teamId, access.teamId),
+          ),
+        )
+        .limit(1);
+      if (!teamMember) return c.json({ error: "Team member not found" }, 404);
 
-    if (member && invite.projectId && invite.projectRole) {
-      const [existingGrant] = await db
+      const [existing] = await db
         .select()
         .from(dbSchema.projectMembers)
         .where(
           and(
-            eq(dbSchema.projectMembers.projectId, invite.projectId),
-            eq(dbSchema.projectMembers.teamMemberId, member.id),
+            eq(dbSchema.projectMembers.projectId, projectId),
+            eq(dbSchema.projectMembers.teamMemberId, teamMember.id),
           ),
         )
         .limit(1);
-      if (existingGrant) {
+
+      if (existing) {
         await db
           .update(dbSchema.projectMembers)
-          .set({ role: invite.projectRole })
-          .where(eq(dbSchema.projectMembers.id, existingGrant.id));
+          .set({ role: data.role })
+          .where(eq(dbSchema.projectMembers.id, existing.id));
       } else {
         await db.insert(dbSchema.projectMembers).values({
           id: crypto.randomUUID(),
-          projectId: invite.projectId,
-          teamMemberId: member.id,
-          role: invite.projectRole,
+          projectId,
+          teamMemberId: teamMember.id,
+          role: data.role,
         });
       }
+
+      return c.json({ success: true });
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Project member upsert error:", err);
+      return c.json({ error: "Failed to save project member" }, 500);
     }
+  })
 
-    await db
-      .update(dbSchema.teamInvites)
-      .set({ status: "accepted", acceptedAt: new Date(), updatedAt: new Date() })
-      .where(eq(dbSchema.teamInvites.id, invite.id));
+  .patch("/api/projects/:projectId/members/:memberId", async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const memberId = c.req.param("memberId");
+      const db = c.get("db");
+      const planLimits = c.get("planLimits");
+      if (planLimits.maxTeamMembers === 0) {
+        return c.json(
+          {
+            error: "Team collaboration requires a paid plan",
+            code: "teams_requires_paid_plan",
+          },
+          403,
+        );
+      }
 
-    return c.json({ success: true, teamId: invite.teamId, projectId: invite.projectId });
-  } catch (err) {
-    console.error("Invite accept error:", err);
-    return c.json({ error: "Failed to accept invite" }, 500);
-  }
-})
-
-// ─── Project Members ────────────────────────────────────────────────────────
-
-  .get("/api/projects/:projectId/members", async (c) => {
-  const projectId = c.req.param("projectId");
-  const access = c.get("projectAccess");
-  const db = c.get("db");
-  if (!access?.teamId) return c.json({ members: [] });
-
-  const members = await db
-    .select({
-      teamMemberId: dbSchema.teamMembers.id,
-      teamRole: dbSchema.teamMembers.role,
-      joinedAt: dbSchema.teamMembers.joinedAt,
-      user: {
-        id: dbSchema.schema.users.id,
-        name: dbSchema.schema.users.name,
-        email: dbSchema.schema.users.email,
-        image: dbSchema.schema.users.image,
-      },
-    })
-    .from(dbSchema.teamMembers)
-    .innerJoin(
-      dbSchema.schema.users,
-      eq(dbSchema.teamMembers.userId, dbSchema.schema.users.id),
-    )
-    .where(eq(dbSchema.teamMembers.teamId, access.teamId));
-
-  const grants = await db
-    .select()
-    .from(dbSchema.projectMembers)
-    .where(eq(dbSchema.projectMembers.projectId, projectId));
-  const grantByTeamMemberId = new Map(
-    grants.map((grant) => [grant.teamMemberId, grant]),
-  );
-  const planLimits = c.get("planLimits");
-
-  return c.json({
-    planLimits: {
-      maxTeamMembers: planLimits.maxTeamMembers,
-      maxCalendarConnections: planLimits.maxCalendarConnections,
-    },
-    members: members.map((member) => ({
-      ...member,
-      projectMember: grantByTeamMemberId.get(member.teamMemberId) ?? null,
-    })),
-  });
-})
-
-  .post("/api/projects/:projectId/members", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const access = c.get("projectAccess");
-    const db = c.get("db");
-    if (!access?.teamId) return c.json({ error: "Project has no team" }, 400);
-    const planLimits = c.get("planLimits");
-    if (planLimits.maxTeamMembers === 0) {
-      return c.json(
-        {
-          error: "Team collaboration requires a paid plan",
-          code: "teams_requires_paid_plan",
-        },
-        403,
-      );
-    }
-
-    const data = validate(upsertProjectMemberSchema, await c.req.json());
-    const [teamMember] = await db
-      .select()
-      .from(dbSchema.teamMembers)
-      .where(
-        and(
-          eq(dbSchema.teamMembers.id, data.teamMemberId),
-          eq(dbSchema.teamMembers.teamId, access.teamId),
-        ),
-      )
-      .limit(1);
-    if (!teamMember) return c.json({ error: "Team member not found" }, 404);
-
-    const [existing] = await db
-      .select()
-      .from(dbSchema.projectMembers)
-      .where(
-        and(
-          eq(dbSchema.projectMembers.projectId, projectId),
-          eq(dbSchema.projectMembers.teamMemberId, teamMember.id),
-        ),
-      )
-      .limit(1);
-
-    if (existing) {
+      const data = validate(updateProjectMemberSchema, await c.req.json());
+      const [grant] = await db
+        .select()
+        .from(dbSchema.projectMembers)
+        .where(
+          and(
+            eq(dbSchema.projectMembers.id, memberId),
+            eq(dbSchema.projectMembers.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!grant) return c.json({ error: "Project member not found" }, 404);
       await db
         .update(dbSchema.projectMembers)
         .set({ role: data.role })
-        .where(eq(dbSchema.projectMembers.id, existing.id));
-    } else {
-      await db.insert(dbSchema.projectMembers).values({
-        id: crypto.randomUUID(),
-        projectId,
-        teamMemberId: teamMember.id,
-        role: data.role,
-      });
+        .where(eq(dbSchema.projectMembers.id, grant.id));
+      return c.json({ success: true });
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Project member update error:", err);
+      return c.json({ error: "Failed to update project member" }, 500);
     }
+  })
 
-    return c.json({ success: true });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Project member upsert error:", err);
-    return c.json({ error: "Failed to save project member" }, 500);
-  }
-})
-
-  .patch("/api/projects/:projectId/members/:memberId", async (c) => {
-  try {
+  .delete("/api/projects/:projectId/members/:memberId", async (c) => {
     const projectId = c.req.param("projectId");
     const memberId = c.req.param("memberId");
     const db = c.get("db");
-    const planLimits = c.get("planLimits");
-    if (planLimits.maxTeamMembers === 0) {
-      return c.json(
-        {
-          error: "Team collaboration requires a paid plan",
-          code: "teams_requires_paid_plan",
-        },
-        403,
-      );
-    }
-
-    const data = validate(updateProjectMemberSchema, await c.req.json());
-    const [grant] = await db
-      .select()
-      .from(dbSchema.projectMembers)
+    await db
+      .delete(dbSchema.projectMembers)
       .where(
         and(
           eq(dbSchema.projectMembers.id, memberId),
           eq(dbSchema.projectMembers.projectId, projectId),
         ),
-      )
-      .limit(1);
-    if (!grant) return c.json({ error: "Project member not found" }, 404);
-    await db
-      .update(dbSchema.projectMembers)
-      .set({ role: data.role })
-      .where(eq(dbSchema.projectMembers.id, grant.id));
+      );
     return c.json({ success: true });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Project member update error:", err);
-    return c.json({ error: "Failed to update project member" }, 500);
-  }
-})
-
-  .delete("/api/projects/:projectId/members/:memberId", async (c) => {
-  const projectId = c.req.param("projectId");
-  const memberId = c.req.param("memberId");
-  const db = c.get("db");
-  await db
-    .delete(dbSchema.projectMembers)
-    .where(
-      and(
-        eq(dbSchema.projectMembers.id, memberId),
-        eq(dbSchema.projectMembers.projectId, projectId),
-      ),
-    );
-  return c.json({ success: true });
-});
+  });
 
 // ─── Team Billing ───────────────────────────────────────────────────────────
 
@@ -3408,7 +3598,10 @@ app.post("/api/teams/:teamId/billing/checkout", async (c) => {
   try {
     const teamId = c.req.param("teamId");
     const body = await c.req.json();
-    const { plan, interval, successUrl, cancelUrl } = validate(checkoutSchema, body);
+    const { plan, interval, successUrl, cancelUrl } = validate(
+      checkoutSchema,
+      body,
+    );
     const db = c.get("db");
     const user = c.get("user");
     const context = await getTeamAdminContext(db, teamId, user.id);
@@ -3493,12 +3686,13 @@ app.get("/api/projects", async (c) => {
     memberships.map((member) => [member.teamId, member]),
   );
   const membershipIds = memberships.map((member) => member.id);
-  const grants = membershipIds.length > 0
-    ? await db
-        .select()
-        .from(dbSchema.projectMembers)
-        .where(inArray(dbSchema.projectMembers.teamMemberId, membershipIds))
-    : [];
+  const grants =
+    membershipIds.length > 0
+      ? await db
+          .select()
+          .from(dbSchema.projectMembers)
+          .where(inArray(dbSchema.projectMembers.teamMemberId, membershipIds))
+      : [];
   const grantByProjectId = new Map(
     grants.map((grant) => [grant.projectId, grant]),
   );
@@ -3519,7 +3713,8 @@ app.get("/api/projects", async (c) => {
       const team = teamId ? teamById.get(teamId) : null;
       const membership = teamId ? membershipByTeamId.get(teamId) : null;
       const grant = grantByProjectId.get(project.id);
-      const teamRole = membership?.role ?? (project.userId === userId ? "owner" : null);
+      const teamRole =
+        membership?.role ?? (project.userId === userId ? "owner" : null);
       const hasImplicitAccess = teamRole === "owner" || teamRole === "admin";
       const hasLegacyAccess = !teamId && project.userId === userId;
 
@@ -3530,12 +3725,18 @@ app.get("/api/projects", async (c) => {
         teamName: team?.name ?? null,
         teamOwnerUserId: team?.ownerUserId ?? project.userId,
         teamRole,
-        projectRole: grant?.role ?? (hasImplicitAccess || hasLegacyAccess ? "admin" : null),
+        projectRole:
+          grant?.role ??
+          (hasImplicitAccess || hasLegacyAccess ? "admin" : null),
         effectiveProjectRole:
-          hasImplicitAccess || hasLegacyAccess ? "admin" : grant?.role ?? null,
+          hasImplicitAccess || hasLegacyAccess
+            ? "admin"
+            : (grant?.role ?? null),
       };
     })
-    .filter((project): project is NonNullable<typeof project> => project !== null);
+    .filter(
+      (project): project is NonNullable<typeof project> => project !== null,
+    );
 
   return c.json({ projects });
 });
@@ -3745,21 +3946,24 @@ app.put("/api/projects/:projectId", async (c) => {
   }
 });
 
-const projectRoutes = teamRoutes.delete("/api/projects/:projectId", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const db = c.get("db");
+const projectRoutes = teamRoutes.delete(
+  "/api/projects/:projectId",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const db = c.get("db");
 
-    await db
-      .delete(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, projectId));
+      await db
+        .delete(dbSchema.projects)
+        .where(eq(dbSchema.projects.id, projectId));
 
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Project deletion error:", err);
-    return c.json({ error: "Failed to delete project" }, 500);
-  }
-});
+      return c.json({ success: true });
+    } catch (err) {
+      console.error("Project deletion error:", err);
+      return c.json({ error: "Failed to delete project" }, 500);
+    }
+  },
+);
 
 // ─── Uploads (R2) ────────────────────────────────────────────────────────────
 
@@ -4239,16 +4443,27 @@ app.get("/api/projects/:projectId/bookings/:id", async (c) => {
     const bookingId = c.req.param("id");
     const db = c.get("db");
 
-    const [booking] = await db.select().from(dbSchema.bookings).where(eq(dbSchema.bookings.id, bookingId)).limit(1);
+    const [booking] = await db
+      .select()
+      .from(dbSchema.bookings)
+      .where(eq(dbSchema.bookings.id, bookingId))
+      .limit(1);
     if (!booking) return c.json({ error: "Booking not found" }, 404);
 
     // Get event type name
-    const [eventType] = await db.select().from(dbSchema.eventTypes).where(eq(dbSchema.eventTypes.id, booking.eventTypeId)).limit(1);
+    const [eventType] = await db
+      .select()
+      .from(dbSchema.eventTypes)
+      .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
+      .limit(1);
 
     // Get form response fields if exists
     let formFields: Array<{ label: string; type: string; value: string }> = [];
     if (booking.formResponseId) {
-      const fieldValues = await db.select().from(dbSchema.formFieldValues).where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
+      const fieldValues = await db
+        .select()
+        .from(dbSchema.formFieldValues)
+        .where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
       for (const fv of fieldValues) {
         const [field] = await db
           .select()
@@ -4260,11 +4475,19 @@ app.get("/api/projects/:projectId/bookings/:id", async (c) => {
             ),
           )
           .limit(1);
-        formFields.push({ label: field?.label ?? "Unknown", type: field?.type ?? "text", value: fv.value ?? "" });
+        formFields.push({
+          label: field?.label ?? "Unknown",
+          type: field?.type ?? "text",
+          value: fv.value ?? "",
+        });
       }
     }
 
-    return c.json({ booking, eventTypeName: eventType?.name ?? "Event", formFields });
+    return c.json({
+      booking,
+      eventTypeName: eventType?.name ?? "Event",
+      formFields,
+    });
   } catch (err) {
     console.error("Booking detail error:", err);
     return c.json({ error: "Failed to fetch booking" }, 500);
@@ -4338,7 +4561,11 @@ app.get("/api/projects/:projectId/bookings/:id/form-response", async (c) => {
         )
         .limit(1);
       if (field) {
-        allFieldDefs.push({ id: field.id, label: field.label, type: field.type });
+        allFieldDefs.push({
+          id: field.id,
+          label: field.label,
+          type: field.type,
+        });
       }
     }
 
@@ -4761,38 +4988,35 @@ app.get(
   },
 );
 
-app.delete(
-  "/api/projects/:projectId/form-responses/:id",
-  async (c) => {
-    try {
-      const id = c.req.param("id");
-      const db = c.get("db");
+app.delete("/api/projects/:projectId/form-responses/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const db = c.get("db");
 
-      const existing = await db
-        .select({ id: dbSchema.formResponses.id })
-        .from(dbSchema.formResponses)
-        .where(eq(dbSchema.formResponses.id, id))
-        .get();
+    const existing = await db
+      .select({ id: dbSchema.formResponses.id })
+      .from(dbSchema.formResponses)
+      .where(eq(dbSchema.formResponses.id, id))
+      .get();
 
-      if (!existing) {
-        return c.json({ error: "Form response not found" }, 404);
-      }
-
-      // Delete field values first, then the response
-      await db
-        .delete(dbSchema.formFieldValues)
-        .where(eq(dbSchema.formFieldValues.responseId, id));
-      await db
-        .delete(dbSchema.formResponses)
-        .where(eq(dbSchema.formResponses.id, id));
-
-      return c.json({ success: true });
-    } catch (err) {
-      console.error("Delete form response error:", err);
-      return c.json({ error: "Failed to delete form response" }, 500);
+    if (!existing) {
+      return c.json({ error: "Form response not found" }, 404);
     }
-  },
-);
+
+    // Delete field values first, then the response
+    await db
+      .delete(dbSchema.formFieldValues)
+      .where(eq(dbSchema.formFieldValues.responseId, id));
+    await db
+      .delete(dbSchema.formResponses)
+      .where(eq(dbSchema.formResponses.id, id));
+
+    return c.json({ success: true });
+  } catch (err) {
+    console.error("Delete form response error:", err);
+    return c.json({ error: "Failed to delete form response" }, 500);
+  }
+});
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
 
@@ -4909,7 +5133,8 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
       tagIds: tagIds.length > 0 ? tagIds : undefined,
       matchAllTags,
       activityType:
-        activityType && (validActivity as readonly string[]).includes(activityType)
+        activityType &&
+        (validActivity as readonly string[]).includes(activityType)
           ? (activityType as (typeof validActivity)[number])
           : undefined,
       activitySinceDays:
@@ -4921,7 +5146,8 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
           ? parsedNoActivitySince
           : undefined,
       bookingStatus:
-        bookingStatus && (validBooking as readonly string[]).includes(bookingStatus)
+        bookingStatus &&
+        (validBooking as readonly string[]).includes(bookingStatus)
           ? (bookingStatus as (typeof validBooking)[number])
           : undefined,
     },
@@ -5030,7 +5256,13 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
     }
 
     // Creates + fires new_contact_created (no duplicate exists at this point).
-    const { contact } = await ensureContact(db, c.env, projectId, data, "manual");
+    const { contact } = await ensureContact(
+      db,
+      c.env,
+      projectId,
+      data,
+      "manual",
+    );
     return c.json({ contact }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
@@ -5403,13 +5635,18 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     if (!(await service.contactInProject(projectId, contactId))) {
       return c.json({ error: "Contact not found" }, 404);
     }
-    const ent = await resolveProjectEntitlements(db, projectId, { ensureSubscription: true });
+    const ent = await resolveProjectEntitlements(db, projectId, {
+      ensureSubscription: true,
+    });
     if (!ent) return c.json({ error: "Project not found" }, 404);
     const limit = ent.planLimits.maxEnrichmentsPerMonth;
     const now = new Date();
     const used = await getEnrichmentUsage(db, ent.ownerUserId, now);
     if (limit !== -1 && used >= limit) {
-      return c.json({ error: "Monthly enrichment limit reached", used, limit }, 403);
+      return c.json(
+        { error: "Monthly enrichment limit reached", used, limit },
+        403,
+      );
     }
     // Run the research inline and return the enriched contact so the client can
     // show the new fields immediately — no queue, no polling. Usage is only
@@ -5419,7 +5656,12 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     await incrementEnrichmentUsage(db, ent.ownerUserId, now);
     const contact = await service.getById(contactId);
     const remaining = limit === -1 ? -1 : Math.max(0, limit - (used + 1));
-    return c.json({ success: true, contact, remaining, unlimited: limit === -1 });
+    return c.json({
+      success: true,
+      contact,
+      remaining,
+      unlimited: limit === -1,
+    });
   } catch (err) {
     console.error("Enrich error:", err);
     // AI SDK errors surface as `AI_*` names (e.g. AI_APICallError for a bad key,
@@ -5443,7 +5685,12 @@ app.get("/api/projects/:projectId/enrichment-usage", async (c) => {
   const limit = ent.planLimits.maxEnrichmentsPerMonth;
   const used = await getEnrichmentUsage(db, ent.ownerUserId, new Date());
   const unlimited = limit === -1;
-  return c.json({ used, limit, remaining: unlimited ? -1 : Math.max(0, limit - used), unlimited });
+  return c.json({
+    used,
+    limit,
+    remaining: unlimited ? -1 : Math.max(0, limit - used),
+    unlimited,
+  });
 });
 
 app.post("/api/projects/:projectId/pipeline/seed", async (c) => {
@@ -5700,7 +5947,13 @@ app.post(
       }
 
       if (workflow.trigger !== "manual" && workflow.trigger !== "scheduled") {
-        return c.json({ error: "Only manual or scheduled workflows can be triggered via this endpoint" }, 400);
+        return c.json(
+          {
+            error:
+              "Only manual or scheduled workflows can be triggered via this endpoint",
+          },
+          400,
+        );
       }
 
       if (workflow.status !== "active") {
@@ -5733,7 +5986,11 @@ app.post(
           contactEmail: contact.email ?? undefined,
           contactName: contact.name ?? undefined,
         };
-        const runId = await executionService.dispatchTestRun(workflowId, context, c.env as AppEnv);
+        const runId = await executionService.dispatchTestRun(
+          workflowId,
+          context,
+          c.env as AppEnv,
+        );
         started = runId ? 1 : 0;
       } else {
         const config = parseWorkflowTriggerConfig(workflow.triggerConfig);
@@ -5746,7 +6003,13 @@ app.post(
       }
 
       if (started === 0) {
-        return c.json({ error: "No runs started — the workflow has no steps or no contacts match the filter" }, 400);
+        return c.json(
+          {
+            error:
+              "No runs started — the workflow has no steps or no contacts match the filter",
+          },
+          400,
+        );
       }
 
       return c.json({ success: true, started }, 201);
@@ -5758,109 +6021,116 @@ app.post(
 );
 
 // Test-run any workflow (no trigger-type or status restrictions)
-app.post(
-  "/api/projects/:projectId/workflows/:workflowId/test",
-  async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const workflowId = c.req.param("workflowId");
+app.post("/api/projects/:projectId/workflows/:workflowId/test", async (c) => {
+  try {
+    const projectId = c.req.param("projectId");
+    const workflowId = c.req.param("workflowId");
 
-      const db = c.get("db");
-      const service = new WorkflowService(db);
-      const workflow = await service.getById(workflowId);
+    const db = c.get("db");
+    const service = new WorkflowService(db);
+    const workflow = await service.getById(workflowId);
 
-      if (!workflow) {
-        return c.json({ error: "Workflow not found" }, 404);
-      }
+    if (!workflow) {
+      return c.json({ error: "Workflow not found" }, 404);
+    }
 
-      const body = await c.req.json().catch(() => ({}));
-      const { contactId, tagId } = body as { contactId?: string; tagId?: string };
+    const body = await c.req.json().catch(() => ({}));
+    const { contactId, tagId } = body as { contactId?: string; tagId?: string };
 
-      if (!contactId) {
-        return c.json({ error: "contactId is required" }, 400);
-      }
+    if (!contactId) {
+      return c.json({ error: "contactId is required" }, 400);
+    }
 
-      if (workflow.trigger === "tag_added" && !tagId) {
-        return c.json({ error: "tagId is required for tag_added workflows" }, 400);
-      }
+    if (workflow.trigger === "tag_added" && !tagId) {
+      return c.json(
+        { error: "tagId is required for tag_added workflows" },
+        400,
+      );
+    }
 
-      // Look up contact details for context
-      const contactService = new ContactService(db);
-      const contact = await contactService.getById(contactId);
-      if (!contact) {
-        return c.json({ error: "Contact not found" }, 404);
-      }
+    // Look up contact details for context
+    const contactService = new ContactService(db);
+    const contact = await contactService.getById(contactId);
+    if (!contact) {
+      return c.json({ error: "Contact not found" }, 404);
+    }
 
-      const context: TriggerContext = {
-        projectId,
-        contactId: contact.id,
-        contactEmail: contact.email ?? undefined,
-        contactName: contact.name ?? undefined,
-        tagId,
-      };
+    const context: TriggerContext = {
+      projectId,
+      contactId: contact.id,
+      contactEmail: contact.email ?? undefined,
+      contactName: contact.name ?? undefined,
+      tagId,
+    };
 
-      // For form_submitted test runs, seed metadata.formFields from the
-      // contact's most recent form response so {{form.fields.*}} and any
-      // step inputs that reference form fields resolve during the test.
-      if (workflow.trigger === "form_submitted" && contact.email) {
-        const [latestResponse] = await db
-          .select({ id: dbSchema.formResponses.id })
-          .from(dbSchema.formResponses)
-          .innerJoin(dbSchema.forms, eq(dbSchema.formResponses.formId, dbSchema.forms.id))
-          .where(
+    // For form_submitted test runs, seed metadata.formFields from the
+    // contact's most recent form response so {{form.fields.*}} and any
+    // step inputs that reference form fields resolve during the test.
+    if (workflow.trigger === "form_submitted" && contact.email) {
+      const [latestResponse] = await db
+        .select({ id: dbSchema.formResponses.id })
+        .from(dbSchema.formResponses)
+        .innerJoin(
+          dbSchema.forms,
+          eq(dbSchema.formResponses.formId, dbSchema.forms.id),
+        )
+        .where(
+          and(
+            eq(dbSchema.forms.projectId, projectId),
+            eq(dbSchema.formResponses.respondentEmail, contact.email),
+          ),
+        )
+        .orderBy(desc(dbSchema.formResponses.createdAt))
+        .limit(1);
+
+      if (latestResponse) {
+        context.formResponseId = latestResponse.id;
+        const values = await db
+          .select({
+            fieldId: dbSchema.formFieldValues.fieldId,
+            label: dbSchema.formFields.label,
+            value: dbSchema.formFieldValues.value,
+          })
+          .from(dbSchema.formFieldValues)
+          .innerJoin(
+            dbSchema.formFields,
             and(
-              eq(dbSchema.forms.projectId, projectId),
-              eq(dbSchema.formResponses.respondentEmail, contact.email),
+              eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+              eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
             ),
           )
-          .orderBy(desc(dbSchema.formResponses.createdAt))
-          .limit(1);
+          .where(eq(dbSchema.formFieldValues.responseId, latestResponse.id));
 
-        if (latestResponse) {
-          context.formResponseId = latestResponse.id;
-          const values = await db
-            .select({
-              fieldId: dbSchema.formFieldValues.fieldId,
-              label: dbSchema.formFields.label,
-              value: dbSchema.formFieldValues.value,
-            })
-            .from(dbSchema.formFieldValues)
-            .innerJoin(
-              dbSchema.formFields,
-              and(
-                eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
-                eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
-              ),
-            )
-            .where(eq(dbSchema.formFieldValues.responseId, latestResponse.id));
-
-          const formFields: Record<string, string> = {};
-          for (const row of values) {
-            if (!row.value) continue;
-            formFields[row.fieldId] = row.value;
-            const labelSlug = slugifyFormFieldKey(row.label);
-            if (labelSlug && !(labelSlug in formFields)) {
-              formFields[labelSlug] = row.value;
-            }
+        const formFields: Record<string, string> = {};
+        for (const row of values) {
+          if (!row.value) continue;
+          formFields[row.fieldId] = row.value;
+          const labelSlug = slugifyFormFieldKey(row.label);
+          if (labelSlug && !(labelSlug in formFields)) {
+            formFields[labelSlug] = row.value;
           }
-          context.metadata = { ...(context.metadata ?? {}), formFields };
         }
+        context.metadata = { ...(context.metadata ?? {}), formFields };
       }
-
-      const executionService = new WorkflowExecutionService(db);
-      const runId = await executionService.dispatchTestRun(workflowId, context, c.env as AppEnv);
-
-      if (!runId) {
-        return c.json({ error: "Workflow has no steps" }, 400);
-      }
-
-      return c.json({ success: true, runId }, 201);
-    } catch (err) {
-      console.error("Workflow test-run error:", err);
-      return c.json({ error: "Failed to test-run workflow" }, 500);
     }
-  },
-);
+
+    const executionService = new WorkflowExecutionService(db);
+    const runId = await executionService.dispatchTestRun(
+      workflowId,
+      context,
+      c.env as AppEnv,
+    );
+
+    if (!runId) {
+      return c.json({ error: "Workflow has no steps" }, 400);
+    }
+
+    return c.json({ success: true, runId }, 201);
+  } catch (err) {
+    console.error("Workflow test-run error:", err);
+    return c.json({ error: "Failed to test-run workflow" }, 500);
+  }
+});
 
 // ─── API Keys ────────────────────────────────────────────────────────────────
 
@@ -5870,7 +6140,10 @@ app.get("/api/projects/:projectId/api-keys", async (c) => {
     const db = c.get("db");
     const planLimits = c.get("planLimits");
     if (!planLimits.apiAccess) {
-      return c.json({ error: "API access requires a Pro or Business plan" }, 403);
+      return c.json(
+        { error: "API access requires a Pro or Business plan" },
+        403,
+      );
     }
     const service = new ApiKeyService(db);
     const apiKeys = await service.list(projectId);
@@ -5890,7 +6163,10 @@ app.post("/api/projects/:projectId/api-keys", async (c) => {
     const db = c.get("db");
     const planLimits = c.get("planLimits");
     if (!planLimits.apiAccess) {
-      return c.json({ error: "API access requires a Pro or Business plan" }, 403);
+      return c.json(
+        { error: "API access requires a Pro or Business plan" },
+        403,
+      );
     }
     const service = new ApiKeyService(db);
     const result = await service.create(projectId, data.label);
@@ -5912,7 +6188,10 @@ app.delete("/api/projects/:projectId/api-keys/:id", async (c) => {
     const db = c.get("db");
     const planLimits = c.get("planLimits");
     if (!planLimits.apiAccess) {
-      return c.json({ error: "API access requires a Pro or Business plan" }, 403);
+      return c.json(
+        { error: "API access requires a Pro or Business plan" },
+        403,
+      );
     }
     const service = new ApiKeyService(db);
     await service.delete(projectId, id);
@@ -5954,7 +6233,9 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
 
       if (existing.length >= planLimits.maxCalendarConnections) {
         return c.json(
-          { error: `Plan limit reached: maximum ${planLimits.maxCalendarConnections} calendar connection(s)` },
+          {
+            error: `Plan limit reached: maximum ${planLimits.maxCalendarConnections} calendar connection(s)`,
+          },
           403,
         );
       }
@@ -5971,7 +6252,9 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
 
     // Encode projectId + optional returnUrl in OAuth state param
     const body = await c.req.json().catch(() => ({}));
-    const returnUrl = (body as Record<string, unknown>).returnUrl as string | undefined;
+    const returnUrl = (body as Record<string, unknown>).returnUrl as
+      | string
+      | undefined;
     const state = JSON.stringify({ projectId, returnUrl });
 
     const url = calendarService.getOAuthUrl(redirectUri, state);
@@ -5996,7 +6279,10 @@ app.get("/api/integrations/gcal/callback", async (c) => {
     let returnUrl: string | undefined;
     if (stateParam) {
       try {
-        const parsed = JSON.parse(stateParam) as { projectId?: string; returnUrl?: string };
+        const parsed = JSON.parse(stateParam) as {
+          projectId?: string;
+          returnUrl?: string;
+        };
         projectId = parsed.projectId;
         returnUrl = parsed.returnUrl;
       } catch {
@@ -6030,7 +6316,10 @@ app.get("/api/integrations/gcal/callback", async (c) => {
 
     if (projectId) {
       const [project] = await db
-        .select({ teamId: dbSchema.projects.teamId, userId: dbSchema.projects.userId })
+        .select({
+          teamId: dbSchema.projects.teamId,
+          userId: dbSchema.projects.userId,
+        })
         .from(dbSchema.projects)
         .where(eq(dbSchema.projects.id, projectId))
         .limit(1);
@@ -6092,7 +6381,9 @@ app.get("/api/projects/:projectId/calendar/connections", async (c) => {
           createdByUserId: dbSchema.calendarConnections.userId,
         })
         .from(dbSchema.calendarConnections)
-        .where(eq(dbSchema.calendarConnections.userId, c.get("effectiveUserId")));
+        .where(
+          eq(dbSchema.calendarConnections.userId, c.get("effectiveUserId")),
+        );
 
   return c.json({ connections: rows });
 });
@@ -6141,10 +6432,16 @@ app.delete("/api/projects/:projectId/calendar/connections/:id", async (c) => {
 
     const inUse = eventTypes.some((eventType) => {
       if (eventType.destinationConnectionId === id) return true;
-      if (parseBusyCalendars(eventType.busyCalendars).some((ref) => ref.connectionId === id)) {
+      if (
+        parseBusyCalendars(eventType.busyCalendars).some(
+          (ref) => ref.connectionId === id,
+        )
+      ) {
         return true;
       }
-      return parseInviteConnectionIds(eventType.inviteConnectionIds).includes(id);
+      return parseInviteConnectionIds(eventType.inviteConnectionIds).includes(
+        id,
+      );
     });
 
     if (inUse) {
@@ -6170,72 +6467,77 @@ app.delete("/api/projects/:projectId/calendar/connections/:id", async (c) => {
 
 // ─── Calendar: List Sub-Calendars ────────────────────────────────────────────
 
-const calendarRoutes = projectRoutes.get("/api/projects/:projectId/calendar/calendars", async (c) => {
-  try {
-    const access = c.get("projectAccess");
-    const userId = c.get("effectiveUserId");
-    const db = c.get("db");
+const calendarRoutes = projectRoutes.get(
+  "/api/projects/:projectId/calendar/calendars",
+  async (c) => {
+    try {
+      const access = c.get("projectAccess");
+      const userId = c.get("effectiveUserId");
+      const db = c.get("db");
 
-    const connections = access?.teamId
-      ? await db
-          .select({
-            id: dbSchema.calendarConnections.id,
-            email: dbSchema.calendarConnections.email,
-            refreshToken: dbSchema.calendarConnections.refreshToken,
-          })
-          .from(dbSchema.teamCalendarConnections)
-          .innerJoin(
-            dbSchema.calendarConnections,
-            eq(
-              dbSchema.teamCalendarConnections.connectionId,
-              dbSchema.calendarConnections.id,
-            ),
-          )
-          .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
-      : await db
-          .select({
-            id: dbSchema.calendarConnections.id,
-            email: dbSchema.calendarConnections.email,
-            refreshToken: dbSchema.calendarConnections.refreshToken,
-          })
-          .from(dbSchema.calendarConnections)
-          .where(eq(dbSchema.calendarConnections.userId, userId));
+      const connections = access?.teamId
+        ? await db
+            .select({
+              id: dbSchema.calendarConnections.id,
+              email: dbSchema.calendarConnections.email,
+              refreshToken: dbSchema.calendarConnections.refreshToken,
+            })
+            .from(dbSchema.teamCalendarConnections)
+            .innerJoin(
+              dbSchema.calendarConnections,
+              eq(
+                dbSchema.teamCalendarConnections.connectionId,
+                dbSchema.calendarConnections.id,
+              ),
+            )
+            .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
+        : await db
+            .select({
+              id: dbSchema.calendarConnections.id,
+              email: dbSchema.calendarConnections.email,
+              refreshToken: dbSchema.calendarConnections.refreshToken,
+            })
+            .from(dbSchema.calendarConnections)
+            .where(eq(dbSchema.calendarConnections.userId, userId));
 
-    if (connections.length === 0) {
-      return c.json({ accounts: [] });
-    }
-
-    const calendarService = new CalendarService(db, {
-      GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-      GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-    });
-
-    const accounts = [];
-    for (const conn of connections) {
-      try {
-        const accessToken = await calendarService.refreshAccessToken(conn.refreshToken);
-        const calendars = await calendarService.listCalendars(accessToken);
-        accounts.push({
-          connectionId: conn.id,
-          email: conn.email,
-          calendars,
-        });
-      } catch (err) {
-        console.error(`Failed to list calendars for ${conn.email}:`, err);
-        accounts.push({
-          connectionId: conn.id,
-          email: conn.email,
-          calendars: [],
-        });
+      if (connections.length === 0) {
+        return c.json({ accounts: [] });
       }
-    }
 
-    return c.json({ accounts });
-  } catch (err) {
-    console.error("Project calendar list error:", err);
-    return c.json({ error: "Failed to list calendars" }, 500);
-  }
-});
+      const calendarService = new CalendarService(db, {
+        GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
+        GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
+      });
+
+      const accounts = [];
+      for (const conn of connections) {
+        try {
+          const accessToken = await calendarService.refreshAccessToken(
+            conn.refreshToken,
+          );
+          const calendars = await calendarService.listCalendars(accessToken);
+          accounts.push({
+            connectionId: conn.id,
+            email: conn.email,
+            calendars,
+          });
+        } catch (err) {
+          console.error(`Failed to list calendars for ${conn.email}:`, err);
+          accounts.push({
+            connectionId: conn.id,
+            email: conn.email,
+            calendars: [],
+          });
+        }
+      }
+
+      return c.json({ accounts });
+    } catch (err) {
+      console.error("Project calendar list error:", err);
+      return c.json({ error: "Failed to list calendars" }, 500);
+    }
+  },
+);
 
 export const rpcRoutes = calendarRoutes;
 export type AppType = typeof rpcRoutes;
@@ -6262,7 +6564,9 @@ app.get("/api/calendar/calendars", async (c) => {
     const accounts = [];
     for (const conn of connections) {
       try {
-        const accessToken = await calendarService.refreshAccessToken(conn.refreshToken);
+        const accessToken = await calendarService.refreshAccessToken(
+          conn.refreshToken,
+        );
         const calendars = await calendarService.listCalendars(accessToken);
         accounts.push({
           connectionId: conn.id,
@@ -6289,109 +6593,122 @@ app.get("/api/calendar/calendars", async (c) => {
 
 // ─── Calendar: Event Type Calendar Config ────────────────────────────────────
 
-app.get("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const eventTypeId = c.req.param("eventTypeId");
-    const db = c.get("db");
+app.get(
+  "/api/projects/:projectId/event-types/:eventTypeId/calendars",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const eventTypeId = c.req.param("eventTypeId");
+      const db = c.get("db");
 
-    const [eventType] = await db
-      .select()
-      .from(dbSchema.eventTypes)
-      .where(
-        and(
-          eq(dbSchema.eventTypes.id, eventTypeId),
-          eq(dbSchema.eventTypes.projectId, projectId),
+      const [eventType] = await db
+        .select()
+        .from(dbSchema.eventTypes)
+        .where(
+          and(
+            eq(dbSchema.eventTypes.id, eventTypeId),
+            eq(dbSchema.eventTypes.projectId, projectId),
+          ),
+        )
+        .limit(1);
+
+      if (!eventType) {
+        return c.json({ error: "Event type not found" }, 404);
+      }
+
+      return c.json({
+        destination:
+          eventType.destinationConnectionId && eventType.destinationCalendarId
+            ? {
+                connectionId: eventType.destinationConnectionId,
+                calendarId: eventType.destinationCalendarId,
+              }
+            : null,
+        busyCalendars: parseBusyCalendars(eventType.busyCalendars),
+        inviteConnectionIds: parseInviteConnectionIds(
+          eventType.inviteConnectionIds,
         ),
-      )
-      .limit(1);
-
-    if (!eventType) {
-      return c.json({ error: "Event type not found" }, 404);
+      });
+    } catch (err) {
+      console.error("Get event type calendars error:", err);
+      return c.json({ error: "Failed to get calendar config" }, 500);
     }
+  },
+);
 
-    return c.json({
-      destination:
-        eventType.destinationConnectionId && eventType.destinationCalendarId
-        ? {
-            connectionId: eventType.destinationConnectionId,
-            calendarId: eventType.destinationCalendarId,
-          }
-        : null,
-      busyCalendars: parseBusyCalendars(eventType.busyCalendars),
-      inviteConnectionIds: parseInviteConnectionIds(eventType.inviteConnectionIds),
-    });
-  } catch (err) {
-    console.error("Get event type calendars error:", err);
-    return c.json({ error: "Failed to get calendar config" }, 500);
-  }
-});
+app.put(
+  "/api/projects/:projectId/event-types/:eventTypeId/calendars",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const eventTypeId = c.req.param("eventTypeId");
+      const body = await c.req.json();
+      const data = validate(updateEventTypeCalendarsSchema, body);
+      const db = c.get("db");
+      const userId = c.get("effectiveUserId");
+      const access = c.get("projectAccess");
 
-app.put("/api/projects/:projectId/event-types/:eventTypeId/calendars", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const eventTypeId = c.req.param("eventTypeId");
-    const body = await c.req.json();
-    const data = validate(updateEventTypeCalendarsSchema, body);
-    const db = c.get("db");
-    const userId = c.get("effectiveUserId");
-    const access = c.get("projectAccess");
+      const [eventType] = await db
+        .select({ id: dbSchema.eventTypes.id })
+        .from(dbSchema.eventTypes)
+        .where(
+          and(
+            eq(dbSchema.eventTypes.id, eventTypeId),
+            eq(dbSchema.eventTypes.projectId, projectId),
+          ),
+        )
+        .limit(1);
 
-    const [eventType] = await db
-      .select({ id: dbSchema.eventTypes.id })
-      .from(dbSchema.eventTypes)
-      .where(
-        and(
-          eq(dbSchema.eventTypes.id, eventTypeId),
-          eq(dbSchema.eventTypes.projectId, projectId),
-        ),
-      )
-      .limit(1);
+      if (!eventType) {
+        return c.json({ error: "Event type not found" }, 404);
+      }
 
-    if (!eventType) {
-      return c.json({ error: "Event type not found" }, 404);
-    }
+      const connectionIds = [
+        data.destination?.connectionId,
+        ...data.busyCalendars.map((calendar) => calendar.connectionId),
+        ...data.inviteConnectionIds,
+      ].filter((id): id is string => Boolean(id));
 
-    const connectionIds = [
-      data.destination?.connectionId,
-      ...data.busyCalendars.map((calendar) => calendar.connectionId),
-      ...data.inviteConnectionIds,
-    ].filter((id): id is string => Boolean(id));
-
-    const canUseConnections = await projectCanUseCalendarConnections(
-      db,
-      access,
-      userId,
-      connectionIds,
-    );
-    if (!canUseConnections) {
-      return c.json({ error: "Calendar connection is not available to this project" }, 400);
-    }
-
-    await db
-      .update(dbSchema.eventTypes)
-      .set({
-        destinationConnectionId: data.destination?.connectionId ?? null,
-        destinationCalendarId: data.destination?.calendarId ?? null,
-        busyCalendars: serializeBusyCalendars(data.busyCalendars),
-        inviteConnectionIds: serializeInviteConnectionIds(data.inviteConnectionIds),
-      })
-      .where(
-        and(
-          eq(dbSchema.eventTypes.id, eventTypeId),
-          eq(dbSchema.eventTypes.projectId, projectId),
-        ),
+      const canUseConnections = await projectCanUseCalendarConnections(
+        db,
+        access,
+        userId,
+        connectionIds,
       );
+      if (!canUseConnections) {
+        return c.json(
+          { error: "Calendar connection is not available to this project" },
+          400,
+        );
+      }
 
-    return c.json({ success: true });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
+      await db
+        .update(dbSchema.eventTypes)
+        .set({
+          destinationConnectionId: data.destination?.connectionId ?? null,
+          destinationCalendarId: data.destination?.calendarId ?? null,
+          busyCalendars: serializeBusyCalendars(data.busyCalendars),
+          inviteConnectionIds: serializeInviteConnectionIds(
+            data.inviteConnectionIds,
+          ),
+        })
+        .where(
+          and(
+            eq(dbSchema.eventTypes.id, eventTypeId),
+            eq(dbSchema.eventTypes.projectId, projectId),
+          ),
+        );
+
+      return c.json({ success: true });
+    } catch (err) {
+      if (err instanceof Error && err.name === "ZodError") {
+        return c.json({ error: "Invalid request" }, 400);
+      }
+      console.error("Update event type calendars error:", err);
+      return c.json({ error: "Failed to update calendar config" }, 500);
     }
-    console.error("Update event type calendars error:", err);
-    return c.json({ error: "Failed to update calendar config" }, 500);
-  }
-});
+  },
+);
 
 // ─── Activity Feed ───────────────────────────────────────────────────────────
 
@@ -6422,12 +6739,15 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
         eventTypeName: dbSchema.eventTypes.name,
       })
       .from(dbSchema.bookings)
-      .innerJoin(dbSchema.eventTypes, eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id))
+      .innerJoin(
+        dbSchema.eventTypes,
+        eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id),
+      )
       .where(
         and(
           eq(dbSchema.eventTypes.projectId, projectId),
-          gte(dbSchema.bookings.endTime, sql`(unixepoch() - 86400)`)
-        )
+          gte(dbSchema.bookings.endTime, sql`(unixepoch() - 86400)`),
+        ),
       )
       .orderBy(desc(dbSchema.bookings.createdAt))
       .limit(10);
@@ -6444,12 +6764,15 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
         formName: dbSchema.forms.name,
       })
       .from(dbSchema.formResponses)
-      .innerJoin(dbSchema.forms, eq(dbSchema.formResponses.formId, dbSchema.forms.id))
+      .innerJoin(
+        dbSchema.forms,
+        eq(dbSchema.formResponses.formId, dbSchema.forms.id),
+      )
       .where(
         and(
           eq(dbSchema.forms.projectId, projectId),
-          gte(dbSchema.formResponses.createdAt, sql`(unixepoch() - 86400)`)
-        )
+          gte(dbSchema.formResponses.createdAt, sql`(unixepoch() - 86400)`),
+        ),
       )
       .orderBy(desc(dbSchema.formResponses.createdAt))
       .limit(10);
@@ -6483,28 +6806,36 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
                   eq(dbSchema.formFields.type, "text"),
                 ),
               ),
-            )
+            ),
           )
       : [];
     const nameByResponseId = new Map<string, string>();
     // contactMapping="name" rows take priority over label-heuristic rows
     const mappedNameIds = new Set(
-      nameValues.filter((r) => r.contactMapping === "name").map((r) => r.responseId),
+      nameValues
+        .filter((r) => r.contactMapping === "name")
+        .map((r) => r.responseId),
     );
     for (const row of nameValues.sort((a, b) => a.sortOrder - b.sortOrder)) {
       if (!row.value) continue;
-      if (mappedNameIds.has(row.responseId) && row.contactMapping !== "name") continue;
+      if (mappedNameIds.has(row.responseId) && row.contactMapping !== "name")
+        continue;
       const existing = nameByResponseId.get(row.responseId);
-      nameByResponseId.set(row.responseId, existing ? `${existing} ${row.value}` : row.value);
+      nameByResponseId.set(
+        row.responseId,
+        existing ? `${existing} ${row.value}` : row.value,
+      );
     }
 
     const items = [
       ...bookings.map((b) => ({
-        type: "booking" as const, ...b,
+        type: "booking" as const,
+        ...b,
         title: b.eventTypeName,
       })),
       ...responses.map((r) => ({
-        type: "form_response" as const, ...r,
+        type: "form_response" as const,
+        ...r,
         name: nameByResponseId.get(r.id) ?? r.respondentEmail ?? "Anonymous",
         email: r.respondentEmail ?? "",
         title: r.formName,
@@ -6514,7 +6845,11 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
         const now = Date.now();
 
         function parseTs(val: any) {
-          if (typeof val === "string") return new Date(String(val).replace(" ", "T") + (String(val).includes("T") ? "" : "Z")).getTime();
+          if (typeof val === "string")
+            return new Date(
+              String(val).replace(" ", "T") +
+                (String(val).includes("T") ? "" : "Z"),
+            ).getTime();
           return new Date(val).getTime();
         }
 
@@ -6667,7 +7002,10 @@ async function createBillingPortalSession(
 app.post("/api/billing/checkout", async (c) => {
   try {
     const body = await c.req.json();
-    const { plan, interval, successUrl, cancelUrl } = validate(checkoutSchema, body);
+    const { plan, interval, successUrl, cancelUrl } = validate(
+      checkoutSchema,
+      body,
+    );
 
     const user = c.get("user");
     const accountTeamId = c.get("accountTeamId");
@@ -6908,7 +7246,11 @@ app.get("/api/projects/:projectId/analytics/filters", async (c) => {
   try {
     const projectId = c.req.param("projectId");
 
-    const filters = await queryFilterOptions(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, projectId);
+    const filters = await queryFilterOptions(
+      c.env.CF_ACCOUNT_ID,
+      c.env.WAE_API_TOKEN,
+      projectId,
+    );
     return c.json(filters);
   } catch (err) {
     console.error("Analytics filters error:", err);
@@ -6925,8 +7267,14 @@ app.get("/api/projects/:projectId/analytics/overview", async (c) => {
   try {
     const projectId = c.req.param("projectId");
 
-    const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
-    const data = await queryOverview(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
+    const query = validate(
+      analyticsQuerySchema,
+      Object.fromEntries(new URL(c.req.url).searchParams),
+    );
+    const data = await queryOverview(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, {
+      projectId,
+      ...query,
+    });
     return c.json(data);
   } catch (err) {
     console.error("Analytics overview error:", err);
@@ -6943,8 +7291,14 @@ app.get("/api/projects/:projectId/analytics/bookings", async (c) => {
   try {
     const projectId = c.req.param("projectId");
 
-    const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
-    const data = await queryBookings(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
+    const query = validate(
+      analyticsQuerySchema,
+      Object.fromEntries(new URL(c.req.url).searchParams),
+    );
+    const data = await queryBookings(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, {
+      projectId,
+      ...query,
+    });
     return c.json(data);
   } catch (err) {
     console.error("Analytics bookings error:", err);
@@ -6961,8 +7315,14 @@ app.get("/api/projects/:projectId/analytics/forms", async (c) => {
   try {
     const projectId = c.req.param("projectId");
 
-    const query = validate(analyticsQuerySchema, Object.fromEntries(new URL(c.req.url).searchParams));
-    const data = await queryForms(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, { projectId, ...query });
+    const query = validate(
+      analyticsQuerySchema,
+      Object.fromEntries(new URL(c.req.url).searchParams),
+    );
+    const data = await queryForms(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, {
+      projectId,
+      ...query,
+    });
     return c.json(data);
   } catch (err) {
     console.error("Analytics forms error:", err);
@@ -6983,7 +7343,10 @@ const LOVABLEHTML_FORWARD_HEADERS = [
   "user-agent",
 ];
 
-async function tryPrerender(req: Request, apiKey: string): Promise<Response | null> {
+async function tryPrerender(
+  req: Request,
+  apiKey: string,
+): Promise<Response | null> {
   const url = req.url;
   if (!apiKey) {
     console.log("[prerender] skip: no api key", url);
@@ -6998,7 +7361,8 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
   // requests from browsers send a specific Accept (e.g. 'text/css,*/*;q=0.1')
   // so they won't match.
   const accept = (req.headers.get("accept") || "").trim();
-  const isHtmlRequest = !accept || accept === "*/*" || accept.includes("text/html");
+  const isHtmlRequest =
+    !accept || accept === "*/*" || accept.includes("text/html");
   if (!isHtmlRequest) {
     console.log("[prerender] skip: non-html accept", accept, url);
     return null;
@@ -7085,7 +7449,10 @@ async function tryPrerender(req: Request, apiKey: string): Promise<Response | nu
 app.use(
   "*",
   except(["/api/*"], async (c) => {
-    const prerendered = await tryPrerender(c.req.raw, c.env.LOVABLEHTML_API_KEY);
+    const prerendered = await tryPrerender(
+      c.req.raw,
+      c.env.LOVABLEHTML_API_KEY,
+    );
     if (prerendered) return prerendered;
     return c.env.ASSETS.fetch(c.req.raw);
   }),
@@ -7143,7 +7510,12 @@ export default {
 
         // If this is a chained wait (delay > 12h), re-enqueue without executing
         if (remainingDelay !== undefined && remainingDelay > 0) {
-          await executionService.continueWait(workflowRunId, stepIndex, remainingDelay, env);
+          await executionService.continueWait(
+            workflowRunId,
+            stepIndex,
+            remainingDelay,
+            env,
+          );
         } else {
           await executionService.executeStep(workflowRunId, stepIndex, env);
         }
