@@ -36,11 +36,13 @@ import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
 import {
   buildFormExperienceModel,
+  getAllFormFields,
   getContactMappedFieldIds,
   shouldCollectDetailsWithForm,
   type ContactMappedFieldIds,
   type FormExperienceForm,
 } from "@/lib/form-experience";
+import { buildBookingPrefill, parseQueryString } from "@/lib/form-prefill";
 import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
@@ -314,6 +316,33 @@ export default function PublicBooking() {
     () => shouldCollectDetailsWithForm(eventType?.settings, bookingForm),
     [eventType?.settings, bookingForm],
   );
+
+  const didPrefill = useRef(false);
+  useEffect(() => {
+    if (!data) return;
+    if (didPrefill.current) return;
+    didPrefill.current = true;
+
+    const fields = bookingForm ? getAllFormFields(bookingForm) : [];
+    const prefill = buildBookingPrefill({
+      fields: fields.map((field) => ({
+        id: field.id,
+        type: field.type,
+        options: field.options,
+      })),
+      query: parseQueryString(window.location.search),
+      nameFieldId: mappedFields.nameFieldId,
+      emailFieldId: mappedFields.emailFieldId,
+    });
+
+    if (Object.keys(prefill.formValues).length > 0) {
+      setFormValues((previous) => ({ ...prefill.formValues, ...previous }));
+    }
+    const { guestName: seededName, guestEmail: seededEmail, guestNotes: seededNotes } = prefill;
+    if (seededName) setGuestName((previous) => previous || seededName);
+    if (seededEmail) setGuestEmail((previous) => previous || seededEmail);
+    if (seededNotes) setGuestNotes((previous) => previous || seededNotes);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mappedFieldIds = useMemo(() => {
     const ids = new Set<string>();
