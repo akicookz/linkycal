@@ -126,18 +126,22 @@ export function buildBookingPrefill(input: BookingPrefillInput): BookingPrefill 
   const formValues = prefillFromQuery(fields, query);
   const fieldIds = new Set(fields.map((field) => field.id));
 
+  function nonBlank(value: string | undefined): string | undefined {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : undefined;
+  }
+
   function reserved(key: string): string | undefined {
     if (fieldIds.has(key)) return undefined;
-    const value = firstValue(query[key]);
-    if (value === undefined) return undefined;
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
+    return nonBlank(firstValue(query[key]));
   }
 
   const guestName =
-    (nameFieldId ? formValues[nameFieldId] : undefined) ?? reserved("name");
+    nonBlank(nameFieldId ? formValues[nameFieldId] : undefined) ??
+    reserved("name");
   const guestEmail =
-    (emailFieldId ? formValues[emailFieldId] : undefined) ?? reserved("email");
+    nonBlank(emailFieldId ? formValues[emailFieldId] : undefined) ??
+    reserved("email");
 
   return {
     formValues,

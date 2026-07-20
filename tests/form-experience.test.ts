@@ -367,6 +367,71 @@ describe("shouldCollectDetailsWithForm", () => {
     expect(shouldCollectDetailsWithForm("yes", mappedForm)).toBe(false);
   });
 
+  test("false when a mapped field is visibility-gated", () => {
+    const gatedField = form({
+      steps: [
+        {
+          id: "s1",
+          sortOrder: 0,
+          title: null,
+          description: null,
+          richDescription: null,
+          settings: null,
+          visibility: null,
+          fields: [
+            field("full-name", { contactMapping: "name" }),
+            field("work-email", {
+              sortOrder: 1,
+              contactMapping: "email",
+              visibility: {
+                when: "all",
+                rules: [{ fieldId: "full-name", operator: "equals", value: "x" }],
+              },
+            }),
+          ],
+        },
+      ],
+    });
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, gatedField),
+    ).toBe(false);
+  });
+
+  test("false when a mapped field's step is visibility-gated", () => {
+    const gatedStep = form({
+      steps: [
+        {
+          id: "s1",
+          sortOrder: 0,
+          title: null,
+          description: null,
+          richDescription: null,
+          settings: null,
+          visibility: null,
+          fields: [field("full-name", { contactMapping: "name" })],
+        },
+        {
+          id: "s2",
+          sortOrder: 1,
+          title: null,
+          description: null,
+          richDescription: null,
+          settings: null,
+          visibility: {
+            when: "all",
+            rules: [{ fieldId: "full-name", operator: "equals", value: "x" }],
+          },
+          fields: [
+            field("work-email", { stepId: "s2", contactMapping: "email" }),
+          ],
+        },
+      ],
+    });
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, gatedStep),
+    ).toBe(false);
+  });
+
   test("false when a mapping is missing", () => {
     const nameOnly = form({
       steps: [

@@ -131,6 +131,23 @@ export function getContactMappedFieldIds(
   return result;
 }
 
+export function formSupportsMergedDetails(form: FormExperienceForm): boolean {
+  const mapped = getContactMappedFieldIds(form);
+  if (!mapped.nameFieldId || !mapped.emailFieldId) return false;
+  // A visibility-gated mapped field could be hidden mid-flow, leaving the
+  // merged booking with no way to collect name/email — only merge when the
+  // mapped fields are unconditionally visible.
+  for (const step of form.steps) {
+    for (const field of step.fields) {
+      if (field.id !== mapped.nameFieldId && field.id !== mapped.emailFieldId) {
+        continue;
+      }
+      if (field.visibility || step.visibility) return false;
+    }
+  }
+  return true;
+}
+
 export function shouldCollectDetailsWithForm(
   settings: unknown,
   form: FormExperienceForm | null | undefined,
@@ -140,8 +157,7 @@ export function shouldCollectDetailsWithForm(
   if ((settings as Record<string, unknown>).collectDetailsWithForm !== true) {
     return false;
   }
-  const mapped = getContactMappedFieldIds(form);
-  return !!mapped.nameFieldId && !!mapped.emailFieldId;
+  return formSupportsMergedDetails(form);
 }
 
 export function getCompletionField(

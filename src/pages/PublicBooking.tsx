@@ -341,7 +341,7 @@ export default function PublicBooking() {
     const { guestName: seededName, guestEmail: seededEmail, guestNotes: seededNotes } = prefill;
     if (seededName) setGuestName((previous) => previous || seededName);
     if (seededEmail) setGuestEmail((previous) => previous || seededEmail);
-    if (seededNotes) setGuestNotes((previous) => previous || seededNotes);
+    if (seededNotes && !mergeDetails) setGuestNotes((previous) => previous || seededNotes);
   }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mappedFieldIds = useMemo(() => {
@@ -553,7 +553,11 @@ export default function PublicBooking() {
   }
 
   async function handleBook(): Promise<boolean> {
-    if (!selectedSlot || !guestName || !guestEmail || !eventSlug || !projectSlug) {
+    if (!selectedSlot || !eventSlug || !projectSlug) {
+      return false;
+    }
+    if (!guestName || !guestEmail) {
+      setBookingError("Please provide your name and email");
       return false;
     }
     setSubmitting(true);
@@ -564,7 +568,9 @@ export default function PublicBooking() {
         projectSlug, eventTypeSlug: eventSlug,
         startTime: selectedSlot.start,
         name: guestName, email: guestEmail,
-        notes: guestNotes || undefined,
+        // Merged mode has no Notes input, so never attach notes the booker
+        // couldn't see (e.g. seeded from a crafted ?notes= link).
+        notes: mergeDetails ? undefined : guestNotes || undefined,
         timezone,
         website: spamField,
         _token: formToken,

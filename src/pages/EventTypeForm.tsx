@@ -49,7 +49,7 @@ import {
 import { queryClient } from "@/lib/query-client";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 import {
-  getContactMappedFieldIds,
+  formSupportsMergedDetails,
   type FormExperienceForm,
 } from "@/lib/form-experience";
 
@@ -283,26 +283,26 @@ export default function EventTypeForm() {
     enabled: !!projectId,
   });
 
-  // Full definition of the selected booking form, to gate the collect-details toggle
-  const { data: selectedFormData } = useQuery<{ form: FormExperienceForm }>({
+  // Full definition of the selected booking form, to gate the collect-details
+  // toggle. Shares FormBuilder's query key, so it must store the same unwrapped
+  // form shape or it poisons the builder's cache (and vice versa).
+  const { data: selectedFormData } = useQuery<FormExperienceForm>({
     queryKey: ["projects", projectId, "forms", formData.bookingFormId],
     queryFn: async () => {
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formData.bookingFormId}`,
       );
       if (!res.ok) throw new Error("Failed to fetch form");
-      return res.json();
+      const data = await res.json();
+      return data.form ?? data;
     },
     enabled: !!projectId && !!formData.bookingFormId,
   });
 
   const selectedForm =
-    formData.bookingFormId && selectedFormData ? selectedFormData.form : null;
-  const selectedFormMapping = selectedForm
-    ? getContactMappedFieldIds(selectedForm)
-    : null;
+    formData.bookingFormId && selectedFormData ? selectedFormData : null;
   const canCollectDetailsWithForm =
-    !!selectedFormMapping?.nameFieldId && !!selectedFormMapping?.emailFieldId;
+    !!selectedForm && formSupportsMergedDetails(selectedForm);
 
   // Fetch connected calendar accounts
   const { data: calendarAccounts } = useQuery<{

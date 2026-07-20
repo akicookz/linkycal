@@ -3,7 +3,6 @@ import { describe, expect, test } from "bun:test";
 import {
   buildBookingPrefill,
   prefillFromQuery,
-  parseQueryString,
   type FormPrefillField,
 } from "../../src/lib/form-prefill";
 
@@ -17,9 +16,6 @@ describe("prefillFromQuery", () => {
     const fields: FormPrefillField[] = [{ id: "upload", type: "file" }];
     expect(prefillFromQuery(fields, { upload: "https://x/y.pdf" })).toEqual({});
   });
-});
-
-describe("parseQueryString", () => {
 });
 
 describe("buildBookingPrefill", () => {
@@ -79,5 +75,14 @@ describe("buildBookingPrefill", () => {
     });
     expect(result.guestName).toBeUndefined();
     expect(result.guestNotes).toBeUndefined();
+  });
+
+  test("blank mapped-field values fall back to reserved params", () => {
+    const result = buildBookingPrefill({
+      fields: [textField("full-name")],
+      query: { "full-name": "   ", name: "Ada Lovelace" },
+      nameFieldId: "full-name",
+    });
+    expect(result.guestName).toBe("Ada Lovelace");
   });
 });
