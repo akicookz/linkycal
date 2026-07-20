@@ -3,6 +3,8 @@ import { describe, expect, test } from "bun:test";
 import {
   buildFormExperienceModel,
   createFormTransitionLock,
+  getContactMappedFieldIds,
+  shouldCollectDetailsWithForm,
   type FormExperienceField,
   type FormExperienceForm,
 } from "../src/lib/form-experience";
@@ -259,5 +261,97 @@ describe("createFormTransitionLock", () => {
     release(true);
     expect(await first).toBe(true);
     expect(lock.isLocked()).toBe(false);
+  });
+});
+
+describe("getContactMappedFieldIds", () => {
+  test("returns the first name- and email-mapped field ids", () => {
+    const model = form({
+      steps: [
+        {
+          id: "s1",
+          sortOrder: 0,
+          title: null,
+          description: null,
+          richDescription: null,
+          settings: null,
+          visibility: null,
+          fields: [
+            field("full-name", { contactMapping: "name" }),
+            field("work-email", { sortOrder: 1, contactMapping: "email" }),
+            field("alt-email", { sortOrder: 2, contactMapping: "email" }),
+          ],
+        },
+      ],
+    });
+    expect(getContactMappedFieldIds(model)).toEqual({
+      nameFieldId: "full-name",
+      emailFieldId: "work-email",
+    });
+  });
+
+  test("returns empty object when nothing is mapped", () => {
+    expect(getContactMappedFieldIds(form())).toEqual({});
+  });
+});
+
+describe("shouldCollectDetailsWithForm", () => {
+  const mappedForm = form({
+    steps: [
+      {
+        id: "s1",
+        sortOrder: 0,
+        title: null,
+        description: null,
+        richDescription: null,
+        settings: null,
+        visibility: null,
+        fields: [
+          field("full-name", { contactMapping: "name" }),
+          field("work-email", { sortOrder: 1, contactMapping: "email" }),
+        ],
+      },
+    ],
+  });
+
+  test("true when flag is on and form maps name and email", () => {
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, mappedForm),
+    ).toBe(true);
+  });
+
+  test("false without a form", () => {
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, null),
+    ).toBe(false);
+  });
+
+  test("false when settings are missing or the flag is off", () => {
+    expect(shouldCollectDetailsWithForm(null, mappedForm)).toBe(false);
+    expect(shouldCollectDetailsWithForm(undefined, mappedForm)).toBe(false);
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: false }, mappedForm),
+    ).toBe(false);
+    expect(shouldCollectDetailsWithForm("yes", mappedForm)).toBe(false);
+  });
+
+  test("false when a mapping is missing", () => {
+    const nameOnly = form({
+      steps: [
+        {
+          id: "s1",
+          sortOrder: 0,
+          title: null,
+          description: null,
+          richDescription: null,
+          settings: null,
+          visibility: null,
+          fields: [field("full-name", { contactMapping: "name" })],
+        },
+      ],
+    });
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, nameOnly),
+    ).toBe(false);
   });
 });

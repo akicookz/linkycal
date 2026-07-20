@@ -108,6 +108,41 @@ export function getAllFormFields(
   return getSortedFormSteps(form).flatMap((step) => step.fields);
 }
 
+export interface ContactMappedFieldIds {
+  nameFieldId?: string;
+  emailFieldId?: string;
+}
+
+export function getContactMappedFieldIds(
+  form: FormExperienceForm,
+): ContactMappedFieldIds {
+  const result: ContactMappedFieldIds = {};
+  for (const step of form.steps) {
+    for (const field of step.fields) {
+      if (field.contactMapping === "name" && !result.nameFieldId) {
+        result.nameFieldId = field.id;
+      }
+      if (field.contactMapping === "email" && !result.emailFieldId) {
+        result.emailFieldId = field.id;
+      }
+    }
+  }
+  return result;
+}
+
+export function shouldCollectDetailsWithForm(
+  settings: unknown,
+  form: FormExperienceForm | null | undefined,
+): boolean {
+  if (!form) return false;
+  if (typeof settings !== "object" || settings === null) return false;
+  if ((settings as Record<string, unknown>).collectDetailsWithForm !== true) {
+    return false;
+  }
+  const mapped = getContactMappedFieldIds(form);
+  return !!mapped.nameFieldId && !!mapped.emailFieldId;
+}
+
 export function getCompletionField(
   form: FormExperienceForm,
 ): FormExperienceField | null {
