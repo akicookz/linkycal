@@ -65,6 +65,7 @@ export interface FormExperienceProps {
   values: Record<string, string>;
   files?: Record<string, File | null>;
   excludedFieldIds?: ReadonlySet<string>;
+  requiredFieldIds?: ReadonlySet<string>;
   submitting: boolean;
   error: string | null;
   theme?: FormExperienceTheme;
@@ -130,6 +131,7 @@ export function FormExperience(props: FormExperienceProps) {
     values,
     files = {},
     excludedFieldIds,
+    requiredFieldIds,
     submitting,
     error,
     theme,
@@ -155,8 +157,9 @@ export function FormExperience(props: FormExperienceProps) {
         values,
         surface,
         excludedFieldIds,
+        requiredFieldIds,
       }),
-    [form, values, surface, excludedFieldIds],
+    [form, values, surface, excludedFieldIds, requiredFieldIds],
   );
   const { steps, screens } = model;
   const currentStep = steps[currentStepIndex];

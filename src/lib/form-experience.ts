@@ -94,6 +94,7 @@ export interface BuildFormExperienceModelInput {
   values: Record<string, string>;
   surface: "standalone" | "booking";
   excludedFieldIds?: ReadonlySet<string>;
+  requiredFieldIds?: ReadonlySet<string>;
 }
 
 export function getSortedFormSteps(
@@ -242,6 +243,7 @@ export function buildFormExperienceModel(
 ): FormExperienceModel {
   const { form, values, surface } = input;
   const excludedFieldIds = input.excludedFieldIds ?? new Set<string>();
+  const requiredFieldIds = input.requiredFieldIds ?? new Set<string>();
   const allSortedSteps = getSortedFormSteps(form);
   const allFields = allSortedSteps.flatMap((step) => step.fields);
   const completionField =
@@ -288,6 +290,11 @@ export function buildFormExperienceModel(
               conditionInputs,
             ) &&
             !excludedFieldIds.has(currentField.id),
+        )
+        .map((currentField) =>
+          requiredFieldIds.has(currentField.id) && !currentField.required
+            ? { ...currentField, required: true }
+            : currentField,
         ),
     }))
     .filter((step) => step.fields.length > 0);

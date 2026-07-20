@@ -237,6 +237,38 @@ describe("buildFormExperienceModel", () => {
       }).hiddenValueFieldIds,
     ).toEqual([]);
   });
+
+  test("requiredFieldIds forces matching fields required in steps and screens", () => {
+    const model = buildFormExperienceModel({
+      form: form(),
+      values: {},
+      surface: "booking",
+      requiredFieldIds: new Set(["first"]),
+    });
+
+    const first = model.steps[0]?.fields.find((f) => f.id === "first");
+    const second = model.steps[0]?.fields.find((f) => f.id === "second");
+    expect(first?.required).toBe(true);
+    expect(second?.required).toBe(false);
+
+    const screen = model.screens.find(
+      (s) => s.kind === "question" && s.field.id === "first",
+    );
+    expect(screen?.kind === "question" && screen.field.required).toBe(true);
+  });
+
+  test("requiredFieldIds does not resurrect excluded fields", () => {
+    const model = buildFormExperienceModel({
+      form: form(),
+      values: {},
+      surface: "booking",
+      excludedFieldIds: new Set(["first"]),
+      requiredFieldIds: new Set(["first"]),
+    });
+    expect(
+      model.steps.flatMap((s) => s.fields).some((f) => f.id === "first"),
+    ).toBe(false);
+  });
 });
 
 describe("createFormTransitionLock", () => {
