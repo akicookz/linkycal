@@ -36,6 +36,9 @@ import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
 import {
   buildFormExperienceModel,
+  getContactMappedFieldIds,
+  shouldCollectDetailsWithForm,
+  type ContactMappedFieldIds,
   type FormExperienceForm,
 } from "@/lib/form-experience";
 import { track } from "@/lib/track";
@@ -62,6 +65,7 @@ interface EventType {
   description: string | null;
   location: string | null;
   color: string;
+  settings?: { collectDetailsWithForm?: boolean } | null;
 }
 
 interface ProjectInfo {
@@ -79,6 +83,8 @@ interface TimeSlot {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+
+const EMPTY_FIELD_ID_SET: ReadonlySet<string> = new Set();
 
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
@@ -299,18 +305,15 @@ export default function PublicBooking() {
   const bookingForm = data?.bookingForm;
   const availableDays = data?.availableDays ?? [];
 
-  const formSteps = bookingForm?.steps ?? [];
+  const mappedFields = useMemo<ContactMappedFieldIds>(
+    () => (bookingForm ? getContactMappedFieldIds(bookingForm) : {}),
+    [bookingForm],
+  );
 
-  const mappedFields = useMemo(() => {
-    const result: { nameFieldId?: string; emailFieldId?: string } = {};
-    for (const s of formSteps) {
-      for (const f of s.fields) {
-        if (f.contactMapping === "name" && !result.nameFieldId) result.nameFieldId = f.id;
-        if (f.contactMapping === "email" && !result.emailFieldId) result.emailFieldId = f.id;
-      }
-    }
-    return result;
-  }, [formSteps]);
+  const mergeDetails = useMemo(
+    () => shouldCollectDetailsWithForm(eventType?.settings, bookingForm),
+    [eventType?.settings, bookingForm],
+  );
 
   const mappedFieldIds = useMemo(() => {
     const ids = new Set<string>();
@@ -319,6 +322,9 @@ export default function PublicBooking() {
     return ids;
   }, [mappedFields]);
 
+  const excludedFieldIds = mergeDetails ? EMPTY_FIELD_ID_SET : mappedFieldIds;
+  const requiredFieldIds = mergeDetails ? mappedFieldIds : undefined;
+
   const bookingFormModel = useMemo(
     () =>
       bookingForm
@@ -326,10 +332,11 @@ export default function PublicBooking() {
             form: bookingForm,
             values: formValues,
             surface: "booking",
-            excludedFieldIds: mappedFieldIds,
+            excludedFieldIds,
+            requiredFieldIds,
           })
         : null,
-    [bookingForm, formValues, mappedFieldIds],
+    [bookingForm, formValues, excludedFieldIds, requiredFieldIds],
   );
   const hasBookingFormContent = bookingFormModel?.hasDisplayContent ?? false;
   const confirmationStep = 4;
@@ -578,6 +585,21 @@ export default function PublicBooking() {
     if (!checkpoint.isFinal) return true;
     return handleBook();
   }
+
+  const honeypotInput = (
+    <div className="sr-only" aria-hidden="true">
+      <label htmlFor="website">Website</label>
+      <input
+        id="website"
+        type="text"
+        name="website"
+        autoComplete="url"
+        tabIndex={-1}
+        value={spamField}
+        onChange={(e) => setSpamField(e.target.value)}
+      />
+    </div>
+  );
 
   const primaryColorStyle: React.CSSProperties | undefined = theme?.primaryBg
     ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg }
@@ -976,7 +998,7 @@ export default function PublicBooking() {
                   )}
                   <Button
                     disabled={!selectedSlot}
-                    onClick={() => setStep(2)}
+                    onClick={() => setStep(mergeDetails ? 3 : 2)}
                     className="px-10"
                     style={primaryStyle}
                   >
@@ -1003,18 +1025,7 @@ export default function PublicBooking() {
               )}
 
               <div className="space-y-4">
-                <div className="sr-only" aria-hidden="true">
-                  <label htmlFor="website">Website</label>
-                  <input
-                    id="website"
-                    type="text"
-                    name="website"
-                    autoComplete="url"
-                    tabIndex={-1}
-                    value={spamField}
-                    onChange={(e) => setSpamField(e.target.value)}
-                  />
-                </div>
+                {honeypotInput}
 
                 <div>
                   <Label htmlFor="name">Name *</Label>
@@ -1095,14 +1106,23 @@ export default function PublicBooking() {
               form={bookingForm}
               surface="booking"
               values={formValues}
-              excludedFieldIds={mappedFieldIds}
+              excludedFieldIds={excludedFieldIds}
+              requiredFieldIds={requiredFieldIds}
               submitting={submitting}
               error={bookingError}
               theme={theme}
+              honeypot={honeypotInput}
               onValueChange={setBookingFormValue}
               onClearFields={clearBookingFormFields}
               onCheckpoint={checkpointBookingForm}
-              onExitBack={() => setStep(2)}
+              onExitBack={() => {
+                if (mergeDetails) {
+                  setStep(1);
+                  if (isMobile) goMobileSubStep("time");
+                } else {
+                  setStep(2);
+                }
+              }}
             />
           )}
 
