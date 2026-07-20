@@ -68,21 +68,19 @@ describe("buildBookingPrefill", () => {
     expect(result.guestEmail).toBe("grace@example.com");
   });
 
-  test("blank reserved params are ignored", () => {
-    const result = buildBookingPrefill({
+  test("blank values are ignored for guests", () => {
+    const blankReserved = buildBookingPrefill({
       fields: [],
       query: { name: "   ", notes: "" },
     });
-    expect(result.guestName).toBeUndefined();
-    expect(result.guestNotes).toBeUndefined();
-  });
+    expect(blankReserved.guestName).toBeUndefined();
+    expect(blankReserved.guestNotes).toBeUndefined();
 
-  test("blank mapped-field values fall back to reserved params", () => {
-    const result = buildBookingPrefill({
+    const blankMapped = buildBookingPrefill({
       fields: [textField("full-name")],
       query: { "full-name": "   ", name: "Ada Lovelace" },
       nameFieldId: "full-name",
     });
-    expect(result.guestName).toBe("Ada Lovelace");
+    expect(blankMapped.guestName).toBe("Ada Lovelace");
   });
 });

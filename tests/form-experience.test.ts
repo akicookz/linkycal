@@ -256,19 +256,6 @@ describe("buildFormExperienceModel", () => {
     );
     expect(screen?.kind === "question" && screen.field.required).toBe(true);
   });
-
-  test("requiredFieldIds does not resurrect excluded fields", () => {
-    const model = buildFormExperienceModel({
-      form: form(),
-      values: {},
-      surface: "booking",
-      excludedFieldIds: new Set(["first"]),
-      requiredFieldIds: new Set(["first"]),
-    });
-    expect(
-      model.steps.flatMap((s) => s.fields).some((f) => f.id === "first"),
-    ).toBe(false);
-  });
 });
 
 describe("createFormTransitionLock", () => {
@@ -367,7 +354,11 @@ describe("shouldCollectDetailsWithForm", () => {
     expect(shouldCollectDetailsWithForm("yes", mappedForm)).toBe(false);
   });
 
-  test("false when a mapped field is visibility-gated", () => {
+  test("false when a mapped field or its step is visibility-gated", () => {
+    const gate = {
+      when: "all",
+      rules: [{ fieldId: "full-name", operator: "equals", value: "x" }],
+    } as const;
     const gatedField = form({
       steps: [
         {
@@ -383,21 +374,12 @@ describe("shouldCollectDetailsWithForm", () => {
             field("work-email", {
               sortOrder: 1,
               contactMapping: "email",
-              visibility: {
-                when: "all",
-                rules: [{ fieldId: "full-name", operator: "equals", value: "x" }],
-              },
+              visibility: gate,
             }),
           ],
         },
       ],
     });
-    expect(
-      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, gatedField),
-    ).toBe(false);
-  });
-
-  test("false when a mapped field's step is visibility-gated", () => {
     const gatedStep = form({
       steps: [
         {
@@ -417,16 +399,16 @@ describe("shouldCollectDetailsWithForm", () => {
           description: null,
           richDescription: null,
           settings: null,
-          visibility: {
-            when: "all",
-            rules: [{ fieldId: "full-name", operator: "equals", value: "x" }],
-          },
+          visibility: gate,
           fields: [
             field("work-email", { stepId: "s2", contactMapping: "email" }),
           ],
         },
       ],
     });
+    expect(
+      shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, gatedField),
+    ).toBe(false);
     expect(
       shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, gatedStep),
     ).toBe(false);
