@@ -106,3 +106,43 @@ export function parseQueryString(search: string): FormPrefillQuery {
   }
   return out;
 }
+
+export interface BookingPrefillInput {
+  fields: FormPrefillField[];
+  query: FormPrefillQuery;
+  nameFieldId?: string;
+  emailFieldId?: string;
+}
+
+export interface BookingPrefill {
+  formValues: Record<string, string>;
+  guestName?: string;
+  guestEmail?: string;
+  guestNotes?: string;
+}
+
+export function buildBookingPrefill(input: BookingPrefillInput): BookingPrefill {
+  const { fields, query, nameFieldId, emailFieldId } = input;
+  const formValues = prefillFromQuery(fields, query);
+  const fieldIds = new Set(fields.map((field) => field.id));
+
+  function reserved(key: string): string | undefined {
+    if (fieldIds.has(key)) return undefined;
+    const value = firstValue(query[key]);
+    if (value === undefined) return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
+  const guestName =
+    (nameFieldId ? formValues[nameFieldId] : undefined) ?? reserved("name");
+  const guestEmail =
+    (emailFieldId ? formValues[emailFieldId] : undefined) ?? reserved("email");
+
+  return {
+    formValues,
+    guestName,
+    guestEmail,
+    guestNotes: reserved("notes"),
+  };
+}
