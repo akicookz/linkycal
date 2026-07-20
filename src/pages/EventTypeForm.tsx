@@ -1022,14 +1022,7 @@ export default function EventTypeForm() {
               </div>
 
               <div className="space-y-3">
-                <div>
-                  <p className="text-sm font-medium">Booking limits</p>
-                  <p className="text-xs text-muted-foreground">
-                    Cap how many calls this event type accepts. Pending and
-                    booked calls count; cancelled and declined ones don't. Leave
-                    blank for no limit.
-                  </p>
-                </div>
+                <p className="text-sm font-medium">Booking limits</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="maxPerDay">Max calls per day</Label>
