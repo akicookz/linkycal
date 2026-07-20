@@ -48,6 +48,10 @@ import {
 } from "@/lib/availability";
 import { queryClient } from "@/lib/query-client";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
+import {
+  getContactMappedFieldIds,
+  type FormExperienceForm,
+} from "@/lib/form-experience";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +72,7 @@ interface EventType {
   requiresConfirmation: boolean;
   bookingFormId: string | null;
   scheduleId: string | null;
+  settings?: Record<string, unknown> | null;
 }
 
 interface Schedule {
@@ -106,6 +111,7 @@ interface EventTypeFormData {
   weekStart: "monday" | "sunday";
   requiresConfirmation: boolean;
   bookingFormId: string | null;
+  collectDetailsWithForm: boolean;
 }
 
 interface CalendarConnectionCalendar {
@@ -188,6 +194,7 @@ const defaultFormData: EventTypeFormData = {
   weekStart: "monday",
   requiresConfirmation: false,
   bookingFormId: null as string | null,
+  collectDetailsWithForm: false,
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -275,6 +282,27 @@ export default function EventTypeForm() {
     },
     enabled: !!projectId,
   });
+
+  // Full definition of the selected booking form, to gate the collect-details toggle
+  const { data: selectedFormData } = useQuery<{ form: FormExperienceForm }>({
+    queryKey: ["projects", projectId, "forms", formData.bookingFormId],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/forms/${formData.bookingFormId}`,
+      );
+      if (!res.ok) throw new Error("Failed to fetch form");
+      return res.json();
+    },
+    enabled: !!projectId && !!formData.bookingFormId,
+  });
+
+  const selectedForm =
+    formData.bookingFormId && selectedFormData ? selectedFormData.form : null;
+  const selectedFormMapping = selectedForm
+    ? getContactMappedFieldIds(selectedForm)
+    : null;
+  const canCollectDetailsWithForm =
+    !!selectedFormMapping?.nameFieldId && !!selectedFormMapping?.emailFieldId;
 
   // Fetch connected calendar accounts
   const { data: calendarAccounts } = useQuery<{
@@ -411,6 +439,7 @@ export default function EventTypeForm() {
       weekStart: et.weekStart ?? "monday",
       requiresConfirmation: et.requiresConfirmation ?? false,
       bookingFormId: et.bookingFormId ?? null,
+      collectDetailsWithForm: et.settings?.collectDetailsWithForm === true,
     });
     setSlugManuallyEdited(true);
 
@@ -462,9 +491,13 @@ export default function EventTypeForm() {
     setCopyAvailabilitySourceId("");
   }
 
+  type EventTypeSavePayload = Omit<EventTypeFormData, "collectDetailsWithForm"> & {
+    settings: Record<string, unknown>;
+  };
+
   // Create mutation
   const createMutation = useMutation({
-    mutationFn: async (data: EventTypeFormData) => {
+    mutationFn: async (data: EventTypeSavePayload) => {
       const res = await fetch(`/api/projects/${projectId}/event-types`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -505,7 +538,7 @@ export default function EventTypeForm() {
 
   // Update mutation
   const updateMutation = useMutation({
-    mutationFn: async (data: EventTypeFormData) => {
+    mutationFn: async (data: EventTypeSavePayload) => {
       const res = await fetch(
         `/api/projects/${projectId}/event-types/${eventTypeId}`,
         {
@@ -684,10 +717,22 @@ export default function EventTypeForm() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const { collectDetailsWithForm, ...rest } = formData;
+    const existingSettings = eventTypeData?.eventType?.settings ?? {};
+    // Only force the flag off once the form definition has loaded and lacks a
+    // name or email mapping; before that, preserve the stored value.
+    const keepFlag =
+      collectDetailsWithForm &&
+      !!formData.bookingFormId &&
+      (selectedForm ? canCollectDetailsWithForm : true);
+    const payload: EventTypeSavePayload = {
+      ...rest,
+      settings: { ...existingSettings, collectDetailsWithForm: keepFlag },
+    };
     if (isEditing) {
-      updateMutation.mutate(formData);
+      updateMutation.mutate(payload);
     } else {
-      createMutation.mutate(formData);
+      createMutation.mutate(payload);
     }
   }
 
@@ -1090,6 +1135,30 @@ export default function EventTypeForm() {
                 <p className="text-[11px] text-muted-foreground">
                   Attach a form to collect additional information during booking.
                 </p>
+                {formData.bookingFormId && canCollectDetailsWithForm && (
+                  <div className="flex items-center justify-between rounded-[12px] border px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Collect details with this form</p>
+                      <p className="text-xs text-muted-foreground">
+                        Skips the built-in info step, the form collects the booker's name and email instead
+                      </p>
+                    </div>
+                    <Switch
+                      checked={formData.collectDetailsWithForm}
+                      onCheckedChange={(checked) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          collectDetailsWithForm: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+                {formData.bookingFormId && selectedForm && !canCollectDetailsWithForm && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Map a name and an email field on this form to collect booker details with it.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
