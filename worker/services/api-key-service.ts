@@ -41,6 +41,11 @@ interface ApiKeyCreateResult {
   label: string | null;
 }
 
+export interface ApiKeyIdentity {
+  apiKeyId: string;
+  projectId: string;
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class ApiKeyService {
@@ -100,7 +105,7 @@ export class ApiKeyService {
 
   // ─── Validate ─────────────────────────────────────────────────────────────
 
-  async validate(key: string): Promise<string | null> {
+  async validate(key: string): Promise<ApiKeyIdentity | null> {
     const keyHash = await hashKey(key);
 
     const [row] = await this.db
@@ -120,6 +125,6 @@ export class ApiKeyService {
       .set({ lastUsedAt: new Date() })
       .where(eq(dbSchema.apiKeys.id, row.id));
 
-    return row.projectId;
+    return { apiKeyId: row.id, projectId: row.projectId };
   }
 }

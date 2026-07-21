@@ -1568,8 +1568,8 @@ app.get(
       const responseId = c.req.param("responseId");
       const valueId = c.req.param("valueId");
       const db = drizzle(c.env.DB, { schema });
-      const apiKeyProjectId = await new ApiKeyService(db).validate(key);
-      if (!apiKeyProjectId) {
+      const apiKeyIdentity = await new ApiKeyService(db).validate(key);
+      if (!apiKeyIdentity) {
         return c.json({ error: "Invalid API key" }, 401);
       }
 
@@ -1583,7 +1583,7 @@ app.get(
         return c.json({ error: "Form not found" }, 404);
       }
 
-      if (apiKeyProjectId !== project.id) {
+      if (apiKeyIdentity.projectId !== project.id) {
         return c.json({ error: "Forbidden" }, 403);
       }
 
@@ -2558,15 +2558,15 @@ app.all("/api/mcp", async (c) => {
   }
 
   const db = drizzle(c.env.DB, { schema });
-  const projectId = await new ApiKeyService(db).validate(key); // also bumps lastUsedAt
-  if (!projectId) {
+  const apiKeyIdentity = await new ApiKeyService(db).validate(key); // also bumps lastUsedAt
+  if (!apiKeyIdentity) {
     return c.json({ error: "Invalid API key" }, 401);
   }
 
   const ctx = c.executionCtx as ExecutionContext & {
     props?: Record<string, unknown>;
   };
-  ctx.props = { projectId } satisfies McpProps;
+  ctx.props = { projectId: apiKeyIdentity.projectId } satisfies McpProps;
   return mcpHandler.fetch(c.req.raw, c.env, ctx);
 });
 
