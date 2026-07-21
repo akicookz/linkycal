@@ -2,7 +2,17 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { ContactService } from "../../services/contact-service";
-import { createContactSchema, updateContactSchema, createTagSchema } from "../../validation";
+import {
+  TagNameConflictError,
+  TagService,
+} from "../../services/tag-service";
+import {
+  createContactSchema,
+  updateContactSchema,
+  createTagSchema,
+  tagNameSchema,
+  tagColorSchema,
+} from "../../validation";
 import { dispatchWorkflowTrigger } from "../../lib/workflow-dispatch";
 import { ensureContact } from "../../lib/contact-actions";
 import type { ToolContext } from "../agent";
@@ -11,7 +21,6 @@ import {
   err,
   withToolErrors,
   inProject,
-  tagInProject,
   getPlanLimitsForProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
@@ -131,17 +140,65 @@ export async function deleteContact(
 }
 
 export async function listContactTags(ctx: ToolContext): Promise<ToolResult> {
-  const service = new ContactService(ctx.db());
-  return ok(await service.listTags(ctx.projectId()));
+  return ok(await new TagService(ctx.db()).listAll(ctx.projectId()));
 }
 
 export async function createContactTag(
   ctx: ToolContext,
   input: { name: string; color?: string },
 ): Promise<ToolResult> {
-  const service = new ContactService(ctx.db());
-  const tag = await service.createTag(ctx.projectId(), input);
-  return ok(tag);
+  try {
+    return ok(await new TagService(ctx.db()).create(ctx.projectId(), input));
+  } catch (error) {
+    if (error instanceof TagNameConflictError) return err(error.message);
+    throw error;
+  }
+}
+
+export async function getContactTag(
+  ctx: ToolContext,
+  input: { tagId: string },
+): Promise<ToolResult> {
+  const tag = await new TagService(ctx.db()).get(ctx.projectId(), input.tagId);
+  return tag ? ok(tag) : err("Not found");
+}
+
+export async function updateContactTag(
+  ctx: ToolContext,
+  input: { tagId: string; name?: string; color?: string },
+): Promise<ToolResult> {
+  try {
+    const { tagId, ...data } = input;
+    if (data.name === undefined && data.color === undefined) {
+      return err("At least one tag field is required");
+    }
+    const tag = await new TagService(ctx.db()).update(
+      ctx.projectId(),
+      tagId,
+      data,
+    );
+    return tag ? ok(tag) : err("Not found");
+  } catch (error) {
+    if (error instanceof TagNameConflictError) return err(error.message);
+    throw error;
+  }
+}
+
+export async function deleteContactTag(
+  ctx: ToolContext,
+  input: { tagId: string },
+): Promise<ToolResult> {
+  const result = await new TagService(ctx.db()).delete(
+    ctx.projectId(),
+    input.tagId,
+  );
+  if (result.status === "not_found") return err("Not found");
+  if (result.status === "in_use") {
+    return err(
+      `Tag is used by workflows: ${result.workflows.map((workflow) => workflow.name).join(", ")}`,
+    );
+  }
+  return ok({ deleted: true });
 }
 
 export async function addTagToContact(
@@ -150,40 +207,37 @@ export async function addTagToContact(
 ): Promise<ToolResult> {
   const db = ctx.db();
   const projectId = ctx.projectId();
-  const service = new ContactService(db);
-
-  const contact = inProject(await service.getById(input.contactId), projectId);
-  if (!contact) return err("Not found");
-  if (!(await tagInProject(db, input.tagId, projectId))) return err("Not found");
-
-  await service.addTag(input.contactId, input.tagId);
-
-  // Mirror the dashboard route: tagging fires tag_added workflows
-  ctx.waitUntil(
-    dispatchWorkflowTrigger(db, ctx.env(), projectId, "tag_added", {
-      projectId,
-      contactId: input.contactId,
-      tagId: input.tagId,
-    }),
+  const result = await new TagService(db).assignToContact(
+    projectId,
+    input.contactId,
+    input.tagId,
   );
+  if (result.status !== "ok") return err("Not found");
 
-  return ok({ success: true });
+  if (result.changed) {
+    ctx.waitUntil(
+      dispatchWorkflowTrigger(db, ctx.env(), projectId, "tag_added", {
+        projectId,
+        contactId: input.contactId,
+        tagId: input.tagId,
+      }),
+    );
+  }
+
+  return ok({ success: true, assigned: result.changed });
 }
 
 export async function removeTagFromContact(
   ctx: ToolContext,
   input: { contactId: string; tagId: string },
 ): Promise<ToolResult> {
-  const db = ctx.db();
-  const projectId = ctx.projectId();
-  const service = new ContactService(db);
-
-  const contact = inProject(await service.getById(input.contactId), projectId);
-  if (!contact) return err("Not found");
-  if (!(await tagInProject(db, input.tagId, projectId))) return err("Not found");
-
-  await service.removeTag(input.contactId, input.tagId);
-  return ok({ success: true });
+  const result = await new TagService(ctx.db()).removeFromContact(
+    ctx.projectId(),
+    input.contactId,
+    input.tagId,
+  );
+  if (result.status !== "ok") return err("Not found");
+  return ok({ success: true, removed: result.changed });
 }
 
 export async function getContactActivity(
@@ -325,6 +379,44 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
       },
     },
     withToolErrors("create_contact_tag", (input) => createContactTag(ctx, input)),
+  );
+
+  server.registerTool(
+    "get_contact_tag",
+    {
+      description: "Get a contact tag by id in this project.",
+      inputSchema: {
+        tagId: z.string().describe("Tag id"),
+      },
+    },
+    withToolErrors("get_contact_tag", (input) => getContactTag(ctx, input)),
+  );
+
+  server.registerTool(
+    "update_contact_tag",
+    {
+      description: "Rename or recolor a contact tag.",
+      inputSchema: {
+        tagId: z.string().describe("Tag id"),
+        name: tagNameSchema.optional().describe("New tag name"),
+        color: tagColorSchema.optional().describe("New hex color"),
+      },
+    },
+    withToolErrors("update_contact_tag", (input) =>
+      updateContactTag(ctx, input),
+    ),
+  );
+
+  server.registerTool(
+    "delete_contact_tag",
+    {
+      description:
+        "Delete a contact tag unless it is referenced by a workflow.",
+      inputSchema: {
+        tagId: z.string().describe("Tag id"),
+      },
+    },
+    withToolErrors("delete_contact_tag", (input) => deleteContactTag(ctx, input)),
   );
 
   server.registerTool(

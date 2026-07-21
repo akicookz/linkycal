@@ -1,6 +1,7 @@
 import { eq, and, desc, inArray, gte, isNotNull, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
+import { TagService } from "./tag-service";
 
 export type ContactActivityType =
   | "contact_created"
@@ -94,7 +95,11 @@ export function normalizeEmail(
 // ─── Contact Service ─────────────────────────────────────────────────────────
 
 export class ContactService {
-  constructor(private db: DrizzleD1Database<Record<string, unknown>>) {}
+  private tagService: TagService;
+
+  constructor(private db: DrizzleD1Database<Record<string, unknown>>) {
+    this.tagService = new TagService(db);
+  }
 
   // ─── Contacts CRUD ───────────────────────────────────────────────────────
 
@@ -539,58 +544,6 @@ export class ContactService {
 
   // ─── Tags ────────────────────────────────────────────────────────────────
 
-  async listTags(projectId: string) {
-    return this.db
-      .select()
-      .from(dbSchema.tags)
-      .where(eq(dbSchema.tags.projectId, projectId))
-      .orderBy(dbSchema.tags.name);
-  }
-
-  async createTag(projectId: string, data: { name: string; color?: string }) {
-    const id = crypto.randomUUID();
-    await this.db.insert(dbSchema.tags).values({
-      id,
-      projectId,
-      name: data.name,
-      color: data.color ?? "#6b7280",
-    });
-    const rows = await this.db
-      .select()
-      .from(dbSchema.tags)
-      .where(eq(dbSchema.tags.id, id))
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
-  async deleteTag(id: string) {
-    // Cascade deletes contact_tags entries
-    await this.db.delete(dbSchema.tags).where(eq(dbSchema.tags.id, id));
-  }
-
-  async updateTag(
-    projectId: string,
-    id: string,
-    data: { name?: string; color?: string },
-  ) {
-    const fields: Partial<{ name: string; color: string }> = {};
-    if (data.name !== undefined) fields.name = data.name;
-    if (data.color !== undefined) fields.color = data.color;
-    const where = and(
-      eq(dbSchema.tags.id, id),
-      eq(dbSchema.tags.projectId, projectId),
-    );
-    if (Object.keys(fields).length > 0) {
-      await this.db.update(dbSchema.tags).set(fields).where(where);
-    }
-    const rows = await this.db
-      .select()
-      .from(dbSchema.tags)
-      .where(where)
-      .limit(1);
-    return rows[0] ?? null;
-  }
-
   async getContactTags(contactId: string) {
     const rows = await this.db
       .select({
@@ -619,59 +572,12 @@ export class ContactService {
     return !!row;
   }
 
-  // Subset of tagIds that actually belong to the project (drops foreign ids).
-  async filterProjectTagIds(
-    projectId: string,
-    tagIds: string[],
-  ): Promise<string[]> {
-    if (tagIds.length === 0) return [];
-    const rows = await this.db
-      .select({ id: dbSchema.tags.id })
-      .from(dbSchema.tags)
-      .where(
-        and(
-          eq(dbSchema.tags.projectId, projectId),
-          inArray(dbSchema.tags.id, tagIds),
-        ),
-      );
-    const valid = new Set(rows.map((r) => r.id));
-    return tagIds.filter((id) => valid.has(id));
+  async addTag(contactId: string, tagId: string): Promise<boolean> {
+    return this.tagService.addTag(contactId, tagId);
   }
 
-  async addTag(contactId: string, tagId: string) {
-    // Check if already assigned
-    const existing = await this.db
-      .select()
-      .from(dbSchema.contactTags)
-      .where(
-        and(
-          eq(dbSchema.contactTags.contactId, contactId),
-          eq(dbSchema.contactTags.tagId, tagId),
-        ),
-      )
-      .limit(1);
-
-    if (existing.length > 0) return;
-
-    await this.db.insert(dbSchema.contactTags).values({ contactId, tagId });
-
-    // Log activity with the tag name so the timeline can render it
-    const tagName = await this.getTagName(tagId);
-    await this.logActivity(contactId, "tag_added", tagId, tagName ? { tagName } : undefined);
-  }
-
-  async removeTag(contactId: string, tagId: string) {
-    await this.db
-      .delete(dbSchema.contactTags)
-      .where(
-        and(
-          eq(dbSchema.contactTags.contactId, contactId),
-          eq(dbSchema.contactTags.tagId, tagId),
-        ),
-      );
-
-    const tagName = await this.getTagName(tagId);
-    await this.logActivity(contactId, "tag_removed", tagId, tagName ? { tagName } : undefined);
+  async removeTag(contactId: string, tagId: string): Promise<boolean> {
+    return this.tagService.removeTag(contactId, tagId);
   }
 
   // Move a contact into a single pipeline stage: drop the board's other stage
@@ -795,15 +701,6 @@ export class ContactService {
     return rows.map((r) => ({ ...r, metadata: normalizeJsonColumn(r.metadata) }));
   }
 
-  private async getTagName(tagId: string): Promise<string | null> {
-    const [tag] = await this.db
-      .select({ name: dbSchema.tags.name })
-      .from(dbSchema.tags)
-      .where(eq(dbSchema.tags.id, tagId))
-      .limit(1);
-    return tag?.name ?? null;
-  }
-
   async logActivity(
     contactId: string,
     type: ContactActivityType,
@@ -868,7 +765,12 @@ export class ContactService {
   async seedPipeline(projectId: string) {
     const tagIds: string[] = [];
     for (const stage of PIPELINE_STAGES) {
-      const tag = await this.createTag(projectId, { name: stage.name, color: stage.color });
+      const tag =
+        (await this.tagService.findByName(projectId, stage.name)) ??
+        (await this.tagService.create(projectId, {
+          name: stage.name,
+          color: stage.color,
+        }));
       if (tag) tagIds.push(tag.id);
     }
     const view = await this.createView(projectId, {
@@ -922,35 +824,4 @@ export class ContactService {
       );
   }
 
-  // Remove a tagId from the JSON config of every saved view in a project.
-  // Called after a tag is deleted so saved views don't point at a dead UUID.
-  async pruneTagFromViews(projectId: string, tagId: string) {
-    const views = await this.listViews(projectId);
-    for (const v of views) {
-      if (!v.config) continue;
-      const cfg = v.config as {
-        tagIds?: string[];
-        pivotTagIds?: string[];
-        [k: string]: unknown;
-      };
-      const next = { ...cfg };
-      let changed = false;
-      if (cfg.tagIds && cfg.tagIds.includes(tagId)) {
-        next.tagIds = cfg.tagIds.filter((t) => t !== tagId);
-        if (next.tagIds.length === 0) delete next.tagIds;
-        changed = true;
-      }
-      if (cfg.pivotTagIds && cfg.pivotTagIds.includes(tagId)) {
-        next.pivotTagIds = cfg.pivotTagIds.filter((t) => t !== tagId);
-        if (next.pivotTagIds.length === 0) delete next.pivotTagIds;
-        changed = true;
-      }
-      if (changed) {
-        await this.db
-          .update(dbSchema.contactViews)
-          .set({ config: next })
-          .where(eq(dbSchema.contactViews.id, v.id));
-      }
-    }
-  }
 }

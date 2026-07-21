@@ -115,11 +115,16 @@ export const PROJECT_API_KEY_ROUTES: ApiRoutePolicyEntry[] = [
   { method: "DELETE", path: "/api/projects/:projectId/contacts/:id" },
   { method: "GET", path: "/api/projects/:projectId/tags" },
   { method: "POST", path: "/api/projects/:projectId/tags" },
+  { method: "GET", path: "/api/projects/:projectId/tags/:id" },
   { method: "DELETE", path: "/api/projects/:projectId/tags/:id" },
   { method: "PATCH", path: "/api/projects/:projectId/tags/:id" },
   {
     method: "POST",
     path: "/api/projects/:projectId/contacts/:contactId/tags",
+  },
+  {
+    method: "PUT",
+    path: "/api/projects/:projectId/contacts/:contactId/tags/:tagId",
   },
   {
     method: "DELETE",

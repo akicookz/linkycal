@@ -10,6 +10,10 @@ import {
   listContacts,
   createContact,
   updateContact,
+  listContactTags,
+  getContactTag,
+  updateContactTag,
+  deleteContactTag,
   addTagToContact,
   setContactNextAction,
   completeContactNextAction,
@@ -139,6 +143,61 @@ describe("MCP tool project scoping", () => {
 
     const ownTag = await addTagToContact(ctxA, { contactId: "ct-a1", tagId: "tag-a1" });
     expect(ownTag.isError).toBeUndefined();
+  });
+
+  test("add_tag_to_contact dispatches only when the assignment changes", async () => {
+    const { ctxA } = await seedFixture();
+    const pending: Promise<unknown>[] = [];
+    const trackedContext = {
+      ...ctxA,
+      waitUntil(promise: Promise<unknown>) {
+        pending.push(promise);
+      },
+    };
+
+    const first = parsed(
+      await addTagToContact(trackedContext, {
+        contactId: "ct-a1",
+        tagId: "tag-a1",
+      }),
+    ) as { assigned: boolean };
+    const duplicate = parsed(
+      await addTagToContact(trackedContext, {
+        contactId: "ct-a1",
+        tagId: "tag-a1",
+      }),
+    ) as { assigned: boolean };
+
+    await Promise.all(pending);
+    expect(first.assigned).toBe(true);
+    expect(duplicate.assigned).toBe(false);
+    expect(pending).toHaveLength(1);
+  });
+
+  test("tag CRUD tools are project-scoped", async () => {
+    const { ctxA } = await seedFixture();
+
+    const listed = parsed(await listContactTags(ctxA)) as Array<{ id: string }>;
+    expect(listed.map((tag) => tag.id)).toEqual(["tag-a1"]);
+
+    const own = await getContactTag(ctxA, { tagId: "tag-a1" });
+    const foreign = await getContactTag(ctxA, { tagId: "tag-b1" });
+    expect((parsed(own) as { name: string }).name).toBe("VIP");
+    expect(foreign.isError).toBe(true);
+
+    const updated = await updateContactTag(ctxA, {
+      tagId: "tag-a1",
+      name: "Customer",
+    });
+    expect((parsed(updated) as { name: string }).name).toBe("Customer");
+    expect(
+      (await updateContactTag(ctxA, { tagId: "tag-b1", name: "Hijack" }))
+        .isError,
+    ).toBe(true);
+
+    const deleted = await deleteContactTag(ctxA, { tagId: "tag-a1" });
+    expect(parsed(deleted)).toEqual({ deleted: true });
+    expect((await getContactTag(ctxA, { tagId: "tag-a1" })).isError).toBe(true);
   });
 
   test("sets and completes a Next Action only for an owned contact", async () => {

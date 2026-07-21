@@ -28,6 +28,7 @@ import type { AppEnv } from "../types";
 import { WorkflowService, type StepLog } from "./workflow-service";
 import { WorkflowAiResearchService } from "./workflow-ai-research-service";
 import { ContactService } from "./contact-service";
+import { TagService } from "./tag-service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -71,11 +72,13 @@ const STEP_LABELS: Record<string, string> = {
 export class WorkflowExecutionService {
   private workflowService: WorkflowService;
   private contactService: ContactService;
+  private tagService: TagService;
   private workflowAiResearchService: WorkflowAiResearchService;
 
   constructor(private db: DrizzleD1Database<Record<string, unknown>>) {
     this.workflowService = new WorkflowService(db);
     this.contactService = new ContactService(db);
+    this.tagService = new TagService(db);
     this.workflowAiResearchService = new WorkflowAiResearchService();
   }
 
@@ -769,6 +772,7 @@ export class WorkflowExecutionService {
     snap: StepSnapshot,
   ): Promise<void> {
     const contactId = context.contactId;
+    const projectId = context.projectId;
     const tagId = config.tagId as string;
     const tagName = typeof config.tagName === "string" ? config.tagName : undefined;
 
@@ -781,8 +785,15 @@ export class WorkflowExecutionService {
     }
     if (!tagId) throw new Error("add_tag: missing 'tagId' in config");
 
-    await this.contactService.addTag(contactId, tagId);
-    snap.output = { applied: true };
+    const result = await this.tagService.assignToContact(
+      projectId,
+      contactId,
+      tagId,
+    );
+    if (result.status !== "ok") {
+      throw new Error(`add_tag: ${result.status}`);
+    }
+    snap.output = { applied: result.changed };
   }
 
   // ─── remove_tag ────────────────────────────────────────────────────────
@@ -793,6 +804,7 @@ export class WorkflowExecutionService {
     snap: StepSnapshot,
   ): Promise<void> {
     const contactId = context.contactId;
+    const projectId = context.projectId;
     const tagId = config.tagId as string;
     const tagName = typeof config.tagName === "string" ? config.tagName : undefined;
 
@@ -805,8 +817,15 @@ export class WorkflowExecutionService {
     }
     if (!tagId) throw new Error("remove_tag: missing 'tagId' in config");
 
-    await this.contactService.removeTag(contactId, tagId);
-    snap.output = { removed: true };
+    const result = await this.tagService.removeFromContact(
+      projectId,
+      contactId,
+      tagId,
+    );
+    if (result.status !== "ok") {
+      throw new Error(`remove_tag: ${result.status}`);
+    }
+    snap.output = { removed: result.changed };
   }
 
   // ─── wait ──────────────────────────────────────────────────────────────

@@ -49,6 +49,9 @@
       "name": "Public files"
     },
     {
+      "name": "Tags"
+    },
+    {
       "name": "Visitor booking"
     },
     {
@@ -4538,9 +4541,9 @@
     "/api/projects/{projectId}/tags": {
       "get": {
         "operationId": "getProjectsProjectIdTags",
-        "summary": "Get tags",
+        "summary": "List tags",
         "tags": [
-          "Contacts"
+          "Tags"
         ],
         "security": [
           {
@@ -4555,9 +4558,48 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Opaque cursor from a previous response; requires limit."
           }
         ],
         "responses": {
+          "200": {
+            "description": "Tag page",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagListResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4597,17 +4639,14 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
       "post": {
         "operationId": "postProjectsProjectIdTags",
-        "summary": "Create tags",
+        "summary": "Create a tag",
         "tags": [
-          "Contacts"
+          "Tags"
         ],
         "security": [
           {
@@ -4625,16 +4664,26 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonObject"
+                "$ref": "#/components/schemas/CreateTagRequest"
               }
             }
           }
         },
         "responses": {
+          "201": {
+            "description": "Tag created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4665,6 +4714,16 @@
               }
             }
           },
+          "409": {
+            "description": "A tag with this name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -4674,19 +4733,16 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
     },
     "/api/projects/{projectId}/tags/{tagId}": {
-      "delete": {
-        "operationId": "deleteProjectsProjectIdTagsTagId",
-        "summary": "Delete tags",
+      "get": {
+        "operationId": "getProjectsProjectIdTagsTagId",
+        "summary": "Get a tag",
         "tags": [
-          "Contacts"
+          "Tags"
         ],
         "security": [
           {
@@ -4712,6 +4768,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Tag details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4742,6 +4808,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -4751,17 +4827,116 @@
                 }
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProjectsProjectIdTagsTagId",
+        "summary": "Delete a tag",
+        "tags": [
+          "Tags"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
-          "2XX": {
-            "description": "Successful response"
+          {
+            "name": "tagId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tag deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuccessResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential cannot access this project or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The tag is referenced by workflows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagInUseError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       },
       "patch": {
         "operationId": "patchProjectsProjectIdTagsTagId",
-        "summary": "Update tags",
+        "summary": "Update a tag",
         "tags": [
-          "Contacts"
+          "Tags"
         ],
         "security": [
           {
@@ -4787,16 +4962,26 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonObject"
+                "$ref": "#/components/schemas/UpdateTagRequest"
               }
             }
           }
         },
         "responses": {
+          "200": {
+            "description": "Tag updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4827,6 +5012,26 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A tag with this name already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -4836,9 +5041,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
@@ -4846,9 +5048,9 @@
     "/api/projects/{projectId}/contacts/{contactId}/tags": {
       "post": {
         "operationId": "postProjectsProjectIdContactsContactIdTags",
-        "summary": "Create tags",
+        "summary": "Assign a tag to a contact (legacy)",
         "tags": [
-          "Contacts"
+          "Tags"
         ],
         "security": [
           {
@@ -4874,16 +5076,26 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonObject"
+                "$ref": "#/components/schemas/AssignTagRequest"
               }
             }
           }
         },
         "responses": {
+          "201": {
+            "description": "Tag assignment processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4914,6 +5126,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -4923,19 +5145,16 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
     },
     "/api/projects/{projectId}/contacts/{contactId}/tags/{tagId}": {
-      "delete": {
-        "operationId": "deleteProjectsProjectIdContactsContactIdTagsTagId",
-        "summary": "Delete tags",
+      "put": {
+        "operationId": "putProjectsProjectIdContactsContactIdTagsTagId",
+        "summary": "Assign a tag to a contact",
         "tags": [
-          "Contacts"
+          "Tags"
         ],
         "security": [
           {
@@ -4969,6 +5188,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Tag assignment processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagAssignmentResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4999,6 +5228,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -5008,9 +5247,106 @@
                 }
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteProjectsProjectIdContactsContactIdTagsTagId",
+        "summary": "Remove a tag from a contact",
+        "tags": [
+          "Tags"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
           },
-          "2XX": {
-            "description": "Successful response"
+          {
+            "name": "contactId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tagId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tag removal processed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TagRemovalResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The credential cannot access this project or operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -8026,6 +8362,210 @@
       }
     },
     "schemas": {
+      "Tag": {
+        "type": "object",
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "color",
+          "createdAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "TagResponse": {
+        "type": "object",
+        "required": [
+          "tag"
+        ],
+        "properties": {
+          "tag": {
+            "$ref": "#/components/schemas/Tag"
+          }
+        }
+      },
+      "TagListResponse": {
+        "type": "object",
+        "required": [
+          "tags",
+          "nextCursor"
+        ],
+        "properties": {
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            }
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CreateTagRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        }
+      },
+      "UpdateTagRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "minProperties": 1,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+        }
+      },
+      "AssignTagRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tagId"
+        ],
+        "properties": {
+          "tagId": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "TagAssignmentResponse": {
+        "type": "object",
+        "required": [
+          "tag",
+          "assigned"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "tag": {
+            "$ref": "#/components/schemas/Tag"
+          },
+          "assigned": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TagRemovalResponse": {
+        "type": "object",
+        "required": [
+          "success",
+          "tag",
+          "removed"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "tag": {
+            "$ref": "#/components/schemas/Tag"
+          },
+          "removed": {
+            "type": "boolean"
+          }
+        }
+      },
+      "TagInUseError": {
+        "type": "object",
+        "required": [
+          "error",
+          "code",
+          "workflows"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "const": "TAG_IN_USE"
+          },
+          "workflows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "name"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "SuccessResponse": {
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean"
+          }
+        }
+      },
       "JsonObject": {
         "type": "object",
         "additionalProperties": true

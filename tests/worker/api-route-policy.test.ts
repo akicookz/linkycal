@@ -65,6 +65,15 @@ describe("project API route policy", () => {
         "/api/projects/project-a/workflows/workflow-a/runs/run-a",
       ),
     ).toBe("apiKey");
+    expect(
+      projectRouteAccess("GET", "/api/projects/project-a/tags/tag-a"),
+    ).toBe("apiKey");
+    expect(
+      projectRouteAccess(
+        "PUT",
+        "/api/projects/project-a/contacts/contact-a/tags/tag-a",
+      ),
+    ).toBe("apiKey");
     expect(projectRouteAccess("DELETE", "/api/projects/project-a")).toBe(
       "sessionOnly",
     );

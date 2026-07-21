@@ -57,7 +57,7 @@ What an agent can do — 32 tools, grouped by domain:
 - Forms: list_forms, get_form, create_form, update_form, list_form_responses — build single or multi-step forms and read what's submitted.
 - Bookings: list_bookings, get_booking, get_available_slots, create_booking, cancel_booking, confirm_booking, decline_booking — review and manage the calendar.
 - Contacts: list_contacts, get_contact, create_contact, update_contact, set_contact_next_action, complete_contact_next_action, delete_contact, get_contact_activity.
-- Tags: list_contact_tags, create_contact_tag, add_tag_to_contact, remove_tag_from_contact.
+- Tags: list_contact_tags, get_contact_tag, create_contact_tag, update_contact_tag, delete_contact_tag, add_tag_to_contact, remove_tag_from_contact.
 - Schedules: list_schedules, get_schedule — the working hours behind event types.
 - Workflows: list_workflows, get_workflow — read-only over MCP by design.
 

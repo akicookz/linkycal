@@ -341,7 +341,7 @@ function tagForProjectPath(path: string): string {
     ["/bookings", "Bookings"],
     ["/contacts", "Contacts"],
     ["/contact-views", "Contacts"],
-    ["/tags", "Contacts"],
+    ["/tags", "Tags"],
     ["/pipeline", "Contacts"],
     ["/event-types", "Event types"],
     ["/schedules", "Availability"],
@@ -459,6 +459,168 @@ function responsesFor(
   return responses;
 }
 
+function jsonRequestBody(schemaName: string): Record<string, unknown> {
+  return {
+    required: true,
+    content: {
+      "application/json": {
+        schema: { $ref: `#/components/schemas/${schemaName}` },
+      },
+    },
+  };
+}
+
+function jsonResponse(
+  description: string,
+  schemaName: string,
+): Record<string, unknown> {
+  return {
+    description,
+    content: {
+      "application/json": {
+        schema: { $ref: `#/components/schemas/${schemaName}` },
+      },
+    },
+  };
+}
+
+function setExplicitSuccess(
+  operation: OpenApiOperation,
+  status: string,
+  description: string,
+  schemaName: string,
+): void {
+  delete operation.responses["2XX"];
+  operation.responses[status] = jsonResponse(description, schemaName);
+}
+
+function addNotFound(operation: OpenApiOperation): void {
+  operation.responses["404"] = jsonResponse("Resource not found", "Error");
+}
+
+function applyTagApiContract(
+  method: OpenApiMethod,
+  path: string,
+  operation: OpenApiOperation,
+): OpenApiOperation {
+  const collectionPath = "/api/projects/:projectId/tags";
+  const resourcePath = "/api/projects/:projectId/tags/:id";
+  const legacyAssignmentPath =
+    "/api/projects/:projectId/contacts/:contactId/tags";
+  const assignmentPath =
+    "/api/projects/:projectId/contacts/:contactId/tags/:tagId";
+
+  if (
+    path !== collectionPath &&
+    path !== resourcePath &&
+    path !== legacyAssignmentPath &&
+    path !== assignmentPath
+  ) {
+    return operation;
+  }
+
+  operation.tags = ["Tags"];
+
+  if (path === collectionPath && method === "get") {
+    operation.summary = "List tags";
+    operation.parameters = [
+      ...(operation.parameters ?? []),
+      {
+        name: "search",
+        in: "query",
+        required: false,
+        schema: { type: "string", minLength: 1, maxLength: 100 },
+      },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1, maximum: 100 },
+      },
+      {
+        name: "cursor",
+        in: "query",
+        required: false,
+        schema: { type: "string" },
+        description: "Opaque cursor from a previous response; requires limit.",
+      },
+    ];
+    setExplicitSuccess(operation, "200", "Tag page", "TagListResponse");
+  }
+
+  if (path === collectionPath && method === "post") {
+    operation.summary = "Create a tag";
+    operation.requestBody = jsonRequestBody("CreateTagRequest");
+    setExplicitSuccess(operation, "201", "Tag created", "TagResponse");
+    operation.responses["409"] = jsonResponse(
+      "A tag with this name already exists",
+      "Error",
+    );
+  }
+
+  if (path === resourcePath) {
+    addNotFound(operation);
+    if (method === "get") {
+      operation.summary = "Get a tag";
+      setExplicitSuccess(operation, "200", "Tag details", "TagResponse");
+    }
+    if (method === "patch") {
+      operation.summary = "Update a tag";
+      operation.requestBody = jsonRequestBody("UpdateTagRequest");
+      setExplicitSuccess(operation, "200", "Tag updated", "TagResponse");
+      operation.responses["409"] = jsonResponse(
+        "A tag with this name already exists",
+        "Error",
+      );
+    }
+    if (method === "delete") {
+      operation.summary = "Delete a tag";
+      setExplicitSuccess(operation, "200", "Tag deleted", "SuccessResponse");
+      operation.responses["409"] = jsonResponse(
+        "The tag is referenced by workflows",
+        "TagInUseError",
+      );
+    }
+  }
+
+  if (path === legacyAssignmentPath && method === "post") {
+    operation.summary = "Assign a tag to a contact (legacy)";
+    operation.requestBody = jsonRequestBody("AssignTagRequest");
+    setExplicitSuccess(
+      operation,
+      "201",
+      "Tag assignment processed",
+      "TagAssignmentResponse",
+    );
+    addNotFound(operation);
+  }
+
+  if (path === assignmentPath) {
+    addNotFound(operation);
+    delete operation.requestBody;
+    if (method === "put") {
+      operation.summary = "Assign a tag to a contact";
+      setExplicitSuccess(
+        operation,
+        "200",
+        "Tag assignment processed",
+        "TagAssignmentResponse",
+      );
+    }
+    if (method === "delete") {
+      operation.summary = "Remove a tag from a contact";
+      setExplicitSuccess(
+        operation,
+        "200",
+        "Tag removal processed",
+        "TagRemovalResponse",
+      );
+    }
+  }
+
+  return operation;
+}
+
 function createOperation(
   method: OpenApiMethod,
   path: string,
@@ -468,7 +630,7 @@ function createOperation(
   const parameters = pathParameters(openApiPath);
   const body = requestBody(method, path);
 
-  return {
+  const operation: OpenApiOperation = {
     operationId: operationId(method, path),
     summary: metadata.summary,
     tags: [metadata.tag],
@@ -477,6 +639,7 @@ function createOperation(
     ...(body ? { requestBody: body } : {}),
     responses: responsesFor(metadata.auth),
   };
+  return applyTagApiContract(method, path, operation);
 }
 
 function addOperation(
@@ -557,6 +720,112 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
         },
       },
       schemas: {
+        Tag: {
+          type: "object",
+          required: ["id", "projectId", "name", "color", "createdAt"],
+          properties: {
+            id: { type: "string" },
+            projectId: { type: "string" },
+            name: { type: "string", minLength: 1, maxLength: 50 },
+            color: {
+              anyOf: [
+                { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+                { type: "null" },
+              ],
+            },
+            createdAt: { type: "string", format: "date-time" },
+          },
+        },
+        TagResponse: {
+          type: "object",
+          required: ["tag"],
+          properties: {
+            tag: { $ref: "#/components/schemas/Tag" },
+          },
+        },
+        TagListResponse: {
+          type: "object",
+          required: ["tags", "nextCursor"],
+          properties: {
+            tags: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Tag" },
+            },
+            nextCursor: {
+              anyOf: [{ type: "string" }, { type: "null" }],
+            },
+          },
+        },
+        CreateTagRequest: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name"],
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 50 },
+            color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+          },
+        },
+        UpdateTagRequest: {
+          type: "object",
+          additionalProperties: false,
+          minProperties: 1,
+          properties: {
+            name: { type: "string", minLength: 1, maxLength: 50 },
+            color: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+          },
+        },
+        AssignTagRequest: {
+          type: "object",
+          additionalProperties: false,
+          required: ["tagId"],
+          properties: {
+            tagId: { type: "string", minLength: 1 },
+          },
+        },
+        TagAssignmentResponse: {
+          type: "object",
+          required: ["tag", "assigned"],
+          properties: {
+            success: { type: "boolean" },
+            tag: { $ref: "#/components/schemas/Tag" },
+            assigned: { type: "boolean" },
+          },
+        },
+        TagRemovalResponse: {
+          type: "object",
+          required: ["success", "tag", "removed"],
+          properties: {
+            success: { type: "boolean" },
+            tag: { $ref: "#/components/schemas/Tag" },
+            removed: { type: "boolean" },
+          },
+        },
+        TagInUseError: {
+          type: "object",
+          required: ["error", "code", "workflows"],
+          properties: {
+            error: { type: "string" },
+            code: { type: "string", const: "TAG_IN_USE" },
+            workflows: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "name"],
+                properties: {
+                  id: { type: "string" },
+                  name: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        SuccessResponse: {
+          type: "object",
+          required: ["success"],
+          properties: {
+            success: { type: "boolean" },
+          },
+        },
         JsonObject: {
           type: "object",
           additionalProperties: true,

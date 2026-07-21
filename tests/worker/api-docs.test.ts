@@ -45,6 +45,45 @@ describe("generated API documentation", () => {
     }
   });
 
+  test("publishes an explicit Tags API contract", async () => {
+    const { openApi } = await loadArtifacts();
+    const collection = openApi.paths["/api/projects/{projectId}/tags"];
+    const resource =
+      openApi.paths["/api/projects/{projectId}/tags/{tagId}"];
+    const assignment =
+      openApi.paths[
+        "/api/projects/{projectId}/contacts/{contactId}/tags/{tagId}"
+      ];
+
+    expect(collection.get.tags).toEqual(["Tags"]);
+    expect(collection.get.parameters?.map((parameter) => parameter.name)).toEqual([
+      "projectId",
+      "search",
+      "limit",
+      "cursor",
+    ]);
+    expect(collection.post.requestBody).toEqual(
+      expect.objectContaining({
+        required: true,
+        content: {
+          "application/json": {
+            schema: { $ref: "#/components/schemas/CreateTagRequest" },
+          },
+        },
+      }),
+    );
+    expect(resource.get.responses["200"]).toBeDefined();
+    expect(resource.patch.requestBody).toEqual(
+      expect.objectContaining({ required: true }),
+    );
+    expect(resource.delete.responses["409"]).toBeDefined();
+    expect(assignment.put.requestBody).toBeUndefined();
+    expect(assignment.put.responses["200"]).toBeDefined();
+    expect(openApi.components.schemas.Tag).toBeDefined();
+    expect(openApi.components.schemas.TagListResponse).toBeDefined();
+    expect(openApi.components.schemas.TagAssignmentResponse).toBeDefined();
+  });
+
   test("classifies every registered API route in the audit", async () => {
     const { auditRows, routes } = await loadArtifacts();
     const auditKeys = auditRows.map((row) => `${row.method} ${row.path}`);

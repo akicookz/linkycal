@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
 import * as dbSchema from "../../worker/db/schema";
 import { ContactService } from "../../worker/services/contact-service";
 import { createTestDb } from "./mcp-test-db";
@@ -150,28 +149,5 @@ describe("ContactService ownership guards", () => {
     expect(await svc.contactInProject("p", "c")).toBe(true);
     expect(await svc.contactInProject("p2", "c")).toBe(false);
     expect(await svc.contactInProject("p", "nonexistent")).toBe(false);
-  });
-
-  test("filterProjectTagIds drops foreign and unknown tag ids", async () => {
-    const db = await seed();
-    await db.insert(dbSchema.projects).values({ id: "p2", userId: "u", name: "P2", slug: "p2" });
-    await db.insert(dbSchema.tags).values({ id: "foreign", projectId: "p2", name: "Foreign", color: "#000000" });
-    const svc = new ContactService(db);
-    const valid = await svc.filterProjectTagIds("p", ["lead", "foreign", "missing"]);
-    expect(valid).toEqual(["lead"]);
-  });
-});
-
-describe("ContactService.updateTag", () => {
-
-  test("does not update a tag from another project", async () => {
-    const db = await seed();
-    await db.insert(dbSchema.projects).values({ id: "p2", userId: "u", name: "P2", slug: "p2" });
-    await db.insert(dbSchema.tags).values({ id: "foreign", projectId: "p2", name: "Foreign", color: "#000000" });
-    const svc = new ContactService(db);
-    const result = await svc.updateTag("p", "foreign", { name: "Hijacked" });
-    expect(result).toBeNull();
-    const [row] = await db.select().from(dbSchema.tags).where(eq(dbSchema.tags.id, "foreign"));
-    expect(row.name).toBe("Foreign");
   });
 });

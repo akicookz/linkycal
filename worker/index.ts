@@ -41,6 +41,8 @@ import {
   setNextActionSchema,
   createTagSchema,
   updateTagSchema,
+  listTagsQuerySchema,
+  assignTagSchema,
   setStageSchema,
   createContactViewSchema,
   updateContactViewSchema,
@@ -110,6 +112,10 @@ import {
 import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
+import {
+  TagNameConflictError,
+  TagService,
+} from "./services/tag-service";
 import {
   ContactActivityService,
   parseContactActivityListOptions,
@@ -5703,27 +5709,54 @@ app.delete("/api/projects/:projectId/contacts/:id", async (c) => {
 // ─── Tags ────────────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/tags", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-  const service = new ContactService(db);
-  const tags = await service.listTags(projectId);
-  return c.json({ tags });
+  try {
+    const data = validate(listTagsQuerySchema, {
+      ...(c.req.query("search") ? { search: c.req.query("search") } : {}),
+      ...(c.req.query("limit") ? { limit: c.req.query("limit") } : {}),
+      ...(c.req.query("cursor") ? { cursor: c.req.query("cursor") } : {}),
+    });
+    const service = new TagService(c.get("db"));
+    return c.json(await service.list(c.req.param("projectId"), data));
+  } catch (err) {
+    if (
+      (err instanceof Error && err.name === "ZodError") ||
+      (err instanceof Error && err.message === "Invalid tag cursor")
+    ) {
+      return c.json({ error: "Invalid request" }, 400);
+    }
+    console.error("Tag list error:", err);
+    return c.json({ error: "Failed to fetch tags" }, 500);
+  }
+});
+
+app.get("/api/projects/:projectId/tags/:id", async (c) => {
+  try {
+    const service = new TagService(c.get("db"));
+    const tag = await service.get(c.req.param("projectId"), c.req.param("id"));
+    if (!tag) return c.json({ error: "Tag not found" }, 404);
+    return c.json({ tag });
+  } catch (err) {
+    console.error("Tag fetch error:", err);
+    return c.json({ error: "Failed to fetch tag" }, 500);
+  }
 });
 
 app.post("/api/projects/:projectId/tags", async (c) => {
   try {
     const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createTagSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-    const tag = await service.createTag(projectId, data);
+    const data = validate(createTagSchema, await c.req.json());
+    const tag = await new TagService(c.get("db")).create(projectId, data);
 
     return c.json({ tag }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
+    }
+    if (err instanceof TagNameConflictError) {
+      return c.json(
+        { error: err.message, code: "TAG_NAME_CONFLICT" },
+        409,
+      );
     }
     console.error("Tag creation error:", err);
     return c.json({ error: "Failed to create tag" }, 500);
@@ -5734,13 +5767,20 @@ app.delete("/api/projects/:projectId/tags/:id", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new ContactService(db);
-    if ((await service.filterProjectTagIds(projectId, [id])).length === 0) {
+    const result = await new TagService(c.get("db")).delete(projectId, id);
+    if (result.status === "not_found") {
       return c.json({ error: "Tag not found" }, 404);
     }
-    await service.pruneTagFromViews(projectId, id);
-    await service.deleteTag(id);
+    if (result.status === "in_use") {
+      return c.json(
+        {
+          error: "Tag is referenced by one or more workflows",
+          code: "TAG_IN_USE",
+          workflows: result.workflows,
+        },
+        409,
+      );
+    }
     return c.json({ success: true });
   } catch (err) {
     console.error("Tag deletion error:", err);
@@ -5752,18 +5792,20 @@ app.patch("/api/projects/:projectId/tags/:id", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateTagSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-    const tag = await service.updateTag(projectId, id, data);
+    const data = validate(updateTagSchema, await c.req.json());
+    const tag = await new TagService(c.get("db")).update(projectId, id, data);
     if (!tag) return c.json({ error: "Tag not found" }, 404);
 
     return c.json({ tag });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
+    }
+    if (err instanceof TagNameConflictError) {
+      return c.json(
+        { error: err.message, code: "TAG_NAME_CONFLICT" },
+        409,
+      );
     }
     console.error("Tag update error:", err);
     return c.json({ error: "Failed to update tag" }, 500);
@@ -5775,35 +5817,81 @@ app.post("/api/projects/:projectId/contacts/:contactId/tags", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const contactId = c.req.param("contactId");
-    const body = await c.req.json();
-    const { tagId } = body as { tagId: string };
+    const { tagId } = validate(assignTagSchema, await c.req.json());
 
     const db = c.get("db");
-    const service = new ContactService(db);
-
-    if (!(await service.contactInProject(projectId, contactId))) {
+    const result = await new TagService(db).assignToContact(
+      projectId,
+      contactId,
+      tagId,
+    );
+    if (result.status === "contact_not_found") {
       return c.json({ error: "Contact not found" }, 404);
     }
-    if ((await service.filterProjectTagIds(projectId, [tagId])).length === 0) {
-      return c.json({ error: "Invalid tag" }, 400);
+    if (result.status === "tag_not_found") {
+      return c.json({ error: "Tag not found" }, 404);
     }
-    await service.addTag(contactId, tagId);
 
-    // Dispatch tag_added workflow trigger
-    c.executionCtx.waitUntil(
-      dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
-        projectId,
-        contactId,
-        tagId,
-      }),
+    if (result.changed) {
+      c.executionCtx.waitUntil(
+        dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
+          projectId,
+          contactId,
+          tagId,
+        }),
+      );
+    }
+
+    return c.json(
+      { success: true, tag: result.tag, assigned: result.changed },
+      201,
     );
-
-    return c.json({ success: true }, 201);
   } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid request" }, 400);
+    }
     console.error("Tag assignment error:", err);
     return c.json({ error: "Failed to assign tag" }, 500);
   }
 });
+
+// Canonical idempotent tag assignment endpoint for REST clients.
+app.put(
+  "/api/projects/:projectId/contacts/:contactId/tags/:tagId",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const contactId = c.req.param("contactId");
+      const tagId = c.req.param("tagId");
+      const db = c.get("db");
+      const result = await new TagService(db).assignToContact(
+        projectId,
+        contactId,
+        tagId,
+      );
+      if (result.status === "contact_not_found") {
+        return c.json({ error: "Contact not found" }, 404);
+      }
+      if (result.status === "tag_not_found") {
+        return c.json({ error: "Tag not found" }, 404);
+      }
+
+      if (result.changed) {
+        c.executionCtx.waitUntil(
+          dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
+            projectId,
+            contactId,
+            tagId,
+          }),
+        );
+      }
+      return c.json({ tag: result.tag, assigned: result.changed });
+    } catch (err) {
+      console.error("Tag assignment error:", err);
+      return c.json({ error: "Failed to assign tag" }, 500);
+    }
+  },
+);
 
 // Remove tag from contact
 app.delete(
@@ -5814,15 +5902,23 @@ app.delete(
       const contactId = c.req.param("contactId");
       const tagId = c.req.param("tagId");
 
-      const db = c.get("db");
-      const service = new ContactService(db);
-
-      if (!(await service.contactInProject(projectId, contactId))) {
+      const result = await new TagService(c.get("db")).removeFromContact(
+        projectId,
+        contactId,
+        tagId,
+      );
+      if (result.status === "contact_not_found") {
         return c.json({ error: "Contact not found" }, 404);
       }
-      await service.removeTag(contactId, tagId);
+      if (result.status === "tag_not_found") {
+        return c.json({ error: "Tag not found" }, 404);
+      }
 
-      return c.json({ success: true });
+      return c.json({
+        success: true,
+        tag: result.tag,
+        removed: result.changed,
+      });
     } catch (err) {
       console.error("Tag removal error:", err);
       return c.json({ error: "Failed to remove tag" }, 500);
@@ -5838,18 +5934,19 @@ app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
     const data = validate(setStageSchema, body);
     const db = c.get("db");
     const service = new ContactService(db);
+    const tagService = new TagService(db);
 
     if (!(await service.contactInProject(projectId, contactId))) {
       return c.json({ error: "Contact not found" }, 404);
     }
     // Only ever touch tags that belong to this project.
-    const groupTagIds = await service.filterProjectTagIds(
+    const groupTagIds = await tagService.filterProjectTagIds(
       projectId,
       data.groupTagIds,
     );
     if (
       data.tagId &&
-      (await service.filterProjectTagIds(projectId, [data.tagId])).length === 0
+      (await tagService.filterProjectTagIds(projectId, [data.tagId])).length === 0
     ) {
       return c.json({ error: "Invalid tag" }, 400);
     }

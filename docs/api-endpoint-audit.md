@@ -4,11 +4,11 @@
 
 ## Result
 
-- Registered route/method pairs: 142
-- API-key-supported or API-key-required routes: 89
+- Registered route/method pairs: 144
+- API-key-supported or API-key-required routes: 91
 - Anonymous visitor routes: 15
 - Session-only routes: 33
-- Operations in the public OpenAPI contract: 104
+- Operations in the public OpenAPI contract: 106
 
 All project resource routes approved for external automation use the canonical `/api/projects/:projectId/*` contract and accept either a dashboard session or a project-scoped API key. Account, team, billing, onboarding, OAuth lifecycle, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
 
@@ -22,7 +22,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 - Invite token: 1
 - Invite token + session: 1
 - Session: 33
-- Session or API key: 87
+- Session or API key: 89
 - Stripe signature: 1
 
 ## Endpoint inventory
@@ -77,6 +77,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | PUT | `/api/projects/:projectId/contacts/:contactId/next-action` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/contacts/:contactId/stage` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/contacts/:contactId/tags` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| PUT | `/api/projects/:projectId/contacts/:contactId/tags/:tagId` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | DELETE | `/api/projects/:projectId/contacts/:contactId/tags/:tagId` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/contacts/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | PUT | `/api/projects/:projectId/contacts/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
@@ -125,6 +126,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | PUT | `/api/projects/:projectId/schedules/:id/rules` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/tags` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/tags` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| GET | `/api/projects/:projectId/tags/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | PATCH | `/api/projects/:projectId/tags/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | DELETE | `/api/projects/:projectId/tags/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/uploads` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |

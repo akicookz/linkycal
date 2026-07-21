@@ -466,14 +466,35 @@ export const setNextActionSchema = z.union([
 
 // ─── Tags ────────────────────────────────────────────────────────────────────
 
+export const tagNameSchema = z.string().trim().min(1).max(50);
+export const tagColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
 export const createTagSchema = z.object({
-  name: z.string().min(1).max(50),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  name: tagNameSchema,
+  color: tagColorSchema.optional(),
 });
 
-export const updateTagSchema = z.object({
-  name: z.string().min(1).max(50).optional(),
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+export const updateTagSchema = z
+  .object({
+    name: tagNameSchema.optional(),
+    color: tagColorSchema.optional(),
+  })
+  .refine((data) => data.name !== undefined || data.color !== undefined, {
+    message: "At least one tag field is required",
+  });
+
+export const listTagsQuerySchema = z
+  .object({
+    search: z.string().trim().min(1).max(100).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+    cursor: z.string().min(1).max(1000).optional(),
+  })
+  .refine((data) => data.cursor === undefined || data.limit !== undefined, {
+    message: "limit is required when cursor is provided",
+  });
+
+export const assignTagSchema = z.object({
+  tagId: z.string().min(1),
 });
 
 export const setStageSchema = z.object({

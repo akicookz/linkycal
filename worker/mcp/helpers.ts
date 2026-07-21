@@ -93,16 +93,3 @@ export function inProject<T extends { projectId: string }>(
   if (!row || row.projectId !== projectId) return null;
   return row;
 }
-
-export async function tagInProject(
-  db: AppDatabase,
-  tagId: string,
-  projectId: string,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ id: dbSchema.tags.id })
-    .from(dbSchema.tags)
-    .where(and(eq(dbSchema.tags.id, tagId), eq(dbSchema.tags.projectId, projectId)))
-    .limit(1);
-  return !!row;
-}
