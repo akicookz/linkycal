@@ -27,6 +27,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { TagSearchCreate } from "@/components/tag-search-create";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -210,117 +211,6 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(handler);
   }, [value, delay]);
   return debouncedValue;
-}
-
-function EditableTagRow({
-  tag,
-  deleting,
-  updating,
-  onUpdate,
-  onDelete,
-}: {
-  tag: Tag;
-  deleting: boolean;
-  updating: boolean;
-  onUpdate: (vars: { id: string; name?: string; color?: string }) => void;
-  onDelete: (tagId: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [name, setName] = useState(tag.name);
-
-  useEffect(() => {
-    if (!editing) setName(tag.name);
-  }, [editing, tag.name]);
-
-  function saveName() {
-    const nextName = name.trim();
-    setEditing(false);
-    if (!nextName) {
-      setName(tag.name);
-      return;
-    }
-    if (nextName !== tag.name) onUpdate({ id: tag.id, name: nextName });
-  }
-
-  return (
-    <div className="group flex items-center justify-between gap-3 rounded-[12px] px-3 py-2 hover:bg-muted/50">
-      <div className="flex min-w-0 flex-1 items-center gap-2">
-        <label
-          className="group/swatch relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full"
-          title={`Change ${tag.name} color`}
-          aria-busy={updating}
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none absolute -inset-1 rounded-full border-2 border-transparent",
-              updating &&
-                "animate-spin border-primary/25 border-t-primary",
-            )}
-          />
-          <span
-            className="h-full w-full rounded-full ring-2 ring-transparent transition-shadow group-hover/swatch:ring-primary/20"
-            style={{ backgroundColor: tag.color ?? "#94a3b8" }}
-          />
-          <input
-            type="color"
-            value={tag.color ?? "#94a3b8"}
-            onChange={(event) =>
-              onUpdate({ id: tag.id, color: event.target.value })
-            }
-            className="absolute -inset-[13px] h-10 w-10 cursor-pointer opacity-0"
-            aria-label={`Color for ${tag.name}`}
-          />
-        </label>
-
-        {editing ? (
-          <input
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            onBlur={saveName}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                saveName();
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                setName(tag.name);
-                setEditing(false);
-              }
-            }}
-            className="h-7 min-w-0 flex-1 rounded-[8px] bg-background px-2 text-sm font-medium outline-none ring-1 ring-primary/35 focus:ring-2 focus:ring-primary/45"
-            aria-label={`Edit ${tag.name} name`}
-            autoFocus
-          />
-        ) : (
-          <button
-            type="button"
-            className="min-w-0 flex-1 truncate text-left text-sm font-medium outline-none hover:text-primary focus-visible:text-primary"
-            onClick={() => setEditing(true)}
-            title={`Rename ${tag.name}`}
-          >
-            {tag.name}
-          </button>
-        )}
-      </div>
-
-      <button
-        type="button"
-        className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground opacity-0 outline-none transition-[color,opacity,scale] after:absolute after:-inset-1.5 hover:text-destructive focus-visible:opacity-100 focus-visible:text-destructive group-hover:opacity-100 active:scale-[0.96]"
-        onClick={() => onDelete(tag.id)}
-        disabled={deleting}
-        aria-label={`Delete ${tag.name}`}
-        title={`Delete ${tag.name}`}
-      >
-        {deleting ? (
-          <Loader className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <X className="h-3.5 w-3.5" />
-        )}
-      </button>
-    </div>
-  );
 }
 
 const EMPTY_FORM: ContactFormData = { name: "", email: "", phone: "", notes: "" };
@@ -852,10 +742,21 @@ export default function Contacts() {
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error("Failed to create tag");
-      return res.json();
+      return (await res.json()) as { tag?: Tag };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
+    onSuccess: (data) => {
+      if (data.tag) {
+        queryClient.setQueryData<Tag[]>(
+          ["projects", projectId, "tags"],
+          (current = []) =>
+            current.some((tag) => tag.id === data.tag?.id)
+              ? current
+              : [...current, data.tag as Tag],
+        );
+      }
+      void queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "tags"],
+      });
       setTagSearch("");
       setNewTagColor("#6366f1");
     },
@@ -1162,15 +1063,6 @@ export default function Contacts() {
     editMutation.mutate({ id: editingContact.id, data: editForm });
   }
 
-  function handleCreateTag(e: React.FormEvent) {
-    e.preventDefault();
-    if (!tagSearch.trim()) return;
-    createTagMutation.mutate({
-      name: tagSearch.trim(),
-      color: newTagColor || undefined,
-    });
-  }
-
   function applyPipelineConfig(nextConfig: ViewConfig) {
     configRef.current = nextConfig;
     setConfig(nextConfig);
@@ -1225,7 +1117,11 @@ export default function Contacts() {
 
   // ─── Kanban step editing ───
   // Board-composition changes update immediately, then persist serially in the background.
-  function handleAddStep(input: { name?: string; color?: string; tagId?: string }) {
+  async function handleAddStep(input: {
+    name?: string;
+    color?: string;
+    tagId?: string;
+  }) {
     const currentConfig = configRef.current;
     const base = resolveColumnTagIds(currentConfig.pivotTagIds ?? null, tags);
     if (input.tagId) {
@@ -1238,23 +1134,20 @@ export default function Contacts() {
     }
     const name = input.name?.trim();
     if (!name) return;
-    createTagMutation.mutate(
-      { name, color: input.color },
-      {
-        onSuccess: (data: { tag?: { id: string } }) => {
-          const newId = data?.tag?.id;
-          if (!newId) return;
-          const latestConfig = configRef.current;
-          applyPipelineConfig({
-            ...latestConfig,
-            pivotTagIds: [
-              ...resolveColumnTagIds(latestConfig.pivotTagIds ?? null, tags),
-              newId,
-            ],
-          });
-        },
-      },
-    );
+    const data = await createTagMutation.mutateAsync({
+      name,
+      color: input.color,
+    });
+    const newId = data.tag?.id;
+    if (!newId) throw new Error("Failed to create tag");
+    const latestConfig = configRef.current;
+    applyPipelineConfig({
+      ...latestConfig,
+      pivotTagIds: [
+        ...resolveColumnTagIds(latestConfig.pivotTagIds ?? null, tags),
+        newId,
+      ],
+    });
   }
 
   function handleRemoveStepFromBoard(tagId: string) {
@@ -1575,21 +1468,6 @@ export default function Contacts() {
   // ─── Render ───
 
   const filterCount = activeFilterCount(config);
-  const normalizedTagSearch = tagSearch.trim().toLocaleLowerCase();
-  const filteredTags = useMemo(
-    () =>
-      normalizedTagSearch
-        ? tags.filter((tag) =>
-            tag.name.toLocaleLowerCase().includes(normalizedTagSearch),
-          )
-        : tags,
-    [normalizedTagSearch, tags],
-  );
-  const canCreateTag =
-    normalizedTagSearch.length > 0 &&
-    !tags.some(
-      (tag) => tag.name.toLocaleLowerCase() === normalizedTagSearch,
-    );
   const allTagsForKanban = useMemo(
     () =>
       tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
@@ -2309,92 +2187,27 @@ export default function Contacts() {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={handleCreateTag} className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={tagSearch}
-                onChange={(event) => setTagSearch(event.target.value)}
-                placeholder="Search or create a tag"
-                className="pl-9"
-                autoFocus
-              />
-            </div>
-
-            <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-              {loadingTags && (
-                <div className="space-y-2">
-                  {Array.from({ length: 3 }).map((_, index) => (
-                    <div key={index} className="flex items-center gap-3 px-3 py-2">
-                      <Skeleton className="h-4 w-4 rounded-full" />
-                      <Skeleton className="h-4 w-24" />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {!loadingTags && filteredTags.length === 0 && !canCreateTag && (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No tags yet
-                </p>
-              )}
-
-              {filteredTags.map((tag) => (
-                <EditableTagRow
-                  key={tag.id}
-                  tag={tag}
-                  deleting={
-                    deleteTagMutation.isPending &&
-                    deleteTagMutation.variables === tag.id
-                  }
-                  updating={
-                    updateTagMutation.isPending &&
-                    updateTagMutation.variables?.id === tag.id
-                  }
-                  onUpdate={(vars) => updateTagMutation.mutate(vars)}
-                  onDelete={(tagId) => deleteTagMutation.mutate(tagId)}
-                />
-              ))}
-
-              {canCreateTag && (
-                <div className="flex items-center justify-between gap-3 rounded-[12px] bg-muted/50 px-3 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <label
-                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full"
-                      title="Choose tag color"
-                    >
-                      <span
-                        className="h-full w-full rounded-full"
-                        style={{ backgroundColor: newTagColor }}
-                      />
-                      <input
-                        type="color"
-                        value={newTagColor}
-                        onChange={(event) => setNewTagColor(event.target.value)}
-                        className="absolute -inset-[13px] h-10 w-10 cursor-pointer opacity-0"
-                        aria-label="New tag color"
-                      />
-                    </label>
-                    <span className="truncate text-sm">
-                      Create “{tagSearch.trim()}”
-                    </span>
-                  </div>
-                  <Button
-                    type="submit"
-                    size="sm"
-                    disabled={createTagMutation.isPending}
-                  >
-                    {createTagMutation.isPending ? (
-                      <Loader className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Plus className="h-4 w-4" />
-                    )}
-                    Create
-                  </Button>
-                </div>
-              )}
-            </div>
-          </form>
+          <TagSearchCreate
+            tags={tags}
+            search={tagSearch}
+            newTagColor={newTagColor}
+            loading={loadingTags}
+            creating={createTagMutation.isPending}
+            updatingTagId={
+              updateTagMutation.isPending
+                ? updateTagMutation.variables?.id
+                : null
+            }
+            deletingTagId={
+              deleteTagMutation.isPending ? deleteTagMutation.variables : null
+            }
+            autoFocus
+            onSearchChange={setTagSearch}
+            onNewTagColorChange={setNewTagColor}
+            onCreate={(input) => createTagMutation.mutate(input)}
+            onUpdate={(input) => updateTagMutation.mutate(input)}
+            onDelete={(tagId) => deleteTagMutation.mutate(tagId)}
+          />
         </DialogContent>
       </Dialog>
 

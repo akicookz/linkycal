@@ -30,6 +30,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TagSearchCreate } from "@/components/tag-search-create";
 import {
   Popover,
   PopoverContent,
@@ -59,7 +60,11 @@ interface ContactsKanbanProps {
   onStartPipeline?: () => void;
   seedingPipeline?: boolean;
   editable?: boolean;
-  onAddStep?: (input: { name?: string; color?: string; tagId?: string }) => void;
+  onAddStep?: (input: {
+    name?: string;
+    color?: string;
+    tagId?: string;
+  }) => Promise<void>;
   onRenameStep?: (tagId: string, name: string) => void;
   onRecolorStep?: (tagId: string, color: string) => void;
   onSwapStep?: (tagId: string, newTagId: string) => void;
@@ -401,25 +406,55 @@ function StepMenu({
 }
 
 function AddStepColumn({
+  allTags,
   availableTags,
   onAdd,
 }: {
+  allTags: ViewTag[];
   availableTags: ViewTag[];
-  onAdd: (input: { name?: string; color?: string; tagId?: string }) => void;
+  onAdd: (input: {
+    name?: string;
+    color?: string;
+    tagId?: string;
+  }) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
+  const [search, setSearch] = useState("");
   const [color, setColor] = useState(STEP_COLORS[4]);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+
+  function close() {
+    setOpen(false);
+    setSearch("");
+    setColor(STEP_COLORS[4]);
+    setCreateError("");
+  }
+
+  async function handleCreate(input: { name: string; color: string }) {
+    setCreating(true);
+    setCreateError("");
+    try {
+      await onAdd(input);
+      close();
+    } catch {
+      setCreateError("Couldn’t create this step. Try again.");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   return (
     <div className="w-72 shrink-0">
       <Popover
         open={open}
         onOpenChange={(o) => {
+          if (!o && creating) return;
           setOpen(o);
           if (!o) {
-            setName("");
+            setSearch("");
             setColor(STEP_COLORS[4]);
+            setCreateError("");
           }
         }}
       >
@@ -432,72 +467,28 @@ function AddStepColumn({
             Add step
           </button>
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-64 p-2 space-y-2">
-          <form
-            className="flex items-center gap-1.5"
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (!name.trim()) return;
-              onAdd({ name: name.trim(), color });
-              setOpen(false);
-              setName("");
+        <PopoverContent align="start" className="w-72 p-3">
+          <TagSearchCreate
+            tags={availableTags}
+            allTags={allTags}
+            search={search}
+            newTagColor={color}
+            creating={creating}
+            emptyText="All tags are already in this pipeline"
+            autoFocus
+            listClassName="max-h-56"
+            onSearchChange={setSearch}
+            onNewTagColorChange={setColor}
+            onCreate={handleCreate}
+            onSelect={(tag) => {
+              void onAdd({ tagId: tag.id });
+              close();
             }}
-          >
-            <label
-              className="h-8 w-8 shrink-0 cursor-pointer rounded-[8px] border"
-              style={{ backgroundColor: color }}
-              title="Pick a color"
-            >
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => setColor(e.target.value)}
-                className="h-0 w-0 opacity-0"
-                aria-label="Step color"
-              />
-            </label>
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="New step name"
-              className="h-8 flex-1"
-              aria-label="New step name"
-            />
-            <button
-              type="submit"
-              disabled={!name.trim()}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] hover:bg-accent disabled:opacity-40"
-              aria-label="Add step"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </form>
-
-          {availableTags.length > 0 && (
-            <div className="border-t border-border/60 pt-1">
-              <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-                Use existing tag
-              </p>
-              <div className="max-h-40 overflow-y-auto">
-                {availableTags.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    className="flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-accent"
-                    onClick={() => {
-                      onAdd({ tagId: t.id });
-                      setOpen(false);
-                    }}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: t.color ?? "#94a3b8" }}
-                    />
-                    <span className="truncate">{t.name}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          />
+          {createError && (
+            <p role="alert" className="mt-2 px-1 text-xs text-destructive">
+              {createError}
+            </p>
           )}
         </PopoverContent>
       </Popover>
@@ -562,7 +553,7 @@ function KanbanColumnBox({
           {menu}
         </div>
       </div>
-      <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pr-0.5 pl-2">
+      <div className="space-y-2 max-h-[calc(100vh-280px)] overflow-y-auto pl-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {children}
       </div>
     </div>
@@ -844,7 +835,13 @@ export default function ContactsKanban({
               }
             />
           ))}
-          {editable && onAddStep && <AddStepColumn availableTags={swappableTags} onAdd={onAddStep} />}
+          {editable && onAddStep && (
+            <AddStepColumn
+              allTags={allTags}
+              availableTags={swappableTags}
+              onAdd={onAddStep}
+            />
+          )}
         </div>
       </div>
       {/* Floating preview that follows the cursor while dragging (portaled,
