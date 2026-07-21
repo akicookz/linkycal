@@ -590,6 +590,8 @@ function KanbanStageColumn({
   editable?: boolean;
   menu?: React.ReactNode;
 }) {
+  const stageMembershipKey =
+    column.id === UNTAGGED_COLUMN_ID ? [...stageTagIds].sort() : undefined;
   const {
     data,
     isLoading,
@@ -605,7 +607,7 @@ function KanbanStageColumn({
       "kanban-stage",
       column.id,
       filters,
-      stageTagIds,
+      stageMembershipKey,
     ],
     initialPageParam: 0,
     queryFn: async ({ pageParam }): Promise<ContactsPage> => {
@@ -733,6 +735,26 @@ export default function ContactsKanban({
     () => columns.filter((c) => c.id !== UNTAGGED_COLUMN_ID).map((c) => c.id),
     [columns],
   );
+  const contactFilters = useMemo<ContactQueryFilters>(
+    () => ({
+      search: filters.search,
+      tagIds: filters.tagIds,
+      matchAllTags: filters.matchAllTags,
+      activityType: filters.activityType,
+      activitySinceDays: filters.activitySinceDays,
+      noActivitySinceDays: filters.noActivitySinceDays,
+      bookingStatus: filters.bookingStatus,
+    }),
+    [
+      filters.search,
+      filters.tagIds,
+      filters.matchAllTags,
+      filters.activityType,
+      filters.activitySinceDays,
+      filters.noActivitySinceDays,
+      filters.bookingStatus,
+    ],
+  );
   const swappableTags = useMemo(() => {
     const used = new Set(columnTagIds);
     return allTags.filter((t) => !used.has(t.id));
@@ -802,7 +824,7 @@ export default function ContactsKanban({
               projectId={projectId}
               column={col}
               stageTagIds={columnTagIds}
-              filters={filters}
+              filters={contactFilters}
               now={now}
               editable={editable}
               menu={

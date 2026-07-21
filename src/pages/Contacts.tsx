@@ -20,7 +20,6 @@ import {
   ListIcon,
   LayoutGrid,
   Bookmark,
-  Save,
   ChevronDown,
   Check,
   Upload,
@@ -377,28 +376,6 @@ const BOOKING_STATUS_LABELS: Record<BookingStatus, string> = {
   declined: "Declined",
 };
 
-function configsEqual(a: ViewConfig, b: ViewConfig): boolean {
-  // Preserve explicit `false` so toggling a boolean off still registers
-  // as a change vs. a saved view that had it `true`.
-  const norm = (c: ViewConfig) =>
-    JSON.stringify({
-      search: c.search ? c.search : undefined,
-      tagIds:
-        c.tagIds && c.tagIds.length > 0 ? [...c.tagIds].sort() : undefined,
-      matchAllTags: c.matchAllTags ?? undefined,
-      activityType: c.activityType,
-      activitySinceDays: c.activitySinceDays,
-      noActivitySinceDays: c.noActivitySinceDays,
-      bookingStatus: c.bookingStatus,
-      pivotTagIds:
-        c.pivotTagIds && c.pivotTagIds.length > 0
-          ? [...c.pivotTagIds].sort()
-          : undefined,
-      showUntagged: c.showUntagged ?? undefined,
-    });
-  return norm(a) === norm(b);
-}
-
 function activeFilterCount(c: ViewConfig): number {
   let n = 0;
   if (c.tagIds && c.tagIds.length > 0) n++;
@@ -611,12 +588,27 @@ export default function Contacts() {
   const [csvError, setCsvError] = useState("");
   const [importResult, setImportResult] = useState<ContactImportResult | null>(null);
 
-  // ─── View dialogs ───
-  const [saveViewOpen, setSaveViewOpen] = useState(false);
-  const [saveViewName, setSaveViewName] = useState("");
+  // ─── View controls ───
   const [viewsMenuOpen, setViewsMenuOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [deleteViewTarget, setDeleteViewTarget] = useState<SavedView | null>(null);
+  const [pipelineSaveError, setPipelineSaveError] = useState("");
+  const pipelineViewIdRef = useRef<string | null>(null);
+  const configRef = useRef<ViewConfig>(EMPTY_CONFIG);
+
+  useEffect(() => {
+    pipelineViewIdRef.current = activeViewId;
+  }, [activeViewId]);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  useEffect(() => {
+    if (!pipelineSaveError) return;
+    const timeout = window.setTimeout(() => setPipelineSaveError(""), 4000);
+    return () => window.clearTimeout(timeout);
+  }, [pipelineSaveError]);
 
   // ─── Queries ───
 
@@ -711,20 +703,19 @@ export default function Contacts() {
     [csvRows.length, csvMapping],
   );
 
-  const isDirty = useMemo(() => {
-    const liveConfig: ViewConfig = { ...config, search: searchInput || undefined };
-    if (!activeView) {
-      return (
-        activeFilterCount(liveConfig) > 0 ||
-        viewType !== "list" ||
-        !!searchInput
-      );
-    }
-    return (
-      activeView.type !== viewType ||
-      !configsEqual(activeView.config ?? {}, liveConfig)
-    );
-  }, [activeView, config, viewType, searchInput]);
+  function invalidateNonKanbanContactQueries() {
+    return queryClient.invalidateQueries({
+      predicate: (query) => {
+        const key = query.queryKey;
+        return (
+          key[0] === "projects" &&
+          key[1] === projectId &&
+          key[2] === "contacts" &&
+          key[3] !== "kanban-stage"
+        );
+      },
+    });
+  }
 
   // ─── Mutations ───
 
@@ -878,9 +869,11 @@ export default function Contacts() {
       if (!res.ok) throw new Error("Failed to delete tag");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] }),
+        invalidateNonKanbanContactQueries(),
+      ]);
     },
   });
 
@@ -897,59 +890,54 @@ export default function Contacts() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] }),
-        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] }),
+        invalidateNonKanbanContactQueries(),
       ]);
     },
   });
 
-  const createViewMutation = useMutation({
-    mutationFn: async (payload: {
-      name: string;
-      type: ViewType;
-      config: ViewConfig;
-    }) => {
-      const res = await fetch(`/api/projects/${projectId}/contact-views`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error("Failed to save view");
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({
-        queryKey: ["projects", projectId, "contact-views"],
-      });
-      if (data?.view?.id) setActiveViewId(data.view.id);
-      setSaveViewOpen(false);
-      setSaveViewName("");
-    },
-  });
-
-  const updateViewMutation = useMutation({
-    mutationFn: async (payload: {
-      id: string;
-      type: ViewType;
-      config: ViewConfig;
-    }) => {
+  const pipelineViewMutation = useMutation({
+    scope: { id: `pipeline-view:${projectId}` },
+    mutationFn: async ({ nextConfig }: { nextConfig: ViewConfig }) => {
+      const viewId = pipelineViewIdRef.current;
       const res = await fetch(
-        `/api/projects/${projectId}/contact-views/${payload.id}`,
+        viewId
+          ? `/api/projects/${projectId}/contact-views/${viewId}`
+          : `/api/projects/${projectId}/contact-views`,
         {
-          method: "PUT",
+          method: viewId ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            type: payload.type,
-            config: payload.config,
-          }),
+          body: JSON.stringify(
+            viewId
+              ? { type: "kanban", config: nextConfig }
+              : { name: "Pipeline", type: "kanban", config: nextConfig },
+          ),
         },
       );
-      if (!res.ok) throw new Error("Failed to update view");
-      return res.json();
+      if (!res.ok) throw new Error("Failed to save pipeline");
+      const data = (await res.json()) as { view?: SavedView };
+      if (!data.view) throw new Error("Failed to save pipeline");
+      return data.view;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["projects", projectId, "contact-views"],
-      });
+    onSuccess: (view) => {
+      pipelineViewIdRef.current = view.id;
+      setActiveViewId(view.id);
+      setPipelineSaveError("");
+      try {
+        localStorage.setItem(`linkycal:contacts:lastView:${projectId}`, view.id);
+      } catch {
+        /* localStorage unavailable — non-fatal */
+      }
+      queryClient.setQueryData<SavedView[]>(
+        ["projects", projectId, "contact-views"],
+        (current = []) => {
+          const index = current.findIndex((item) => item.id === view.id);
+          if (index === -1) return [...current, view];
+          return current.map((item) => (item.id === view.id ? view : item));
+        },
+      );
+    },
+    onError: () => {
+      setPipelineSaveError("Couldn’t save the pipeline change. Try again.");
     },
   });
 
@@ -967,6 +955,8 @@ export default function Contacts() {
         queryKey: ["projects", projectId, "contact-views"],
       });
       if (activeViewId === id) {
+        pipelineViewIdRef.current = null;
+        configRef.current = EMPTY_CONFIG;
         setActiveViewId(null);
         setConfig(EMPTY_CONFIG);
         setSearchInput("");
@@ -992,6 +982,8 @@ export default function Contacts() {
       } catch {
         /* ignore */
       }
+      pipelineViewIdRef.current = view.id;
+      configRef.current = view.config ?? {};
       setActiveViewId(view.id);
       setConfig(view.config ?? {});
       setSearchInput("");
@@ -1061,15 +1053,20 @@ export default function Contacts() {
         /* localStorage unavailable — non-fatal */
       }
       if (!view) {
+        pipelineViewIdRef.current = null;
+        configRef.current = EMPTY_CONFIG;
         setActiveViewId(null);
         setConfig(EMPTY_CONFIG);
         setSearchInput("");
         setViewType("list");
         return;
       }
+      pipelineViewIdRef.current = view.id;
       setActiveViewId(view.id);
       const cfg = view.config ?? {};
-      setConfig({ ...cfg, search: undefined });
+      const nextConfig = { ...cfg, search: undefined };
+      configRef.current = nextConfig;
+      setConfig(nextConfig);
       setSearchInput(cfg.search ?? "");
       setViewType(view.type);
     },
@@ -1174,22 +1171,11 @@ export default function Contacts() {
     });
   }
 
-  function handleSaveView(e: React.FormEvent) {
-    e.preventDefault();
-    if (!saveViewName.trim()) return;
-    createViewMutation.mutate({
-      name: saveViewName.trim(),
-      type: viewType,
-      config: { ...config, search: searchInput || undefined },
-    });
-  }
-
-  function handleUpdateActiveView() {
-    if (!activeView) return;
-    updateViewMutation.mutate({
-      id: activeView.id,
-      type: viewType,
-      config: { ...config, search: searchInput || undefined },
+  function applyPipelineConfig(nextConfig: ViewConfig) {
+    configRef.current = nextConfig;
+    setConfig(nextConfig);
+    pipelineViewMutation.mutate({
+      nextConfig: { ...nextConfig, search: searchInput || undefined },
     });
   }
 
@@ -1227,24 +1213,27 @@ export default function Contacts() {
   }
 
   function togglePivotTag(tagId: string) {
-    const current = new Set(config.pivotTagIds ?? []);
+    const currentConfig = configRef.current;
+    const current = new Set(currentConfig.pivotTagIds ?? []);
     if (current.has(tagId)) current.delete(tagId);
     else current.add(tagId);
-    setConfig((c) => ({
-      ...c,
+    applyPipelineConfig({
+      ...currentConfig,
       pivotTagIds: current.size === 0 ? undefined : Array.from(current),
-    }));
+    });
   }
 
   // ─── Kanban step editing ───
-  // Board-composition ops edit the live config draft (persisted via "Update view").
-  // Materialize the implicit "all tags" order into pivotTagIds on first structural edit.
+  // Board-composition changes update immediately, then persist serially in the background.
   function handleAddStep(input: { name?: string; color?: string; tagId?: string }) {
-    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    const currentConfig = configRef.current;
+    const base = resolveColumnTagIds(currentConfig.pivotTagIds ?? null, tags);
     if (input.tagId) {
       if (base.includes(input.tagId)) return;
-      const next = [...base, input.tagId];
-      setConfig((c) => ({ ...c, pivotTagIds: next }));
+      applyPipelineConfig({
+        ...currentConfig,
+        pivotTagIds: [...base, input.tagId],
+      });
       return;
     }
     const name = input.name?.trim();
@@ -1255,23 +1244,35 @@ export default function Contacts() {
         onSuccess: (data: { tag?: { id: string } }) => {
           const newId = data?.tag?.id;
           if (!newId) return;
-          setConfig((c) => ({
-            ...c,
-            pivotTagIds: [...resolveColumnTagIds(c.pivotTagIds ?? null, tags), newId],
-          }));
+          const latestConfig = configRef.current;
+          applyPipelineConfig({
+            ...latestConfig,
+            pivotTagIds: [
+              ...resolveColumnTagIds(latestConfig.pivotTagIds ?? null, tags),
+              newId,
+            ],
+          });
         },
       },
     );
   }
 
   function handleRemoveStepFromBoard(tagId: string) {
-    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
-    setConfig((c) => ({ ...c, pivotTagIds: base.filter((id) => id !== tagId) }));
+    const currentConfig = configRef.current;
+    const base = resolveColumnTagIds(currentConfig.pivotTagIds ?? null, tags);
+    applyPipelineConfig({
+      ...currentConfig,
+      pivotTagIds: base.filter((id) => id !== tagId),
+    });
   }
 
   function handleDeleteStepTag(tagId: string) {
-    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
-    setConfig((c) => ({ ...c, pivotTagIds: base.filter((id) => id !== tagId) }));
+    const currentConfig = configRef.current;
+    const base = resolveColumnTagIds(currentConfig.pivotTagIds ?? null, tags);
+    applyPipelineConfig({
+      ...currentConfig,
+      pivotTagIds: base.filter((id) => id !== tagId),
+    });
     deleteTagMutation.mutate(tagId);
   }
 
@@ -1286,21 +1287,29 @@ export default function Contacts() {
   }
 
   function handleSwapStep(tagId: string, newTagId: string) {
-    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
+    const currentConfig = configRef.current;
+    const base = resolveColumnTagIds(currentConfig.pivotTagIds ?? null, tags);
     const idx = base.indexOf(tagId);
     if (idx === -1) return;
     if (base.includes(newTagId)) {
-      setConfig((c) => ({ ...c, pivotTagIds: base.filter((id) => id !== tagId) }));
+      applyPipelineConfig({
+        ...currentConfig,
+        pivotTagIds: base.filter((id) => id !== tagId),
+      });
       return;
     }
     const next = [...base];
     next[idx] = newTagId;
-    setConfig((c) => ({ ...c, pivotTagIds: next }));
+    applyPipelineConfig({ ...currentConfig, pivotTagIds: next });
   }
 
   function handleReorderSteps(fromIndex: number, toIndex: number) {
-    const base = resolveColumnTagIds(config.pivotTagIds ?? null, tags);
-    setConfig((c) => ({ ...c, pivotTagIds: applyReorder(base, fromIndex, toIndex) }));
+    const currentConfig = configRef.current;
+    const base = resolveColumnTagIds(currentConfig.pivotTagIds ?? null, tags);
+    applyPipelineConfig({
+      ...currentConfig,
+      pivotTagIds: applyReorder(base, fromIndex, toIndex),
+    });
   }
 
   // ─── Description ───
@@ -1825,12 +1834,13 @@ export default function Contacts() {
                     <input
                       type="checkbox"
                       checked={!!config.showUntagged}
-                      onChange={(e) =>
-                        setConfig((c) => ({
-                          ...c,
+                      onChange={(e) => {
+                        const currentConfig = configRef.current;
+                        applyPipelineConfig({
+                          ...currentConfig,
                           showUntagged: e.target.checked || undefined,
-                        }))
-                      }
+                        });
+                      }}
                     />
                     Show "Untagged" column
                   </label>
@@ -1860,43 +1870,12 @@ export default function Contacts() {
         </Popover>
 
         <div className="ml-auto flex items-center gap-2">
-          {isDirty && activeView && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9"
-              onClick={handleUpdateActiveView}
-              disabled={updateViewMutation.isPending}
-            >
-              {updateViewMutation.isPending ? (
-                <Loader className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Save className="h-3.5 w-3.5" />
-              )}
-              Update view
-            </Button>
-          )}
-          {isDirty && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9"
-              onClick={() => setSaveViewOpen(true)}
-            >
-              <Save className="h-3.5 w-3.5" />
-              Save as new view
-            </Button>
-          )}
-
           {/* Saved views dropdown */}
           <Popover open={viewsMenuOpen} onOpenChange={setViewsMenuOpen}>
             <PopoverTrigger asChild>
               <Button variant="outline" className="h-9">
                 <Bookmark className="h-4 w-4" />
                 {activeView ? activeView.name : "All contacts"}
-                {isDirty && activeView && (
-                  <span className="ml-1 text-xs text-muted-foreground">·</span>
-                )}
                 <ChevronDown className="h-4 w-4 opacity-60" />
               </Button>
             </PopoverTrigger>
@@ -2272,52 +2251,6 @@ export default function Contacts() {
         </DialogContent>
       </Dialog>
 
-      {/* ─── Save View Dialog ─── */}
-      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Save view</DialogTitle>
-            <DialogDescription>
-              Give this view a name. It will save the current filters and{" "}
-              {viewType === "kanban" ? "kanban layout" : "list mode"}.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveView}>
-            <div className="space-y-2">
-              <Label htmlFor="view-name">Name</Label>
-              <Input
-                id="view-name"
-                placeholder="e.g. Hot leads, Stale contacts"
-                value={saveViewName}
-                onChange={(e) => setSaveViewName(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <DialogFooter className="mt-6">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setSaveViewOpen(false)}
-                disabled={createViewMutation.isPending}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  createViewMutation.isPending || !saveViewName.trim()
-                }
-              >
-                {createViewMutation.isPending && (
-                  <Loader className="h-4 w-4 animate-spin" />
-                )}
-                Save view
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
       {/* ─── Delete View Dialog ─── */}
       <Dialog
         open={!!deleteViewTarget}
@@ -2464,6 +2397,16 @@ export default function Contacts() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {pipelineSaveError && (
+        <div
+          role="alert"
+          className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-[12px] bg-destructive px-4 py-3 text-sm text-destructive-foreground shadow-lg"
+        >
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          {pipelineSaveError}
+        </div>
+      )}
     </div>
   );
 }
