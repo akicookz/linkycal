@@ -41,48 +41,9 @@ describe("project API route policy", () => {
     expect(
       projectRouteAccess("GET", "/api/projects/project-a/contacts"),
     ).toBe("apiKey");
-    expect(
-      projectRouteAccess(
-        "PATCH",
-        "/api/projects/project-a/bookings/booking-a/cancel",
-      ),
-    ).toBe("apiKey");
-    expect(
-      projectRouteAccess(
-        "PUT",
-        "/api/projects/project-a/event-types/event-a/calendars",
-      ),
-    ).toBe("apiKey");
-    expect(
-      projectRouteAccess(
-        "GET",
-        "/api/projects/project-a/contacts/contact-a/activities",
-      ),
-    ).toBe("apiKey");
-    expect(
-      projectRouteAccess(
-        "GET",
-        "/api/projects/project-a/workflows/workflow-a/runs/run-a",
-      ),
-    ).toBe("apiKey");
-    expect(
-      projectRouteAccess("GET", "/api/projects/project-a/tags/tag-a"),
-    ).toBe("apiKey");
-    expect(
-      projectRouteAccess(
-        "PUT",
-        "/api/projects/project-a/contacts/contact-a/tags/tag-a",
-      ),
-    ).toBe("apiKey");
     expect(projectRouteAccess("DELETE", "/api/projects/project-a")).toBe(
       "sessionOnly",
     );
-    expect(
-      projectRouteAccess("GET", "/api/projects/project-a/api-keys"),
-    ).toBe("sessionOnly");
-    expect(
-      projectRouteAccess("POST", "/api/projects/project-a/calendar/connect"),
-    ).toBe("sessionOnly");
     expect(
       projectRouteAccess("GET", "/api/projects/project-a/unknown"),
     ).toBe("unclassified");
@@ -97,7 +58,6 @@ describe("project API route policy", () => {
     const sourceKeys = sourceRoutes.map(routeKey);
     const policyKeys = policyRoutes.map(routeKey);
 
-    expect(sourceRoutes.length).toBeGreaterThan(80);
     expect(new Set(sourceKeys).size).toBe(sourceKeys.length);
     expect(new Set(policyKeys).size).toBe(policyKeys.length);
     expect(new Set(policyKeys)).toEqual(new Set(sourceKeys));

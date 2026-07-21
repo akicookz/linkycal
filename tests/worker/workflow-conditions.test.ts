@@ -112,6 +112,3 @@ describe("evaluateWorkflowCondition", () => {
     expect(evaluateWorkflowCondition(cond, baseContext())).toBe(true);
   });
 });
-
-describe("parseWorkflowCondition", () => {
-});

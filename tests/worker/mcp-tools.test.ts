@@ -281,6 +281,3 @@ describe("MCP tool project scoping", () => {
     expect((await getWorkflow(ctxA, { workflowId: "wf-b1" })).isError).toBe(true);
   });
 });
-
-describe("MCP tool plan limits", () => {
-});

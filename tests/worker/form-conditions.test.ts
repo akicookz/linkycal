@@ -96,9 +96,6 @@ describe("evaluateFormCondition", () => {
   });
 });
 
-describe("isFieldVisible", () => {
-});
-
 describe("SPA/widget parity", () => {
   test("both evaluators agree on a representative fixture", () => {
     const fields = fieldsById([

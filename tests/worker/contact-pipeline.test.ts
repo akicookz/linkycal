@@ -44,12 +44,6 @@ describe("ContactService.setStage", () => {
   });
 });
 
-describe("ContactService.seedPipeline", () => {
-});
-
-describe("ContactService.listWithTags lastActivityAt", () => {
-});
-
 describe("ContactService operational facts", () => {
   test("uses the latest tag-added timestamp for a current assignment", async () => {
     const db = await seed();

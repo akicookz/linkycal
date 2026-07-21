@@ -87,6 +87,3 @@ describe("owner booking notifications", () => {
     expect(body.cc).toEqual(["owner@example.com"]);
   });
 });
-
-describe("booking confirmation ICS attachment", () => {
-});

@@ -40,6 +40,3 @@ describe("computeNextRunAt", () => {
     expect(decemberNext?.toISOString()).toBe("2027-01-01T10:00:00.000Z");
   });
 });
-
-describe("parseWorkflowTriggerConfig", () => {
-});
