@@ -216,11 +216,13 @@ function useDebounce<T>(value: T, delay: number): T {
 function EditableTagRow({
   tag,
   deleting,
+  updating,
   onUpdate,
   onDelete,
 }: {
   tag: Tag;
   deleting: boolean;
+  updating: boolean;
   onUpdate: (vars: { id: string; name?: string; color?: string }) => void;
   onDelete: (tagId: string) => void;
 }) {
@@ -245,9 +247,18 @@ function EditableTagRow({
     <div className="group flex items-center justify-between gap-3 rounded-[12px] px-3 py-2 hover:bg-muted/50">
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <label
-          className="group/swatch relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full after:absolute after:-inset-[13px]"
+          className="group/swatch relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full"
           title={`Change ${tag.name} color`}
+          aria-busy={updating}
         >
+          <span
+            aria-hidden="true"
+            className={cn(
+              "pointer-events-none absolute -inset-1 rounded-full border-2 border-transparent",
+              updating &&
+                "animate-spin border-primary/25 border-t-primary",
+            )}
+          />
           <span
             className="h-full w-full rounded-full ring-2 ring-transparent transition-shadow group-hover/swatch:ring-primary/20"
             style={{ backgroundColor: tag.color ?? "#94a3b8" }}
@@ -258,7 +269,7 @@ function EditableTagRow({
             onChange={(event) =>
               onUpdate({ id: tag.id, color: event.target.value })
             }
-            className="absolute h-0 w-0 opacity-0"
+            className="absolute -inset-[13px] h-10 w-10 cursor-pointer opacity-0"
             aria-label={`Color for ${tag.name}`}
           />
         </label>
@@ -883,9 +894,11 @@ export default function Contacts() {
       if (!res.ok) throw new Error("Failed to update tag");
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] }),
+        queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] }),
+      ]);
     },
   });
 
@@ -2401,6 +2414,10 @@ export default function Contacts() {
                     deleteTagMutation.isPending &&
                     deleteTagMutation.variables === tag.id
                   }
+                  updating={
+                    updateTagMutation.isPending &&
+                    updateTagMutation.variables?.id === tag.id
+                  }
                   onUpdate={(vars) => updateTagMutation.mutate(vars)}
                   onDelete={(tagId) => deleteTagMutation.mutate(tagId)}
                 />
@@ -2410,7 +2427,7 @@ export default function Contacts() {
                 <div className="flex items-center justify-between gap-3 rounded-[12px] bg-muted/50 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <label
-                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full after:absolute after:-inset-[13px]"
+                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full"
                       title="Choose tag color"
                     >
                       <span
@@ -2421,7 +2438,7 @@ export default function Contacts() {
                         type="color"
                         value={newTagColor}
                         onChange={(event) => setNewTagColor(event.target.value)}
-                        className="absolute h-0 w-0 opacity-0"
+                        className="absolute -inset-[13px] h-10 w-10 cursor-pointer opacity-0"
                         aria-label="New tag color"
                       />
                     </label>
