@@ -132,6 +132,9 @@ import {
   type ProjectPermission,
 } from "./lib/team-access";
 import { getEnrichmentUsage, incrementEnrichmentUsage } from "./lib/usage";
+import { resolveRequestAuth } from "./lib/request-auth";
+import { projectRouteAccess } from "./lib/api-route-policy";
+import { authorizeApiKeyProjectRequest } from "./lib/project-api-access";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -2646,28 +2649,74 @@ app.use("/api/*", async (c, next) => {
     return next();
   }
 
+  const db = drizzle(c.env.DB, { schema });
   const auth = createAuth(c.env);
-  const session = await auth.api.getSession({
-    headers: c.req.raw.headers,
+  const requestAuthResult = await resolveRequestAuth({
+    authorization: c.req.header("authorization"),
+    cookie: c.req.header("cookie"),
+    loadSession: async () => {
+      const session = await auth.api.getSession({
+        headers: c.req.raw.headers,
+      });
+      if (!session?.user || !session.session) return null;
+
+      return {
+        user: {
+          id: session.user.id,
+          name: session.user.name,
+          email: session.user.email,
+          image: session.user.image ?? null,
+        },
+        session: {
+          id: session.session.id,
+          userId: session.session.userId,
+          token: session.session.token,
+          expiresAt: session.session.expiresAt,
+        },
+      };
+    },
+    validateApiKey: async (key) => new ApiKeyService(db).validate(key),
   });
 
-  if (!session?.user || !session?.session) {
-    return c.json({ error: "Unauthorized" }, 401);
+  if (!requestAuthResult.ok) {
+    if (requestAuthResult.code === "invalid_api_key") {
+      c.header("WWW-Authenticate", 'Bearer realm="linkycal"');
+    }
+    return c.json(
+      { error: requestAuthResult.error, code: requestAuthResult.code },
+      requestAuthResult.status,
+    );
   }
 
-  const db = drizzle(c.env.DB, { schema });
+  c.set("requestAuth", requestAuthResult.auth);
+  c.set("db", db);
+
+  if (requestAuthResult.auth.kind === "apiKey") {
+    if (!path.startsWith("/api/projects/")) {
+      return c.json(
+        {
+          error: "API keys cannot access this route",
+          code: "api_key_route_forbidden",
+        },
+        403,
+      );
+    }
+    return next();
+  }
+
+  const { user, session } = requestAuthResult.auth;
 
   const accountContext = await cachedMiddlewareContext(
     accountMiddlewareCache,
-    session.user.id,
+    user.id,
     async () => {
       const accountTeam = await ensurePersonalTeam(db, {
-        id: session.user.id,
-        name: session.user.name,
+        id: user.id,
+        name: user.name,
       });
       const subscription = await ensureTeamSubscriptionRecord(
         db,
-        session.user.id,
+        user.id,
         accountTeam.id,
       );
       const { plan, status } = resolveSubscriptionPlan(subscription);
@@ -2676,25 +2725,24 @@ app.use("/api/*", async (c, next) => {
   );
 
   c.set("user", {
-    id: session.user.id,
-    name: session.user.name,
-    email: session.user.email,
-    image: session.user.image ?? null,
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    image: user.image,
   });
   c.set("session", {
-    id: session.session.id,
-    userId: session.session.userId,
-    token: session.session.token,
-    expiresAt: session.session.expiresAt,
+    id: session.id,
+    userId: session.userId,
+    token: session.token,
+    expiresAt: session.expiresAt,
   });
-  c.set("db", db);
   c.set("subscription", {
     plan: accountContext.plan,
     status: accountContext.status,
   });
   c.set("planLimits", PLAN_LIMITS[accountContext.plan]);
   c.set("accountTeamId", accountContext.accountTeamId);
-  c.set("effectiveUserId", session.user.id);
+  c.set("effectiveUserId", user.id);
 
   return next();
 });
@@ -2809,8 +2857,64 @@ const projectAccessMiddleware = async (
   if (!projectId) return next();
 
   const db = c.get("db");
-  const userId = c.get("effectiveUserId");
-  if (!db || !userId) return c.json({ error: "Unauthorized" }, 401);
+  const requestAuth = c.get("requestAuth");
+  if (!db || !requestAuth) {
+    return c.json({ error: "Unauthorized", code: "unauthorized" }, 401);
+  }
+
+  if (requestAuth.kind === "apiKey") {
+    const routeAccess = projectRouteAccess(c.req.method, c.req.path);
+    const preliminaryFailure = authorizeApiKeyProjectRequest({
+      apiKeyProjectId: requestAuth.projectId,
+      routeProjectId: projectId,
+      routeAccess,
+      apiAccess: true,
+    });
+    if (preliminaryFailure) {
+      return c.json(
+        {
+          error: preliminaryFailure.error,
+          code: preliminaryFailure.code,
+        },
+        preliminaryFailure.status,
+      );
+    }
+
+    const entitlements = await resolveProjectEntitlements(db, projectId, {
+      ensureSubscription: true,
+    });
+    if (!entitlements) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+
+    const accessFailure = authorizeApiKeyProjectRequest({
+      apiKeyProjectId: requestAuth.projectId,
+      routeProjectId: projectId,
+      routeAccess,
+      apiAccess: entitlements.planLimits.apiAccess,
+    });
+    if (accessFailure) {
+      return c.json(
+        { error: accessFailure.error, code: accessFailure.code },
+        accessFailure.status,
+      );
+    }
+
+    const { plan, status } = entitlements.subscription;
+    c.set("projectScope", {
+      projectId,
+      ownerUserId: entitlements.ownerUserId,
+      teamId: entitlements.teamId,
+    });
+    c.set("projectSubscription", { plan, status });
+    c.set("projectPlanLimits", entitlements.planLimits);
+    c.set("subscription", { plan, status });
+    c.set("planLimits", entitlements.planLimits);
+
+    return next();
+  }
+
+  const userId = requestAuth.user.id;
 
   const projectContext = await cachedMiddlewareContext(
     projectMiddlewareCache,
@@ -2868,6 +2972,11 @@ const projectAccessMiddleware = async (
   }
 
   c.set("projectAccess", access);
+  c.set("projectScope", {
+    projectId,
+    ownerUserId: access.ownerUserId,
+    teamId: access.teamId,
+  });
   c.set("projectSubscription", { plan, status });
   c.set("projectPlanLimits", planLimits);
   c.set("subscription", { plan, status });

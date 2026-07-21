@@ -36,6 +36,12 @@ export interface ProjectAccessContext {
   isLegacyOwner: boolean;
 }
 
+export interface ProjectScope {
+  projectId: string;
+  ownerUserId: string;
+  teamId: string | null;
+}
+
 // ─── Worker Env ──────────────────────────────────────────────────────────────
 
 export interface AppEnv {
@@ -125,6 +131,7 @@ export interface HonoAppContext {
     planLimits: PlanLimits;
     accountTeamId: string;
     projectAccess?: ProjectAccessContext;
+    projectScope: ProjectScope;
     projectSubscription?: {
       plan: Plan;
       status: string;
