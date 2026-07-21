@@ -321,8 +321,7 @@ ${et.maxPerWeek ? `- Max bookings per week: ${et.maxPerWeek}` : ""}
 
 ## Check Availability
 \`\`\`bash
-curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  "${origin}/api/v1/availability/${projectSlug}?date=2026-03-24&timezone=America/New_York&eventTypeSlug=${et.slug}"
+curl "${origin}/api/v1/availability/${projectSlug}?date=2026-08-12&timezone=America/New_York&eventTypeSlug=${et.slug}"
 \`\`\`
 
 Use the returned slot \`start\` value when creating the booking.
@@ -330,10 +329,11 @@ Use the returned slot \`start\` value when creating the booking.
 ## Create Booking
 \`\`\`bash
 curl -X POST "${origin}/api/v1/bookings" \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '${JSON.stringify(bookingRequest, null, 2)}'
 \`\`\`
+
+These visitor-facing endpoints are anonymous and rate limited. Never add a project API key to browser or visitor-side code.
 ${bookingFieldsSection}
 ${et.requiresConfirmation
     ? 'Successful requests create a booking with status `"pending"` until the host approves it.'
@@ -441,7 +441,7 @@ ${renderStepApiExample(origin, projectSlug, form.slug, index, step.fields)}`;
     ? `## Upload File Fields
 ${renderFileUploadApiExample(origin, projectSlug, form.slug, firstFileField)}
 
-Private file downloads require dashboard authentication or a project API key:
+Private file downloads require a project API key and must be performed from trusted server-side code:
 \`GET ${origin}/api/v1/forms/${projectSlug}/${form.slug}/responses/RESPONSE_ID/files/VALUE_ID\``
     : "";
 

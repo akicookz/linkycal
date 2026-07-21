@@ -840,12 +840,12 @@ const FEATURES: Record<string, FeaturePageData> = {
         title: "Booking without",
         highlightedTitle: "our UI.",
         description:
-          "Check open slots and create bookings over REST, then render the whole flow in your own frontend. Project-scoped keys keep each integration sandboxed to a single project.",
+          "Check open slots and create bookings over anonymous, rate-limited REST endpoints, then render the whole flow in your own frontend. Use project-scoped keys only for trusted management integrations.",
         points: [
           {
-            title: "Project-scoped keys",
+            title: "No visitor secret",
             description:
-              "Create keys per environment or integration, and each one sees exactly one project.",
+              "Availability, booking, forms, and widgets work without exposing an API key in the browser.",
           },
           {
             title: "Build your own UI",
@@ -853,9 +853,9 @@ const FEATURES: Record<string, FeaturePageData> = {
               "Skip our widgets entirely and render booking and forms in your own frontend.",
           },
           {
-            title: "One header to auth",
+            title: "Server-side management",
             description:
-              "A single Authorization: Bearer header, with no OAuth dance for your own integrations.",
+              "Use one project-scoped Bearer key for protected project resources and keep it in secret storage.",
           },
         ],
         Visual: () => (
@@ -874,7 +874,7 @@ const FEATURES: Record<string, FeaturePageData> = {
           "LinkyCal ships an MCP server at /api/mcp. Connect any MCP client with an API key and your agent can check availability, book meetings, manage contacts, and read form responses, all scoped to one project.",
         points: [
           {
-            title: "30 tools out of the box",
+            title: "32 tools out of the box",
             description:
               "Bookings, availability, contacts, event types, forms, and workflows, read and write.",
           },

@@ -403,7 +403,7 @@ function requestBody(
   if (method === "get" || method === "delete") return undefined;
   const multipart = path.endsWith("/uploads");
   return {
-    required: true,
+    required: false,
     content: {
       [multipart ? "multipart/form-data" : "application/json"]: {
         schema: multipart
@@ -420,31 +420,15 @@ function requestBody(
   };
 }
 
-function responsesFor(method: OpenApiMethod): Record<string, unknown> {
-  const successStatus = method === "post" ? "201" : "200";
-  return {
-    [successStatus]: {
+function responsesFor(
+  auth: OperationMetadata["auth"],
+): Record<string, unknown> {
+  const responses: Record<string, unknown> = {
+    "2XX": {
       description: "Successful response",
-      content: {
-        "application/json": {
-          schema: { $ref: "#/components/schemas/JsonObject" },
-        },
-      },
     },
     "400": {
       description: "Invalid request",
-      content: {
-        "application/json": { schema: { $ref: "#/components/schemas/Error" } },
-      },
-    },
-    "401": {
-      description: "Missing or invalid API key",
-      content: {
-        "application/json": { schema: { $ref: "#/components/schemas/Error" } },
-      },
-    },
-    "403": {
-      description: "The credential cannot access this project or operation",
       content: {
         "application/json": { schema: { $ref: "#/components/schemas/Error" } },
       },
@@ -456,6 +440,23 @@ function responsesFor(method: OpenApiMethod): Record<string, unknown> {
       },
     },
   };
+
+  if (auth === "apiKey") {
+    responses["401"] = {
+      description: "Missing or invalid API key",
+      content: {
+        "application/json": { schema: { $ref: "#/components/schemas/Error" } },
+      },
+    };
+    responses["403"] = {
+      description: "The credential cannot access this project or operation",
+      content: {
+        "application/json": { schema: { $ref: "#/components/schemas/Error" } },
+      },
+    };
+  }
+
+  return responses;
 }
 
 function createOperation(
@@ -474,7 +475,7 @@ function createOperation(
     security: metadata.auth === "apiKey" ? [{ bearerAuth: [] }] : [],
     ...(parameters.length > 0 ? { parameters } : {}),
     ...(body ? { requestBody: body } : {}),
-    responses: responsesFor(method),
+    responses: responsesFor(metadata.auth),
   };
 }
 

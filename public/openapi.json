@@ -91,16 +91,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -140,6 +130,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -165,7 +158,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -175,16 +168,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -224,6 +207,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -251,16 +237,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -300,6 +276,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -327,7 +306,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "multipart/form-data": {
               "schema": {
@@ -346,16 +325,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -395,6 +364,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -430,16 +402,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -479,6 +441,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -506,16 +471,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -555,6 +510,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -580,7 +538,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -590,16 +548,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -639,6 +587,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -674,16 +625,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -723,6 +664,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -756,7 +700,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -766,16 +710,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -815,6 +749,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -848,16 +785,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -897,6 +824,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -924,16 +854,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -973,6 +893,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -998,7 +921,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -1008,16 +931,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1057,6 +970,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1092,7 +1008,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -1102,16 +1018,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1151,6 +1057,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -1184,16 +1093,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1233,6 +1132,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1268,7 +1170,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -1278,16 +1180,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1327,6 +1219,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -1360,16 +1255,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1409,6 +1294,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1444,16 +1332,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1493,6 +1371,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -1526,7 +1407,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -1536,16 +1417,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1585,6 +1456,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1628,16 +1502,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1677,6 +1541,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1704,16 +1571,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1753,6 +1610,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1788,16 +1648,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1837,6 +1687,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1872,7 +1725,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -1882,16 +1735,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -1931,6 +1774,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -1966,16 +1812,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2015,6 +1851,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -2050,7 +1889,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -2060,16 +1899,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2109,6 +1938,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -2144,7 +1976,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -2154,16 +1986,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2203,6 +2025,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -2230,16 +2055,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2279,6 +2094,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -2304,7 +2122,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -2314,16 +2132,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2363,6 +2171,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -2398,16 +2209,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2447,6 +2248,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -2480,7 +2284,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -2490,16 +2294,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2539,6 +2333,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -2572,16 +2369,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2621,6 +2408,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -2656,16 +2446,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2705,6 +2485,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -2738,7 +2521,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -2748,16 +2531,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2797,6 +2570,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -2840,7 +2616,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -2850,16 +2626,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2899,6 +2665,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -2940,16 +2709,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2989,6 +2748,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3024,7 +2786,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -3034,16 +2796,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3083,6 +2835,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3118,16 +2873,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3167,6 +2912,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -3200,7 +2948,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -3210,16 +2958,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3259,6 +2997,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3294,7 +3035,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -3304,16 +3045,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3353,6 +3084,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3396,7 +3130,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -3406,16 +3140,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3455,6 +3179,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -3496,16 +3223,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3545,6 +3262,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3580,16 +3300,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3629,6 +3339,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3680,16 +3393,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3729,6 +3432,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3772,16 +3478,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3821,6 +3517,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3856,16 +3555,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3905,6 +3594,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -3932,16 +3624,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3981,6 +3663,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -4006,7 +3691,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4016,16 +3701,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4065,6 +3740,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -4092,16 +3770,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4141,6 +3809,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -4166,7 +3837,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4176,16 +3847,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4225,6 +3886,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -4260,7 +3924,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4270,16 +3934,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4319,6 +3973,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -4352,16 +4009,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4401,6 +4048,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -4428,7 +4078,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4438,16 +4088,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4487,6 +4127,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -4522,16 +4165,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4571,6 +4204,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -4604,7 +4240,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4614,16 +4250,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4663,6 +4289,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -4696,16 +4325,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4745,6 +4364,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -4780,7 +4402,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4790,16 +4412,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4839,6 +4451,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -4866,16 +4481,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4915,6 +4520,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -4940,7 +4548,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -4950,16 +4558,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -4999,6 +4597,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5034,16 +4635,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5083,6 +4674,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -5116,7 +4710,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5126,16 +4720,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5175,6 +4759,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5210,7 +4797,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5220,16 +4807,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5269,6 +4846,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5312,16 +4892,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5361,6 +4931,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5396,7 +4969,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5406,16 +4979,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5455,6 +5018,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5490,7 +5056,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5500,16 +5066,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5549,6 +5105,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5576,7 +5135,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5586,16 +5145,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5635,6 +5184,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5662,16 +5214,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5711,6 +5253,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -5736,7 +5281,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5746,16 +5291,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5795,6 +5330,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -5830,7 +5368,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -5840,16 +5378,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5889,6 +5417,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -5922,16 +5453,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -5971,6 +5492,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -6004,16 +5528,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6053,6 +5567,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6088,16 +5605,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6137,6 +5644,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -6170,7 +5680,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -6180,16 +5690,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6229,6 +5729,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6264,7 +5767,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -6274,16 +5777,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6323,6 +5816,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6366,7 +5862,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -6376,16 +5872,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6425,6 +5911,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -6466,16 +5955,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6515,6 +5994,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6550,16 +6032,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6599,6 +6071,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6634,7 +6109,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -6644,16 +6119,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6693,6 +6158,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6728,7 +6196,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -6738,16 +6206,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6787,6 +6245,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6814,16 +6275,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6863,6 +6314,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -6898,16 +6352,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -6947,6 +6391,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       },
@@ -6980,7 +6427,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -6990,16 +6437,6 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7039,6 +6476,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7066,16 +6506,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7115,6 +6545,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7142,16 +6575,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7191,6 +6614,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7218,16 +6644,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7267,6 +6683,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7294,16 +6713,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7343,6 +6752,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7370,16 +6782,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7419,6 +6821,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7442,38 +6847,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -7491,6 +6866,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7504,7 +6882,7 @@
         ],
         "security": [],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -7514,38 +6892,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -7563,6 +6911,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7576,7 +6927,7 @@
         ],
         "security": [],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -7586,38 +6937,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -7635,6 +6956,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7666,7 +6990,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -7676,38 +7000,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -7725,6 +7019,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7764,7 +7061,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "multipart/form-data": {
               "schema": {
@@ -7783,38 +7080,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -7832,6 +7099,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7883,16 +7153,6 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -7932,6 +7192,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -7979,7 +7242,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -7989,38 +7252,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8038,6 +7271,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8069,38 +7305,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8118,6 +7324,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8141,38 +7350,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8190,6 +7369,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8221,38 +7403,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8270,6 +7422,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8301,38 +7456,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8350,6 +7475,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8381,38 +7509,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8430,6 +7528,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8461,7 +7562,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -8471,38 +7572,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8520,6 +7591,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8567,7 +7641,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -8577,38 +7651,8 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8626,6 +7670,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8657,7 +7704,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -8667,38 +7714,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8716,6 +7733,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8739,38 +7759,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid API key",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The credential cannot access this project or operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -8788,6 +7778,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }
@@ -8805,7 +7798,7 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
@@ -8815,16 +7808,6 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Successful response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/JsonObject"
-                }
-              }
-            }
-          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -8864,6 +7847,9 @@
                 }
               }
             }
+          },
+          "2XX": {
+            "description": "Successful response"
           }
         }
       }

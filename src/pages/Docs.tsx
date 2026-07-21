@@ -50,6 +50,8 @@ const sidebarSections: SidebarSection[] = [
       { id: "installation", title: "Installation" },
       { id: "quick-start", title: "Quick Start" },
       { id: "how-it-works", title: "How It Works" },
+      { id: "endpoint-catalog", title: "Endpoint Catalog" },
+      { id: "dashboard-only", title: "Dashboard-only" },
     ],
   },
   {
@@ -141,6 +143,49 @@ const MCP_CLIENT_CONFIG = `{
   }
 }`;
 
+const API_MANAGEMENT_DOMAINS = [
+  {
+    name: "Project settings",
+    routes: "GET, PUT /api/projects/:projectId · GET /entitlements",
+  },
+  {
+    name: "Event types",
+    routes: "List, get, create, update, delete, and configure calendars",
+  },
+  {
+    name: "Schedules and availability",
+    routes: "Schedules, rules, and date overrides",
+  },
+  {
+    name: "Bookings",
+    routes: "List, get, cancel, confirm, decline, and read form responses",
+  },
+  {
+    name: "Forms and responses",
+    routes: "Forms, steps, fields, responses, files, and reordering",
+  },
+  {
+    name: "Contacts, tags, and views",
+    routes: "Contacts, imports, next actions, stages, tags, and saved views",
+  },
+  {
+    name: "Workflows",
+    routes: "Definitions, steps, runs, manual triggers, and test runs",
+  },
+  {
+    name: "Activity",
+    routes: "GET /api/projects/:projectId/activity/recent",
+  },
+  {
+    name: "Analytics",
+    routes: "Filters, overview, booking analytics, and form analytics",
+  },
+  {
+    name: "Calendar configuration",
+    routes: "Project calendars and per-event-type calendar selection",
+  },
+];
+
 // ─── Inline Helpers ───────────────────────────────────────────────────────────
 
 function CopyActionButton({
@@ -165,7 +210,7 @@ function CopyActionButton({
   }
 
   return (
-    <Button variant="outline" size="sm" className="rounded-full h-8" onClick={handleCopy}>
+    <Button variant="outline" size="sm" className="rounded-full h-10" onClick={handleCopy}>
       {copied ? <Check /> : <Icon />}
       {copied ? "Copied" : label}
     </Button>
@@ -472,6 +517,18 @@ export default function Docs() {
                   icon={FileText}
                   getValue={() => "https://linkycal.com/llms.txt"}
                 />
+                <Button variant="outline" size="sm" className="rounded-full h-10" asChild>
+                  <a href="/openapi.json">
+                    <Code2 />
+                    OpenAPI spec
+                  </a>
+                </Button>
+                <Button variant="outline" size="sm" className="rounded-full h-10" asChild>
+                  <a href="/llms.txt">
+                    <FileText />
+                    View llms.txt
+                  </a>
+                </Button>
               </div>
             </div>
 
@@ -519,17 +576,15 @@ export default function Docs() {
             <ol className="list-decimal list-inside space-y-2 text-sm text-foreground mb-6">
               <li>Create a project in the dashboard</li>
               <li>Create an event type or form</li>
+              <li>Use the anonymous visitor endpoints in your public form or booking UI</li>
               <li>
-                Get your API key from <IC>MCP &amp; APIs</IC> in the dashboard
-                sidebar
+                For server-side management, create a project API key under <IC>MCP &amp; APIs</IC>
               </li>
-              <li>Start making API calls</li>
             </ol>
 
             <CodeBlock title="Check available slots" language="bash">
 {`# Check available slots
-curl -H "Authorization: Bearer lc_live_your_api_key" \\
-  "https://linkycal.com/api/v1/availability/your-project?date=2026-03-24&timezone=UTC&eventTypeSlug=consultation"`}
+curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&timezone=UTC&eventTypeSlug=consultation"`}
             </CodeBlock>
 
             <SectionHeading id="how-it-works" level="h2">
@@ -550,6 +605,50 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               All API responses follow a consistent JSON format. Errors include a descriptive{" "}
               <IC>error</IC> field.
             </Callout>
+
+            <SectionHeading id="endpoint-catalog" level="h2">
+              Endpoint Catalog
+            </SectionHeading>
+            <p className="text-muted-foreground text-sm leading-relaxed text-pretty mb-4">
+              <strong className="text-foreground">Anonymous visitor endpoints</strong> cover form
+              responses, file uploads, availability, booking creation, widgets, and public link
+              resolution. They are rate limited and need no credential. Never put an API key in visitor-side code.
+            </p>
+            <p className="text-muted-foreground text-sm leading-relaxed text-pretty mb-4">
+              The protected management API uses the canonical{" "}
+              <IC>/api/projects/:projectId/*</IC> routes. Send{" "}
+              <IC>Authorization: Bearer lc_live_...</IC> from a server, secure automation, or local
+              agent. The key must belong to the project ID in the URL and the project must have API
+              access on its current plan.
+            </p>
+            <div className="space-y-2 my-4">
+              {API_MANAGEMENT_DOMAINS.map((domain) => (
+                <div key={domain.name} className="rounded-[16px] bg-muted/50 px-4 py-3">
+                  <p className="text-sm font-medium text-foreground">{domain.name}</p>
+                  <p className="text-xs text-muted-foreground text-pretty mt-1">{domain.routes}</p>
+                </div>
+              ))}
+            </div>
+            <Callout type="info">
+              The complete machine-readable operation list and security declaration are in the{" "}
+              <a href="/openapi.json" className="text-primary hover:underline">
+                OpenAPI 3.1 specification
+              </a>
+              . Agent-oriented integration guidance is available in{" "}
+              <a href="/llms.txt" className="text-primary hover:underline">
+                llms.txt
+              </a>
+              .
+            </Callout>
+
+            <SectionHeading id="dashboard-only" level="h2">
+              Dashboard-only Operations
+            </SectionHeading>
+            <p className="text-muted-foreground text-sm leading-relaxed text-pretty mb-4">
+              Project creation and deletion, members, API-key management, billing, and OAuth connections are dashboard-only. Account, team, and onboarding operations are also
+              session-only. API keys receive <IC>api_key_route_forbidden</IC> for these operations;
+              use the dashboard instead.
+            </p>
 
             {/* ════════════════════════════════════════════════════════════
                 2. FORMS API
@@ -807,8 +906,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             />
 
             <CodeBlock title="Request" language="bash">
-{`curl -H "Authorization: Bearer lc_live_your_api_key" \\
-  "https://linkycal.com/api/v1/availability/acme?date=2026-03-24&timezone=UTC&eventTypeSlug=consultation"`}
+{`curl "https://linkycal.com/api/v1/availability/acme?date=2026-08-12&timezone=UTC&eventTypeSlug=consultation"`}
             </CodeBlock>
 
             <CodeBlock title="Response" language="json">
@@ -888,7 +986,6 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
 
             <CodeBlock title="Request" language="bash">
 {`curl -X POST "https://linkycal.com/api/v1/bookings" \\
-  -H "Authorization: Bearer lc_live_your_api_key" \\
   -H "Content-Type: application/json" \\
   -d '{
     "projectSlug": "acme",
@@ -935,14 +1032,14 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               removed.
             </p>
 
-            <Callout type="warning">
-              This is a protected route requiring session authentication. It is not accessible via
-              API key — use it from the dashboard or an authenticated session.
+            <Callout type="info">
+              This protected project route accepts either a dashboard session or a project API key.
+              Server-side integrations should use the Bearer header below.
             </Callout>
 
             <CodeBlock title="Request" language="bash">
 {`curl -X PATCH "https://linkycal.com/api/projects/proj_123/bookings/bk_abc123/cancel" \\
-  -H "Cookie: session=your_session_cookie"`}
+  -H "Authorization: Bearer lc_live_your_api_key"`}
             </CodeBlock>
 
             <CodeBlock title="Response" language="json">
@@ -1044,7 +1141,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             <CodeBlock title="Request" language="bash">
 {`curl -X POST "https://linkycal.com/api/projects/proj_123/contacts" \\
   -H "Content-Type: application/json" \\
-  -H "Cookie: session=your_session_cookie" \\
+  -H "Authorization: Bearer lc_live_your_api_key" \\
   -d '{
     "name": "Jane Smith",
     "email": "jane@example.com",
@@ -1079,7 +1176,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             <CodeBlock title="Request" language="bash">
 {`curl -X PUT "https://linkycal.com/api/projects/proj_123/contacts/ct_p4q5r6" \\
   -H "Content-Type: application/json" \\
-  -H "Cookie: session=your_session_cookie" \\
+  -H "Authorization: Bearer lc_live_your_api_key" \\
   -d '{
     "name": "Jane Smith-Doe",
     "notes": "Updated: now a paying customer"
@@ -1346,7 +1443,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </CodeBlock>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Sessions authenticate with a project API key passed as a Bearer
+              MCP connections authenticate with a project API key passed as a Bearer
               token. Every tool is hard-scoped to that key's project — agents
               never pass a project ID and can never reach data outside the
               project the key belongs to.
@@ -1366,9 +1463,9 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </CodeBlock>
 
             <Callout type="warning">
-              The API key grants full access to its project. Configure it in
-              server-side or local agent environments only — never ship it in
-              client-side code.
+              The API key grants access to the MCP tools for its project. Configure it in
+              server-side or local agent environments only — never ship it in client-side code.
+              Project and key administration remain dashboard-only.
             </Callout>
 
             <Callout type="tip">
@@ -1382,7 +1479,7 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               Available Tools
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              The server exposes 30 tools mirroring the REST API, grouped by
+              The server exposes 32 tools for the project, grouped by
               domain. Read tools return JSON; write tools enforce the same plan
               limits and validation as the dashboard.
             </p>
@@ -1456,18 +1553,29 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Create API keys in the dashboard under <IC>MCP &amp; APIs</IC>.
-              Include your key in the <IC>Authorization</IC> header as a Bearer token with every
-              request.
+              Include your key in the <IC>Authorization</IC> header as a Bearer token for MCP and
+              protected <IC>/api/projects/:projectId/*</IC> requests. Visitor endpoints are
+              anonymous and must not receive this header.
             </p>
 
             <CodeBlock title="Authorization Header" language="bash">
 {`curl -H "Authorization: Bearer lc_live_a1b2c3d4e5f6..." \\
-  "https://linkycal.com/api/v1/availability/your-project?date=2026-03-24&eventTypeSlug=consultation"`}
+  "https://linkycal.com/api/projects/proj_123/contacts"`}
             </CodeBlock>
 
             <Callout type="warning">
-              API keys grant full access to your project. Never expose them in client-side code.
+              API keys are project-scoped management credentials. Keep them in server-side secret
+              storage or a local agent configuration. Never expose them in visitor-side code.
             </Callout>
+
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Send either a dashboard session or an API key, never both. If a request has a valid
+              session plus any <IC>Authorization</IC> header, LinkyCal returns{" "}
+              <IC>ambiguous_credentials</IC>. An invalid Bearer value returns{" "}
+              <IC>invalid_api_key</IC> and never falls back to a session. A key used with another
+              project returns <IC>api_key_project_mismatch</IC>; a project without current API
+              entitlement returns <IC>api_access_unavailable</IC>.
+            </p>
 
             <SectionHeading id="rate-limits" level="h2">
               Rate Limits
@@ -1499,8 +1607,8 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </div>
 
             <Callout type="info">
-              Rate limits apply to public API endpoints. Dashboard API endpoints have separate,
-              higher limits.
+              These per-IP limits apply to visitor endpoints. Protected project requests are
+              additionally constrained by project ownership, current plan, and resource limits.
             </Callout>
 
             {/* ════════════════════════════════════════════════════════════
@@ -1601,8 +1709,8 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               <Terminal className="w-8 h-8 text-primary mx-auto mb-3" />
               <h3 className="text-xl font-bold tracking-tight mb-2">Ready to integrate?</h3>
               <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
-                Get your API key and start building with LinkyCal's forms, booking, and contact
-                APIs today.
+                Build visitor forms and booking flows without a secret, then use a project key for
+                trusted management integrations.
               </p>
               <div className="flex items-center justify-center gap-3">
                 <Button className="glow-surface rounded-full" asChild>

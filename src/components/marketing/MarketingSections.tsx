@@ -1084,7 +1084,7 @@ const faqItems: FaqItemData[] = [
   {
     question: "Is there an API?",
     answer:
-      "Yes, LinkyCal is headless-friendly. Post forms straight from plain HTML or fetch from any framework, and check availability and create bookings over REST. Use a project-scoped API key for contacts and management, plus an MCP server so AI agents can book on your behalf. Full OpenAPI docs and llms.txt are included.",
+      "Yes, LinkyCal is headless-friendly. Visitor forms, widgets, availability, and booking creation use anonymous rate-limited endpoints, so no key is exposed in the browser. Protected project management and MCP use a project-scoped API key from trusted server-side or local agent environments. Full OpenAPI docs and llms.txt are included.",
   },
   {
     question: "What's included in the free plan?",

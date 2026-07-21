@@ -4,16 +4,37 @@
 
 Base URL: https://linkycal.com
 API docs: https://linkycal.com/docs
+OpenAPI 3.1: https://linkycal.com/openapi.json
 
 ## Authentication
 
-Workspace management and the MCP server use a project-scoped API key. Create one in the dashboard under "MCP & APIs" and send it as a Bearer token:
+Protected project management and the MCP server use a project-scoped API key. Create one in the dashboard under "MCP & APIs" and send it as a Bearer token:
 
     Authorization: Bearer lc_live_...
 
-A key grants full access to its project. Use it server-side or in a local agent only, never in client-side code.
+A key can use the documented project resource operations for exactly one project. It cannot create or delete projects, manage members or keys, change billing, or start and remove OAuth connections. Use it server-side or in a local agent only, never in client-side code.
 
 The visitor-facing endpoints (start a form response, submit a step, upload a file, check availability, create a booking, native HTML form posts) are open and rate-limited per IP, so you can embed forms and booking on a public site without exposing a key.
+
+Send either a dashboard session or an API key, never both. A valid session plus any Authorization header returns `400 ambiguous_credentials`. A malformed or invalid Bearer value returns `401 invalid_api_key` and never falls back to a session.
+
+## Protected management REST API
+
+Base path: https://linkycal.com/api/projects/:projectId
+Auth: `Authorization: Bearer lc_live_...`. The key must belong to `:projectId`, and the project's current plan must include API access.
+
+API-key-enabled domains:
+- Project settings: read/update the project and read entitlements.
+- Event types: list, get, create, update, delete, and configure destination calendars.
+- Schedules and availability: schedules, rules, and date overrides.
+- Bookings: list, get, cancel, confirm, decline, and read linked form responses.
+- Forms and responses: forms, steps, fields, response data, and private files.
+- Contacts, tags, and views: contacts, imports, stages, next actions, tags, and saved views.
+- Workflows: definitions, steps, runs, triggers, and test runs.
+- Activity and analytics: recent activity, filters, overview, bookings, and forms.
+- Calendar configuration: enumerate project calendars and choose calendars per event type.
+
+Dashboard-only operations: project creation/deletion, project members, API-key management, teams, accounts, billing, onboarding, and Google OAuth connection lifecycle. Do not attempt these with an API key.
 
 ## Manage the workspace (MCP server)
 
@@ -31,11 +52,11 @@ Or any MCP client config:
 
     { "mcpServers": { "linkycal": { "type": "http", "url": "https://linkycal.com/api/mcp", "headers": { "Authorization": "Bearer lc_live_..." } } } }
 
-What an agent can do — 30 tools, grouped by domain:
+What an agent can do — 32 tools, grouped by domain:
 - Event Types: list_event_types, get_event_type, create_event_type, update_event_type — define bookable meeting types (name, slug, duration, buffers, confirmation rules).
 - Forms: list_forms, get_form, create_form, update_form, list_form_responses — build single or multi-step forms and read what's submitted.
 - Bookings: list_bookings, get_booking, get_available_slots, create_booking, cancel_booking, confirm_booking, decline_booking — review and manage the calendar.
-- Contacts: list_contacts, get_contact, create_contact, update_contact, delete_contact, get_contact_activity.
+- Contacts: list_contacts, get_contact, create_contact, update_contact, set_contact_next_action, complete_contact_next_action, delete_contact, get_contact_activity.
 - Tags: list_contact_tags, create_contact_tag, add_tag_to_contact, remove_tag_from_contact.
 - Schedules: list_schedules, get_schedule — the working hours behind event types.
 - Workflows: list_workflows, get_workflow — read-only over MCP by design.
@@ -133,7 +154,7 @@ JSON body: `projectSlug`, `eventTypeSlug`, `startTime` (ISO 8601), `name`, `emai
             "name": "Jane Smith", "email": "jane@example.com", "timezone": "America/New_York" }'
     # => { "booking": { "id": "bk_abc", "status": "confirmed", "startTime": "...", "endTime": "..." } }
 
-A confirmation email is sent automatically, and a Google Calendar event is created when the event type has calendar sync connected. Cancellation is a dashboard/agent action (cancel_booking over MCP), not a public endpoint.
+A confirmation email is sent automatically, and a Google Calendar event is created when the event type has calendar sync connected. Cancellation is not a visitor endpoint; use the protected booking REST route, the dashboard, or `cancel_booking` over MCP.
 
 ### Embeddable widgets
 
@@ -173,4 +194,6 @@ Exceeding a limit returns 429.
 
 ## Errors
 
-Errors return JSON `{ "error": "message" }`. Status codes: 400 validation, 401 unauthorized, 403 forbidden (plan limit or unavailable feature), 404 not found, 429 rate limited, 500 server error.
+Errors return JSON `{ "error": "message", "code": "stable_code_when_available" }`. Status codes: 400 validation or ambiguous credentials, 401 unauthorized/invalid key, 403 project mismatch/route/plan denial, 404 not found, 429 rate limited, 500 server error.
+
+Stable authentication and authorization codes: `ambiguous_credentials`, `invalid_api_key`, `unauthorized`, `api_key_project_mismatch`, `api_key_route_forbidden`, and `api_access_unavailable`.

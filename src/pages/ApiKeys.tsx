@@ -268,7 +268,7 @@ export default function ApiKeys() {
       <div className="rounded-[20px] border bg-muted/30 p-5 mb-6">
         <h3 className="text-sm font-semibold text-foreground mb-2">Using API Keys</h3>
         <p className="text-sm text-muted-foreground mb-3">
-          Include your API key in the <code className="rounded-[8px] bg-muted px-1.5 py-0.5 text-xs font-mono">Authorization</code> header of your requests.
+          Use the <code className="rounded-[8px] bg-muted px-1.5 py-0.5 text-xs font-mono">Authorization</code> header for MCP and protected project-management requests. Keep keys server-side; visitor form, booking, widget, and availability requests are anonymous.
         </p>
         <div className="rounded-[16px] bg-background border p-4 font-mono text-xs leading-relaxed overflow-x-auto">
           <span className="text-muted-foreground">curl</span>{" "}
@@ -277,7 +277,7 @@ export default function ApiKeys() {
           <span className="text-muted-foreground">\</span>
           <br />
           {"  "}
-          <span className="text-foreground">https://linkycal.com/api/v1/availability/your-project?date=2025-01-15&timezone=UTC&eventTypeSlug=consultation</span>
+          <span className="text-foreground">https://linkycal.com/api/projects/YOUR_PROJECT_ID/contacts</span>
         </div>
       </div>
 
