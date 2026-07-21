@@ -621,6 +621,154 @@ function applyTagApiContract(
   return operation;
 }
 
+function applyContactApiContract(
+  method: OpenApiMethod,
+  path: string,
+  operation: OpenApiOperation,
+): OpenApiOperation {
+  const collectionPath = "/api/projects/:projectId/contacts";
+  const activityPath =
+    "/api/projects/:projectId/contacts/:contactId/activities";
+
+  if (path === collectionPath && method === "get") {
+    operation.summary = "List and filter contacts";
+    operation.parameters = [
+      ...(operation.parameters ?? []),
+      {
+        name: "search",
+        in: "query",
+        required: false,
+        schema: { type: "string" },
+      },
+      {
+        name: "tagId",
+        in: "query",
+        required: false,
+        schema: { type: "string" },
+        description: "Legacy single-tag filter.",
+      },
+      {
+        name: "tagIds",
+        in: "query",
+        required: false,
+        schema: { type: "array", items: { type: "string" } },
+        style: "form",
+        explode: true,
+        description: "Repeat the query parameter to filter by multiple tags.",
+      },
+      {
+        name: "matchAllTags",
+        in: "query",
+        required: false,
+        schema: { type: "boolean", default: false },
+      },
+      {
+        name: "stageTagId",
+        in: "query",
+        required: false,
+        schema: { type: "string" },
+      },
+      {
+        name: "excludeStageTagIds",
+        in: "query",
+        required: false,
+        schema: { type: "array", items: { type: "string" } },
+        style: "form",
+        explode: true,
+      },
+      {
+        name: "activityType",
+        in: "query",
+        required: false,
+        schema: {
+          type: "string",
+          enum: [
+            "form_submitted",
+            "booked",
+            "cancelled",
+            "tag_added",
+            "tag_removed",
+            "workflow_researched",
+          ],
+        },
+      },
+      {
+        name: "activitySinceDays",
+        in: "query",
+        required: false,
+        schema: { type: "number", minimum: 0 },
+      },
+      {
+        name: "noActivitySinceDays",
+        in: "query",
+        required: false,
+        schema: { type: "number", minimum: 0 },
+      },
+      {
+        name: "bookingStatus",
+        in: "query",
+        required: false,
+        schema: {
+          type: "string",
+          enum: ["confirmed", "cancelled", "rescheduled", "pending", "declined"],
+        },
+      },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+      },
+      {
+        name: "offset",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 0, default: 0 },
+      },
+    ];
+    setExplicitSuccess(operation, "200", "Contact page", "ContactListResponse");
+  }
+
+  if (path === activityPath && method === "get") {
+    operation.summary = "List contact activity";
+    operation.parameters = [
+      ...(operation.parameters ?? []),
+      {
+        name: "category",
+        in: "query",
+        required: false,
+        schema: {
+          type: "string",
+          enum: ["all", "bookings", "form_responses", "workflows"],
+          default: "all",
+        },
+      },
+      {
+        name: "limit",
+        in: "query",
+        required: false,
+        schema: { type: "integer", minimum: 1, maximum: 100, default: 20 },
+      },
+      {
+        name: "cursor",
+        in: "query",
+        required: false,
+        schema: { type: "string" },
+        description: "Opaque nextCursor value from the previous page.",
+      },
+    ];
+    setExplicitSuccess(
+      operation,
+      "200",
+      "Contact activity page",
+      "ContactActivityPage",
+    );
+    addNotFound(operation);
+  }
+
+  return operation;
+}
+
 function createOperation(
   method: OpenApiMethod,
   path: string,
@@ -639,7 +787,11 @@ function createOperation(
     ...(body ? { requestBody: body } : {}),
     responses: responsesFor(metadata.auth),
   };
-  return applyTagApiContract(method, path, operation);
+  return applyContactApiContract(
+    method,
+    path,
+    applyTagApiContract(method, path, operation),
+  );
 }
 
 function addOperation(
@@ -720,6 +872,152 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
         },
       },
       schemas: {
+        ContactTag: {
+          type: "object",
+          required: ["id", "name", "color"],
+          properties: {
+            id: { type: "string" },
+            name: { type: "string" },
+            color: {
+              anyOf: [
+                { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
+                { type: "null" },
+              ],
+            },
+          },
+        },
+        ContactNextAction: {
+          type: "object",
+          required: ["text", "deadline"],
+          properties: {
+            text: { type: "string" },
+            deadline: {
+              anyOf: [
+                { type: "string", format: "date-time" },
+                { type: "null" },
+              ],
+            },
+          },
+        },
+        Contact: {
+          type: "object",
+          required: [
+            "id",
+            "projectId",
+            "name",
+            "tags",
+            "lastActivityAt",
+            "enteredAtByTagId",
+            "nextAction",
+            "createdAt",
+            "updatedAt",
+          ],
+          properties: {
+            id: { type: "string" },
+            projectId: { type: "string" },
+            name: { type: "string" },
+            email: { anyOf: [{ type: "string", format: "email" }, { type: "null" }] },
+            phone: { anyOf: [{ type: "string" }, { type: "null" }] },
+            notes: { anyOf: [{ type: "string" }, { type: "null" }] },
+            company: { anyOf: [{ type: "string" }, { type: "null" }] },
+            companyWebsite: { anyOf: [{ type: "string" }, { type: "null" }] },
+            position: { anyOf: [{ type: "string" }, { type: "null" }] },
+            companySize: { anyOf: [{ type: "string" }, { type: "null" }] },
+            estimatedRevenue: { anyOf: [{ type: "string" }, { type: "null" }] },
+            linkedinUrl: { anyOf: [{ type: "string" }, { type: "null" }] },
+            metadata: {
+              anyOf: [
+                { type: "object", additionalProperties: true },
+                { type: "null" },
+              ],
+            },
+            tags: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ContactTag" },
+            },
+            lastActivityAt: {
+              anyOf: [
+                { type: "string", format: "date-time" },
+                { type: "null" },
+              ],
+            },
+            enteredAtByTagId: {
+              type: "object",
+              additionalProperties: { type: "string", format: "date-time" },
+            },
+            nextAction: {
+              anyOf: [
+                { $ref: "#/components/schemas/ContactNextAction" },
+                { type: "null" },
+              ],
+            },
+            createdAt: { type: "string", format: "date-time" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+        },
+        ContactListResponse: {
+          type: "object",
+          required: ["contacts", "total"],
+          properties: {
+            contacts: {
+              type: "array",
+              items: { $ref: "#/components/schemas/Contact" },
+            },
+            total: { type: "integer", minimum: 0 },
+          },
+        },
+        ContactActivityCounts: {
+          type: "object",
+          required: ["all", "bookings", "formResponses", "workflows"],
+          properties: {
+            all: { type: "integer", minimum: 0 },
+            bookings: { type: "integer", minimum: 0 },
+            formResponses: { type: "integer", minimum: 0 },
+            workflows: { type: "integer", minimum: 0 },
+          },
+        },
+        ContactActivityItem: {
+          type: "object",
+          additionalProperties: true,
+          required: [
+            "id",
+            "kind",
+            "category",
+            "occurredAt",
+            "title",
+            "description",
+            "status",
+          ],
+          properties: {
+            id: { type: "string" },
+            kind: {
+              type: "string",
+              enum: ["booking", "form_response", "workflow_run", "research", "generic"],
+            },
+            category: {
+              type: "string",
+              enum: ["all", "bookings", "form_responses", "workflows"],
+            },
+            occurredAt: { type: "string", format: "date-time" },
+            title: { type: "string" },
+            description: { type: "string" },
+            status: { anyOf: [{ type: "string" }, { type: "null" }] },
+          },
+        },
+        ContactActivityPage: {
+          type: "object",
+          required: ["activities", "counts", "nextCursor"],
+          properties: {
+            activities: {
+              type: "array",
+              items: { $ref: "#/components/schemas/ContactActivityItem" },
+            },
+            counts: { $ref: "#/components/schemas/ContactActivityCounts" },
+            nextCursor: {
+              anyOf: [{ type: "string" }, { type: "null" }],
+            },
+          },
+        },
         Tag: {
           type: "object",
           required: ["id", "projectId", "name", "color", "createdAt"],

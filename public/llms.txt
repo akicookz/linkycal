@@ -52,7 +52,7 @@ Or any MCP client config:
 
     { "mcpServers": { "linkycal": { "type": "http", "url": "https://linkycal.com/api/mcp", "headers": { "Authorization": "Bearer lc_live_..." } } } }
 
-What an agent can do — 32 tools, grouped by domain:
+What an agent can do — 35 tools, grouped by domain:
 - Event Types: list_event_types, get_event_type, create_event_type, update_event_type — define bookable meeting types (name, slug, duration, buffers, confirmation rules).
 - Forms: list_forms, get_form, create_form, update_form, list_form_responses — build single or multi-step forms and read what's submitted.
 - Bookings: list_bookings, get_booking, get_available_slots, create_booking, cancel_booking, confirm_booking, decline_booking — review and manage the calendar.

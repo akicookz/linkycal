@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Terminal,
@@ -23,6 +23,11 @@ import {
 import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
 import { Button } from "@/components/ui/button";
+import {
+  API_REFERENCE_SECTIONS,
+  type ApiReferenceMethod,
+  type ApiReferenceSection,
+} from "@/lib/api-reference";
 import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -50,6 +55,7 @@ const sidebarSections: SidebarSection[] = [
       { id: "installation", title: "Installation" },
       { id: "quick-start", title: "Quick Start" },
       { id: "how-it-works", title: "How It Works" },
+      { id: "api-families", title: "API Families" },
       { id: "endpoint-catalog", title: "Endpoint Catalog" },
       { id: "dashboard-only", title: "Dashboard-only" },
     ],
@@ -63,6 +69,7 @@ const sidebarSections: SidebarSection[] = [
       { id: "upload-file", title: "Upload File" },
       { id: "native-html-form", title: "Native HTML Form" },
       { id: "get-form-config", title: "Get Form Config" },
+      { id: "visitor-utility-api", title: "Other Visitor Routes" },
     ],
   },
   {
@@ -82,6 +89,14 @@ const sidebarSections: SidebarSection[] = [
       { id: "create-contact", title: "Create Contact" },
       { id: "update-contact", title: "Update Contact" },
     ],
+  },
+  {
+    title: "Management API",
+    icon: Code2,
+    children: API_REFERENCE_SECTIONS.map((section) => ({
+      id: section.id,
+      title: section.title,
+    })),
   },
   {
     title: "Widgets",
@@ -145,46 +160,76 @@ const MCP_CLIENT_CONFIG = `{
 
 const API_MANAGEMENT_DOMAINS = [
   {
+    id: "project-api",
     name: "Project settings",
     routes: "GET, PUT /api/projects/:projectId · GET /entitlements",
   },
   {
+    id: "event-types-api",
     name: "Event types",
     routes: "List, get, create, update, delete, and configure calendars",
   },
   {
+    id: "schedules-api",
     name: "Schedules and availability",
     routes: "Schedules, rules, and date overrides",
   },
   {
+    id: "booking-management-api",
     name: "Bookings",
     routes: "List, get, cancel, confirm, decline, and read form responses",
   },
   {
+    id: "form-management-api",
     name: "Forms and responses",
     routes: "Forms, steps, fields, responses, files, and reordering",
   },
   {
-    name: "Contacts, tags, and views",
-    routes: "Contacts, imports, next actions, stages, tags, and saved views",
+    id: "contact-management-api",
+    name: "Contacts and views",
+    routes: "Contacts, imports, next actions, stages, enrichment, and saved views",
   },
   {
+    id: "tags-api",
+    name: "Tags",
+    routes: "Tag CRUD, cursor pagination, and idempotent contact assignments",
+  },
+  {
+    id: "workflow-management-api",
     name: "Workflows",
     routes: "Definitions, steps, runs, manual triggers, and test runs",
   },
   {
-    name: "Activity",
-    routes: "GET /api/projects/:projectId/activity/recent",
+    id: "analytics-activity-api",
+    name: "Activity and analytics",
+    routes: "Recent activity, filters, overview, booking analytics, and form analytics",
   },
   {
-    name: "Analytics",
-    routes: "Filters, overview, booking analytics, and form analytics",
-  },
-  {
-    name: "Calendar configuration",
-    routes: "Project calendars and per-event-type calendar selection",
+    id: "files-calendars-api",
+    name: "Files and calendars",
+    routes: "Project uploads, available calendars, and per-event-type calendar selection",
   },
 ];
+
+const VISITOR_UTILITY_SECTION: ApiReferenceSection = {
+  id: "visitor-utility-api",
+  title: "Other visitor endpoints",
+  description:
+    "Supporting anonymous routes used by public links, widgets, analytics, and older form integrations.",
+  notes: [
+    "The /api/public form write routes are retained for compatibility. New direct integrations should use the equivalent /api/v1 form routes.",
+    "Public upload URLs contain unguessable object keys; do not treat them as authorization for sensitive private response files.",
+  ],
+  operations: [
+    { method: "GET", path: "/api/v1/event-types/:projectSlug/:eventSlug", description: "Get public event type configuration." },
+    { method: "POST", path: "/api/v1/t", description: "Record an anonymous visitor analytics event." },
+    { method: "GET", path: "/api/public/resolve/:projectSlug/:slug", description: "Resolve a share-link slug to a form or event type." },
+    { method: "POST", path: "/api/public/forms/:projectSlug/:formSlug/responses", description: "Legacy form response creation." },
+    { method: "PATCH", path: "/api/public/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex", description: "Legacy form step submission." },
+    { method: "POST", path: "/api/public/forms/:projectSlug/:formSlug/submit", description: "Legacy single-request form submission." },
+    { method: "GET", path: "/api/uploads/:key", description: "Download a public upload by object key." },
+  ],
+};
 
 // ─── Inline Helpers ───────────────────────────────────────────────────────────
 
@@ -231,23 +276,191 @@ function SectionHeading({
     <Tag
       id={id}
       className={cn(
-        "group relative flex items-center gap-2",
-        level === "h2" && "text-2xl font-bold tracking-tight mt-14 mb-4 scroll-mt-24",
-        level === "h3" && "text-lg font-semibold mt-10 mb-3 scroll-mt-24",
+        "relative scroll-mt-24 text-balance",
+        level === "h2" && "text-2xl font-bold tracking-tight mt-14 mb-4",
+        level === "h3" && "text-lg font-semibold mt-10 mb-3",
       )}
     >
-      {children}
       <a
         href={`#${id}`}
-        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+        className="group -ml-2 inline-flex min-h-10 items-center gap-2 rounded-[10px] px-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         aria-label={`Link to the ${id.replace(/-/g, " ")} section`}
       >
-        <span className="sr-only">
-          Link to the {id.replace(/-/g, " ")} section
-        </span>
-        <Hash className="w-4 h-4" aria-hidden="true" />
+        <span>{children}</span>
+        <Hash
+          className="size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+          aria-hidden="true"
+        />
       </a>
     </Tag>
+  );
+}
+
+const METHOD_STYLES: Record<ApiReferenceMethod, string> = {
+  GET: "bg-sky-500/10 text-sky-700",
+  POST: "bg-emerald-500/10 text-emerald-700",
+  PUT: "bg-amber-500/10 text-amber-700",
+  PATCH: "bg-violet-500/10 text-violet-700",
+  DELETE: "bg-rose-500/10 text-rose-700",
+};
+
+function ManagementReferenceSection({ section }: { section: ApiReferenceSection }) {
+  return (
+    <section aria-labelledby={section.id}>
+      <SectionHeading id={section.id} level="h2">
+        {section.title}
+      </SectionHeading>
+      <p className="text-muted-foreground text-sm leading-relaxed text-pretty mb-4">
+        {section.description}
+      </p>
+      <div className="space-y-2 my-4">
+        {section.operations.map((operation) => (
+          <div
+            key={`${operation.method}-${operation.path}`}
+            className="rounded-[16px] bg-muted/50 px-4 py-3 sm:flex sm:items-start sm:gap-3"
+          >
+            <span
+              className={cn(
+                "inline-flex w-16 shrink-0 justify-center rounded-[8px] px-2 py-1 font-mono text-[11px] font-semibold tabular-nums",
+                METHOD_STYLES[operation.method],
+              )}
+            >
+              {operation.method}
+            </span>
+            <div className="mt-2 min-w-0 sm:mt-0">
+              <code className="block break-all text-[13px] text-foreground">
+                {operation.path}
+              </code>
+              <p className="mt-1 text-xs leading-relaxed text-pretty text-muted-foreground">
+                {operation.description}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <ul className="space-y-2 text-sm text-muted-foreground">
+        {section.notes.map((note) => (
+          <li key={note} className="flex items-start gap-2 text-pretty">
+            <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/60" />
+            <span>{note}</span>
+          </li>
+        ))}
+      </ul>
+      {section.id === "contact-management-api" && <ContactManagementGuide />}
+      {section.id === "tags-api" && <TagsApiGuide />}
+    </section>
+  );
+}
+
+function ContactManagementGuide() {
+  return (
+    <>
+      <SectionHeading id="contact-list-filters" level="h3">
+        Contact list filters
+      </SectionHeading>
+      <PropTable
+        props={[
+          { name: "search", type: "string", description: "Match contact name or email" },
+          { name: "tagId", type: "string", description: "Legacy single-tag filter" },
+          { name: "tagIds", type: "string[]", description: "Repeat the query key to filter by multiple tags" },
+          { name: "matchAllTags", type: "boolean", description: "Require every tagIds value instead of any" },
+          { name: "stageTagId", type: "string", description: "Require the current stage tag" },
+          { name: "excludeStageTagIds", type: "string[]", description: "Repeated stage IDs to exclude" },
+          { name: "activityType", type: "enum", description: "Filter by the latest supported activity type" },
+          { name: "activitySinceDays", type: "number", description: "Require activity within this many days" },
+          { name: "noActivitySinceDays", type: "number", description: "Require no activity within this many days" },
+          { name: "bookingStatus", type: "enum", description: "Filter by related booking status" },
+          { name: "limit", type: "integer", description: "Page size; defaults to 50 and is capped at 100" },
+          { name: "offset", type: "integer", description: "Zero-based result offset" },
+        ]}
+      />
+
+      <CodeBlock title="Filtered contact page" language="bash">
+{`curl --get "https://linkycal.com/api/projects/proj_123/contacts" \\
+  -H "Authorization: Bearer lc_live_your_api_key" \\
+  --data-urlencode "tagIds=tag_lead" \\
+  --data-urlencode "tagIds=tag_vip" \\
+  --data-urlencode "matchAllTags=true" \\
+  --data-urlencode "limit=50" \\
+  --data-urlencode "offset=0"`}
+      </CodeBlock>
+
+      <SectionHeading id="contact-activity-pagination" level="h3">
+        Contact activity pagination
+      </SectionHeading>
+      <p className="text-muted-foreground text-sm leading-relaxed text-pretty mb-4">
+        Activity accepts <IC>category</IC> values <IC>all</IC>, <IC>bookings</IC>,{" "}
+        <IC>form_responses</IC>, or <IC>workflows</IC>. The default page size is 20 and the
+        maximum is 100. Pass the returned opaque <IC>nextCursor</IC> unchanged to load the
+        next page.
+      </p>
+      <CodeBlock title="Contact timeline page" language="bash">
+{`curl --get "https://linkycal.com/api/projects/proj_123/contacts/ct_123/activities" \\
+  -H "Authorization: Bearer lc_live_your_api_key" \\
+  --data-urlencode "category=bookings" \\
+  --data-urlencode "limit=20"`}
+      </CodeBlock>
+    </>
+  );
+}
+
+function TagsApiGuide() {
+  return (
+    <>
+      <SectionHeading id="tags-list-and-create" level="h3">
+        List and create tags
+      </SectionHeading>
+      <PropTable
+        props={[
+          { name: "search", type: "string", description: "Case-insensitive name search, 1–100 characters" },
+          { name: "limit", type: "integer", description: "Optional page size from 1 to 100" },
+          { name: "cursor", type: "string", description: "Opaque nextCursor value; requires limit" },
+          { name: "name", type: "string", required: true, description: "Trimmed project-unique name, 1–50 characters" },
+          { name: "color", type: "string", description: "Optional six-digit hexadecimal color such as #1B4332" },
+        ]}
+      />
+      <CodeBlock title="Create a tag" language="bash">
+{`curl -X POST "https://linkycal.com/api/projects/proj_123/tags" \\
+  -H "Authorization: Bearer lc_live_your_api_key" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Qualified lead","color":"#1B4332"}'`}
+      </CodeBlock>
+      <CodeBlock title="Paginated tag response" language="json">
+{`{
+  "tags": [
+    {
+      "id": "tag_123",
+      "projectId": "proj_123",
+      "name": "Qualified lead",
+      "color": "#1B4332",
+      "createdAt": "2026-07-22T09:00:00.000Z"
+    }
+  ],
+  "nextCursor": null
+}`}
+      </CodeBlock>
+
+      <SectionHeading id="tags-contact-assignment" level="h3">
+        Assign and remove contact tags
+      </SectionHeading>
+      <CodeBlock title="Idempotent assignment" language="bash">
+{`curl -X PUT \\
+  "https://linkycal.com/api/projects/proj_123/contacts/ct_123/tags/tag_123" \\
+  -H "Authorization: Bearer lc_live_your_api_key"`}
+      </CodeBlock>
+      <p className="text-muted-foreground text-sm leading-relaxed text-pretty mb-4">
+        Assignment returns <IC>{`{ tag, assigned }`}</IC>; removal returns{" "}
+        <IC>{`{ success, tag, removed }`}</IC>. Repeating either request succeeds and reports{" "}
+        <IC>false</IC> for the unchanged relationship.
+      </p>
+      <CodeBlock title="Deletion conflict" language="json">
+{`{
+  "error": "Tag is referenced by one or more workflows",
+  "code": "TAG_IN_USE",
+  "workflows": [{ "id": "wf_123", "name": "Research new leads" }]
+}`}
+      </CodeBlock>
+    </>
   );
 }
 
@@ -368,7 +581,6 @@ function IC({ children }: { children: React.ReactNode }) {
 
 export default function Docs() {
   const [activeSection, setActiveSection] = useState("installation");
-  const scrollHandlerRef = useRef<(() => void) | null>(null);
 
   const handleScroll = useCallback(() => {
     const allIds = sidebarSections.flatMap((s) => s.children.map((c) => c.id));
@@ -388,14 +600,17 @@ export default function Docs() {
   }, []);
 
   useEffect(() => {
-    scrollHandlerRef.current = handleScroll;
+    const frame = window.requestAnimationFrame(() => {
+      const hashId = window.location.hash.slice(1);
+      if (hashId) document.getElementById(hashId)?.scrollIntoView();
+      handleScroll();
+    });
     window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", handleScroll);
+    };
   }, [handleScroll]);
-
-  function scrollTo(id: string) {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -471,18 +686,18 @@ export default function Docs() {
                 </div>
                 <div className="ml-6 space-y-0.5 mb-3">
                   {section.children.map((child) => (
-                    <button
+                    <a
                       key={child.id}
-                      onClick={() => scrollTo(child.id)}
+                      href={`#${child.id}`}
                       className={cn(
-                        "block w-full text-left px-3 py-1.5 text-[13px] rounded-[8px] transition-colors",
+                        "flex min-h-10 w-full items-center px-3 py-2 text-left text-[13px] rounded-[8px] transition-colors",
                         activeSection === child.id
                           ? "text-primary bg-primary/[0.06] font-medium"
                           : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
                       )}
                     >
                       {child.title}
-                    </button>
+                    </a>
                   ))}
                 </div>
               </div>
@@ -602,9 +817,45 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </ol>
 
             <Callout type="info">
-              All API responses follow a consistent JSON format. Errors include a descriptive{" "}
-              <IC>error</IC> field.
+              JSON errors include a descriptive <IC>error</IC> field and may include a stable{" "}
+              <IC>code</IC>. Successful responses vary by operation: JSON resources, file bodies,
+              and empty <IC>204</IC> responses are all used where appropriate.
             </Callout>
+
+            <SectionHeading id="api-families" level="h2">
+              API Families
+            </SectionHeading>
+            <div className="space-y-2 my-4">
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">
+                  Visitor API · <IC>/api/v1/*</IC>
+                </p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Canonical anonymous endpoints for availability, bookings, and multi-step form
+                  submissions. These routes are safe for visitor-side code and are rate limited by
+                  IP.
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">
+                  Share-link API · <IC>/api/public/*</IC>
+                </p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Public link resolution and form configuration used by LinkyCal share pages. The
+                  response-creation and step-submission variants are retained for compatibility;
+                  new direct integrations should prefer <IC>/api/v1/*</IC>.
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">
+                  Management API · <IC>/api/projects/:projectId/*</IC>
+                </p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Server-side project administration with a project-scoped API key. Never expose
+                  this credential in a browser, widget, or public form.
+                </p>
+              </div>
+            </div>
 
             <SectionHeading id="endpoint-catalog" level="h2">
               Endpoint Catalog
@@ -623,10 +874,17 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </p>
             <div className="space-y-2 my-4">
               {API_MANAGEMENT_DOMAINS.map((domain) => (
-                <div key={domain.name} className="rounded-[16px] bg-muted/50 px-4 py-3">
-                  <p className="text-sm font-medium text-foreground">{domain.name}</p>
-                  <p className="text-xs text-muted-foreground text-pretty mt-1">{domain.routes}</p>
-                </div>
+                <a
+                  key={domain.name}
+                  href={`#${domain.id}`}
+                  className="group flex min-h-10 items-start justify-between gap-3 rounded-[16px] bg-muted/50 px-4 py-3 transition-[background-color] hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+                >
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">{domain.name}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground text-pretty">{domain.routes}</span>
+                  </span>
+                  <Hash className="mt-0.5 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+                </a>
               ))}
             </div>
             <Callout type="info">
@@ -867,6 +1125,8 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
 }`}
             </CodeBlock>
 
+            <ManagementReferenceSection section={VISITOR_UTILITY_SECTION} />
+
             {/* ════════════════════════════════════════════════════════════
                 3. BOOKING API
             ════════════════════════════════════════════════════════════ */}
@@ -1063,7 +1323,12 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <IC>GET /api/projects/:projectId/contacts</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Retrieve all contacts for a project, with optional search and tag filtering.
+              Retrieve the first page of contacts for a project, with optional search and tag
+              filtering. The response includes the full filtered <IC>total</IC>; see{" "}
+              <a href="#contact-list-filters" className="text-primary hover:underline">
+                Contact list filters
+              </a>{" "}
+              for the complete filter and pagination reference.
             </p>
 
             <PropTable
@@ -1080,6 +1345,18 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   required: false,
                   description: "Filter by tag ID",
                 },
+                {
+                  name: "limit",
+                  type: "integer",
+                  required: false,
+                  description: "Page size, default 50 and maximum 100",
+                },
+                {
+                  name: "offset",
+                  type: "integer",
+                  required: false,
+                  description: "Zero-based result offset",
+                },
               ]}
             />
 
@@ -1091,10 +1368,14 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
       "name": "Jane Smith",
       "email": "jane@example.com",
       "phone": "+1-555-0123",
-      "tags": ["lead", "vip"],
-      "createdAt": "2026-03-20T10:00:00Z"
+      "tags": [
+        { "id": "tag_lead", "name": "Lead", "color": "#1B4332" }
+      ],
+      "lastActivityAt": "2026-07-22T08:30:00.000Z",
+      "createdAt": "2026-03-20T10:00:00.000Z"
     }
-  ]
+  ],
+  "total": 1
 }`}
             </CodeBlock>
 
@@ -1197,7 +1478,15 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </CodeBlock>
 
             {/* ════════════════════════════════════════════════════════════
-                5. WIDGETS
+                5. MANAGEMENT API REFERENCE
+            ════════════════════════════════════════════════════════════ */}
+
+            {API_REFERENCE_SECTIONS.map((section) => (
+              <ManagementReferenceSection key={section.id} section={section} />
+            ))}
+
+            {/* ════════════════════════════════════════════════════════════
+                6. WIDGETS
             ════════════════════════════════════════════════════════════ */}
 
             <SectionHeading id="booking-widget" level="h2">
@@ -1329,7 +1618,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </Callout>
 
             {/* ════════════════════════════════════════════════════════════
-                6. WORKFLOWS
+                7. WORKFLOWS
             ════════════════════════════════════════════════════════════ */}
 
             <SectionHeading id="triggers" level="h2">
@@ -1346,11 +1635,19 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               </div>
               <div className="flex items-start gap-3 py-2">
                 <IC>booking_created</IC>
-                <span className="text-muted-foreground">Fires when a new booking is confirmed</span>
+                <span className="text-muted-foreground">Fires whenever a new booking is created</span>
               </div>
               <div className="flex items-start gap-3 py-2">
                 <IC>booking_cancelled</IC>
                 <span className="text-muted-foreground">Fires when a booking is cancelled</span>
+              </div>
+              <div className="flex items-start gap-3 py-2">
+                <IC>booking_pending</IC> / <IC>booking_confirmed</IC>
+                <span className="text-muted-foreground">Fires for the corresponding booking state</span>
+              </div>
+              <div className="flex items-start gap-3 py-2">
+                <IC>new_contact_created</IC>
+                <span className="text-muted-foreground">Fires when a brand-new contact is stored</span>
               </div>
               <div className="flex items-start gap-3 py-2">
                 <IC>tag_added</IC>
@@ -1359,6 +1656,10 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <div className="flex items-start gap-3 py-2">
                 <IC>manual</IC>
                 <span className="text-muted-foreground">Triggered manually via API</span>
+              </div>
+              <div className="flex items-start gap-3 py-2">
+                <IC>scheduled</IC>
+                <span className="text-muted-foreground">Runs hourly, daily, weekly, or monthly in the configured timezone</span>
               </div>
             </div>
 
@@ -1373,6 +1674,10 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <div className="flex items-start gap-3 py-2">
                 <IC>send_email</IC>
                 <span className="text-muted-foreground">Send email via Resend</span>
+              </div>
+              <div className="flex items-start gap-3 py-2">
+                <IC>ai_research</IC>
+                <span className="text-muted-foreground">Research and enrich a contact with structured results</span>
               </div>
               <div className="flex items-start gap-3 py-2">
                 <IC>add_tag</IC> / <IC>remove_tag</IC>
@@ -1400,24 +1705,23 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               Webhook Events
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              When a workflow's webhook action fires, it sends a POST request to your configured URL
-              with a JSON payload describing the event.
+              A webhook step sends the configured method, headers, and body to an external URL. The
+              method defaults to <IC>POST</IC>; the body defaults to the workflow context below, but
+              you can replace it and interpolate workflow values.
             </p>
 
             <CodeBlock title="Webhook Payload" language="json">
 {`{
-  "event": "form_submitted",
-  "timestamp": "2026-03-24T14:00:00Z",
-  "data": {
-    "formId": "form_x1y2z3",
-    "responseId": "resp_a1b2c3d4",
-    "contactId": "ct_m1n2o3"
-  }
+  "projectId": "proj_123",
+  "contactId": "ct_m1n2o3",
+  "contactEmail": "jane@example.com",
+  "formResponseId": "resp_a1b2c3d4",
+  "metadata": {}
 }`}
             </CodeBlock>
 
             {/* ════════════════════════════════════════════════════════════
-                7. MCP SERVER
+                8. MCP SERVER
             ════════════════════════════════════════════════════════════ */}
 
             <SectionHeading id="mcp-overview" level="h2">
@@ -1479,7 +1783,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               Available Tools
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              The server exposes 32 tools for the project, grouped by
+              The server exposes 35 tools for the project, grouped by
               domain. Read tools return JSON; write tools enforce the same plan
               limits and validation as the dashboard.
             </p>
@@ -1512,7 +1816,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                 {
                   domain: "Tags",
                   tools:
-                    "list_contact_tags · create_contact_tag · add_tag_to_contact · remove_tag_from_contact",
+                    "list_contact_tags · get_contact_tag · create_contact_tag · update_contact_tag · delete_contact_tag · add_tag_to_contact · remove_tag_from_contact",
                 },
                 {
                   domain: "Forms",
@@ -1545,7 +1849,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </Callout>
 
             {/* ════════════════════════════════════════════════════════════
-                8. AUTHENTICATION
+                9. AUTHENTICATION
             ════════════════════════════════════════════════════════════ */}
 
             <SectionHeading id="api-keys" level="h2">
@@ -1567,6 +1871,13 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               API keys are project-scoped management credentials. Keep them in server-side secret
               storage or a local agent configuration. Never expose them in visitor-side code.
             </Callout>
+
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              API access is available on Pro and Business projects. Free projects return{" "}
+              <IC>api_access_unavailable</IC> even when the key itself is valid. Read{" "}
+              <IC>GET /api/projects/:projectId/entitlements</IC> when your integration needs the
+              current resource limits.
+            </p>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Send either a dashboard session or an API key, never both. If a request has a valid
@@ -1594,6 +1905,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                 { endpoint: "Availability checks", limit: "60 requests/minute per IP" },
                 { endpoint: "Booking creation", limit: "10 requests/minute per IP" },
                 { endpoint: "Form responses", limit: "30 requests/minute per IP" },
+                { endpoint: "Form response uploads", limit: "30 requests/minute per IP" },
                 { endpoint: "Form step submissions", limit: "60 requests/minute per IP" },
               ].map((row) => (
                 <div
@@ -1612,7 +1924,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </Callout>
 
             {/* ════════════════════════════════════════════════════════════
-                9. ADVANCED
+                10. ADVANCED
             ════════════════════════════════════════════════════════════ */}
 
             <SectionHeading id="error-handling" level="h2">
@@ -1650,6 +1962,10 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                 <span className="text-muted-foreground">Not found — resource does not exist</span>
               </div>
               <div className="flex items-start gap-3 py-1">
+                <IC>409</IC>
+                <span className="text-muted-foreground">Conflict — a unique value already exists or a referenced resource cannot be deleted</span>
+              </div>
+              <div className="flex items-start gap-3 py-1">
                 <IC>429</IC>
                 <span className="text-muted-foreground">Rate limited — too many requests, try again later</span>
               </div>
@@ -1663,14 +1979,38 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               Pagination
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Currently, list endpoints return all results. Cursor-based pagination will be added in a
-              future release with <IC>cursor</IC> and <IC>limit</IC> query parameters.
+              Pagination is endpoint-specific. Do not assume that every list uses the same model.
             </p>
-
-            <Callout type="info">
-              For now, all list endpoints return the full result set. Plan for pagination support if
-              you're building against the Contacts API.
-            </Callout>
+            <div className="space-y-2 my-4">
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Contacts</p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Offset pagination with <IC>limit</IC> and <IC>offset</IC>. The default limit is 50,
+                  the maximum is 100, and the response includes the full filtered <IC>total</IC>.
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Contact activity</p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Cursor pagination with a default limit of 20 and maximum of 100. Pass the returned
+                  opaque <IC>nextCursor</IC> unchanged.
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Tags</p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Optional cursor pagination from 1 to 100 items. When using <IC>cursor</IC>, repeat
+                  the same <IC>limit</IC> on the next request.
+                </p>
+              </div>
+              <div className="rounded-[16px] bg-muted/50 px-4 py-3">
+                <p className="text-sm font-medium text-foreground">Other lists</p>
+                <p className="text-xs text-muted-foreground text-pretty mt-1">
+                  Other list operations currently return their complete result unless their section
+                  or OpenAPI operation declares a limit.
+                </p>
+              </div>
+            </div>
 
             <SectionHeading id="webhooks" level="h2">
               Webhooks

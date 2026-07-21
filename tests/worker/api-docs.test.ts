@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { PROJECT_API_KEY_ROUTES } from "../../worker/lib/api-route-policy";
+import { API_REFERENCE_SECTIONS } from "../../src/lib/api-reference";
 import {
   generateApiArtifacts,
   toOpenApiPath,
@@ -11,6 +12,10 @@ async function loadArtifacts() {
     new URL("../../worker/index.ts", import.meta.url),
   ).text();
   return generateApiArtifacts(source);
+}
+
+function normalizePathParameters(path: string): string {
+  return path.replace(/:[^/]+/g, ":parameter");
 }
 
 describe("generated API documentation", () => {
@@ -43,9 +48,22 @@ describe("generated API documentation", () => {
         { bearerAuth: [] },
       ]);
     }
+
+    const humanReferenceKeys = API_REFERENCE_SECTIONS.flatMap((section) =>
+      section.operations
+        .filter((operation) => operation.path.startsWith("/api/projects/"))
+        .map(
+          (operation) =>
+            `${operation.method} ${normalizePathParameters(operation.path)}`,
+        ),
+    );
+    const projectRouteKeys = PROJECT_API_KEY_ROUTES.map(
+      (route) => `${route.method} ${normalizePathParameters(route.path)}`,
+    );
+    expect(new Set(humanReferenceKeys)).toEqual(new Set(projectRouteKeys));
   });
 
-  test("publishes an explicit Tags API contract", async () => {
+  test("publishes explicit Tags and paginated contact contracts", async () => {
     const { openApi } = await loadArtifacts();
     const collection = openApi.paths["/api/projects/{projectId}/tags"];
     const resource =
@@ -82,6 +100,43 @@ describe("generated API documentation", () => {
     expect(openApi.components.schemas.Tag).toBeDefined();
     expect(openApi.components.schemas.TagListResponse).toBeDefined();
     expect(openApi.components.schemas.TagAssignmentResponse).toBeDefined();
+
+    const contacts =
+      openApi.paths["/api/projects/{projectId}/contacts"].get;
+    const activities =
+      openApi.paths[
+        "/api/projects/{projectId}/contacts/{contactId}/activities"
+      ].get;
+    expect(contacts.parameters?.map((parameter) => parameter.name)).toEqual([
+      "projectId",
+      "search",
+      "tagId",
+      "tagIds",
+      "matchAllTags",
+      "stageTagId",
+      "excludeStageTagIds",
+      "activityType",
+      "activitySinceDays",
+      "noActivitySinceDays",
+      "bookingStatus",
+      "limit",
+      "offset",
+    ]);
+    expect(contacts.responses["200"]).toEqual(
+      expect.objectContaining({ description: "Contact page" }),
+    );
+    expect(activities.parameters?.map((parameter) => parameter.name)).toEqual([
+      "projectId",
+      "contactId",
+      "category",
+      "limit",
+      "cursor",
+    ]);
+    expect(activities.responses["200"]).toEqual(
+      expect.objectContaining({ description: "Contact activity page" }),
+    );
+    expect(openApi.components.schemas.ContactListResponse).toBeDefined();
+    expect(openApi.components.schemas.ContactActivityPage).toBeDefined();
   });
 
   test("classifies every registered API route in the audit", async () => {
