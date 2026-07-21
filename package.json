@@ -7,6 +7,8 @@
 		"dev": "vite",
 		"build": "bun run cf-typegen && tsc -b && vite build",
 		"test": "bun test",
+		"docs:generate": "bun scripts/generate-api-docs.ts",
+		"docs:check": "bun scripts/generate-api-docs.ts --check",
 		"lint": "eslint .",
 		"preview": "bun run build && vite preview",
 		"deploy": "bun run build && wrangler deploy",
