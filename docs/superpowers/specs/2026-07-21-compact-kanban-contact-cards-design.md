@@ -6,7 +6,7 @@ Reduce the vertical space used by contact cards in the Contacts Kanban view whil
 
 ## Scope
 
-This change applies only to contact cards in the Kanban view. It does not change the contacts table, contact detail page, pipeline columns, drag-and-drop behavior, or contact editing.
+The primary change applies to contact cards in the Kanban view. It does not change the contacts table, pipeline columns, drag-and-drop behavior, or contact editing. It also corrects the alignment of the empty Next Action card on the contact detail page without changing its populated or editing states.
 
 ## Card layout
 
@@ -38,6 +38,10 @@ No new endpoint or database query is required.
 
 The complete card remains the drag target and navigation target. Existing hover, dragging, and column behavior remain unchanged. Text truncates within the available column width so the denser layout does not widen the board.
 
+## Empty Next Action card
+
+When no Next Action, editor, or error is present, the contact detail card renders as one compact header row. The title and Add button share the same vertical center, and the unused content gap is removed. Populated, editing, and error states retain their current spacing.
+
 ## Testing
 
-A focused temporary component test will verify that a dated Next Action appears with its relative deadline and that an undated or missing deadline does not add empty metadata. The temporary test will be removed after verification, following the project preference. Existing contact-service and build checks will confirm the response shape and TypeScript integration.
+Focused temporary component tests will verify that a dated Next Action appears with its relative deadline, that an undated or missing deadline does not add empty metadata, and that the empty Next Action card uses the compact centered header. The temporary tests will be removed after verification, following the project preference. Existing contact-service and build checks will confirm the response shape and TypeScript integration.
