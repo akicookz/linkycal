@@ -90,3 +90,18 @@ describe("ContactService.findOrCreate dedup", () => {
     expect(contact.linkedinUrl).toBe("https://linkedin.com/in/jane");
   });
 });
+
+describe("ContactService.getWithDetails", () => {
+  test("returns tags without embedding activity", async () => {
+    const db = createTestDb();
+    await seedProject(db);
+    const svc = new ContactService(db);
+    const contact = await svc.create("p", { name: "Jane" });
+
+    const detail = await svc.getWithDetails(contact.id, "p");
+
+    expect(detail).not.toBeNull();
+    expect(detail).toHaveProperty("tags");
+    expect(detail && "activity" in detail).toBe(false);
+  });
+});

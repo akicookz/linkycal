@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  buildWorkflowResearchActivityMetadata,
   buildWorkflowContactOperationalContext,
   formatContactsInputValue,
   interpolateWorkflowTemplate,
@@ -51,6 +52,39 @@ function buildContext(): WorkflowTriggerContext {
 }
 
 describe("workflow runtime helpers", () => {
+  test("preserves the complete research record in activity metadata", () => {
+    const record = {
+      resultKey: "lead",
+      provider: "gemini" as const,
+      model: "gemini-2.5-flash",
+      prompt: "Research Ada",
+      executedAt: "2026-07-01T10:00:00.000Z",
+      result: {
+        summary: "Strong fit",
+        company: "Analytical Engines",
+        role: "Founder",
+        website: "https://example.com",
+        linkedinUrl: null,
+        location: "London",
+        description: null,
+        companySize: "1-10",
+        estimatedRevenue: null,
+        recommendedTags: ["qualified"],
+        insights: ["Interested in automation"],
+        sources: [
+          { title: "Company", url: "https://example.com", snippet: null },
+        ],
+      },
+    };
+
+    expect(buildWorkflowResearchActivityMetadata(record)).toEqual({
+      resultKey: "lead",
+      summary: "Strong fit",
+      sourceCount: 1,
+      research: record,
+    });
+  });
+
   test("exposes exact fractional stage ages and deadline distances", () => {
     const context = buildContext();
     context.contactOperational = buildWorkflowContactOperationalContext(

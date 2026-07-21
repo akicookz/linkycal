@@ -120,6 +120,17 @@ export interface WorkflowResearchRecord {
   result: WorkflowResearchResult;
 }
 
+export function buildWorkflowResearchActivityMetadata(
+  record: WorkflowResearchRecord,
+): Record<string, unknown> {
+  return {
+    resultKey: record.resultKey,
+    summary: record.result.summary,
+    sourceCount: record.result.sources.length,
+    research: record,
+  };
+}
+
 const LEGACY_FIELD_ALIASES: Record<string, string> = {
   contact_name: "contact.name",
   contact_email: "contact.email",

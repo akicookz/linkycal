@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import * as dbSchema from "../../worker/db/schema";
-import { ContactActivityService } from "../../worker/services/contact-activity-service";
+import {
+  ContactActivityService,
+  encodeContactActivityCursor,
+  parseContactActivityListOptions,
+} from "../../worker/services/contact-activity-service";
 import { createTestDb, seedTwoProjects } from "./mcp-test-db";
 
 const hour = 60 * 60 * 1000;
@@ -212,6 +216,30 @@ async function seedTimeline() {
 }
 
 describe("ContactActivityService", () => {
+  test("validates and defaults activity list query parameters", () => {
+    const cursor = encodeContactActivityCursor({
+      occurredAt: "2026-07-01T10:00:00.000Z",
+      id: "activity:a",
+    });
+    expect(parseContactActivityListOptions({})).toEqual({
+      category: "all",
+      limit: 20,
+      cursor: null,
+    });
+    expect(
+      parseContactActivityListOptions({
+        category: "workflows",
+        limit: "100",
+        cursor,
+      }),
+    ).toEqual({ category: "workflows", limit: 100, cursor });
+    expect(() => parseContactActivityListOptions({ category: "tags" })).toThrow();
+    expect(() => parseContactActivityListOptions({ limit: "0" })).toThrow();
+    expect(() => parseContactActivityListOptions({ limit: "101" })).toThrow();
+    expect(() => parseContactActivityListOptions({ limit: "2.5" })).toThrow();
+    expect(() => parseContactActivityListOptions({ cursor: "invalid" })).toThrow();
+  });
+
   test("normalizes the complete contact timeline and exact counts", async () => {
     const { db } = await seedTimeline();
     const service = new ContactActivityService(db);

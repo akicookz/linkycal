@@ -238,6 +238,33 @@ export class WorkflowService {
     return query;
   }
 
+  async getRunInProject(
+    projectId: string,
+    workflowId: string,
+    runId: string,
+  ) {
+    const rows = await this.db
+      .select({
+        run: dbSchema.workflowRuns,
+        workflowName: dbSchema.workflows.name,
+      })
+      .from(dbSchema.workflowRuns)
+      .innerJoin(
+        dbSchema.workflows,
+        eq(dbSchema.workflowRuns.workflowId, dbSchema.workflows.id),
+      )
+      .where(
+        and(
+          eq(dbSchema.workflowRuns.id, runId),
+          eq(dbSchema.workflowRuns.workflowId, workflowId),
+          eq(dbSchema.workflows.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    const row = rows[0];
+    return row ? { ...row.run, workflowName: row.workflowName } : null;
+  }
+
   async createRun(workflowId: string, triggerId?: string, context?: string) {
     const id = crypto.randomUUID();
     await this.db.insert(dbSchema.workflowRuns).values({

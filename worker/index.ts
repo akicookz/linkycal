@@ -110,6 +110,10 @@ import {
 import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
+import {
+  ContactActivityService,
+  parseContactActivityListOptions,
+} from "./services/contact-activity-service";
 import { ensureContact } from "./lib/contact-actions";
 import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
@@ -5586,6 +5590,37 @@ app.get("/api/projects/:projectId/contacts/:id", async (c) => {
   return c.json({ contact });
 });
 
+app.get(
+  "/api/projects/:projectId/contacts/:contactId/activities",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const contactId = c.req.param("contactId");
+      const options = parseContactActivityListOptions({
+        category: c.req.query("category"),
+        limit: c.req.query("limit"),
+        cursor: c.req.query("cursor"),
+      });
+      const service = new ContactActivityService(c.get("db"));
+      const page = await service.list(projectId, contactId, options);
+      if (!page) return c.json({ error: "Contact not found" }, 404);
+      return c.json(page);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("Invalid")) {
+        return c.json({ error: error.message }, 400);
+      }
+      if (
+        error instanceof Error &&
+        error.message === "Activity limit must be an integer from 1 to 100"
+      ) {
+        return c.json({ error: error.message }, 400);
+      }
+      console.error("Contact activity list error:", error);
+      return c.json({ error: "Failed to fetch contact activity" }, 500);
+    }
+  },
+);
+
 app.put("/api/projects/:projectId/contacts/:id", async (c) => {
   try {
     const projectId = c.req.param("projectId");
@@ -6110,6 +6145,24 @@ app.get("/api/projects/:projectId/workflows/:workflowId/runs", async (c) => {
     return c.json({ error: "Failed to fetch workflow runs" }, 500);
   }
 });
+
+app.get(
+  "/api/projects/:projectId/workflows/:workflowId/runs/:runId",
+  async (c) => {
+    try {
+      const projectId = c.req.param("projectId");
+      const workflowId = c.req.param("workflowId");
+      const runId = c.req.param("runId");
+      const service = new WorkflowService(c.get("db"));
+      const run = await service.getRunInProject(projectId, workflowId, runId);
+      if (!run) return c.json({ error: "Workflow run not found" }, 404);
+      return c.json({ run });
+    } catch (error) {
+      console.error("Workflow run detail error:", error);
+      return c.json({ error: "Failed to fetch workflow run" }, 500);
+    }
+  },
+);
 
 // Manually trigger a workflow
 app.post(

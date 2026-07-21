@@ -76,6 +76,12 @@ export interface ContactActivityCursor {
   id: string;
 }
 
+export interface ContactActivityQueryInput {
+  category?: string;
+  limit?: string;
+  cursor?: string;
+}
+
 const RESPONSE_ID_CHUNK = 90;
 
 function toIso(value: Date | string): string {
@@ -192,6 +198,29 @@ export function parseContactActivityCursor(
   } catch {
     throw new Error("Invalid cursor");
   }
+}
+
+export function parseContactActivityListOptions(
+  input: ContactActivityQueryInput,
+): ContactActivityListOptions {
+  const category = input.category ?? "all";
+  if (
+    category !== "all" &&
+    category !== "bookings" &&
+    category !== "form_responses" &&
+    category !== "workflows"
+  ) {
+    throw new Error("Invalid activity category");
+  }
+
+  const limit = input.limit === undefined ? 20 : Number(input.limit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new Error("Activity limit must be an integer from 1 to 100");
+  }
+
+  const cursor = input.cursor ?? null;
+  parseContactActivityCursor(cursor);
+  return { category, limit, cursor };
 }
 
 export class ContactActivityService {

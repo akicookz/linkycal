@@ -425,14 +425,13 @@ export class ContactService {
   // ─── Contact with Tags + Activity ────────────────────────────────────────
 
   async getWithDetails(id: string, projectId?: string) {
-    const [contact, tags, activity] = await Promise.all([
+    const [contact, tags] = await Promise.all([
       projectId ? this.getByIdInProject(projectId, id) : this.getById(id),
       this.getContactTags(id),
-      this.getActivity(id),
     ]);
     if (!contact) return null;
 
-    return { ...contact, tags, activity };
+    return { ...contact, tags };
   }
 
   async getOperationalFacts(

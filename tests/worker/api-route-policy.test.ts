@@ -53,6 +53,18 @@ describe("project API route policy", () => {
         "/api/projects/project-a/event-types/event-a/calendars",
       ),
     ).toBe("apiKey");
+    expect(
+      projectRouteAccess(
+        "GET",
+        "/api/projects/project-a/contacts/contact-a/activities",
+      ),
+    ).toBe("apiKey");
+    expect(
+      projectRouteAccess(
+        "GET",
+        "/api/projects/project-a/workflows/workflow-a/runs/run-a",
+      ),
+    ).toBe("apiKey");
     expect(projectRouteAccess("DELETE", "/api/projects/project-a")).toBe(
       "sessionOnly",
     );

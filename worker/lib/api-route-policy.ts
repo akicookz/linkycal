@@ -103,6 +103,10 @@ export const PROJECT_API_KEY_ROUTES: ApiRoutePolicyEntry[] = [
   { method: "POST", path: "/api/projects/:projectId/contacts" },
   { method: "POST", path: "/api/projects/:projectId/contacts/import" },
   { method: "GET", path: "/api/projects/:projectId/contacts/:id" },
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/contacts/:contactId/activities",
+  },
   { method: "PUT", path: "/api/projects/:projectId/contacts/:id" },
   {
     method: "PUT",
@@ -161,6 +165,10 @@ export const PROJECT_API_KEY_ROUTES: ApiRoutePolicyEntry[] = [
   {
     method: "GET",
     path: "/api/projects/:projectId/workflows/:workflowId/runs",
+  },
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/workflows/:workflowId/runs/:runId",
   },
   {
     method: "POST",

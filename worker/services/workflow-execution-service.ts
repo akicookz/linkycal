@@ -7,6 +7,7 @@ import {
   type WorkflowContactFilter,
 } from "../lib/workflow-schedule";
 import {
+  buildWorkflowResearchActivityMetadata,
   buildWorkflowContactOperationalContext,
   formatContactsInputValue,
   interpolateWorkflowTemplate,
@@ -716,11 +717,12 @@ export class WorkflowExecutionService {
       metadata: nextMetadata,
       notes: nextNotes,
     });
-    await this.contactService.logActivity(contactId, "workflow_researched", undefined, {
-      resultKey: record.resultKey,
-      summary: record.result.summary,
-      sourceCount: record.result.sources.length,
-    });
+    await this.contactService.logActivity(
+      contactId,
+      "workflow_researched",
+      undefined,
+      buildWorkflowResearchActivityMetadata(record),
+    );
   }
 
   // On-demand enrichment (called by the queue consumer for `enrich` jobs).
