@@ -4,11 +4,11 @@
 
 ## Result
 
-- Registered route/method pairs: 140
-- API-key-supported or API-key-required routes: 87
+- Registered route/method pairs: 142
+- API-key-supported or API-key-required routes: 89
 - Anonymous visitor routes: 15
 - Session-only routes: 33
-- Operations in the public OpenAPI contract: 102
+- Operations in the public OpenAPI contract: 104
 
 All project resource routes approved for external automation use the canonical `/api/projects/:projectId/*` contract and accept either a dashboard session or a project-scoped API key. Account, team, billing, onboarding, OAuth lifecycle, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
 
@@ -22,7 +22,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 - Invite token: 1
 - Invite token + session: 1
 - Session: 33
-- Session or API key: 85
+- Session or API key: 87
 - Stripe signature: 1
 
 ## Endpoint inventory
@@ -72,6 +72,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | DELETE | `/api/projects/:projectId/contact-views/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/contacts` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/contacts` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| GET | `/api/projects/:projectId/contacts/:contactId/activities` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/contacts/:contactId/enrich` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | PUT | `/api/projects/:projectId/contacts/:contactId/next-action` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/contacts/:contactId/stage` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
@@ -134,6 +135,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | DELETE | `/api/projects/:projectId/workflows/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/workflows/:workflowId` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/workflows/:workflowId/runs` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| GET | `/api/projects/:projectId/workflows/:workflowId/runs/:runId` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/workflows/:workflowId/steps` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/workflows/:workflowId/steps` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | PUT | `/api/projects/:projectId/workflows/:workflowId/steps/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |

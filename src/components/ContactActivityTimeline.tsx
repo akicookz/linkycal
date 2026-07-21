@@ -112,7 +112,7 @@ function TimelineRow({
           <span className="text-sm font-medium text-foreground">{item.title}</span>
           {item.status && (
             <Badge variant={statusVariant(item.status)} className="px-2 py-0 text-[10px] capitalize">
-              {item.status.replaceAll("_", " ")}
+              {item.status.replace(/_/g, " ")}
             </Badge>
           )}
         </div>
@@ -132,7 +132,7 @@ function TimelineRow({
     <button
       type="button"
       onClick={() => onSelect(item)}
-      className="flex min-h-12 w-full items-start gap-3 rounded-[16px] px-3 py-2.5 text-left transition-[background-color,transform] hover:bg-muted/60 active:scale-[0.96]"
+      className="flex min-h-12 w-full items-start gap-3 rounded-[16px] px-3 py-2.5 text-left transition-[background-color,scale] hover:bg-muted/60 active:scale-[0.96]"
     >
       {content}
     </button>
@@ -228,7 +228,11 @@ export function ContactActivityTimeline({
             </CardTitle>
             <TabsList className="ml-auto h-auto max-w-full flex-wrap justify-end gap-1">
               {categories.map((entry) => (
-                <TabsTrigger key={entry.value} value={entry.value} className="min-h-8 px-2.5 text-xs">
+                <TabsTrigger
+                  key={entry.value}
+                  value={entry.value}
+                  className="min-h-10 px-2.5 text-xs transition-[background-color,color,box-shadow]"
+                >
                   {entry.label}
                 </TabsTrigger>
               ))}
@@ -260,7 +264,7 @@ export function ContactActivityTimeline({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="transition-[background-color,color,transform] active:scale-[0.96]"
+                className="transition-[background-color,color,scale] active:scale-[0.96]"
                 onClick={() => activityQuery.refetch()}
               >
                 <RefreshCw className="h-4 w-4" />
@@ -284,7 +288,7 @@ export function ContactActivityTimeline({
                     variant="outline"
                     size="sm"
                     className={cn(
-                      "transition-[background-color,color,transform] active:scale-[0.96]",
+                      "transition-[background-color,color,scale] active:scale-[0.96]",
                       activityQuery.isFetchingNextPage && "cursor-wait",
                     )}
                     disabled={activityQuery.isFetchingNextPage}

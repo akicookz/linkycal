@@ -342,6 +342,7 @@ export class ContactActivityService {
           ),
         );
       for (const response of responseRows) {
+        if (!response.formId) continue;
         items.push({
           id: `form_response:${response.id}`,
           kind: "form_response",

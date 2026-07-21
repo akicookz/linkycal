@@ -259,7 +259,7 @@ export function ContactActivityDetailsDrawer({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="transition-[background-color,color,transform] active:scale-[0.96]"
+                className="transition-[background-color,color,scale] active:scale-[0.96]"
                 onClick={() => runQuery.refetch()}
               >
                 <RefreshCw className="h-4 w-4" />

@@ -10,12 +10,10 @@ import {
   CalendarCheck,
   X as XIcon,
   FileText,
-  Tag,
   Plus,
   Check,
   Loader,
   AlertCircle,
-  Clock,
   Building2,
   Briefcase,
   Globe,
@@ -26,6 +24,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { AppBreadcrumb } from "@/components/AppBreadcrumb";
+import { ContactActivityTimeline } from "@/components/ContactActivityTimeline";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -53,6 +52,7 @@ import {
   nextActionTimingClass,
 } from "@/lib/contact-time";
 import { queryClient } from "@/lib/query-client";
+import type { ContactActivitySummary } from "@/lib/contact-activity";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -61,24 +61,6 @@ interface ContactTag {
   id: string;
   name: string;
   color: string | null;
-}
-
-interface ContactActivity {
-  id: string;
-  contactId: string;
-  type:
-    | "contact_created"
-    | "form_submitted"
-    | "booked"
-    | "cancelled"
-    | "tag_added"
-    | "tag_removed"
-    | "workflow_researched"
-    | "next_action_set"
-    | "next_action_completed";
-  referenceId: string | null;
-  metadata: unknown;
-  createdAt: string;
 }
 
 interface ContactDetail {
@@ -100,7 +82,6 @@ interface ContactDetail {
   createdAt: string;
   updatedAt: string;
   tags: ContactTag[];
-  activity: ContactActivity[];
 }
 
 interface ContactPreview extends Partial<ContactDetail> {
@@ -158,7 +139,6 @@ function buildContactPlaceholder(
     createdAt: preview.createdAt ?? new Date().toISOString(),
     updatedAt: preview.updatedAt ?? preview.createdAt ?? new Date().toISOString(),
     tags: preview.tags ?? [],
-    activity: preview.activity ?? [],
   };
 }
 
@@ -192,51 +172,6 @@ function formatFullDate(dateStr: string): string {
   });
 }
 
-function activityIcon(type: ContactActivity["type"]) {
-  switch (type) {
-    case "booked":
-      return <CalendarCheck className="h-4 w-4 text-emerald-600" />;
-    case "cancelled":
-      return <XIcon className="h-4 w-4 text-destructive" />;
-    case "form_submitted":
-      return <FileText className="h-4 w-4 text-blue-600" />;
-    case "tag_added":
-      return <Tag className="h-4 w-4 text-violet-600" />;
-    case "tag_removed":
-      return <Tag className="h-4 w-4 text-muted-foreground" />;
-    case "next_action_set":
-      return <CalendarClock className="h-4 w-4 text-blue-600" />;
-    case "next_action_completed":
-      return <CheckCircle2 className="h-4 w-4 text-emerald-600" />;
-    default:
-      return <Clock className="h-4 w-4 text-muted-foreground" />;
-  }
-}
-
-function activityDescription(activity: ContactActivity): string {
-  const meta = activity.metadata as Record<string, unknown> | null;
-  switch (activity.type) {
-    case "booked":
-      return "Booked an appointment";
-    case "cancelled":
-      return "Cancelled an appointment";
-    case "form_submitted":
-      return "Submitted a form response";
-    case "tag_added":
-      return `Tag '${meta?.tagName ?? "unknown"}' added`;
-    case "tag_removed":
-      return `Tag '${meta?.tagName ?? "unknown"}' removed`;
-    case "workflow_researched":
-      return `Stored research in '${meta?.resultKey ?? "research"}'`;
-    case "next_action_set":
-      return `Next action set to '${meta?.text ?? "unknown"}'`;
-    case "next_action_completed":
-      return `Completed next action '${meta?.text ?? "unknown"}'`;
-    default:
-      return "Activity recorded";
-  }
-}
-
 function ensureHttps(url: string): string {
   if (/^https?:\/\//i.test(url)) return url;
   return `https://${url}`;
@@ -253,6 +188,10 @@ export default function ContactDetailPage() {
   const [editingNextAction, setEditingNextAction] = useState(false);
   const [nextActionError, setNextActionError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "error" | null>(null);
+  const [activitySummary, setActivitySummary] = useState<ContactActivitySummary>({
+    status: "loading",
+    counts: null,
+  });
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const now = useMinuteNow();
   const contactPlaceholder = useMemo(() => {
@@ -266,7 +205,6 @@ export default function ContactDetailPage() {
     data: contactData,
     isLoading: loadingContact,
     isError: errorContact,
-    isPlaceholderData: loadingContactDetails,
   } = useQuery<ContactDetail>({
     queryKey: ["projects", projectId, "contacts", contactId],
     queryFn: async () => {
@@ -280,15 +218,6 @@ export default function ContactDetailPage() {
   });
 
   const contact = contactData;
-
-  // Quick stats from activity
-  const stats = useMemo(() => {
-    if (!contact) return { bookings: 0, formSubmissions: 0 };
-    return {
-      bookings: contact.activity.filter((a) => a.type === "booked").length,
-      formSubmissions: contact.activity.filter((a) => a.type === "form_submitted").length,
-    };
-  }, [contact]);
 
   // ─── Mutations ───
 
@@ -566,11 +495,6 @@ export default function ContactDetailPage() {
     );
   }
 
-  // ─── Sorted activity (most recent first) ───
-
-  const sortedActivity = [...contact.activity].sort(
-    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-  );
   const hasNextAction = Boolean(contact.nextActionText);
   const nextActionIsEmpty =
     !editingNextAction && !hasNextAction && !nextActionError;
@@ -833,62 +757,12 @@ export default function ContactDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Activity Timeline */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-muted-foreground" />
-                Activity Timeline
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingContactDetails ? (
-                <div role="status" aria-label="Loading activity" className="space-y-5">
-                  <span className="sr-only">Loading activity</span>
-                  {[0, 1, 2].map((item) => (
-                    <div key={item} className="flex items-start gap-4">
-                      <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
-                      <div className="flex-1 space-y-2 pt-1">
-                        <Skeleton className="h-4 w-2/3" />
-                        <Skeleton className="h-3 w-20" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : sortedActivity.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8">
-                  <Clock className="h-8 w-8 text-muted-foreground mb-3" />
-                  <p className="text-sm text-muted-foreground">No activity yet</p>
-                </div>
-              ) : (
-                <div className="relative">
-                  {/* Timeline line */}
-                  <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
-
-                  <div className="space-y-0">
-                    {sortedActivity.map((activity) => (
-                      <div key={activity.id} className="relative flex items-start gap-4 pb-6 last:pb-0">
-                        {/* Icon dot */}
-                        <div className="relative z-10 flex h-8 w-8 items-center justify-center rounded-full bg-card border shrink-0">
-                          {activityIcon(activity.type)}
-                        </div>
-
-                        {/* Content */}
-                        <div className="flex-1 min-w-0 pt-1">
-                          <p className="text-sm text-foreground">
-                            {activityDescription(activity)}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {relativeTime(activity.createdAt)}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <ContactActivityTimeline
+            projectId={projectId!}
+            contactId={contactId!}
+            contact={{ name: contact.name, email: contact.email }}
+            onSummaryChange={setActivitySummary}
+          />
         </div>
 
         {/* ─── Sidebar ─── */}
@@ -1012,10 +886,12 @@ export default function ContactDetailPage() {
                   <CalendarCheck className="h-4 w-4 text-emerald-600" />
                   <span className="text-sm text-foreground">Bookings</span>
                 </div>
-                {loadingContactDetails ? (
+                {activitySummary.status === "loading" ? (
                   <Skeleton className="h-4 w-6" />
+                ) : activitySummary.status === "error" ? (
+                  <span className="text-sm text-muted-foreground" aria-label="Bookings unavailable">—</span>
                 ) : (
-                  <span className="text-sm font-semibold text-foreground">{stats.bookings}</span>
+                  <span className="text-sm font-semibold tabular-nums text-foreground">{activitySummary.counts?.bookings ?? 0}</span>
                 )}
               </div>
               <div className="flex items-center justify-between rounded-[12px] bg-muted/50 px-4 py-3">
@@ -1023,11 +899,13 @@ export default function ContactDetailPage() {
                   <FileText className="h-4 w-4 text-blue-600" />
                   <span className="text-sm text-foreground">Form Submissions</span>
                 </div>
-                {loadingContactDetails ? (
+                {activitySummary.status === "loading" ? (
                   <Skeleton className="h-4 w-6" />
+                ) : activitySummary.status === "error" ? (
+                  <span className="text-sm text-muted-foreground" aria-label="Form submissions unavailable">—</span>
                 ) : (
-                  <span className="text-sm font-semibold text-foreground">
-                    {stats.formSubmissions}
+                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                    {activitySummary.counts?.formResponses ?? 0}
                   </span>
                 )}
               </div>
@@ -1050,10 +928,12 @@ export default function ContactDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span>Total activity</span>
-                {loadingContactDetails ? (
+                {activitySummary.status === "loading" ? (
                   <Skeleton className="h-3.5 w-14" />
+                ) : activitySummary.status === "error" ? (
+                  <span aria-label="Total activity unavailable">Unavailable</span>
                 ) : (
-                  <span>{contact.activity.length} events</span>
+                  <span className="tabular-nums">{activitySummary.counts?.all ?? 0} events</span>
                 )}
               </div>
             </CardContent>
