@@ -136,6 +136,7 @@ import { resolveRequestAuth } from "./lib/request-auth";
 import { projectRouteAccess } from "./lib/api-route-policy";
 import { authorizeApiKeyProjectRequest } from "./lib/project-api-access";
 import { projectCanUseCalendarConnections } from "./lib/calendar-connection-scope";
+import { isTrustedOrigin, sessionOriginAllowed } from "./lib/cors-policy";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -1108,13 +1109,16 @@ const app = new Hono<HonoAppContext>();
 
 app.use(
   "*",
-  cors({
-    origin: (origin) => origin ?? "*",
-    allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
-    credentials: true,
-    maxAge: 86400,
-  }),
+  except(
+    ["/api/auth/*"],
+    cors({
+      origin: "*",
+      allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+      allowHeaders: ["Content-Type", "Authorization"],
+      credentials: false,
+      maxAge: 86400,
+    }),
+  ),
 );
 
 // ─── Timestamp Normalization Middleware ──────────────────────────────────────
@@ -1138,10 +1142,27 @@ app.use("/api/*", async (c, next) => {
 
 // ─── Auth Routes ─────────────────────────────────────────────────────────────
 
+app.use("/api/auth/*", async (c, next) => {
+  const origin = c.req.header("origin");
+  if (
+    origin &&
+    !isTrustedOrigin(origin, c.env.BETTER_AUTH_URL, c.req.url)
+  ) {
+    return c.json(
+      { error: "Origin is not allowed", code: "origin_forbidden" },
+      403,
+    );
+  }
+  return next();
+});
+
 app.use(
   "/api/auth/*",
   cors({
-    origin: (origin) => origin || "*",
+    origin: (origin, c) =>
+      isTrustedOrigin(origin, c.env.BETTER_AUTH_URL, c.req.url)
+        ? origin
+        : null,
     allowHeaders: ["Content-Type", "Authorization"],
     allowMethods: ["POST", "GET", "OPTIONS"],
     exposeHeaders: ["Content-Length"],
@@ -2703,6 +2724,20 @@ app.use("/api/*", async (c, next) => {
       );
     }
     return next();
+  }
+
+  if (
+    !sessionOriginAllowed(
+      c.req.method,
+      c.req.header("origin"),
+      c.env.BETTER_AUTH_URL,
+      c.req.url,
+    )
+  ) {
+    return c.json(
+      { error: "Origin is not allowed", code: "origin_forbidden" },
+      403,
+    );
   }
 
   const { user, session } = requestAuthResult.auth;
