@@ -32,6 +32,8 @@ export interface ContactListOptions {
   tagId?: string;
   tagIds?: string[];
   matchAllTags?: boolean;
+  stageTagId?: string;
+  excludeStageTagIds?: string[];
   activityType?: ContactActivityType;
   activitySinceDays?: number;
   noActivitySinceDays?: number;
@@ -42,7 +44,7 @@ export interface ContactOperationalFacts {
   enteredAtByTagId: Record<string, string>;
   nextAction: {
     text: string;
-    deadline: string;
+    deadline: string | null;
   } | null;
 }
 
@@ -150,6 +152,24 @@ export class ContactService {
       }
     }
 
+    if (opts?.stageTagId) {
+      const stageRows = await this.db
+        .select({ contactId: dbSchema.contactTags.contactId })
+        .from(dbSchema.contactTags)
+        .where(eq(dbSchema.contactTags.tagId, opts.stageTagId));
+      const stageContactIds = new Set(stageRows.map((row) => row.contactId));
+      rows = rows.filter((contact) => stageContactIds.has(contact.id));
+    }
+
+    if (opts?.excludeStageTagIds?.length) {
+      const stageRows = await this.db
+        .select({ contactId: dbSchema.contactTags.contactId })
+        .from(dbSchema.contactTags)
+        .where(inArray(dbSchema.contactTags.tagId, opts.excludeStageTagIds));
+      const stagedContactIds = new Set(stageRows.map((row) => row.contactId));
+      rows = rows.filter((contact) => !stagedContactIds.has(contact.id));
+    }
+
     // Scope activity/booking lookups to the project's contact set so we
     // never read cross-tenant rows or scan whole tables.
     const projectContactIds = rows.map((r) => r.id);
@@ -220,6 +240,22 @@ export class ContactService {
       .select()
       .from(dbSchema.contacts)
       .where(eq(dbSchema.contacts.id, id))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return null;
+    return { ...row, metadata: normalizeJsonColumn(row.metadata) };
+  }
+
+  async getByIdInProject(projectId: string, id: string) {
+    const rows = await this.db
+      .select()
+      .from(dbSchema.contacts)
+      .where(
+        and(
+          eq(dbSchema.contacts.id, id),
+          eq(dbSchema.contacts.projectId, projectId),
+        ),
+      )
       .limit(1);
     const row = rows[0];
     if (!row) return null;
@@ -316,7 +352,7 @@ export class ContactService {
 
   async setNextAction(
     contactId: string,
-    action: { text: string; deadline: Date } | null,
+    action: { text: string; deadline: Date | null } | null,
   ) {
     const previous = await this.getById(contactId);
     if (!previous) return null;
@@ -332,7 +368,7 @@ export class ContactService {
         .where(eq(dbSchema.contacts.id, contactId));
       await this.logActivity(contactId, "next_action_set", undefined, {
         text,
-        deadline: action.deadline.toISOString(),
+        deadline: action.deadline?.toISOString() ?? null,
       });
     } else {
       await this.db
@@ -342,14 +378,14 @@ export class ContactService {
           nextActionDeadline: null,
         })
         .where(eq(dbSchema.contacts.id, contactId));
-      if (previous.nextActionText && previous.nextActionDeadline) {
+      if (previous.nextActionText) {
         await this.logActivity(
           contactId,
           "next_action_completed",
           undefined,
           {
             text: previous.nextActionText,
-            deadline: previous.nextActionDeadline.toISOString(),
+            deadline: previous.nextActionDeadline?.toISOString() ?? null,
           },
         );
       }
@@ -388,12 +424,13 @@ export class ContactService {
 
   // ─── Contact with Tags + Activity ────────────────────────────────────────
 
-  async getWithDetails(id: string) {
-    const contact = await this.getById(id);
+  async getWithDetails(id: string, projectId?: string) {
+    const [contact, tags, activity] = await Promise.all([
+      projectId ? this.getByIdInProject(projectId, id) : this.getById(id),
+      this.getContactTags(id),
+      this.getActivity(id),
+    ]);
     if (!contact) return null;
-
-    const tags = await this.getContactTags(id);
-    const activity = await this.getActivity(id);
 
     return { ...contact, tags, activity };
   }
@@ -475,10 +512,11 @@ export class ContactService {
       facts[contact.id] = {
         enteredAtByTagId: {},
         nextAction:
-          contact.nextActionText && contact.nextActionDeadline
+          contact.nextActionText
             ? {
                 text: contact.nextActionText,
-                deadline: contact.nextActionDeadline.toISOString(),
+                deadline:
+                  contact.nextActionDeadline?.toISOString() ?? null,
               }
             : null,
       };
@@ -741,6 +779,7 @@ export class ContactService {
         lastActivityAt: last != null ? new Date(Number(last) * 1000).toISOString() : null,
         enteredAtByTagId:
           operationalFacts[contact.id]?.enteredAtByTagId ?? {},
+        nextAction: operationalFacts[contact.id]?.nextAction ?? null,
       };
     });
   }

@@ -51,6 +51,40 @@ export function formatNextActionRelative(
   return diffMs < 0 ? `Overdue by ${distance}` : `Due in ${distance}`;
 }
 
+export function formatNextActionRelativeCompact(
+  deadline: string,
+  now: Date,
+): string | null {
+  const deadlineMs = parseTimestamp(deadline);
+  if (deadlineMs === null) return null;
+  const diffMs = deadlineMs - now.getTime();
+  const absoluteMs = Math.abs(diffMs);
+  if (absoluteMs < 60_000) return "Due now";
+
+  let distance: string;
+  if (absoluteMs < HOUR_MS) {
+    distance = `${Math.floor(absoluteMs / 60_000)}m`;
+  } else if (absoluteMs < DAY_MS) {
+    distance = `${Math.floor(absoluteMs / HOUR_MS)}h`;
+  } else {
+    distance = `${Math.floor(absoluteMs / DAY_MS)}d`;
+  }
+
+  return diffMs < 0 ? `Overdue by ${distance}` : `Due in ${distance}`;
+}
+
+export function nextActionTimingClass(
+  deadline: string,
+  now: Date,
+): string {
+  const deadlineMs = parseTimestamp(deadline);
+  if (deadlineMs === null) return "text-muted-foreground";
+  const diffMs = deadlineMs - now.getTime();
+  if (diffMs <= HOUR_MS) return "text-destructive";
+  if (diffMs < DAY_MS) return "text-amber-700";
+  return "text-primary";
+}
+
 export function formatNextActionDeadline(deadline: string): string | null {
   const deadlineMs = parseTimestamp(deadline);
   if (deadlineMs === null) return null;

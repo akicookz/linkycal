@@ -7,7 +7,10 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import ContactDetailPage from "../src/pages/ContactDetail";
 
-test("opens the natural-language Next Action composer", () => {
+function renderContactDetail(
+  nextActionText: string | null,
+  nextActionDeadline: string | null,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -25,20 +28,13 @@ test("opens the natural-language Next Action composer", () => {
     companySize: null,
     estimatedRevenue: null,
     linkedinUrl: null,
-    nextActionText: null,
-    nextActionDeadline: null,
+    nextActionText,
+    nextActionDeadline,
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-18T00:00:00.000Z",
     tags: [],
     activity: [],
   });
-  queryClient.setQueryData(["projects", "p1", "enrichment-usage"], {
-    used: 0,
-    limit: 10,
-    remaining: 10,
-    unlimited: false,
-  });
-
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/app/projects/p1/contacts/c1"]}>
@@ -51,9 +47,21 @@ test("opens the natural-language Next Action composer", () => {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+test("opens the natural-language Next Action composer", () => {
+  renderContactDetail(null, null);
 
   fireEvent.click(screen.getByRole("button", { name: "Add Next Action" }));
   expect(
     screen.getByLabelText("What should happen, and when?"),
   ).not.toBeNull();
+});
+
+test("renders an undated Next Action", () => {
+  renderContactDetail("Follow up", null);
+
+  expect(screen.getByText("Follow up")).not.toBeNull();
+  expect(screen.getByRole("button", { name: "Mark Done" })).not.toBeNull();
+  expect(screen.queryByText(/^(?:Due|Overdue)/)).toBeNull();
 });

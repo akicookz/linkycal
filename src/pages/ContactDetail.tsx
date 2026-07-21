@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useLocation, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -22,16 +22,20 @@ import {
   Users,
   DollarSign,
   Link2,
-  Sparkles,
   CalendarClock,
-  Pencil,
   CheckCircle2,
 } from "lucide-react";
-import PageHeader from "@/components/PageHeader";
+import { AppBreadcrumb } from "@/components/AppBreadcrumb";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Popover,
   PopoverTrigger,
@@ -46,6 +50,7 @@ import { useMinuteNow } from "@/hooks/use-minute-now";
 import {
   formatNextActionDeadline,
   formatNextActionRelative,
+  nextActionTimingClass,
 } from "@/lib/contact-time";
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
@@ -98,8 +103,17 @@ interface ContactDetail {
   activity: ContactActivity[];
 }
 
+interface ContactPreview extends Partial<ContactDetail> {
+  id: string;
+  name: string;
+  nextAction?: {
+    text: string;
+    deadline: string | null;
+  } | null;
+}
+
 type NextActionMutationInput =
-  | { text: string; deadline: string }
+  | { text: string; deadline: string | null }
   | { text: null; deadline: null };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -115,6 +129,37 @@ function getAvatarColor(name: string): string {
 
 function getInitial(name: string): string {
   return name.charAt(0).toUpperCase();
+}
+
+function buildContactPlaceholder(
+  preview: ContactPreview | undefined,
+  projectId: string | undefined,
+  contactId: string | undefined,
+): ContactDetail | undefined {
+  if (!preview || preview.id !== contactId || !projectId) return undefined;
+
+  return {
+    id: preview.id,
+    projectId: preview.projectId ?? projectId,
+    name: preview.name,
+    email: preview.email ?? null,
+    phone: preview.phone ?? null,
+    notes: preview.notes ?? null,
+    metadata: preview.metadata ?? null,
+    company: preview.company ?? null,
+    companyWebsite: preview.companyWebsite ?? null,
+    position: preview.position ?? null,
+    companySize: preview.companySize ?? null,
+    estimatedRevenue: preview.estimatedRevenue ?? null,
+    linkedinUrl: preview.linkedinUrl ?? null,
+    nextActionText: preview.nextActionText ?? preview.nextAction?.text ?? null,
+    nextActionDeadline:
+      preview.nextActionDeadline ?? preview.nextAction?.deadline ?? null,
+    createdAt: preview.createdAt ?? new Date().toISOString(),
+    updatedAt: preview.updatedAt ?? preview.createdAt ?? new Date().toISOString(),
+    tags: preview.tags ?? [],
+    activity: preview.activity ?? [],
+  };
 }
 
 function relativeTime(dateStr: string): string {
@@ -182,7 +227,7 @@ function activityDescription(activity: ContactActivity): string {
     case "tag_removed":
       return `Tag '${meta?.tagName ?? "unknown"}' removed`;
     case "workflow_researched":
-      return `Stored ${meta?.provider ?? "AI"} research in '${meta?.resultKey ?? "research"}'`;
+      return `Stored research in '${meta?.resultKey ?? "research"}'`;
     case "next_action_set":
       return `Next action set to '${meta?.text ?? "unknown"}'`;
     case "next_action_completed":
@@ -202,6 +247,7 @@ function ensureHttps(url: string): string {
 export default function ContactDetailPage() {
   const { projectId, contactId } = useParams<{ projectId: string; contactId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [addTagOpen, setAddTagOpen] = useState(false);
   const [editingNextAction, setEditingNextAction] = useState(false);
@@ -209,6 +255,10 @@ export default function ContactDetailPage() {
   const [saveStatus, setSaveStatus] = useState<"saving" | "saved" | "error" | null>(null);
   const saveStatusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const now = useMinuteNow();
+  const contactPlaceholder = useMemo(() => {
+    const state = location.state as { contactPreview?: ContactPreview } | null;
+    return buildContactPlaceholder(state?.contactPreview, projectId, contactId);
+  }, [contactId, location.state, projectId]);
 
   // ─── Queries ───
 
@@ -216,6 +266,7 @@ export default function ContactDetailPage() {
     data: contactData,
     isLoading: loadingContact,
     isError: errorContact,
+    isPlaceholderData: loadingContactDetails,
   } = useQuery<ContactDetail>({
     queryKey: ["projects", projectId, "contacts", contactId],
     queryFn: async () => {
@@ -225,6 +276,7 @@ export default function ContactDetailPage() {
       return data.contact ?? data;
     },
     enabled: !!projectId && !!contactId,
+    placeholderData: contactPlaceholder,
   });
 
   const contact = contactData;
@@ -351,17 +403,13 @@ export default function ContactDetailPage() {
 
   // ─── Enrichment ───
 
-  const [enrichError, setEnrichError] = useState<string | null>(null);
+  const [enrichToast, setEnrichToast] = useState<string | null>(null);
 
-  const { data: enrichUsage } = useQuery<{ used: number; limit: number; remaining: number; unlimited: boolean }>({
-    queryKey: ["projects", projectId, "enrichment-usage"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/enrichment-usage`);
-      if (!res.ok) throw new Error("Failed to load usage");
-      return res.json();
-    },
-    enabled: !!projectId,
-  });
+  useEffect(() => {
+    if (!enrichToast) return;
+    const timeout = setTimeout(() => setEnrichToast(null), 5000);
+    return () => clearTimeout(timeout);
+  }, [enrichToast]);
 
   const enrichMutation = useMutation({
     // Enrichment runs synchronously server-side (web research + write), so this
@@ -376,17 +424,16 @@ export default function ContactDetailPage() {
       return res.json();
     },
     onSuccess: () => {
-      setEnrichError(null);
+      setEnrichToast(null);
       // The enriched fields + new activity are already persisted; refetch to show them.
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts", contactId] });
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
-      queryClient.invalidateQueries({ queryKey: ["projects", projectId, "enrichment-usage"] });
     },
     onError: (err: Error) => {
       const msg = err.message.includes("Monthly enrichment limit")
         ? "Monthly enrichment limit reached."
         : (err.message || "Failed to enrich contact.");
-      setEnrichError(msg);
+      setEnrichToast(msg);
     },
   });
 
@@ -421,12 +468,15 @@ export default function ContactDetailPage() {
   if (loadingContact) {
     return (
       <div>
-        <PageHeader title="Contact" description="Loading contact details...">
-          <Button variant="outline" onClick={goBack}>
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-        </PageHeader>
+        <AppBreadcrumb
+          className="mb-4"
+          section={{
+            label: "Contacts",
+            href: `/app/projects/${projectId}/contacts`,
+            icon: Users,
+          }}
+          items={[{ label: "Loading…" }]}
+        />
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
           <div className="space-y-6">
@@ -487,12 +537,15 @@ export default function ContactDetailPage() {
   if (errorContact || !contact) {
     return (
       <div>
-        <PageHeader title="Contact" description="Something went wrong">
-          <Button variant="outline" onClick={goBack}>
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-        </PageHeader>
+        <AppBreadcrumb
+          className="mb-4"
+          section={{
+            label: "Contacts",
+            href: `/app/projects/${projectId}/contacts`,
+            icon: Users,
+          }}
+          items={[{ label: "Contact" }]}
+        />
 
         <div className="flex flex-col items-center justify-center rounded-[20px] border py-16">
           <AlertCircle className="h-10 w-10 text-destructive mb-4" />
@@ -505,6 +558,7 @@ export default function ContactDetailPage() {
               : "This contact may have been deleted."}
           </p>
           <Button variant="outline" size="sm" onClick={goBack}>
+            <ArrowLeft className="h-4 w-4" />
             Back to Contacts
           </Button>
         </div>
@@ -517,55 +571,41 @@ export default function ContactDetailPage() {
   const sortedActivity = [...contact.activity].sort(
     (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
   );
-  const hasNextAction = Boolean(
-    contact.nextActionText && contact.nextActionDeadline,
-  );
+  const hasNextAction = Boolean(contact.nextActionText);
+  const nextActionIsEmpty =
+    !editingNextAction && !hasNextAction && !nextActionError;
   const nextActionDeadlineLabel = contact.nextActionDeadline
     ? formatNextActionDeadline(contact.nextActionDeadline)
     : null;
   const nextActionRelative = contact.nextActionDeadline
     ? formatNextActionRelative(contact.nextActionDeadline, now)
     : null;
-  const nextActionIsOverdue = nextActionRelative?.startsWith("Overdue") ?? false;
+  const nextActionTimingColor = contact.nextActionDeadline
+    ? nextActionTimingClass(contact.nextActionDeadline, now)
+    : "text-muted-foreground";
 
   // ─── Render ───
 
   return (
     <div>
-      <PageHeader
-        title={contact.name}
-        description={`Added ${formatFullDate(contact.createdAt)}`}
-      >
-        <Button variant="outline" onClick={goBack}>
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </Button>
-        <Button
-          onClick={() => enrichMutation.mutate()}
-          disabled={
-            enrichMutation.isPending ||
-            (!!enrichUsage && !enrichUsage.unlimited && enrichUsage.remaining <= 0)
-          }
-          title={
-            enrichUsage && !enrichUsage.unlimited && enrichUsage.remaining <= 0
-              ? "Monthly enrichment limit reached — upgrade for more"
-              : undefined
-          }
-        >
-          {enrichMutation.isPending ? (
-            <><Loader className="h-4 w-4 animate-spin" /> Enriching…</>
-          ) : (
-            <><Sparkles className="h-4 w-4" /> Enrich
-              {enrichUsage && !enrichUsage.unlimited ? ` (${enrichUsage.remaining} left)` : ""}
-            </>
-          )}
-        </Button>
-      </PageHeader>
+      <AppBreadcrumb
+        className="mb-4"
+        section={{
+          label: "Contacts",
+          href: `/app/projects/${projectId}/contacts`,
+          icon: Users,
+        }}
+        items={[{ label: contact.name }]}
+      />
 
-      {enrichError && (
-        <div className="flex items-center gap-2 rounded-[12px] border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive mb-4">
+      {enrichToast && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="fixed bottom-6 right-6 z-50 flex max-w-sm items-center gap-2 rounded-[12px] border border-destructive/30 bg-background px-4 py-3 text-sm text-destructive shadow-lg"
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
-          {enrichError}
+          {enrichToast}
         </div>
       )}
 
@@ -575,111 +615,131 @@ export default function ContactDetailPage() {
           {/* Contact Info Card */}
           <Card>
             <CardContent className="space-y-5 pt-2">
-              {/* Avatar & Name (click name to edit) */}
-              <div data-contact-identity="true" className="flex items-start gap-4">
+              <div className="flex flex-col items-start gap-4 sm:flex-row">
+                {/* Avatar & Name (click name to edit) */}
                 <div
-                  className="h-14 w-14 rounded-full flex items-center justify-center text-white text-xl font-semibold shrink-0"
-                  style={{ backgroundColor: getAvatarColor(contact.name) }}
+                  data-contact-identity="true"
+                  className="flex min-w-0 flex-1 items-start gap-4"
                 >
-                  {getInitial(contact.name)}
-                </div>
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div className="flex min-w-0 items-center justify-between gap-3">
-                    <InlineField
-                      key={`name-${contact.id}`}
-                      value={contact.name}
-                      placeholder="Contact name"
-                      required
-                      className="text-lg font-semibold text-foreground"
-                      onSave={(v) => updateMutation.mutate({ name: v ?? "" })}
-                    />
-                    {saveStatus && (
-                      <span
-                        className={cn(
-                          "flex shrink-0 items-center gap-1 text-[11px] font-normal",
-                          saveStatus === "saving" && "text-muted-foreground",
-                          saveStatus === "saved" && "text-emerald-600",
-                          saveStatus === "error" && "text-destructive",
-                        )}
-                      >
-                        {saveStatus === "saving" && (
-                          <>
-                            <Loader className="h-3 w-3 animate-spin" />
-                            Saving...
-                          </>
-                        )}
-                        {saveStatus === "saved" && (
-                          <>
-                            <Check className="h-3 w-3" />
-                            Saved
-                          </>
-                        )}
-                        {saveStatus === "error" && (
-                          <>
-                            <AlertCircle className="h-3 w-3" />
-                            Failed to save
-                          </>
-                        )}
-                      </span>
-                    )}
+                  <div
+                    className="h-14 w-14 rounded-full flex items-center justify-center text-white text-xl font-semibold shrink-0"
+                    style={{ backgroundColor: getAvatarColor(contact.name) }}
+                  >
+                    {getInitial(contact.name)}
                   </div>
-
-                  <div data-contact-tags="inline" className="flex flex-wrap items-center gap-2">
-                    {contact.tags.map((tag) => (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        className="ring-shadow inline-flex items-center gap-1 rounded-full border-0 py-0.5 pl-2 pr-1 text-[11px] font-medium transition-[background-color,box-shadow,transform] hover:bg-black/5 active:scale-[0.96]"
-                        style={{
-                          backgroundColor: tag.color ? `${tag.color}15` : undefined,
-                          color: tag.color ?? undefined,
-                          "--ring-shadow-color": tag.color ?? "#e2e8f0",
-                        } as CSSProperties}
-                        title={`Remove ${tag.name} tag`}
-                        onClick={() => removeTagMutation.mutate(tag.id)}
-                        disabled={removeTagMutation.isPending}
-                      >
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex min-w-0 items-center justify-between gap-3">
+                      <InlineField
+                        key={`name-${contact.id}`}
+                        value={contact.name}
+                        placeholder="Contact name"
+                        required
+                        className="text-lg font-semibold text-foreground"
+                        onSave={(v) => updateMutation.mutate({ name: v ?? "" })}
+                      />
+                      {saveStatus && (
                         <span
-                          className="h-1.5 w-1.5 shrink-0 rounded-full"
-                          style={{ backgroundColor: tag.color ?? "#94a3b8" }}
-                        />
-                        <span>{tag.name}</span>
-                        <XIcon className="h-3 w-3" />
-                      </button>
-                    ))}
-
-                    <Popover open={addTagOpen} onOpenChange={setAddTagOpen}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1.5 px-1.5 text-[11px] [&_svg]:size-3.5"
+                          className={cn(
+                            "flex shrink-0 items-center gap-1 text-[11px] font-normal",
+                            saveStatus === "saving" && "text-muted-foreground",
+                            saveStatus === "saved" && "text-emerald-600",
+                            saveStatus === "error" && "text-destructive",
+                          )}
                         >
-                          <Plus className="h-3.5 w-3.5" />
-                          Add Tag
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent align="start" className="w-64 p-2">
-                        <TagPickerContent
-                          projectId={projectId!}
-                          assignedTagIds={contact.tags.map((tag) => tag.id)}
-                          pendingTagId={
-                            addTagMutation.isPending
-                              ? addTagMutation.variables
-                              : removeTagMutation.isPending
-                                ? removeTagMutation.variables
-                                : null
-                          }
-                          onToggle={(tag, assigned) =>
-                            assigned
-                              ? removeTagMutation.mutate(tag.id)
-                              : addTagMutation.mutate(tag.id)
-                          }
-                        />
-                      </PopoverContent>
-                    </Popover>
+                          {saveStatus === "saving" && (
+                            <>
+                              <Loader className="h-3 w-3 animate-spin" />
+                              Saving...
+                            </>
+                          )}
+                          {saveStatus === "saved" && (
+                            <>
+                              <Check className="h-3 w-3" />
+                              Saved
+                            </>
+                          )}
+                          {saveStatus === "error" && (
+                            <>
+                              <AlertCircle className="h-3 w-3" />
+                              Failed to save
+                            </>
+                          )}
+                        </span>
+                      )}
+                    </div>
+
+                    <div data-contact-tags="inline" className="flex flex-wrap items-center gap-2">
+                      {contact.tags.map((tag) => (
+                        <button
+                          key={tag.id}
+                          type="button"
+                          className="ring-shadow inline-flex items-center gap-1 rounded-full border-0 py-0.5 pl-2 pr-1 text-[11px] font-medium transition-[background-color,box-shadow,transform] hover:bg-black/5 active:scale-[0.96]"
+                          style={{
+                            backgroundColor: tag.color ? `${tag.color}15` : undefined,
+                            color: tag.color ?? undefined,
+                            "--ring-shadow-color": tag.color ?? "#e2e8f0",
+                          } as CSSProperties}
+                          title={`Remove ${tag.name} tag`}
+                          onClick={() => removeTagMutation.mutate(tag.id)}
+                          disabled={removeTagMutation.isPending}
+                        >
+                          <span
+                            className="h-1.5 w-1.5 shrink-0 rounded-full"
+                            style={{ backgroundColor: tag.color ?? "#94a3b8" }}
+                          />
+                          <span>{tag.name}</span>
+                          <XIcon className="h-3 w-3" />
+                        </button>
+                      ))}
+
+                      <Popover open={addTagOpen} onOpenChange={setAddTagOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 gap-1.5 px-1.5 text-[11px] [&_svg]:size-3.5"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Add Tag
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-64 p-2">
+                          <TagPickerContent
+                            projectId={projectId!}
+                            assignedTagIds={contact.tags.map((tag) => tag.id)}
+                            pendingTagId={
+                              addTagMutation.isPending
+                                ? addTagMutation.variables
+                                : removeTagMutation.isPending
+                                  ? removeTagMutation.variables
+                                  : null
+                            }
+                            onToggle={(tag, assigned) =>
+                              assigned
+                                ? removeTagMutation.mutate(tag.id)
+                                : addTagMutation.mutate(tag.id)
+                            }
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                   </div>
                 </div>
+                <Button
+                  size="sm"
+                  className="relative shrink-0 after:absolute after:inset-x-0 after:-inset-y-1"
+                  onClick={() => enrichMutation.mutate()}
+                  disabled={enrichMutation.isPending}
+                >
+                  {enrichMutation.isPending ? (
+                    <>
+                      <Loader className="h-4 w-4 animate-spin" />
+                      Enriching…
+                    </>
+                  ) : (
+                    "Enrich"
+                  )}
+                </Button>
               </div>
 
               {/* Details — edit in place, saved on blur */}
@@ -782,7 +842,20 @@ export default function ContactDetailPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {sortedActivity.length === 0 ? (
+              {loadingContactDetails ? (
+                <div role="status" aria-label="Loading activity" className="space-y-5">
+                  <span className="sr-only">Loading activity</span>
+                  {[0, 1, 2].map((item) => (
+                    <div key={item} className="flex items-start gap-4">
+                      <Skeleton className="h-8 w-8 shrink-0 rounded-full" />
+                      <div className="flex-1 space-y-2 pt-1">
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-3 w-20" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : sortedActivity.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8">
                   <Clock className="h-8 w-8 text-muted-foreground mb-3" />
                   <p className="text-sm text-muted-foreground">No activity yet</p>
@@ -820,106 +893,112 @@ export default function ContactDetailPage() {
 
         {/* ─── Sidebar ─── */}
         <div className="space-y-6">
-          <Card data-next-action-card="true">
-            <CardHeader>
+          <Card
+            data-next-action-card="true"
+            className={cn(nextActionIsEmpty && "gap-0 py-3")}
+          >
+            <CardHeader className={cn(nextActionIsEmpty && "items-center")}>
               <CardTitle className="flex items-center gap-2">
                 <CalendarClock className="h-4 w-4 text-muted-foreground" />
                 Next Action
               </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {editingNextAction ? (
-                <NextActionComposer
-                  initialAction={
-                    contact.nextActionText && contact.nextActionDeadline
-                      ? {
-                          text: contact.nextActionText,
-                          deadline: contact.nextActionDeadline,
-                        }
-                      : null
-                  }
-                  pending={nextActionMutation.isPending}
-                  error={nextActionError}
-                  onSave={saveNextAction}
-                  onCancel={cancelNextActionEditor}
-                />
-              ) : hasNextAction ? (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <p className="break-words text-pretty text-sm font-medium text-foreground">
-                      {contact.nextActionText}
-                    </p>
-                    {nextActionDeadlineLabel && (
-                      <p className="flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
-                        <CalendarClock className="h-3.5 w-3.5 shrink-0" />
-                        {nextActionDeadlineLabel}
-                      </p>
-                    )}
-                    {nextActionRelative && (
-                      <p
-                        className={cn(
-                          "text-xs font-medium tabular-nums",
-                          nextActionIsOverdue
-                            ? "text-destructive"
-                            : "text-muted-foreground",
-                        )}
-                      >
-                        {nextActionRelative}
-                      </p>
-                    )}
-                  </div>
-                  {nextActionError && (
-                    <p className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      {nextActionError}
-                    </p>
-                  )}
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={startNextActionEditor}
-                      disabled={nextActionMutation.isPending}
-                    >
-                      <Pencil className="h-4 w-4" />
-                      Edit
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={completeNextAction}
-                      disabled={nextActionMutation.isPending}
-                    >
-                      {nextActionMutation.isPending ? (
-                        <Loader className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
-                      )}
-                      Mark Done
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <p className="text-pretty text-sm text-muted-foreground">
-                    No next action
-                  </p>
-                  {nextActionError && (
-                    <p className="flex items-center gap-1.5 text-xs text-destructive">
-                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-                      {nextActionError}
-                    </p>
-                  )}
+              {!editingNextAction && !hasNextAction && (
+                <CardAction className="self-center">
                   <Button
                     type="button"
                     variant="outline"
+                    size="sm"
+                    className="relative after:absolute after:inset-x-0 after:-inset-y-1"
+                    aria-label="Add Next Action"
                     onClick={startNextActionEditor}
                   >
                     <Plus className="h-4 w-4" />
-                    Add Next Action
+                    Add
                   </Button>
-                </div>
+                </CardAction>
               )}
-            </CardContent>
+            </CardHeader>
+            {(editingNextAction || hasNextAction || nextActionError) && (
+              <CardContent>
+                {editingNextAction ? (
+                  <NextActionComposer
+                    initialAction={
+                      contact.nextActionText
+                        ? {
+                            text: contact.nextActionText,
+                            deadline: contact.nextActionDeadline,
+                          }
+                        : null
+                    }
+                    pending={nextActionMutation.isPending}
+                    error={nextActionError}
+                    onSave={saveNextAction}
+                    onCancel={cancelNextActionEditor}
+                  />
+                ) : hasNextAction ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <p className="break-words text-pretty text-base font-medium text-foreground">
+                        {contact.nextActionText}
+                      </p>
+                      {nextActionDeadlineLabel && (
+                        <p className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs tabular-nums text-muted-foreground">
+                          <CalendarClock className="h-3.5 w-3.5 shrink-0" />
+                          <span>{nextActionDeadlineLabel}</span>
+                          {nextActionRelative && (
+                            <span
+                              className={cn(
+                                "font-medium",
+                                nextActionTimingColor,
+                              )}
+                            >
+                              ({nextActionRelative})
+                            </span>
+                          )}
+                        </p>
+                      )}
+                    </div>
+                    {nextActionError && (
+                      <p className="flex items-center gap-1.5 text-xs text-destructive">
+                        <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                        {nextActionError}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="relative after:absolute after:inset-x-0 after:-inset-y-1"
+                        onClick={startNextActionEditor}
+                        disabled={nextActionMutation.isPending}
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="relative after:absolute after:inset-x-0 after:-inset-y-1"
+                        onClick={completeNextAction}
+                        disabled={nextActionMutation.isPending}
+                      >
+                        {nextActionMutation.isPending ? (
+                          <Loader className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        Mark Done
+                      </Button>
+                    </div>
+                  </div>
+                ) : nextActionError ? (
+                  <p className="flex items-center gap-1.5 text-xs text-destructive">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    {nextActionError}
+                  </p>
+                ) : null}
+              </CardContent>
+            )}
           </Card>
 
           {/* Quick Stats */}
@@ -933,16 +1012,24 @@ export default function ContactDetailPage() {
                   <CalendarCheck className="h-4 w-4 text-emerald-600" />
                   <span className="text-sm text-foreground">Bookings</span>
                 </div>
-                <span className="text-sm font-semibold text-foreground">{stats.bookings}</span>
+                {loadingContactDetails ? (
+                  <Skeleton className="h-4 w-6" />
+                ) : (
+                  <span className="text-sm font-semibold text-foreground">{stats.bookings}</span>
+                )}
               </div>
               <div className="flex items-center justify-between rounded-[12px] bg-muted/50 px-4 py-3">
                 <div className="flex items-center gap-2.5">
                   <FileText className="h-4 w-4 text-blue-600" />
                   <span className="text-sm text-foreground">Form Submissions</span>
                 </div>
-                <span className="text-sm font-semibold text-foreground">
-                  {stats.formSubmissions}
-                </span>
+                {loadingContactDetails ? (
+                  <Skeleton className="h-4 w-6" />
+                ) : (
+                  <span className="text-sm font-semibold text-foreground">
+                    {stats.formSubmissions}
+                  </span>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -963,7 +1050,11 @@ export default function ContactDetailPage() {
               </div>
               <div className="flex justify-between">
                 <span>Total activity</span>
-                <span>{contact.activity.length} events</span>
+                {loadingContactDetails ? (
+                  <Skeleton className="h-3.5 w-14" />
+                ) : (
+                  <span>{contact.activity.length} events</span>
+                )}
               </div>
             </CardContent>
           </Card>

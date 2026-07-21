@@ -9,7 +9,12 @@ import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
 import * as dbSchema from "./db/schema";
-import type { AppEnv, HonoAppContext, ProjectAccessContext } from "./types";
+import type {
+  AppEnv,
+  HonoAppContext,
+  Plan,
+  ProjectAccessContext,
+} from "./types";
 
 const { schema } = dbSchema;
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -2567,6 +2572,64 @@ app.all("/api/mcp", async (c) => {
 
 // ─── Session Middleware ──────────────────────────────────────────────────────
 
+const MIDDLEWARE_CONTEXT_TTL_MS = 30_000;
+const MIDDLEWARE_CONTEXT_CACHE_MAX = 1_000;
+
+interface MiddlewareCacheEntry<T> {
+  expiresAt: number;
+  value: Promise<T>;
+}
+
+interface AccountMiddlewareContext {
+  accountTeamId: string;
+  plan: Plan;
+  status: string;
+}
+
+interface ProjectMiddlewareContext {
+  access: ProjectAccessContext;
+  plan: Plan;
+  status: string;
+}
+
+const accountMiddlewareCache = new Map<
+  string,
+  MiddlewareCacheEntry<AccountMiddlewareContext>
+>();
+const projectMiddlewareCache = new Map<
+  string,
+  MiddlewareCacheEntry<ProjectMiddlewareContext | null>
+>();
+
+async function cachedMiddlewareContext<T>(
+  cache: Map<string, MiddlewareCacheEntry<T>>,
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  const now = Date.now();
+  const cached = cache.get(key);
+  if (cached && cached.expiresAt > now) return cached.value;
+  if (cached) cache.delete(key);
+
+  if (cache.size >= MIDDLEWARE_CONTEXT_CACHE_MAX) {
+    const oldestKey = cache.keys().next().value;
+    if (oldestKey) cache.delete(oldestKey);
+  }
+
+  const value = load();
+  cache.set(key, {
+    expiresAt: now + MIDDLEWARE_CONTEXT_TTL_MS,
+    value,
+  });
+
+  try {
+    return await value;
+  } catch (error) {
+    cache.delete(key);
+    throw error;
+  }
+}
+
 app.use("/api/*", async (c, next) => {
   // Skip auth for public routes and auth routes
   const path = c.req.path;
@@ -2594,19 +2657,23 @@ app.use("/api/*", async (c, next) => {
 
   const db = drizzle(c.env.DB, { schema });
 
-  const accountTeam = await ensurePersonalTeam(db, {
-    id: session.user.id,
-    name: session.user.name,
-  });
-
-  // Load account subscription for account-level pages and new-team defaults.
-  const sub = await ensureTeamSubscriptionRecord(
-    db,
+  const accountContext = await cachedMiddlewareContext(
+    accountMiddlewareCache,
     session.user.id,
-    accountTeam.id,
+    async () => {
+      const accountTeam = await ensurePersonalTeam(db, {
+        id: session.user.id,
+        name: session.user.name,
+      });
+      const subscription = await ensureTeamSubscriptionRecord(
+        db,
+        session.user.id,
+        accountTeam.id,
+      );
+      const { plan, status } = resolveSubscriptionPlan(subscription);
+      return { accountTeamId: accountTeam.id, plan, status };
+    },
   );
-
-  const { plan, status } = resolveSubscriptionPlan(sub);
 
   c.set("user", {
     id: session.user.id,
@@ -2621,9 +2688,12 @@ app.use("/api/*", async (c, next) => {
     expiresAt: session.session.expiresAt,
   });
   c.set("db", db);
-  c.set("subscription", { plan, status });
-  c.set("planLimits", PLAN_LIMITS[plan]);
-  c.set("accountTeamId", accountTeam.id);
+  c.set("subscription", {
+    plan: accountContext.plan,
+    status: accountContext.status,
+  });
+  c.set("planLimits", PLAN_LIMITS[accountContext.plan]);
+  c.set("accountTeamId", accountContext.accountTeamId);
   c.set("effectiveUserId", session.user.id);
 
   return next();
@@ -2742,20 +2812,36 @@ const projectAccessMiddleware = async (
   const userId = c.get("effectiveUserId");
   if (!db || !userId) return c.json({ error: "Unauthorized" }, 401);
 
-  const [project] = await db
-    .select({ id: dbSchema.projects.id })
-    .from(dbSchema.projects)
-    .where(eq(dbSchema.projects.id, projectId))
-    .limit(1);
+  const projectContext = await cachedMiddlewareContext(
+    projectMiddlewareCache,
+    `${userId}:${projectId}`,
+    async () => {
+      const access = await resolveProjectAccess(db, projectId, userId);
+      if (!access) return null;
+      const subscription = access.teamId
+        ? await ensureTeamSubscriptionRecord(
+            db,
+            access.ownerUserId,
+            access.teamId,
+          )
+        : await ensureLegacySubscriptionRecord(db, access.ownerUserId);
+      const { plan, status } = resolveSubscriptionPlan(subscription);
+      return { access, plan, status };
+    },
+  );
 
-  if (!project) return c.json({ error: "Project not found" }, 404);
-  const access = await resolveProjectAccess(db, projectId, userId);
-  if (!access) return c.json({ error: "Forbidden" }, 403);
+  if (!projectContext) {
+    const [project] = await db
+      .select({ id: dbSchema.projects.id })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.id, projectId))
+      .limit(1);
+    return project
+      ? c.json({ error: "Forbidden" }, 403)
+      : c.json({ error: "Project not found" }, 404);
+  }
 
-  const subscription = access.teamId
-    ? await ensureTeamSubscriptionRecord(db, access.ownerUserId, access.teamId)
-    : await ensureLegacySubscriptionRecord(db, access.ownerUserId);
-  const { plan, status } = resolveSubscriptionPlan(subscription);
+  const { access, plan, status } = projectContext;
   const planLimits = PLAN_LIMITS[plan];
   const isEntitlementsRequest =
     c.req.method === "GET" &&
@@ -5084,6 +5170,8 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
   const tagId = url.searchParams.get("tagId") ?? undefined;
   const tagIds = url.searchParams.getAll("tagIds");
   const matchAllTags = url.searchParams.get("matchAllTags") === "true";
+  const stageTagId = url.searchParams.get("stageTagId") ?? undefined;
+  const excludeStageTagIds = url.searchParams.getAll("excludeStageTagIds");
   const activityType = url.searchParams.get("activityType") ?? undefined;
   const activitySinceDays = url.searchParams.get("activitySinceDays");
   const noActivitySinceDays = url.searchParams.get("noActivitySinceDays");
@@ -5132,6 +5220,9 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
       tagId,
       tagIds: tagIds.length > 0 ? tagIds : undefined,
       matchAllTags,
+      stageTagId,
+      excludeStageTagIds:
+        excludeStageTagIds.length > 0 ? excludeStageTagIds : undefined,
       activityType:
         activityType &&
         (validActivity as readonly string[]).includes(activityType)
@@ -5373,10 +5464,11 @@ app.post("/api/projects/:projectId/contacts/import", async (c) => {
 });
 
 app.get("/api/projects/:projectId/contacts/:id", async (c) => {
+  const projectId = c.req.param("projectId");
   const id = c.req.param("id");
   const db = c.get("db");
   const service = new ContactService(db);
-  const contact = await service.getWithDetails(id);
+  const contact = await service.getWithDetails(id, projectId);
   if (!contact) {
     return c.json({ error: "Contact not found" }, 404);
   }
@@ -5431,7 +5523,7 @@ app.put(
           ? null
           : {
               text: data.text,
-              deadline: new Date(data.deadline),
+              deadline: data.deadline ? new Date(data.deadline) : null,
             },
       );
       return c.json({ contact });
@@ -5643,10 +5735,7 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     const now = new Date();
     const used = await getEnrichmentUsage(db, ent.ownerUserId, now);
     if (limit !== -1 && used >= limit) {
-      return c.json(
-        { error: "Monthly enrichment limit reached", used, limit },
-        403,
-      );
+      return c.json({ error: "Monthly enrichment limit reached" }, 403);
     }
     // Run the research inline and return the enriched contact so the client can
     // show the new fields immediately — no queue, no polling. Usage is only
@@ -5655,12 +5744,9 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     await execution.enrichContact(projectId, contactId, c.env);
     await incrementEnrichmentUsage(db, ent.ownerUserId, now);
     const contact = await service.getById(contactId);
-    const remaining = limit === -1 ? -1 : Math.max(0, limit - (used + 1));
     return c.json({
       success: true,
       contact,
-      remaining,
-      unlimited: limit === -1,
     });
   } catch (err) {
     console.error("Enrich error:", err);
@@ -5675,22 +5761,6 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     }
     return c.json({ error: "Failed to enrich contact" }, 500);
   }
-});
-
-app.get("/api/projects/:projectId/enrichment-usage", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-  const ent = await resolveProjectEntitlements(db, projectId);
-  if (!ent) return c.json({ error: "Project not found" }, 404);
-  const limit = ent.planLimits.maxEnrichmentsPerMonth;
-  const used = await getEnrichmentUsage(db, ent.ownerUserId, new Date());
-  const unlimited = limit === -1;
-  return c.json({
-    used,
-    limit,
-    remaining: unlimited ? -1 : Math.max(0, limit - used),
-    unlimited,
-  });
 });
 
 app.post("/api/projects/:projectId/pipeline/seed", async (c) => {

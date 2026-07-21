@@ -246,10 +246,8 @@ function getConfigSummary(type: StepType, rawConfig: unknown): string {
       return `${recipients.length} recipient${recipients.length === 1 ? "" : "s"}`;
     }
     case "ai_research": {
-      const provider = config.provider as string | undefined;
       const resultKey = config.resultKey as string | undefined;
-      if (!provider) return "Research not configured";
-      return `${provider === "gemini" ? "Gemini" : "ChatGPT"} -> ${resultKey ?? "research"}`;
+      return `Research -> ${resultKey ?? "research"}`;
     }
     case "add_tag":
     case "remove_tag": {
@@ -1515,22 +1513,6 @@ function StepConfigForm({
       return (
         <div className="space-y-3">
           {inputsSection}
-          <div className="space-y-2">
-            <Label htmlFor="research-provider">AI Provider</Label>
-            <Select
-              value={(config.provider as string) ?? "chatgpt"}
-              onValueChange={(val) => set("provider", val)}
-            >
-              <SelectTrigger id="research-provider">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="chatgpt">ChatGPT Research</SelectItem>
-                <SelectItem value="gemini">Gemini Research</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
           <div className="space-y-2">
             <Label htmlFor="research-result-key">Result Key</Label>
             <Input

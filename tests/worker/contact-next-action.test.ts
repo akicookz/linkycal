@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
 
 import * as dbSchema from "../../worker/db/schema";
 import { ContactService } from "../../worker/services/contact-service";
@@ -28,12 +27,11 @@ async function seedContact() {
 }
 
 describe("setNextActionSchema", () => {
-
-  test("rejects partial and malformed actions", () => {
+  test("accepts an undated action and rejects malformed actions", () => {
     expect(
       setNextActionSchema.safeParse({ text: "Send proposal", deadline: null })
         .success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       setNextActionSchema.safeParse({
         text: null,
@@ -50,6 +48,35 @@ describe("setNextActionSchema", () => {
 });
 
 describe("ContactService.setNextAction", () => {
+  test("sets an action without a deadline", async () => {
+    const db = await seedContact();
+    const service = new ContactService(db);
+
+    await service.setNextAction("c", {
+      text: "Send proposal",
+      deadline: null,
+    });
+
+    const contact = await service.getById("c");
+    expect(contact?.nextActionText).toBe("Send proposal");
+    expect(contact?.nextActionDeadline).toBeNull();
+
+    const activity = await service.getActivity("c");
+    expect(activity[0]?.metadata).toEqual({
+      text: "Send proposal",
+      deadline: null,
+    });
+
+    await service.setNextAction("c", null);
+    const completed = (await service.getActivity("c")).find(
+      (entry) => entry.type === "next_action_completed",
+    );
+    expect(completed?.metadata).toEqual({
+      text: "Send proposal",
+      deadline: null,
+    });
+  });
+
   test("sets and replaces the complete action", async () => {
     const db = await seedContact();
     const service = new ContactService(db);

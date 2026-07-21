@@ -1,24 +1,22 @@
 import {
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type KeyboardEvent,
 } from "react";
-import {
-  AlertCircle,
-  CalendarClock,
-  Loader,
-  Pencil,
-  Save,
-  X,
-} from "lucide-react";
+import { AlertCircle, CalendarClock, Loader, Save, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   datetimeLocalToIso,
-  formatDeadlineAtOffset,
   formatDeadlineInTimeZone,
   toDatetimeLocalValue,
 } from "@/lib/contact-time";
@@ -27,10 +25,11 @@ import {
   type NextActionParseResult,
 } from "@/lib/next-action-parser";
 import { offsetMinutesForTimeZone } from "@/lib/timezone";
+import { cn } from "@/lib/utils";
 
 export interface NextActionValue {
   text: string;
-  deadline: string;
+  deadline: string | null;
 }
 
 interface NextActionComposerProps {
@@ -44,6 +43,8 @@ interface NextActionComposerProps {
   onSave: (value: NextActionValue) => void;
   onCancel: () => void;
 }
+
+type DeadlineSource = "initial" | "parsed" | "manual" | null;
 
 const DEFAULT_PARSE_DELAY_MS = 150;
 
@@ -67,8 +68,6 @@ function browserTimeZoneOrUtc(browserTimeZone: string | undefined): string {
 
 function parseStatusMessage(result: NextActionParseResult): string | null {
   switch (result.status) {
-    case "missing_deadline":
-      return "Add a deadline or choose it manually.";
     case "missing_action":
       return "Add what needs to be done.";
     case "ambiguous":
@@ -90,12 +89,25 @@ function isPastStructuredDeadline(
 ): boolean {
   if (!draftDeadlineIso) return false;
   if (
-    initialAction &&
+    initialAction?.deadline &&
     draftDeadline === toDatetimeLocalValue(initialAction.deadline)
   ) {
     return false;
   }
   return new Date(draftDeadlineIso).getTime() <= now.getTime();
+}
+
+function blocksSave(
+  result: NextActionParseResult,
+  hasAuthoritativeDeadline: boolean,
+): boolean {
+  if (result.status === "missing_action") return true;
+  if (hasAuthoritativeDeadline) return false;
+  return (
+    result.status === "ambiguous" ||
+    result.status === "past_deadline" ||
+    result.status === "invalid_deadline"
+  );
 }
 
 export function NextActionComposer({
@@ -109,26 +121,40 @@ export function NextActionComposer({
   onSave,
   onCancel,
 }: NextActionComposerProps) {
-  const [sentence, setSentence] = useState("");
+  const initialDeadline = initialAction?.deadline
+    ? toDatetimeLocalValue(initialAction.deadline)
+    : "";
+  const [sentence, setSentence] = useState(initialAction?.text ?? "");
   const [parseResult, setParseResult] = useState<NextActionParseResult>({
     status: "empty",
   });
   const [draftAction, setDraftAction] = useState(initialAction?.text ?? "");
-  const [draftDeadline, setDraftDeadline] = useState(
-    initialAction ? toDatetimeLocalValue(initialAction.deadline) : "",
+  const [draftDeadline, setDraftDeadline] = useState(initialDeadline);
+  const [deadlineSource, setDeadlineSource] = useState<DeadlineSource>(
+    initialDeadline ? "initial" : null,
   );
-  const [editingAction, setEditingAction] = useState(false);
-  const [editingDeadline, setEditingDeadline] = useState(false);
-  const [parserUnavailable, setParserUnavailable] = useState(false);
+  const deadlineSourceRef = useRef<DeadlineSource>(
+    initialDeadline ? "initial" : null,
+  );
+  const [sentenceDirty, setSentenceDirty] = useState(false);
   const [parsing, setParsing] = useState(false);
+  const [deadlinePopoverOpen, setDeadlinePopoverOpen] = useState(false);
   const resolvedBrowserTimeZone = browserTimeZoneOrUtc(browserTimeZone);
 
+  function updateDeadline(value: string, source: DeadlineSource) {
+    setDraftDeadline(value);
+    setDeadlineSource(source);
+    deadlineSourceRef.current = source;
+  }
+
   useEffect(() => {
-    if (initialAction || parserUnavailable) return;
+    if (!sentenceDirty) return;
     if (!sentence.trim()) {
       setParseResult({ status: "empty" });
       setDraftAction("");
-      setDraftDeadline("");
+      if (deadlineSourceRef.current === "parsed") {
+        updateDeadline("", null);
+      }
       setParsing(false);
       return;
     }
@@ -145,21 +171,29 @@ export function NextActionComposer({
           setParseResult(result);
           if (result.status === "valid") {
             setDraftAction(result.value.actionText);
-            setDraftDeadline(toDatetimeLocalValue(result.value.deadlineIso));
-          } else if (result.status === "ambiguous") {
-            setParserUnavailable(true);
-            setDraftAction(sentence);
-            setDraftDeadline("");
-          } else {
+            updateDeadline(
+              toDatetimeLocalValue(result.value.deadlineIso),
+              "parsed",
+            );
+            return;
+          }
+
+          if (result.status === "missing_action") {
             setDraftAction("");
-            setDraftDeadline("");
+          } else {
+            setDraftAction(sentence);
+          }
+          if (deadlineSourceRef.current === "parsed") {
+            updateDeadline("", null);
           }
         })
         .catch(() => {
           if (cancelled) return;
-          setParserUnavailable(true);
+          setParseResult({ status: "empty" });
           setDraftAction(sentence);
-          setDraftDeadline("");
+          if (deadlineSourceRef.current === "parsed") {
+            updateDeadline("", null);
+          }
         })
         .finally(() => {
           if (!cancelled) setParsing(false);
@@ -171,13 +205,12 @@ export function NextActionComposer({
       clearTimeout(timeout);
     };
   }, [
-    initialAction,
     parseDelayMs,
     parseSentence,
-    parserUnavailable,
     referenceNow,
     resolvedBrowserTimeZone,
     sentence,
+    sentenceDirty,
   ]);
 
   const draftDeadlineIso = datetimeLocalToIso(draftDeadline);
@@ -187,24 +220,27 @@ export function NextActionComposer({
     initialAction,
     referenceNow(),
   );
+  const hasAuthoritativeDeadline = Boolean(
+    draftDeadlineIso &&
+      (deadlineSource === "initial" || deadlineSource === "manual"),
+  );
+  const parseResultBlocksSave = blocksSave(
+    parseResult,
+    hasAuthoritativeDeadline,
+  );
+  const actionTooLong = draftAction.trim().length > 500;
   const draftIsValid = Boolean(
     draftAction.trim() &&
-      draftAction.trim().length <= 500 &&
-      draftDeadlineIso &&
-      !draftDeadlineIsPast,
+      !actionTooLong &&
+      (!draftDeadline || draftDeadlineIso) &&
+      !draftDeadlineIsPast &&
+      !parseResultBlocksSave,
   );
   const canSave = draftIsValid && !parsing && !pending;
   const parsed = parseResult.status === "valid" ? parseResult.value : null;
-  const deadlinePreview = parsed
-    ? formatDeadlineAtOffset(
-        parsed.deadlineIso,
-        parsed.timezoneOffsetMinutes,
-        parsed.timezoneLabel,
-      )
-    : null;
   const parsedDeadlineGuidance =
+    deadlineSource === "parsed" &&
     parsed &&
-    !editingDeadline &&
     draftDeadlineIso === parsed.deadlineIso
       ? parsed
       : null;
@@ -222,39 +258,62 @@ export function NextActionComposer({
           resolvedBrowserTimeZone,
         )
       : null;
-  const showManualDeadlineChoice =
-    parseResult.status === "missing_deadline" ||
-    parseResult.status === "past_deadline" ||
-    parseResult.status === "invalid_deadline";
   const statusMessage = draftDeadlineIsPast
     ? "Choose a future deadline."
-    : parserUnavailable && draftIsValid
-      ? null
-      : parseStatusMessage(parseResult);
+    : parseResultBlocksSave
+      ? parseStatusMessage(parseResult)
+      : null;
+  const hasStatusContent = Boolean(statusMessage || actionTooLong || error);
+  const deadlineSelectionLabel = draftDeadlineIso
+    ? formatDeadlineInTimeZone(draftDeadlineIso, resolvedBrowserTimeZone)
+    : null;
+  const deadlineButtonLabel = deadlineSelectionLabel
+    ? `Deadline selected: ${deadlineSelectionLabel}. Change deadline`
+    : "Add deadline";
 
   function save() {
-    if (!canSave || !draftDeadlineIso) return;
-    onSave({ text: draftAction.trim(), deadline: draftDeadlineIso });
+    if (!canSave) return;
+    onSave({
+      text: draftAction.trim(),
+      deadline: draftDeadlineIso,
+    });
   }
 
   function handleSentenceChange(event: ChangeEvent<HTMLInputElement>) {
     const nextSentence = event.target.value;
     setSentence(nextSentence);
+    setSentenceDirty(true);
     setParseResult({ status: "empty" });
-    setDraftAction("");
-    setDraftDeadline("");
-    setEditingAction(false);
-    setEditingDeadline(false);
+    setDraftAction(nextSentence);
+    if (deadlineSourceRef.current === "parsed") {
+      updateDeadline("", null);
+    }
     setParsing(Boolean(nextSentence.trim()));
   }
 
+  function handleDeadlineChange(event: ChangeEvent<HTMLInputElement>) {
+    const nextDeadline = event.target.value;
+    updateDeadline(nextDeadline, nextDeadline ? "manual" : null);
+    setParseResult({ status: "empty" });
+  }
+
+  function clearDeadline() {
+    updateDeadline("", null);
+    setParseResult({ status: "empty" });
+  }
+
   function handleComposerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (!(event.target instanceof HTMLInputElement)) return;
     if (event.key === "Escape") {
       event.preventDefault();
+      if (deadlinePopoverOpen) {
+        setDeadlinePopoverOpen(false);
+        return;
+      }
       onCancel();
       return;
     }
+    if (!(event.target instanceof HTMLInputElement)) return;
+    if (event.target.id !== "next-action-sentence") return;
     if (event.key === "Enter" && !event.shiftKey && canSave) {
       event.preventDefault();
       save();
@@ -262,156 +321,116 @@ export function NextActionComposer({
   }
 
   return (
-    <div className="space-y-4" onKeyDown={handleComposerKeyDown}>
-      {!initialAction && !parserUnavailable && (
-        <div className="space-y-2">
-          <Label htmlFor="next-action-sentence">
-            What should happen, and when?
-          </Label>
+    <div className="space-y-3" onKeyDown={handleComposerKeyDown}>
+      <div className="space-y-2">
+        <Label htmlFor="next-action-sentence">
+          What should happen, and when?
+        </Label>
+        <div className="relative">
           <Input
             id="next-action-sentence"
+            className="pr-12"
             value={sentence}
             maxLength={600}
             placeholder="Call Atul by next Friday at 5pm ET"
+            aria-invalid={Boolean(statusMessage || actionTooLong)}
+            aria-describedby={
+              hasStatusContent ? "next-action-status" : undefined
+            }
             onChange={handleSentenceChange}
           />
-        </div>
-      )}
-
-      {parsed && !parserUnavailable && (
-        <div className="space-y-2">
-          {editingAction ? (
-            <div className="space-y-2">
-              <Label htmlFor="next-action-draft-action">Action</Label>
-              <Input
-                id="next-action-draft-action"
-                value={draftAction}
-                maxLength={500}
-                onChange={(event) => setDraftAction(event.target.value)}
-              />
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-auto min-h-10 w-full justify-start whitespace-normal bg-muted/50 px-3 py-2 text-left"
-              aria-label={`Edit action: ${draftAction}`}
-              onClick={() => setEditingAction(true)}
+          <Popover
+            open={deadlinePopoverOpen}
+            onOpenChange={setDeadlinePopoverOpen}
+          >
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "absolute right-1 top-1 z-10 flex h-8 w-8 items-center justify-center rounded-[10px] text-muted-foreground outline-none transition-[color,background-color,box-shadow,transform] after:absolute after:-inset-1 focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.96]",
+                  draftDeadlineIso
+                    ? "bg-primary/10 text-primary ring-1 ring-primary/40"
+                    : "hover:bg-muted hover:text-foreground",
+                )}
+                aria-label={deadlineButtonLabel}
+                data-deadline-selected={Boolean(draftDeadlineIso)}
+              >
+                <CalendarClock className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              align="end"
+              className="w-[min(20rem,calc(100vw-2rem))] space-y-3"
             >
-              <Pencil className="h-4 w-4" />
-              <span className="break-words text-pretty">{draftAction}</span>
-            </Button>
-          )}
-
-          {editingDeadline ? (
-            <div className="space-y-2">
-              <Label htmlFor="next-action-draft-deadline">
-                Deadline (your time)
-              </Label>
-              <Input
-                id="next-action-draft-deadline"
-                type="datetime-local"
-                value={draftDeadline}
-                onChange={(event) => setDraftDeadline(event.target.value)}
-              />
-            </div>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              className="h-auto min-h-10 w-full justify-start whitespace-normal bg-muted/50 px-3 py-2 text-left tabular-nums"
-              aria-label={`Edit deadline: ${deadlinePreview ?? "unknown"}`}
-              onClick={() => setEditingDeadline(true)}
-            >
-              <CalendarClock className="h-4 w-4" />
-              <span>{deadlinePreview}</span>
-            </Button>
-          )}
-
-          {parsedDeadlineGuidance?.assumedTime && (
-            <p className="text-xs font-medium text-muted-foreground">
-              time assumed
-            </p>
-          )}
-          {viewerPreview && (
-            <p className="text-pretty text-xs tabular-nums text-muted-foreground">
-              Your time: {viewerPreview}
-            </p>
-          )}
+              <div className="space-y-2">
+                <Label htmlFor="next-action-deadline">
+                  Deadline (your time)
+                </Label>
+                <Input
+                  id="next-action-deadline"
+                  type="datetime-local"
+                  value={draftDeadline}
+                  onChange={handleDeadlineChange}
+                />
+              </div>
+              {draftDeadline && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={clearDeadline}
+                >
+                  <X className="h-4 w-4" />
+                  Clear deadline
+                </Button>
+              )}
+            </PopoverContent>
+          </Popover>
         </div>
-      )}
-
-      {(initialAction || parserUnavailable) && (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="next-action-manual-action">Action</Label>
-            <Input
-              id="next-action-manual-action"
-              value={draftAction}
-              maxLength={500}
-              onChange={(event) => setDraftAction(event.target.value)}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="next-action-manual-deadline">
-              Deadline (your time)
-            </Label>
-            <Input
-              id="next-action-manual-deadline"
-              type="datetime-local"
-              value={draftDeadline}
-              onChange={(event) => setDraftDeadline(event.target.value)}
-            />
-          </div>
-        </div>
-      )}
-
-      <div
-        role="status"
-        aria-live="polite"
-        className="min-w-0 space-y-1"
-      >
-        {parsing && (
-          <p className="break-words text-pretty text-xs text-muted-foreground">
-            Understanding deadline…
-          </p>
-        )}
-        {statusMessage && (
-          <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
-            <AlertCircle className="h-3.5 w-3.5" />
-            <span className="min-w-0 break-words text-pretty">
-              {statusMessage}
-            </span>
-          </p>
-        )}
-        {draftAction.trim().length > 500 && (
-          <p className="break-words text-pretty text-xs text-destructive">
-            Keep the action under 500 characters.
-          </p>
-        )}
-        {error && (
-          <p className="break-words text-pretty text-xs text-destructive">
-            {error}
-          </p>
-        )}
       </div>
 
-      {showManualDeadlineChoice && !parserUnavailable && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setParserUnavailable(true);
-            setDraftAction(sentence);
-          }}
+      {viewerPreview && (
+        <p className="text-pretty text-xs tabular-nums text-muted-foreground">
+          Deadline in your time: {viewerPreview}
+        </p>
+      )}
+
+      {hasStatusContent && (
+        <div
+          id="next-action-status"
+          role="status"
+          aria-live="polite"
+          className="min-w-0 space-y-1"
         >
-          <CalendarClock className="h-4 w-4" />
-          Choose date manually
-        </Button>
+          {statusMessage && (
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-destructive">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 break-words text-pretty">
+                {statusMessage}
+              </span>
+            </p>
+          )}
+          {actionTooLong && (
+            <p className="break-words text-pretty text-xs text-destructive">
+              Keep the action under 500 characters.
+            </p>
+          )}
+          {error && (
+            <p className="break-words text-pretty text-xs text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
       )}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" disabled={!canSave} onClick={save}>
+        <Button
+          type="button"
+          size="sm"
+          className="relative after:absolute after:inset-x-0 after:-inset-y-1"
+          disabled={!canSave}
+          onClick={save}
+        >
           {pending ? (
             <Loader className="h-4 w-4 animate-spin" />
           ) : (
@@ -422,6 +441,8 @@ export function NextActionComposer({
         <Button
           type="button"
           variant="ghost"
+          size="sm"
+          className="relative after:absolute after:inset-x-0 after:-inset-y-1"
           disabled={pending}
           onClick={onCancel}
         >

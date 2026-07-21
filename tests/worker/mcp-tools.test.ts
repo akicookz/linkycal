@@ -169,6 +169,18 @@ describe("MCP tool project scoping", () => {
       }),
     );
 
+    const undated = await setContactNextAction(ctxA, {
+      contactId: "ct-a1",
+      text: "Follow up",
+    });
+    expect(undated.isError).toBeUndefined();
+    expect(parsed(undated)).toEqual(
+      expect.objectContaining({
+        nextActionText: "Follow up",
+        nextActionDeadline: null,
+      }),
+    );
+
     const completed = await completeContactNextAction(ctxA, {
       contactId: "ct-a1",
     });

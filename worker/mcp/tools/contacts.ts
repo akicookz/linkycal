@@ -36,9 +36,8 @@ export async function getContact(
   input: { contactId: string },
 ): Promise<ToolResult> {
   const service = new ContactService(ctx.db());
-  const contact = inProject(await service.getById(input.contactId), ctx.projectId());
-  if (!contact) return err("Not found");
-  return ok(await service.getWithDetails(input.contactId));
+  const contact = await service.getWithDetails(input.contactId, ctx.projectId());
+  return contact ? ok(contact) : err("Not found");
 }
 
 export async function createContact(
@@ -89,7 +88,7 @@ export async function updateContact(
 
 export async function setContactNextAction(
   ctx: ToolContext,
-  input: { contactId: string; text: string; deadline: string },
+  input: { contactId: string; text: string; deadline?: string | null },
 ): Promise<ToolResult> {
   const service = new ContactService(ctx.db());
   const existing = inProject(
@@ -100,7 +99,7 @@ export async function setContactNextAction(
 
   const contact = await service.setNextAction(input.contactId, {
     text: input.text,
-    deadline: new Date(input.deadline),
+    deadline: input.deadline ? new Date(input.deadline) : null,
   });
   return ok(contact);
 }
@@ -260,7 +259,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
     "set_contact_next_action",
     {
       description:
-        "Set or replace the contact's single Next Action and exact deadline.",
+        "Set or replace the contact's single Next Action, optionally with an exact deadline.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
         text: z
@@ -272,7 +271,9 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         deadline: z
           .string()
           .datetime({ offset: true })
-          .describe("Exact ISO 8601 deadline"),
+          .nullable()
+          .optional()
+          .describe("Optional exact ISO 8601 deadline"),
       },
     },
     withToolErrors("set_contact_next_action", (input) =>

@@ -1336,9 +1336,9 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
               >
                 Model Context Protocol
               </a>{" "}
-              server, so AI agents like Claude can check availability, book
-              meetings, manage contacts, and inspect forms on your behalf. It
-              speaks Streamable HTTP at a single endpoint:
+              server, so AI agents can check availability, book meetings,
+              manage contacts, and inspect forms on your behalf. It speaks
+              Streamable HTTP at a single endpoint:
             </p>
 
             <CodeBlock title="MCP Endpoint" language="text">
@@ -1357,16 +1357,8 @@ curl -H "Authorization: Bearer lc_live_your_api_key" \\
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Create an API key in the dashboard under <IC>MCP &amp; APIs</IC>,
-              then register the server with your MCP client. With Claude Code:
-            </p>
-
-            <CodeBlock title="Claude Code" language="bash">
-              {`claude mcp add --transport http linkycal https://linkycal.com/api/mcp \\
-  --header "Authorization: Bearer lc_live_a1b2c3d4e5f6..."`}
-            </CodeBlock>
-
-            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              For other MCP clients, add the server to your configuration file:
+              then register the server with your MCP client using the endpoint
+              and authorization header below.
             </p>
 
             <CodeBlock title="MCP Client Config" language="json">

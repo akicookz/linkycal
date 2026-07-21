@@ -86,6 +86,10 @@ interface Contact {
   tags: ContactTag[];
   lastActivityAt?: string | null;
   enteredAtByTagId: Record<string, string>;
+  nextAction: {
+    text: string;
+    deadline: string | null;
+  } | null;
 }
 
 interface Tag {
@@ -207,6 +211,106 @@ function useDebounce<T>(value: T, delay: number): T {
     return () => clearTimeout(handler);
   }, [value, delay]);
   return debouncedValue;
+}
+
+function EditableTagRow({
+  tag,
+  deleting,
+  onUpdate,
+  onDelete,
+}: {
+  tag: Tag;
+  deleting: boolean;
+  onUpdate: (vars: { id: string; name?: string; color?: string }) => void;
+  onDelete: (tagId: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(tag.name);
+
+  useEffect(() => {
+    if (!editing) setName(tag.name);
+  }, [editing, tag.name]);
+
+  function saveName() {
+    const nextName = name.trim();
+    setEditing(false);
+    if (!nextName) {
+      setName(tag.name);
+      return;
+    }
+    if (nextName !== tag.name) onUpdate({ id: tag.id, name: nextName });
+  }
+
+  return (
+    <div className="group flex items-center justify-between gap-3 rounded-[12px] px-3 py-2 hover:bg-muted/50">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <label
+          className="group/swatch relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full after:absolute after:-inset-[13px]"
+          title={`Change ${tag.name} color`}
+        >
+          <span
+            className="h-full w-full rounded-full ring-2 ring-transparent transition-shadow group-hover/swatch:ring-primary/20"
+            style={{ backgroundColor: tag.color ?? "#94a3b8" }}
+          />
+          <input
+            type="color"
+            value={tag.color ?? "#94a3b8"}
+            onChange={(event) =>
+              onUpdate({ id: tag.id, color: event.target.value })
+            }
+            className="absolute h-0 w-0 opacity-0"
+            aria-label={`Color for ${tag.name}`}
+          />
+        </label>
+
+        {editing ? (
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onBlur={saveName}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                saveName();
+              }
+              if (event.key === "Escape") {
+                event.preventDefault();
+                setName(tag.name);
+                setEditing(false);
+              }
+            }}
+            className="h-7 min-w-0 flex-1 rounded-[8px] bg-background px-2 text-sm font-medium outline-none ring-1 ring-primary/35 focus:ring-2 focus:ring-primary/45"
+            aria-label={`Edit ${tag.name} name`}
+            autoFocus
+          />
+        ) : (
+          <button
+            type="button"
+            className="min-w-0 flex-1 truncate text-left text-sm font-medium outline-none hover:text-primary focus-visible:text-primary"
+            onClick={() => setEditing(true)}
+            title={`Rename ${tag.name}`}
+          >
+            {tag.name}
+          </button>
+        )}
+      </div>
+
+      <button
+        type="button"
+        className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px] text-muted-foreground opacity-0 outline-none transition-[color,opacity,scale] after:absolute after:-inset-1.5 hover:text-destructive focus-visible:opacity-100 focus-visible:text-destructive group-hover:opacity-100 active:scale-[0.96]"
+        onClick={() => onDelete(tag.id)}
+        disabled={deleting}
+        aria-label={`Delete ${tag.name}`}
+        title={`Delete ${tag.name}`}
+      >
+        {deleting ? (
+          <Loader className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <X className="h-3.5 w-3.5" />
+        )}
+      </button>
+    </div>
+  );
 }
 
 const EMPTY_FORM: ContactFormData = { name: "", email: "", phone: "", notes: "" };
@@ -484,7 +588,7 @@ export default function Contacts() {
   const [deletingContact, setDeletingContact] = useState<Contact | null>(null);
 
   const [manageTagsOpen, setManageTagsOpen] = useState(false);
-  const [newTagName, setNewTagName] = useState("");
+  const [tagSearch, setTagSearch] = useState("");
   const [newTagColor, setNewTagColor] = useState("#6366f1");
 
   // ─── Import dialog ───
@@ -552,7 +656,7 @@ export default function Contacts() {
       const loaded = pages.reduce((n, p) => n + p.contacts.length, 0);
       return loaded < lastPage.total ? loaded : undefined;
     },
-    enabled: !!projectId,
+    enabled: !!projectId && viewType === "list",
   });
 
   const { data: tags = [], isLoading: loadingTags } = useQuery<Tag[]>({
@@ -750,7 +854,7 @@ export default function Contacts() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "tags"] });
-      setNewTagName("");
+      setTagSearch("");
       setNewTagColor("#6366f1");
     },
   });
@@ -1050,9 +1154,9 @@ export default function Contacts() {
 
   function handleCreateTag(e: React.FormEvent) {
     e.preventDefault();
-    if (!newTagName.trim()) return;
+    if (!tagSearch.trim()) return;
     createTagMutation.mutate({
-      name: newTagName.trim(),
+      name: tagSearch.trim(),
       color: newTagColor || undefined,
     });
   }
@@ -1077,7 +1181,10 @@ export default function Contacts() {
   }
 
   function navigateToContact(contactId: string) {
-    navigate(`/app/projects/${projectId}/contacts/${contactId}`);
+    const contact = contacts.find((item) => item.id === contactId);
+    navigate(`/app/projects/${projectId}/contacts/${contactId}`, {
+      state: contact ? { contactPreview: contact } : undefined,
+    });
   }
 
   function handleStageChange(contactId: string, toColumnId: string) {
@@ -1446,6 +1553,21 @@ export default function Contacts() {
   // ─── Render ───
 
   const filterCount = activeFilterCount(config);
+  const normalizedTagSearch = tagSearch.trim().toLocaleLowerCase();
+  const filteredTags = useMemo(
+    () =>
+      normalizedTagSearch
+        ? tags.filter((tag) =>
+            tag.name.toLocaleLowerCase().includes(normalizedTagSearch),
+          )
+        : tags,
+    [normalizedTagSearch, tags],
+  );
+  const canCreateTag =
+    normalizedTagSearch.length > 0 &&
+    !tags.some(
+      (tag) => tag.name.toLocaleLowerCase() === normalizedTagSearch,
+    );
   const allTagsForKanban = useMemo(
     () =>
       tags.map((t) => ({ id: t.id, name: t.name, color: t.color })),
@@ -1900,20 +2022,12 @@ export default function Contacts() {
             />
           )}
         </Card>
-      ) : loadingContacts ? (
-        <Card className="p-12">
-          <div className="flex justify-center">
-            <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
-          </div>
-        </Card>
-      ) : errorContacts ? (
-        <Card>{renderErrorState()}</Card>
       ) : (
         <ContactsKanban
-          contacts={contacts}
           allTags={allTagsForKanban}
           pivotTagIds={config.pivotTagIds ?? null}
           showUntagged={!!config.showUntagged}
+          filters={queryConfig}
           onStageChange={handleStageChange}
           onStartPipeline={() => seedPipelineMutation.mutate()}
           seedingPipeline={seedPipelineMutation.isPending}
@@ -1928,9 +2042,10 @@ export default function Contacts() {
         />
       )}
 
-      {/* Load more — applies to both list and kanban; kanban buckets whatever
-          has been loaded so far. */}
-      {!loadingContacts && !errorContacts && contacts.length > 0 && (
+      {viewType === "list" &&
+        !loadingContacts &&
+        !errorContacts &&
+        contacts.length > 0 && (
         <div className="mt-4 flex items-center justify-center gap-3">
           {hasNextPage && (
             <Button
@@ -1950,7 +2065,7 @@ export default function Contacts() {
             {contacts.length} of {totalContacts} loaded
           </span>
         </div>
-      )}
+        )}
 
       {/* ─── Import Contacts Dialog ─── */}
       <Dialog
@@ -2233,100 +2348,101 @@ export default function Contacts() {
       </Dialog>
 
       {/* ─── Manage Tags Dialog ─── */}
-      <Dialog open={manageTagsOpen} onOpenChange={setManageTagsOpen}>
+      <Dialog
+        open={manageTagsOpen}
+        onOpenChange={(open) => {
+          setManageTagsOpen(open);
+          if (!open) setTagSearch("");
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Manage Tags</DialogTitle>
             <DialogDescription>
-              Create and manage tags for organizing your contacts.
+              Search, create, recolor, or remove contact tags.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {tags.length === 0 && !loadingTags && (
-              <p className="text-sm text-muted-foreground py-4 text-center">
-                No tags yet. Create one below.
-              </p>
-            )}
-            {loadingTags && (
-              <div className="space-y-2">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="flex items-center gap-3 py-2">
-                    <Skeleton className="h-4 w-4 rounded-full" />
-                    <Skeleton className="h-4 w-24" />
-                  </div>
-                ))}
-              </div>
-            )}
-            {tags.map((tag) => (
-              <div
-                key={tag.id}
-                className="flex items-center justify-between gap-3 py-2 px-3 rounded-[12px] hover:bg-muted/50 transition-colors group"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <span
-                    className="h-3.5 w-3.5 rounded-full shrink-0 border"
-                    style={{
-                      backgroundColor: tag.color ?? "#94a3b8",
-                      borderColor: tag.color ?? "#94a3b8",
-                    }}
-                  />
-                  <span className="text-sm font-medium truncate">{tag.name}</span>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity text-destructive hover:text-destructive"
-                  onClick={() => deleteTagMutation.mutate(tag.id)}
-                  disabled={deleteTagMutation.isPending}
-                >
-                  {deleteTagMutation.isPending ? <Loader className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
-                  Delete
-                </Button>
-              </div>
-            ))}
-          </div>
-
-          <form onSubmit={handleCreateTag} className="mt-4 pt-4 space-y-2">
-            <p className="text-sm font-medium">Create new tag</p>
-            <div className="flex items-center gap-2">
-              <label
-                className="h-10 w-10 shrink-0 cursor-pointer rounded-[12px] border transition-transform hover:scale-105"
-                style={{ backgroundColor: newTagColor }}
-                title="Pick a color"
-              >
-                <input
-                  type="color"
-                  value={
-                    /^#[0-9a-fA-F]{6}$/.test(newTagColor)
-                      ? newTagColor
-                      : "#6366f1"
-                  }
-                  onChange={(e) => setNewTagColor(e.target.value)}
-                  className="h-0 w-0 opacity-0"
-                  aria-label="Tag color"
-                />
-              </label>
+          <form onSubmit={handleCreateTag} className="space-y-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                id="tag-name"
-                placeholder="e.g. VIP, Lead, Customer"
-                value={newTagName}
-                onChange={(e) => setNewTagName(e.target.value)}
-                className="flex-1"
+                value={tagSearch}
+                onChange={(event) => setTagSearch(event.target.value)}
+                placeholder="Search or create a tag"
+                className="pl-9"
+                autoFocus
               />
-              <Button
-                type="submit"
-                size="sm"
-                className="h-10 w-10 shrink-0 p-0"
-                aria-label="Add tag"
-                disabled={createTagMutation.isPending || !newTagName.trim()}
-              >
-                {createTagMutation.isPending ? (
-                  <Loader className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-              </Button>
+            </div>
+
+            <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+              {loadingTags && (
+                <div className="space-y-2">
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={index} className="flex items-center gap-3 px-3 py-2">
+                      <Skeleton className="h-4 w-4 rounded-full" />
+                      <Skeleton className="h-4 w-24" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!loadingTags && filteredTags.length === 0 && !canCreateTag && (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No tags yet
+                </p>
+              )}
+
+              {filteredTags.map((tag) => (
+                <EditableTagRow
+                  key={tag.id}
+                  tag={tag}
+                  deleting={
+                    deleteTagMutation.isPending &&
+                    deleteTagMutation.variables === tag.id
+                  }
+                  onUpdate={(vars) => updateTagMutation.mutate(vars)}
+                  onDelete={(tagId) => deleteTagMutation.mutate(tagId)}
+                />
+              ))}
+
+              {canCreateTag && (
+                <div className="flex items-center justify-between gap-3 rounded-[12px] bg-muted/50 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <label
+                      className="relative flex h-3.5 w-3.5 shrink-0 cursor-pointer rounded-full after:absolute after:-inset-[13px]"
+                      title="Choose tag color"
+                    >
+                      <span
+                        className="h-full w-full rounded-full"
+                        style={{ backgroundColor: newTagColor }}
+                      />
+                      <input
+                        type="color"
+                        value={newTagColor}
+                        onChange={(event) => setNewTagColor(event.target.value)}
+                        className="absolute h-0 w-0 opacity-0"
+                        aria-label="New tag color"
+                      />
+                    </label>
+                    <span className="truncate text-sm">
+                      Create “{tagSearch.trim()}”
+                    </span>
+                  </div>
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={createTagMutation.isPending}
+                  >
+                    {createTagMutation.isPending ? (
+                      <Loader className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    Create
+                  </Button>
+                </div>
+              )}
             </div>
           </form>
         </DialogContent>

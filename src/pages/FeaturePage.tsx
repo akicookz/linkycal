@@ -871,7 +871,7 @@ const FEATURES: Record<string, FeaturePageData> = {
         title: "Built for",
         highlightedTitle: "AI agents.",
         description:
-          "LinkyCal ships an MCP server at /api/mcp. Connect Claude, Cursor, or any MCP client with an API key and your agent can check availability, book meetings, manage contacts, and read form responses, all scoped to one project.",
+          "LinkyCal ships an MCP server at /api/mcp. Connect any MCP client with an API key and your agent can check availability, book meetings, manage contacts, and read form responses, all scoped to one project.",
         points: [
           {
             title: "30 tools out of the box",
@@ -886,13 +886,13 @@ const FEATURES: Record<string, FeaturePageData> = {
           {
             title: "Any MCP client",
             description:
-              "Claude Code, Cursor, or anything that speaks Streamable HTTP over MCP.",
+              "Works with clients that support Streamable HTTP over MCP.",
           },
         ],
         Visual: () => (
           <CodeCard
             title="Connect an agent"
-            caption="MCP client config, works with Claude Code & Cursor"
+            caption="Standard MCP client configuration"
             code={MCP_SNIPPET}
           />
         ),

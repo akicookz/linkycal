@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import * as dbSchema from "../../worker/db/schema";
+import { buildWorkflowContactOperationalContext } from "../../worker/lib/workflow-runtime";
 import { WorkflowExecutionService } from "../../worker/services/workflow-execution-service";
 import type { AppEnv } from "../../worker/types";
 import { createTestDb } from "./mcp-test-db";
@@ -86,6 +87,18 @@ async function seedWorkflowRun() {
 }
 
 describe("workflow contact operational hydration", () => {
+  test("keeps undated Next Action text without deadline facts", () => {
+    const context = buildWorkflowContactOperationalContext(
+      {
+        enteredAtByTagId: {},
+        nextAction: { text: "Follow up", deadline: null },
+      },
+      new Date("2026-07-21T00:00:00.000Z"),
+    );
+
+    expect(context.nextAction).toEqual({ text: "Follow up" });
+  });
+
   test("refreshes current stage facts before evaluating a step gate", async () => {
     const db = await seedWorkflowRun();
     const service = new WorkflowExecutionService(db);

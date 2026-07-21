@@ -13,6 +13,10 @@ export interface ViewContact {
   createdAt: string;
   lastActivityAt?: string | null;
   enteredAtByTagId: Record<string, string>;
+  nextAction: {
+    text: string;
+    deadline: string | null;
+  } | null;
   tags: ViewTag[];
 }
 

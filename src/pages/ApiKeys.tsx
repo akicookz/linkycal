@@ -189,7 +189,7 @@ export default function ApiKeys() {
                     <Label htmlFor="key-label">Label (optional)</Label>
                     <Input
                       id="key-label"
-                      placeholder="Claude MCP"
+                      placeholder="Integration key"
                       value={label}
                       onChange={(e) => setLabel(e.target.value)}
                     />
@@ -292,14 +292,8 @@ export default function ApiKeys() {
         </p>
         <div className="space-y-3">
           <div>
-            <p className="text-xs font-medium text-muted-foreground mb-1.5">Claude Code</p>
-            <CodeBlock
-              text={`claude mcp add --transport http linkycal ${window.location.origin}/api/mcp --header "Authorization: Bearer YOUR_API_KEY"`}
-            />
-          </div>
-          <div>
             <p className="text-xs font-medium text-muted-foreground mb-1.5">
-              Other MCP clients (JSON config)
+              MCP client configuration
             </p>
             <CodeBlock
               text={JSON.stringify(

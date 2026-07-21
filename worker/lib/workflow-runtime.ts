@@ -15,10 +15,10 @@ export interface WorkflowContactOperationalContext {
   };
   nextAction?: {
     text: string;
-    deadline: string;
-    overdue: boolean;
-    hoursUntilDeadline: number;
-    daysUntilDeadline: number;
+    deadline?: string;
+    overdue?: boolean;
+    hoursUntilDeadline?: number;
+    daysUntilDeadline?: number;
   };
 }
 
@@ -202,6 +202,9 @@ export function buildWorkflowContactOperationalContext(
     stage: { byTag },
   };
   if (!facts.nextAction) return operational;
+
+  operational.nextAction = { text: facts.nextAction.text };
+  if (!facts.nextAction.deadline) return operational;
 
   const deadlineMs = new Date(facts.nextAction.deadline).getTime();
   if (!Number.isFinite(deadlineMs)) return operational;

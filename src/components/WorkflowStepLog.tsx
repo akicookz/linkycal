@@ -147,7 +147,6 @@ function SendEmailLog({ input, output }: { input: Input; output: Output }) {
 }
 
 function AiResearchLog({ input, output }: { input: Input; output: Output }) {
-  const provider = asString(input?.provider);
   const resultKey = asString(input?.resultKey);
   const finalPrompt = asString(input?.finalPrompt);
   const summary = asString(output?.summary);
@@ -157,7 +156,6 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
   const location = asString(output?.location);
   const linkedinUrl = asString(output?.linkedinUrl);
   const sources = Array.isArray(output?.sources) ? (output!.sources as Array<Record<string, unknown>>) : [];
-  const model = asString(output?.model);
 
   return (
     <div className="space-y-2">
@@ -165,8 +163,6 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
       <Section title="Request">
         <div className="space-y-2">
           <div className="flex flex-wrap gap-1.5">
-            {provider && <Pill tone="info">{provider === "gemini" ? "Gemini" : "ChatGPT"}</Pill>}
-            {model && <Pill>{model}</Pill>}
             {resultKey && <Pill>stored as {`{{${resultKey}.*}}`}</Pill>}
           </div>
           {finalPrompt && (

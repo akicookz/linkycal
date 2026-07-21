@@ -98,8 +98,9 @@ without adding another row.
 
 Clicking it opens a compact popover containing the existing local
 `datetime-local` control. When a deadline exists, the popover also offers an
-icon-and-text **Clear deadline** action. Manual selection overrides the parsed
-deadline until the sentence changes again.
+icon-and-text **Clear deadline** action. Manual selection remains authoritative
+while the action text is edited unless the sentence produces a new valid parsed
+deadline or the user explicitly clears it.
 
 The icon's accessible name states its action and selection state, including a
 formatted local deadline when available.

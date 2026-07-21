@@ -913,7 +913,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                                         ? "Copied!"
                                         : "Embed prompt",
                                     description:
-                                      "Instructions for AI builders (Lovable, Cursor) to install the form.",
+                                      "Instructions for AI builders to install the form.",
                                     copied: promptCopiedId === "embed",
                                     onClick: () => {
                                       if (!templateForm) return;

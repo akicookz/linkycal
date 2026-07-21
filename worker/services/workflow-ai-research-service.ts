@@ -52,7 +52,7 @@ export class WorkflowAiResearchService {
     env: AppEnv,
   ): Promise<WorkflowResearchRecord> {
     if (!env.OPENAI_API_KEY) {
-      throw new Error("ai_research: OPENAI_API_KEY is not configured");
+      throw new Error("ai_research: research service is not configured");
     }
 
     const openai = createOpenAI({
@@ -130,7 +130,7 @@ export class WorkflowAiResearchService {
     // tool calls), structuring would silently yield an all-null result. Fail
     // instead so the caller's fallback/error handling kicks in.
     if (search.text.trim().length === 0) {
-      throw new Error("ai_research: gemini grounded search returned no findings");
+      throw new Error("ai_research: research service returned no findings");
     }
 
     // Pass 2 — structure the grounded findings into the schema. No tools, so the

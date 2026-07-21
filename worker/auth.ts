@@ -46,6 +46,13 @@ export function createAuth(
           window: 60,
           max: 200,
         },
+        session: {
+          cookieCache: {
+            enabled: true,
+            maxAge: 60,
+            strategy: "compact",
+          },
+        },
         secret: env.BETTER_AUTH_SECRET,
         baseURL: env.BETTER_AUTH_URL,
       },

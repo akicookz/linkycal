@@ -657,7 +657,7 @@ export class WorkflowExecutionService {
 
     const provider = config.provider;
     if (provider !== "chatgpt" && provider !== "gemini") {
-      throw new Error("ai_research: invalid 'provider'. Allowed: chatgpt, gemini");
+      throw new Error("ai_research: invalid research configuration");
     }
 
     const userPrompt = this.interpolate(String(config.prompt ?? ""), context);
@@ -692,7 +692,6 @@ export class WorkflowExecutionService {
       sources: record.result.sources,
       recommendedTags: record.result.recommendedTags,
       insights: record.result.insights,
-      model: record.model,
     };
   }
 
@@ -718,8 +717,6 @@ export class WorkflowExecutionService {
       notes: nextNotes,
     });
     await this.contactService.logActivity(contactId, "workflow_researched", undefined, {
-      provider: record.provider,
-      model: record.model,
       resultKey: record.resultKey,
       summary: record.result.summary,
       sourceCount: record.result.sources.length,

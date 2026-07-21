@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import {
-  Mail,
-  Phone,
+  ChevronDown,
   GripVertical,
   Sparkles,
   Loader,
@@ -11,7 +11,6 @@ import {
   Trash2,
   Pencil,
   Check,
-  Clock,
   X,
 } from "lucide-react";
 import {
@@ -38,7 +37,11 @@ import {
 } from "@/components/ui/popover";
 import CopyContactButton from "@/components/CopyContactButton";
 import { useMinuteNow } from "@/hooks/use-minute-now";
-import { formatTimeInStage } from "@/lib/contact-time";
+import {
+  formatNextActionRelativeCompact,
+  formatTimeInStage,
+  nextActionTimingClass,
+} from "@/lib/contact-time";
 import {
   buildKanbanColumns,
   UNTAGGED_COLUMN_ID,
@@ -48,10 +51,10 @@ import {
 import { cn } from "@/lib/utils";
 
 interface ContactsKanbanProps {
-  contacts: ViewContact[];
   allTags: ViewTag[];
   pivotTagIds: string[] | null;
   showUntagged: boolean;
+  filters: ContactQueryFilters;
   onStageChange: (contactId: string, toColumnId: string) => void;
   onStartPipeline?: () => void;
   seedingPipeline?: boolean;
@@ -65,6 +68,23 @@ interface ContactsKanbanProps {
   onReorderSteps?: (fromIndex: number, toIndex: number) => void;
 }
 
+interface ContactQueryFilters {
+  search?: string;
+  tagIds?: string[];
+  matchAllTags?: boolean;
+  activityType?: string;
+  activitySinceDays?: number;
+  noActivitySinceDays?: number;
+  bookingStatus?: string;
+}
+
+interface ContactsPage {
+  contacts: ViewContact[];
+  total: number;
+}
+
+const STAGE_PAGE_SIZE = 20;
+
 function getAvatarColor(name: string): string {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
@@ -76,43 +96,78 @@ function getInitial(name: string): string {
   return name.charAt(0).toUpperCase();
 }
 
+function buildStageQueryParams(
+  filters: ContactQueryFilters,
+  columnId: string,
+  stageTagIds: string[],
+  offset: number,
+): URLSearchParams {
+  const params = new URLSearchParams();
+  if (filters.search) params.set("search", filters.search);
+  for (const tagId of filters.tagIds ?? []) params.append("tagIds", tagId);
+  if (filters.matchAllTags) params.set("matchAllTags", "true");
+  if (filters.activityType) params.set("activityType", filters.activityType);
+  if (filters.activitySinceDays !== undefined) {
+    params.set("activitySinceDays", String(filters.activitySinceDays));
+  }
+  if (filters.noActivitySinceDays !== undefined) {
+    params.set("noActivitySinceDays", String(filters.noActivitySinceDays));
+  }
+  if (filters.bookingStatus) {
+    params.set("bookingStatus", filters.bookingStatus);
+  }
+  if (columnId === UNTAGGED_COLUMN_ID) {
+    for (const tagId of stageTagIds) {
+      params.append("excludeStageTagIds", tagId);
+    }
+  } else {
+    params.set("stageTagId", columnId);
+  }
+  params.set("limit", String(STAGE_PAGE_SIZE));
+  params.set("offset", String(offset));
+  return params;
+}
+
 function KanbanCard({
   contact,
   columnId,
-  pivotTagIds,
   now,
 }: {
   contact: ViewContact;
   columnId: string;
-  pivotTagIds: string[] | null;
   now: Date;
 }) {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: contact.id,
-    data: { type: "card", fromColumnId: columnId },
+    data: { type: "card", fromColumnId: columnId, contact },
   });
 
-  // Exclude ALL stage tags from chips, not just the current column's tag.
-  const stageSet =
-    pivotTagIds && pivotTagIds.length > 0
-      ? new Set(pivotTagIds)
-      : new Set([columnId]);
-  const visibleChips = contact.tags.filter((t) => !stageSet.has(t.id));
   const timeInStage =
     columnId === UNTAGGED_COLUMN_ID
       ? null
       : formatTimeInStage(contact.enteredAtByTagId?.[columnId], now);
+  const nextActionDeadline = contact.nextAction?.deadline ?? null;
+  const nextActionRelative = nextActionDeadline
+    ? formatNextActionRelativeCompact(nextActionDeadline, now)
+    : null;
+  const nextActionColor = nextActionDeadline
+    ? nextActionTimingClass(nextActionDeadline, now)
+    : "text-muted-foreground";
 
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      onClick={() => navigate(`/app/projects/${projectId}/contacts/${contact.id}`)}
+      onClick={() =>
+        navigate(`/app/projects/${projectId}/contacts/${contact.id}`, {
+          state: { contactPreview: contact },
+        })
+      }
       className={cn(
-        "group/contact relative bg-card rounded-[12px] border border-border/60 p-3 transition-all touch-none cursor-grab active:cursor-grabbing",
+        "group/contact relative cursor-grab touch-none rounded-[12px] border border-border/60 bg-card p-2.5 transition-[border-color,box-shadow,opacity] active:cursor-grabbing",
         isDragging ? "opacity-40" : "hover:border-border hover:shadow-xs",
       )}
     >
@@ -123,54 +178,45 @@ function KanbanCard({
       >
         <GripVertical className="h-3.5 w-3.5" />
       </span>
-      <div className="flex w-full items-start gap-2.5 text-left">
+      <div className="flex min-w-0 items-start gap-2 text-left">
         <div
-          className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
           style={{ backgroundColor: getAvatarColor(contact.name) }}
         >
           {getInitial(contact.name)}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{contact.name}</p>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium leading-5">{contact.name}</p>
           {contact.email && (
-            <div className="flex items-center gap-1 mt-0.5 min-w-0">
-              <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
-                <Mail className="h-3 w-3 shrink-0" />
+            <div className="mt-0.5 flex min-w-0 items-center gap-1">
+              <p className="min-w-0 truncate text-xs leading-4 text-muted-foreground">
                 {contact.email}
               </p>
-              <CopyContactButton name={contact.name} email={contact.email} />
-            </div>
-          )}
-          {contact.phone && (
-            <p className="text-xs text-muted-foreground truncate flex items-center gap-1 mt-0.5">
-              <Phone className="h-3 w-3 shrink-0" />
-              {contact.phone}
-            </p>
-          )}
-          {timeInStage && (
-            <p className="mt-1 flex items-center gap-1 text-[11px] tabular-nums text-muted-foreground">
-              <Clock className="h-3 w-3 shrink-0" />
-              {timeInStage}
-            </p>
-          )}
-          {visibleChips.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
-              {visibleChips.slice(0, 3).map((tag) => (
-                <span
-                  key={tag.id}
-                  className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                  style={{
-                    backgroundColor: `${tag.color ?? "#6366f1"}15`,
-                    color: tag.color ?? "#6366f1",
-                  }}
-                >
-                  {tag.name}
-                </span>
-              ))}
+              <CopyContactButton
+                name={contact.name}
+                email={contact.email}
+                className="-my-0.5"
+              />
             </div>
           )}
         </div>
       </div>
+      {(timeInStage || nextActionRelative) && (
+        <p className="mt-2 flex min-w-0 items-center gap-1.5 pl-8 text-[11px] tabular-nums text-muted-foreground">
+          {timeInStage && <span className="shrink-0">{timeInStage}</span>}
+          {timeInStage && nextActionRelative && (
+            <span
+              aria-hidden="true"
+              className="h-1 w-1 shrink-0 rounded-full bg-current opacity-40"
+            />
+          )}
+          {nextActionRelative && (
+            <span className={cn("truncate font-medium", nextActionColor)}>
+              {nextActionRelative}
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }
@@ -523,11 +569,132 @@ function KanbanColumnBox({
   );
 }
 
+function KanbanStageColumn({
+  projectId,
+  column,
+  stageTagIds,
+  filters,
+  now,
+  editable,
+  menu,
+}: {
+  projectId: string;
+  column: {
+    id: string;
+    name: string;
+    color: string | null;
+  };
+  stageTagIds: string[];
+  filters: ContactQueryFilters;
+  now: Date;
+  editable?: boolean;
+  menu?: React.ReactNode;
+}) {
+  const {
+    data,
+    isLoading,
+    isError,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: [
+      "projects",
+      projectId,
+      "contacts",
+      "kanban-stage",
+      column.id,
+      filters,
+      stageTagIds,
+    ],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }): Promise<ContactsPage> => {
+      const params = buildStageQueryParams(
+        filters,
+        column.id,
+        stageTagIds,
+        pageParam,
+      );
+      const response = await fetch(
+        `/api/projects/${projectId}/contacts?${params.toString()}`,
+      );
+      if (!response.ok) throw new Error("Failed to fetch stage contacts");
+      const result = await response.json();
+      return {
+        contacts: result.contacts ?? [],
+        total: result.total ?? 0,
+      };
+    },
+    getNextPageParam: (lastPage, pages) => {
+      const loaded = pages.reduce(
+        (count, page) => count + page.contacts.length,
+        0,
+      );
+      return loaded < lastPage.total ? loaded : undefined;
+    },
+  });
+  const contacts = data?.pages.flatMap((page) => page.contacts) ?? [];
+  const total = data?.pages[0]?.total ?? 0;
+
+  return (
+    <KanbanColumnBox
+      id={column.id}
+      tagId={column.id === UNTAGGED_COLUMN_ID ? undefined : column.id}
+      name={column.name}
+      color={column.color}
+      count={total}
+      editable={editable}
+      menu={menu}
+    >
+      {isLoading && (
+        <div className="flex justify-center py-6">
+          <Loader className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      )}
+      {isError && (
+        <p className="py-6 text-center text-xs text-destructive">
+          Couldn&apos;t load this stage
+        </p>
+      )}
+      {!isLoading && !isError && contacts.length === 0 && (
+        <p className="py-6 text-center text-xs text-muted-foreground">
+          Drop here
+        </p>
+      )}
+      {contacts.map((contact) => (
+        <KanbanCard
+          key={contact.id}
+          contact={contact}
+          columnId={column.id}
+          now={now}
+        />
+      ))}
+      {hasNextPage && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="w-full"
+          disabled={isFetchingNextPage}
+          onClick={() => fetchNextPage()}
+        >
+          {isFetchingNextPage ? (
+            <Loader className="h-4 w-4 animate-spin" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+          Load more
+        </Button>
+      )}
+    </KanbanColumnBox>
+  );
+}
+
 export default function ContactsKanban({
-  contacts,
   allTags,
   pivotTagIds,
   showUntagged,
+  filters,
   onStageChange,
   onStartPipeline,
   seedingPipeline,
@@ -540,13 +707,10 @@ export default function ContactsKanban({
   onDeleteStepTag,
   onReorderSteps,
 }: ContactsKanbanProps) {
+  const { projectId = "" } = useParams<{ projectId: string }>();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeContact, setActiveContact] = useState<ViewContact | null>(null);
   const now = useMinuteNow();
-  const activeContact = useMemo(
-    () => (activeId ? contacts.find((c) => c.id === activeId) ?? null : null),
-    [activeId, contacts],
-  );
 
   // Pointer-based collision: which column the CURSOR is over decides the drop,
   // not the dragged card's (stationary) rect. Falls back to rect overlap when
@@ -556,8 +720,14 @@ export default function ContactsKanban({
     return byPointer.length > 0 ? byPointer : rectIntersection(args);
   };
   const columns = useMemo(
-    () => buildKanbanColumns({ contacts, allTags, pivotTagIds, showUntagged }),
-    [contacts, allTags, pivotTagIds, showUntagged],
+    () =>
+      buildKanbanColumns({
+        contacts: [],
+        allTags,
+        pivotTagIds,
+        showUntagged,
+      }),
+    [allTags, pivotTagIds, showUntagged],
   );
   const columnTagIds = useMemo(
     () => columns.filter((c) => c.id !== UNTAGGED_COLUMN_ID).map((c) => c.id),
@@ -587,11 +757,14 @@ export default function ContactsKanban({
   }
 
   function handleDragStart(event: DragStartEvent) {
-    setActiveId(String(event.active.id));
+    const data = event.active.data.current as
+      | { contact?: ViewContact }
+      | undefined;
+    setActiveContact(data?.contact ?? null);
   }
 
   function handleDragEnd(event: DragEndEvent) {
-    setActiveId(null);
+    setActiveContact(null);
     const { active, over } = event;
     if (!over) return;
     const activeType = (active.data.current as { type?: string } | undefined)?.type;
@@ -619,18 +792,18 @@ export default function ContactsKanban({
       collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      onDragCancel={() => setActiveId(null)}
+      onDragCancel={() => setActiveContact(null)}
     >
       <div className="overflow-x-auto -mx-6 px-6 pb-2">
         <div className="flex gap-4 min-w-max">
           {columns.map((col) => (
-            <KanbanColumnBox
+            <KanbanStageColumn
               key={col.id}
-              id={col.id}
-              tagId={col.id === UNTAGGED_COLUMN_ID ? undefined : col.id}
-              name={col.name}
-              color={col.color}
-              count={col.contacts.length}
+              projectId={projectId}
+              column={col}
+              stageTagIds={columnTagIds}
+              filters={filters}
+              now={now}
               editable={editable}
               menu={
                 editable && col.id !== UNTAGGED_COLUMN_ID && onRenameStep ? (
@@ -647,20 +820,7 @@ export default function ContactsKanban({
                   />
                 ) : undefined
               }
-            >
-              {col.contacts.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-6">Drop here</p>
-              )}
-              {col.contacts.map((contact) => (
-                <KanbanCard
-                  key={contact.id}
-                  contact={contact}
-                  columnId={col.id}
-                  pivotTagIds={pivotTagIds}
-                  now={now}
-                />
-              ))}
-            </KanbanColumnBox>
+            />
           ))}
           {editable && onAddStep && <AddStepColumn availableTags={swappableTags} onAdd={onAddStep} />}
         </div>
@@ -669,10 +829,10 @@ export default function ContactsKanban({
           so it isn't clipped by the columns' overflow). */}
       <DragOverlay dropAnimation={null}>
         {activeContact ? (
-          <div className="w-64 rounded-[12px] border border-border bg-card p-3 shadow-lg cursor-grabbing">
-            <div className="flex items-start gap-2.5">
+          <div className="w-64 cursor-grabbing rounded-[12px] border border-border bg-card p-2.5 shadow-lg">
+            <div className="flex items-start gap-2">
               <div
-                className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white"
                 style={{ backgroundColor: getAvatarColor(activeContact.name) }}
               >
                 {getInitial(activeContact.name)}
