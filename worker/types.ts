@@ -1,5 +1,7 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
+import type { RequestAuth } from "./lib/request-auth";
+
 // ─── Plan Types ──────────────────────────────────────────────────────────────
 
 export type Plan = "free" | "pro" | "business";
@@ -102,6 +104,7 @@ export interface AppEnv {
 export interface HonoAppContext {
   Bindings: AppEnv;
   Variables: {
+    requestAuth: RequestAuth;
     user: {
       id: string;
       name: string;
