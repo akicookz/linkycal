@@ -135,6 +135,7 @@ import { getEnrichmentUsage, incrementEnrichmentUsage } from "./lib/usage";
 import { resolveRequestAuth } from "./lib/request-auth";
 import { projectRouteAccess } from "./lib/api-route-policy";
 import { authorizeApiKeyProjectRequest } from "./lib/project-api-access";
+import { projectCanUseCalendarConnections } from "./lib/calendar-connection-scope";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -2767,40 +2768,6 @@ function permissionForProjectRequest(
   }
   if (method === "GET" || method === "HEAD") return "project:read";
   return "project:write";
-}
-
-async function projectCanUseCalendarConnections(
-  db: AppDatabase,
-  access: ProjectAccessContext | undefined,
-  userId: string,
-  connectionIds: string[],
-): Promise<boolean> {
-  const uniqueIds = Array.from(new Set(connectionIds.filter(Boolean)));
-  if (uniqueIds.length === 0) return true;
-
-  if (access?.teamId) {
-    const rows = await db
-      .select({ connectionId: dbSchema.teamCalendarConnections.connectionId })
-      .from(dbSchema.teamCalendarConnections)
-      .where(
-        and(
-          eq(dbSchema.teamCalendarConnections.teamId, access.teamId),
-          inArray(dbSchema.teamCalendarConnections.connectionId, uniqueIds),
-        ),
-      );
-    return rows.length === uniqueIds.length;
-  }
-
-  const rows = await db
-    .select({ id: dbSchema.calendarConnections.id })
-    .from(dbSchema.calendarConnections)
-    .where(
-      and(
-        eq(dbSchema.calendarConnections.userId, userId),
-        inArray(dbSchema.calendarConnections.id, uniqueIds),
-      ),
-    );
-  return rows.length === uniqueIds.length;
 }
 
 async function scheduleBelongsToProject(
@@ -6650,11 +6617,10 @@ const calendarRoutes = projectRoutes.get(
   "/api/projects/:projectId/calendar/calendars",
   async (c) => {
     try {
-      const access = c.get("projectAccess");
-      const userId = c.get("effectiveUserId");
+      const scope = c.get("projectScope");
       const db = c.get("db");
 
-      const connections = access?.teamId
+      const connections = scope.teamId
         ? await db
             .select({
               id: dbSchema.calendarConnections.id,
@@ -6669,7 +6635,7 @@ const calendarRoutes = projectRoutes.get(
                 dbSchema.calendarConnections.id,
               ),
             )
-            .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
+            .where(eq(dbSchema.teamCalendarConnections.teamId, scope.teamId))
         : await db
             .select({
               id: dbSchema.calendarConnections.id,
@@ -6677,7 +6643,9 @@ const calendarRoutes = projectRoutes.get(
               refreshToken: dbSchema.calendarConnections.refreshToken,
             })
             .from(dbSchema.calendarConnections)
-            .where(eq(dbSchema.calendarConnections.userId, userId));
+            .where(
+              eq(dbSchema.calendarConnections.userId, scope.ownerUserId),
+            );
 
       if (connections.length === 0) {
         return c.json({ accounts: [] });
@@ -6824,8 +6792,7 @@ app.put(
       const body = await c.req.json();
       const data = validate(updateEventTypeCalendarsSchema, body);
       const db = c.get("db");
-      const userId = c.get("effectiveUserId");
-      const access = c.get("projectAccess");
+      const scope = c.get("projectScope");
 
       const [eventType] = await db
         .select({ id: dbSchema.eventTypes.id })
@@ -6850,8 +6817,7 @@ app.put(
 
       const canUseConnections = await projectCanUseCalendarConnections(
         db,
-        access,
-        userId,
+        scope,
         connectionIds,
       );
       if (!canUseConnections) {
