@@ -23,13 +23,23 @@ export interface WorkflowAiResearchConfig {
   resultKey?: string;
 }
 
+export type WorkflowResearchPhase = "researching" | "normalizing";
+export type WorkflowResearchPhaseReporter = (
+  phase: WorkflowResearchPhase,
+) => Promise<void>;
+
+type GenerateTextRunner = typeof generateText;
+
 const CHATGPT_MODEL = "gpt-5.2";
 const GEMINI_MODEL = "gemini-2.5-pro";
 
 export class WorkflowAiResearchService {
+  constructor(private generate: GenerateTextRunner = generateText) {}
+
   async execute(
     config: WorkflowAiResearchConfig,
     env: AppEnv,
+    onPhase?: WorkflowResearchPhaseReporter,
   ): Promise<WorkflowResearchRecord> {
     const prompt = config.prompt.trim();
     if (!prompt) {
@@ -40,16 +50,17 @@ export class WorkflowAiResearchService {
     const resultKey = slugifyWorkflowKey(config.resultKey);
 
     if (provider === "gemini") {
-      return this.executeGeminiResearch(prompt, resultKey, env);
+      return this.executeGeminiResearch(prompt, resultKey, env, onPhase);
     }
 
-    return this.executeChatGptResearch(prompt, resultKey, env);
+    return this.executeChatGptResearch(prompt, resultKey, env, onPhase);
   }
 
   private async executeChatGptResearch(
     prompt: string,
     resultKey: string,
     env: AppEnv,
+    onPhase?: WorkflowResearchPhaseReporter,
   ): Promise<WorkflowResearchRecord> {
     if (!env.OPENAI_API_KEY) {
       throw new Error("ai_research: research service is not configured");
@@ -58,7 +69,8 @@ export class WorkflowAiResearchService {
     const openai = createOpenAI({
       apiKey: env.OPENAI_API_KEY,
     });
-    const result = await generateText({
+    await onPhase?.("researching");
+    const result = await this.generate({
       model: openai(CHATGPT_MODEL),
       prompt: buildResearchPrompt(prompt),
       output: Output.object({
@@ -80,6 +92,7 @@ export class WorkflowAiResearchService {
       },
     });
 
+    await onPhase?.("normalizing");
     return buildResearchRecord({
       provider: "chatgpt",
       model: CHATGPT_MODEL,
@@ -97,6 +110,7 @@ export class WorkflowAiResearchService {
     prompt: string,
     resultKey: string,
     env: AppEnv,
+    onPhase?: WorkflowResearchPhaseReporter,
   ): Promise<WorkflowResearchRecord> {
     if (!env.GOOGLE_GENERATIVE_AI_API_KEY) {
       throw new Error("ai_research: GOOGLE_GENERATIVE_AI_API_KEY is not configured");
@@ -109,7 +123,8 @@ export class WorkflowAiResearchService {
     // Pass 1 — grounded search. No `Output.object`; grounding is automatic when
     // the googleSearch tool is present, so we don't force toolChoice (forcing it
     // can starve the final text generation).
-    const search = await generateText({
+    await onPhase?.("researching");
+    const search = await this.generate({
       model: google(GEMINI_MODEL),
       prompt: buildResearchPrompt(prompt),
       tools: {
@@ -135,7 +150,8 @@ export class WorkflowAiResearchService {
 
     // Pass 2 — structure the grounded findings into the schema. No tools, so the
     // JSON response format is allowed.
-    const structured = await generateText({
+    await onPhase?.("normalizing");
+    const structured = await this.generate({
       model: google(GEMINI_MODEL),
       prompt: buildStructurePrompt(search.text),
       output: Output.object({

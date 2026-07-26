@@ -155,12 +155,13 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
   const website = asString(output?.website);
   const location = asString(output?.location);
   const linkedinUrl = asString(output?.linkedinUrl);
+  const insights = asStringArray(output?.insights);
   const sources = Array.isArray(output?.sources) ? (output!.sources as Array<Record<string, unknown>>) : [];
 
   return (
     <div className="space-y-2">
       <ResolvedInputs input={input} />
-      <Section title="Request">
+      <Section title="Research request">
         <div className="space-y-2">
           <div className="flex flex-wrap gap-1.5">
             {resultKey && <Pill>stored as {`{{${resultKey}.*}}`}</Pill>}
@@ -172,8 +173,8 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
           )}
         </div>
       </Section>
-      {(summary || company || role) && (
-        <Section title="Findings">
+      {(summary || company || role || insights.length > 0) && (
+        <Section title="AI findings">
           <div className="space-y-2">
             {summary && <Field label="Summary">{summary}</Field>}
             {company && <Field label="Company">{company}</Field>}
@@ -193,11 +194,20 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
               </Field>
             )}
             {location && <Field label="Location">{location}</Field>}
+            {insights.length > 0 && (
+              <Field label="Insights">
+                <ul className="list-disc space-y-1 pl-4">
+                  {insights.map((insight, index) => (
+                    <li key={`${insight}-${index}`}>{insight}</li>
+                  ))}
+                </ul>
+              </Field>
+            )}
           </div>
         </Section>
       )}
       {sources.length > 0 && (
-        <Section title="Sources">
+        <Section title="Public sources">
           <ul className="space-y-1">
             {sources.map((s, i) => {
               const url = asString(s.url);

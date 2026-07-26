@@ -26,7 +26,10 @@ import {
 } from "../lib/workflow-conditions";
 import type { AppEnv } from "../types";
 import { WorkflowService, type StepLog } from "./workflow-service";
-import { WorkflowAiResearchService } from "./workflow-ai-research-service";
+import {
+  WorkflowAiResearchService,
+  type WorkflowResearchPhase,
+} from "./workflow-ai-research-service";
 import { ContactService } from "./contact-service";
 import { TagService } from "./tag-service";
 
@@ -37,6 +40,14 @@ export interface TriggerContext extends WorkflowTriggerContext {}
 interface StepSnapshot {
   resolved: Record<string, unknown>;
   output: Record<string, unknown>;
+}
+
+interface StepExecutionProgress {
+  attempt: number;
+  leaseStartedAt: string;
+  report(
+    progress: NonNullable<StepLog["progress"]>,
+  ): Promise<void>;
 }
 
 type WorkflowTrigger = dbSchema.WorkflowRow["trigger"];
@@ -369,17 +380,37 @@ export class WorkflowExecutionService {
     }
 
     // ── Step logging: mark as running ──
+    let executionProgress: StepExecutionProgress | undefined;
     if (stepLogs[stepIndex]) {
       const startedAt = new Date().toISOString();
+      const attempt = stepLogs[stepIndex].progress?.attempt ?? 1;
       stepLogs[stepIndex].status = "running";
       stepLogs[stepIndex].startedAt = startedAt;
       stepLogs[stepIndex].input = { config, resolvedInputs: context.stepInputs };
       stepLogs[stepIndex].progress = {
         phase: "preparing",
         message: "Preparing step",
-        attempt: stepLogs[stepIndex].progress?.attempt ?? 1,
+        attempt,
         maxAttempts: stepLogs[stepIndex].progress?.maxAttempts ?? 1,
         leaseStartedAt: startedAt,
+      };
+      const workflowService = this.workflowService;
+      async function report(
+        progress: NonNullable<StepLog["progress"]>,
+      ): Promise<void> {
+        if (stepLogs[stepIndex]) {
+          stepLogs[stepIndex].progress = progress;
+        }
+        await workflowService.updateStepProgress(
+          workflowRunId,
+          stepIndex,
+          progress,
+        );
+      }
+      executionProgress = {
+        attempt,
+        leaseStartedAt: startedAt,
+        report,
       };
     }
     await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
@@ -393,6 +424,7 @@ export class WorkflowExecutionService {
         context,
         env,
         snapshot,
+        executionProgress,
       );
 
       // ── Step logging: mark as completed ──
@@ -592,6 +624,7 @@ export class WorkflowExecutionService {
     context: TriggerContext,
     env: AppEnv,
     snap: StepSnapshot,
+    progress?: StepExecutionProgress,
   ): Promise<boolean> {
     switch (type) {
       case "send_email":
@@ -599,7 +632,7 @@ export class WorkflowExecutionService {
         return true;
 
       case "ai_research":
-        await this.executeAiResearch(config, context, env, snap);
+        await this.executeAiResearch(config, context, env, snap, progress);
         return true;
 
       case "add_tag":
@@ -690,6 +723,7 @@ export class WorkflowExecutionService {
     context: TriggerContext,
     env: AppEnv,
     snap: StepSnapshot,
+    progress?: StepExecutionProgress,
   ): Promise<void> {
     const contactId = context.contactId;
     if (!contactId) {
@@ -713,11 +747,37 @@ export class WorkflowExecutionService {
       finalPrompt,
     };
 
+    async function reportResearchPhase(
+      phase: WorkflowResearchPhase,
+    ): Promise<void> {
+      if (!progress) return;
+      await progress.report({
+        phase,
+        message:
+          phase === "researching"
+            ? "Researching public sources"
+            : "Structuring findings",
+        attempt: progress.attempt,
+        maxAttempts: 3,
+        leaseStartedAt: progress.leaseStartedAt,
+      });
+    }
+
     const record = await this.workflowAiResearchService.execute(
       { provider, prompt: finalPrompt, resultKey },
       env,
+      reportResearchPhase,
     );
 
+    if (progress) {
+      await progress.report({
+        phase: "saving",
+        message: "Updating the contact",
+        attempt: progress.attempt,
+        maxAttempts: 3,
+        leaseStartedAt: progress.leaseStartedAt,
+      });
+    }
     await this.applyResearchToContact(contactId, record);
 
     context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
