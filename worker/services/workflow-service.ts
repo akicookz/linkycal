@@ -487,6 +487,7 @@ export class WorkflowService {
     stepLogs: StepLog[],
   ): Promise<boolean> {
     if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const statusPath = `$[${stepIndex}].status`;
     const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
     const rows = await this.db
       .update(dbSchema.workflowRuns)
@@ -495,6 +496,7 @@ export class WorkflowService {
         and(
           eq(dbSchema.workflowRuns.id, runId),
           eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'`,
           sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
         ),
       )
@@ -510,6 +512,7 @@ export class WorkflowService {
   ): Promise<boolean> {
     if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
     const progressPath = `$[${stepIndex}].progress`;
+    const statusPath = `$[${stepIndex}].status`;
     const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
     const rows = await this.db
       .update(dbSchema.workflowRuns)
@@ -523,6 +526,7 @@ export class WorkflowService {
         and(
           eq(dbSchema.workflowRuns.id, runId),
           eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'`,
           sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
         ),
       )
@@ -538,6 +542,7 @@ export class WorkflowService {
     context: string,
   ): Promise<boolean> {
     if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const statusPath = `$[${stepIndex}].status`;
     const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
     const rows = await this.db
       .update(dbSchema.workflowRuns)
@@ -550,6 +555,7 @@ export class WorkflowService {
         and(
           eq(dbSchema.workflowRuns.id, runId),
           eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'`,
           sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
         ),
       )
@@ -566,6 +572,7 @@ export class WorkflowService {
     completedAt: Date,
   ): Promise<boolean> {
     if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const statusPath = `$[${stepIndex}].status`;
     const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
     const rows = await this.db
       .update(dbSchema.workflowRuns)
@@ -580,6 +587,7 @@ export class WorkflowService {
         and(
           eq(dbSchema.workflowRuns.id, runId),
           eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'`,
           sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
         ),
       )

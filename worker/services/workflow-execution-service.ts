@@ -30,6 +30,7 @@ import {
   MAX_WORKFLOW_ATTEMPTS,
   retryDelaySeconds,
   safeWorkflowErrorMessage,
+  WORKFLOW_LEASE_MS,
   WorkflowFetchError,
 } from "../lib/workflow-retry";
 import type { AppEnv } from "../types";
@@ -90,6 +91,17 @@ class StepLeaseLostError extends Error {
   constructor() {
     super("Workflow step lease lost");
     this.name = "StepLeaseLostError";
+  }
+}
+
+class WorkflowPersistenceError extends Error {
+  readonly cause: unknown;
+  readonly transient = true;
+
+  constructor(cause: unknown) {
+    super("Workflow persistence temporarily unavailable");
+    this.name = "WorkflowPersistenceError";
+    this.cause = cause;
   }
 }
 
@@ -454,6 +466,14 @@ export class WorkflowExecutionService {
       new Date(),
     );
     if (!claimedLogs) {
+      await this.scheduleActiveLeaseRecovery(
+        workflowRunId,
+        stepIndex,
+        attempt,
+        step.type,
+        config,
+        env,
+      );
       return;
     }
     stepLogs = claimedLogs;
@@ -501,6 +521,82 @@ export class WorkflowExecutionService {
       report,
     };
 
+    async function readCommittedStepLog(): Promise<StepLog | null> {
+      const currentLogs = await workflowService.getStepLogs(workflowRunId);
+      const currentLog = currentLogs[stepIndex];
+      return currentLog?.status === "completed" ||
+        currentLog?.status === "skipped"
+        ? currentLog
+        : null;
+    }
+
+    async function persistLeasedFailure(
+      err: unknown,
+    ): Promise<StepLog | null> {
+      const delaySeconds =
+        isWorkflowStepRetrySafe(step.type, config) &&
+        isTransientWorkflowError(err)
+          ? retryDelaySeconds(attempt)
+          : null;
+      if (delaySeconds !== null && stepLogs[stepIndex]) {
+        const nextRetryAt = new Date(
+          Date.now() + delaySeconds * 1000,
+        ).toISOString();
+        stepLogs[stepIndex].status = "retrying";
+        stepLogs[stepIndex].completedAt = null;
+        stepLogs[stepIndex].output = null;
+        stepLogs[stepIndex].error = null;
+        stepLogs[stepIndex].progress = {
+          phase: "retrying",
+          message: "Retrying after a temporary provider error",
+          attempt: attempt + 1,
+          maxAttempts: MAX_WORKFLOW_ATTEMPTS,
+          nextRetryAt,
+        };
+        const scheduled = await workflowService.updateStepLogsForLease(
+          workflowRunId,
+          stepIndex,
+          leaseToken,
+          stepLogs,
+        );
+        if (!scheduled) {
+          return readCommittedStepLog();
+        }
+        await env.WORKFLOW_QUEUE.send(
+          { workflowRunId, stepIndex, attempt: attempt + 1 },
+          { delaySeconds },
+        );
+        return null;
+      }
+
+      const message = safeWorkflowErrorMessage(err);
+      if (stepLogs[stepIndex]) {
+        stepLogs[stepIndex].status = "failed";
+        stepLogs[stepIndex].completedAt = new Date().toISOString();
+        stepLogs[stepIndex].output = null;
+        stepLogs[stepIndex].error = message;
+      }
+      for (let i = stepIndex + 1; i < stepLogs.length; i++) {
+        if (stepLogs[i]) stepLogs[i].status = "skipped";
+      }
+      const failed = await workflowService.failStepLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        stepLogs,
+        message,
+        new Date(),
+      );
+      if (!failed) {
+        return readCommittedStepLog();
+      }
+
+      console.error(
+        `Workflow step failed: run=${workflowRunId} step=${stepIndex} type=${step.type} message=${message}`,
+      );
+      return null;
+    }
+
     const snapshot: StepSnapshot = { resolved: {}, output: {} };
     let shouldContinue: boolean;
     try {
@@ -545,70 +641,23 @@ export class WorkflowExecutionService {
         return;
       }
 
-      const delaySeconds =
-        isWorkflowStepRetrySafe(step.type, config) &&
-        isTransientWorkflowError(err)
-          ? retryDelaySeconds(attempt)
-          : null;
-      if (delaySeconds !== null && stepLogs[stepIndex]) {
-        const nextRetryAt = new Date(
-          Date.now() + delaySeconds * 1000,
-        ).toISOString();
-        stepLogs[stepIndex].status = "retrying";
-        stepLogs[stepIndex].progress = {
-          phase: "retrying",
-          message: "Retrying after a temporary provider error",
-          attempt: attempt + 1,
-          maxAttempts: MAX_WORKFLOW_ATTEMPTS,
-          nextRetryAt,
-        };
-        const scheduled = await this.workflowService.updateStepLogsForLease(
-          workflowRunId,
+      const committedLog = await persistLeasedFailure(err);
+      if (committedLog) {
+        await this.enqueueNextOrComplete(
+          run,
+          full.steps,
           stepIndex,
-          leaseToken,
-          stepLogs,
+          env,
+          committedLog,
         );
-        if (!scheduled) {
-          return;
-        }
-        await env.WORKFLOW_QUEUE.send(
-          { workflowRunId, stepIndex, attempt: attempt + 1 },
-          { delaySeconds },
-        );
-        return;
       }
-
-      // ── Step logging: mark as failed ──
-      const message = safeWorkflowErrorMessage(err);
-      if (stepLogs[stepIndex]) {
-        stepLogs[stepIndex].status = "failed";
-        stepLogs[stepIndex].completedAt = new Date().toISOString();
-        stepLogs[stepIndex].error = message;
-      }
-      // Mark remaining steps as skipped
-      for (let i = stepIndex + 1; i < stepLogs.length; i++) {
-        if (stepLogs[i]) stepLogs[i].status = "skipped";
-      }
-      const failed = await this.workflowService.failStepLease(
-        workflowRunId,
-        stepIndex,
-        leaseToken,
-        stepLogs,
-        message,
-        new Date(),
-      );
-      if (!failed) {
-        return;
-      }
-
-      console.error(
-        `Workflow step failed: run=${workflowRunId} step=${stepIndex} type=${step.type} message=${message}`,
-      );
       return;
     }
 
-    // Action retries end above. Persistence and continuation failures must not
-    // cause a successful side effect to execute again.
+    // Non-AI action retries end above: their persistence and continuation
+    // failures must not replay a successful side effect. AI Research's leased
+    // atomic finalization is caught separately below because the whole step has
+    // an explicit safe-replay contract.
     const now = new Date().toISOString();
     if (stepLogs[stepIndex]) {
       stepLogs[stepIndex].status = "completed";
@@ -628,8 +677,10 @@ export class WorkflowExecutionService {
         if (stepLogs[i]) stepLogs[i].status = "skipped";
       }
     }
-    const finalized = snapshot.researchApplication
-      ? await this.finalizeAiResearchStepLease(
+    let finalized: boolean;
+    if (snapshot.researchApplication) {
+      try {
+        finalized = await this.finalizeAiResearchStepLease(
           workflowRunId,
           stepIndex,
           leaseToken,
@@ -637,14 +688,29 @@ export class WorkflowExecutionService {
           JSON.stringify(context),
           snapshot.researchApplication.contactId,
           snapshot.researchApplication.record,
-        )
-      : await this.workflowService.finalizeStepLease(
-          workflowRunId,
-          stepIndex,
-          leaseToken,
-          stepLogs,
-          JSON.stringify(context),
         );
+      } catch (err) {
+        const committedLog = await persistLeasedFailure(err);
+        if (committedLog) {
+          await this.enqueueNextOrComplete(
+            run,
+            full.steps,
+            stepIndex,
+            env,
+            committedLog,
+          );
+        }
+        return;
+      }
+    } else {
+      finalized = await this.workflowService.finalizeStepLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        stepLogs,
+        JSON.stringify(context),
+      );
+    }
     if (!finalized) {
       return;
     }
@@ -692,6 +758,54 @@ export class WorkflowExecutionService {
       await env.WORKFLOW_QUEUE.send(body);
     }
     return true;
+  }
+
+  private async scheduleActiveLeaseRecovery(
+    workflowRunId: string,
+    stepIndex: number,
+    deliveredAttempt: number,
+    stepType: string,
+    config: Record<string, unknown>,
+    env: AppEnv,
+  ): Promise<void> {
+    // A recovery delivery can eventually re-run the action, so use the same
+    // explicit replay contract as ordinary retries. Email is covered by its
+    // stable idempotency key; unsafe webhook methods remain excluded.
+    if (!isWorkflowStepRetrySafe(stepType, config)) {
+      return;
+    }
+
+    const logs = await this.workflowService.getStepLogs(workflowRunId);
+    const log = logs[stepIndex];
+    const persistedAttempt = log?.progress?.attempt ?? 1;
+    const leaseStartedAt =
+      log?.progress?.leaseStartedAt ?? log?.startedAt ?? undefined;
+    if (
+      log?.status !== "running" ||
+      persistedAttempt !== deliveredAttempt ||
+      !leaseStartedAt
+    ) {
+      return;
+    }
+
+    const leaseExpiresAt = Date.parse(leaseStartedAt) + WORKFLOW_LEASE_MS;
+    if (!Number.isFinite(leaseExpiresAt)) {
+      return;
+    }
+    const delaySeconds = Math.max(
+      0,
+      Math.ceil((leaseExpiresAt - Date.now()) / 1000),
+    );
+    const body = {
+      workflowRunId,
+      stepIndex,
+      attempt: deliveredAttempt,
+    };
+    if (delaySeconds > 0) {
+      await env.WORKFLOW_QUEUE.send(body, { delaySeconds });
+    } else {
+      await env.WORKFLOW_QUEUE.send(body);
+    }
   }
 
   private async enqueueNextOrComplete(
@@ -1042,10 +1156,12 @@ export class WorkflowExecutionService {
       record.result.summary,
       today,
     );
+    const statusPath = `$[${stepIndex}].status`;
     const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
     const leaseCondition = and(
       eq(dbSchema.workflowRuns.id, workflowRunId),
       eq(dbSchema.workflowRuns.status, "running"),
+      sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'`,
       sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
     );
     const leaseExists = sql`exists (
@@ -1104,10 +1220,15 @@ export class WorkflowExecutionService {
       .where(leaseCondition)
       .returning({ id: dbSchema.workflowRuns.id });
 
-    const results = await runAtomicWorkflowBatch(
-      this.db,
-      [contactUpdate, activityInsert, runFinalize],
-    );
+    let results: unknown[];
+    try {
+      results = await runAtomicWorkflowBatch(
+        this.db,
+        [contactUpdate, activityInsert, runFinalize],
+      );
+    } catch (error) {
+      throw new WorkflowPersistenceError(error);
+    }
     const finalizedRows = results[2];
     return Array.isArray(finalizedRows) && finalizedRows.length > 0;
   }

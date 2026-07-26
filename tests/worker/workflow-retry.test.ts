@@ -419,6 +419,319 @@ describe("workflow execution retry and lease handling", () => {
     ]);
   });
 
+  test("bounds transient AI finalization retries without partial contact effects", async () => {
+    const db = await seedRetryRun();
+    const workflowService = new WorkflowService(db);
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const batchError = new Error("D1_ERROR: Network connection lost.");
+    const sqliteClient = (
+      db as unknown as {
+        $client: {
+          transaction(callback: () => void): () => void;
+        };
+      }
+    ).$client;
+    const transaction = spyOn(sqliteClient, "transaction").mockImplementation(
+      () => {
+        throw batchError;
+      },
+    );
+    const errorLog = spyOn(console, "error").mockImplementation(() => {});
+    let providerCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        providerCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const attemptTwoLogs = await workflowService.getStepLogs("run");
+      expect(attemptTwoLogs[0]?.status).toBe("retrying");
+      if (!attemptTwoLogs[0]?.progress) {
+        throw new Error("expected attempt-two retry progress");
+      }
+      attemptTwoLogs[0].progress.nextRetryAt = new Date(
+        Date.now() - 1_000,
+      ).toISOString();
+      await workflowService.updateStepLogs("run", attemptTwoLogs);
+
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 2 });
+
+      const attemptThreeLogs = await workflowService.getStepLogs("run");
+      expect(attemptThreeLogs[0]?.status).toBe("retrying");
+      if (!attemptThreeLogs[0]?.progress) {
+        throw new Error("expected attempt-three retry progress");
+      }
+      attemptThreeLogs[0].progress.nextRetryAt = new Date(
+        Date.now() - 1_000,
+      ).toISOString();
+      await workflowService.updateStepLogs("run", attemptThreeLogs);
+
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 3 });
+
+      const { run, logs } = await readRun(db);
+      const [contact] = await db
+        .select()
+        .from(dbSchema.contacts)
+        .where(eq(dbSchema.contacts.id, "contact"));
+      const activities = await db
+        .select()
+        .from(dbSchema.contactActivity)
+        .where(eq(dbSchema.contactActivity.contactId, "contact"));
+      expect(providerCalls).toBe(3);
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 15 },
+        },
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 3 },
+          options: { delaySeconds: 60 },
+        },
+      ]);
+      expect(logs[0]?.status).toBe("failed");
+      expect(run?.status).toBe("failed");
+      expect(contact?.company).toBeNull();
+      expect(contact?.notes).toBeNull();
+      expect(contact?.metadata).toBeNull();
+      expect(activities).toEqual([]);
+    } finally {
+      errorLog.mockRestore();
+      transaction.mockRestore();
+    }
+  });
+
+  test("schedules active-attempt recovery after finalization retry persistence fails", async () => {
+    const db = await seedRetryRun();
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const batchError = new Error("D1_ERROR: Network connection lost.");
+    const persistenceError = new Error("retry persistence unavailable");
+    const sqliteClient = (
+      db as unknown as {
+        $client: {
+          transaction(callback: () => void): () => void;
+        };
+      }
+    ).$client;
+    const transaction = spyOn(sqliteClient, "transaction").mockImplementation(
+      () => {
+        throw batchError;
+      },
+    );
+    const originalUpdateStepLogsForLease =
+      WorkflowService.prototype.updateStepLogsForLease;
+    let leaseUpdateCalls = 0;
+    const updateStepLogsForLease = spyOn(
+      WorkflowService.prototype,
+      "updateStepLogsForLease",
+    ).mockImplementation(async function (
+      runId,
+      stepIndex,
+      leaseStartedAt,
+      stepLogs,
+    ) {
+      leaseUpdateCalls += 1;
+      if (leaseUpdateCalls === 2) {
+        throw persistenceError;
+      }
+      return originalUpdateStepLogsForLease.call(
+        this,
+        runId,
+        stepIndex,
+        leaseStartedAt,
+        stepLogs,
+      );
+    });
+    let providerCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        providerCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    try {
+      const firstError = await service
+        .executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 })
+        .then(() => undefined, (error: unknown) => error);
+      expect(firstError).toBe(persistenceError);
+
+      const afterFailure = await readRun(db);
+      const leaseStartedAt =
+        afterFailure.logs[0]?.progress?.leaseStartedAt;
+      expect(afterFailure.logs[0]?.status).toBe("running");
+      expect(typeof leaseStartedAt).toBe("string");
+      if (!leaseStartedAt) {
+        throw new Error("expected the active attempt lease");
+      }
+
+      const dateNow = spyOn(Date, "now").mockReturnValue(
+        Date.parse(leaseStartedAt) + 1_000,
+      );
+      try {
+        await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+      } finally {
+        dateNow.mockRestore();
+      }
+
+      const afterRedelivery = await readRun(db);
+      expect(providerCalls).toBe(1);
+      expect(afterRedelivery.logs[0]?.status).toBe("running");
+      expect(afterRedelivery.logs[0]?.progress?.leaseStartedAt).toBe(
+        leaseStartedAt,
+      );
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 1 },
+          options: { delaySeconds: 899 },
+        },
+      ]);
+    } finally {
+      updateStepLogsForLease.mockRestore();
+      transaction.mockRestore();
+    }
+  });
+
+  test("continues a committed AI finalization whose D1 response rejects", async () => {
+    const db = await seedRetryRun({ includeSecondStep: true });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const responseError = new Error("D1_ERROR: Network connection lost.");
+    const sqliteClient = (
+      db as unknown as {
+        $client: {
+          transaction(callback: () => void): () => void;
+        };
+      }
+    ).$client;
+    const originalTransaction = sqliteClient.transaction;
+    const transaction = spyOn(sqliteClient, "transaction").mockImplementation(
+      function (callback) {
+        const commit = originalTransaction.call(this, callback);
+        return function commitThenReject(): void {
+          commit();
+          throw responseError;
+        };
+      },
+    );
+    let providerCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        providerCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      const [contact] = await db
+        .select()
+        .from(dbSchema.contacts)
+        .where(eq(dbSchema.contacts.id, "contact"));
+      const activities = await db
+        .select()
+        .from(dbSchema.contactActivity)
+        .where(eq(dbSchema.contactActivity.contactId, "contact"));
+      expect(providerCalls).toBe(1);
+      expect(logs[0]?.status).toBe("completed");
+      expect(logs[1]?.status).toBe("pending");
+      expect(run?.status).toBe("running");
+      expect(contact?.company).toBe("Acme");
+      expect(contact?.notes?.match(/— Research summary \(/g)).toHaveLength(1);
+      expect(activities).toHaveLength(1);
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 1 },
+          options: undefined,
+        },
+      ]);
+    } finally {
+      transaction.mockRestore();
+    }
+  });
+
+  test("fails permanently when the contact disappears before AI finalization", async () => {
+    const db = await seedRetryRun();
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const originalGetById = ContactService.prototype.getById;
+    let contactReads = 0;
+    const getById = spyOn(
+      ContactService.prototype,
+      "getById",
+    ).mockImplementation(async function (id) {
+      contactReads += 1;
+      if (contactReads === 2) {
+        await db
+          .delete(dbSchema.contacts)
+          .where(eq(dbSchema.contacts.id, "contact"));
+      }
+      return originalGetById.call(this, id);
+    });
+    let providerCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        providerCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+    const errorLog = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      expect(providerCalls).toBe(1);
+      expect(logs[0]?.status).toBe("failed");
+      expect(logs[0]?.error).toBe("Contact unavailable");
+      expect(run?.status).toBe("failed");
+      expect(run?.error).toBe("Contact unavailable");
+      expect(sent).toEqual([]);
+
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      expect(providerCalls).toBe(1);
+      expect(sent).toEqual([]);
+    } finally {
+      errorLog.mockRestore();
+      getById.mockRestore();
+    }
+  });
+
+  test("does not schedule active-lease recovery for an unsafe webhook", async () => {
+    const leaseStartedAt = new Date().toISOString();
+    const db = await seedRetryRun({
+      stepType: "webhook",
+      firstLog: {
+        status: "running",
+        startedAt: leaseStartedAt,
+        progress: {
+          phase: "preparing",
+          message: "Preparing step inputs",
+          attempt: 1,
+          maxAttempts: 3,
+          leaseStartedAt,
+        },
+      },
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const service = new WorkflowExecutionService(db);
+
+    await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+    const { run, logs } = await readRun(db);
+    expect(logs[0]?.status).toBe("running");
+    expect(run?.status).toBe("running");
+    expect(sent).toEqual([]);
+  });
+
   test("repairs retry delivery after the first delayed queue send rejects", async () => {
     const db = await seedRetryRun();
     const fixedNow = Date.parse("2026-07-26T12:00:00.000Z");
