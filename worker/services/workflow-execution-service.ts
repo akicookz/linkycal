@@ -399,66 +399,6 @@ export class WorkflowExecutionService {
     }
     const config = (step.config ?? {}) as Record<string, unknown>;
 
-    try {
-      await this.refreshContactContext(context);
-    } catch (err) {
-      if (!(err instanceof ContactUnavailableError)) throw err;
-
-      const now = new Date().toISOString();
-      if (stepLogs[stepIndex]) {
-        stepLogs[stepIndex].status = "failed";
-        stepLogs[stepIndex].error = err.message;
-        stepLogs[stepIndex].completedAt = now;
-      }
-      for (let i = stepIndex + 1; i < stepLogs.length; i++) {
-        if (stepLogs[i]) stepLogs[i].status = "skipped";
-      }
-      await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
-      await this.workflowService.failRun(workflowRunId, err.message);
-      return;
-    }
-
-    // Resolve per-step inputs into context.stepInputs so executors can
-    // reference them via {{input.<key>}}. Each run of executeStep gets a
-    // fresh resolution so step outputs accumulated in context propagate.
-    context.stepInputs = resolveStepInputs(config.inputs, context);
-    await this.resolveContactQueryInputs(config.inputs, context);
-
-    // ── Per-step condition gate ──
-    // Distinct from the "condition" step type which halts the run. If this
-    // step's `condition` column evaluates to false, skip this step only and
-    // continue to the next one. Check before marking as running so a skipped
-    // step never shows a startedAt timestamp.
-    const stepGate = parseWorkflowCondition(step.condition);
-    if (stepGate && !evaluateWorkflowCondition(stepGate, context)) {
-      const now = new Date().toISOString();
-      if (stepLogs[stepIndex]) {
-        stepLogs[stepIndex].status = "skipped";
-        stepLogs[stepIndex].completedAt = now;
-        stepLogs[stepIndex].output = { reason: "condition_not_met" };
-      }
-      await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
-      await this.workflowService.updateRunProgress(
-        workflowRunId,
-        stepIndex,
-        undefined,
-        undefined,
-        JSON.stringify(context),
-      );
-
-      const skippedLog = stepLogs[stepIndex];
-      if (skippedLog) {
-        await this.enqueueNextOrComplete(
-          run,
-          full.steps,
-          stepIndex,
-          env,
-          skippedLog,
-        );
-      }
-      return;
-    }
-
     const claimedLogs = await this.workflowService.claimStepLease(
       workflowRunId,
       stepIndex,
@@ -478,48 +418,13 @@ export class WorkflowExecutionService {
     }
     stepLogs = claimedLogs;
 
-    // ── Step logging: attach resolved inputs to the claimed lease ──
     const claimedLog = stepLogs[stepIndex];
     const leaseStartedAt = claimedLog?.progress?.leaseStartedAt;
     if (!claimedLog || !leaseStartedAt) {
       return;
     }
     const leaseToken = leaseStartedAt;
-    claimedLog.input = { config, resolvedInputs: context.stepInputs };
-    const attachedInput = await this.workflowService.updateStepLogsForLease(
-      workflowRunId,
-      stepIndex,
-      leaseToken,
-      stepLogs,
-    );
-    if (!attachedInput) {
-      return;
-    }
-
     const workflowService = this.workflowService;
-    async function report(
-      progress: NonNullable<StepLog["progress"]>,
-    ): Promise<void> {
-      if (stepLogs[stepIndex]) {
-        stepLogs[stepIndex].progress = progress;
-      }
-      const updated = await workflowService.updateStepProgressForLease(
-        workflowRunId,
-        stepIndex,
-        leaseToken,
-        progress,
-      );
-      if (!updated) {
-        throw new StepLeaseLostError();
-      }
-    }
-    const executionProgress: StepExecutionProgress = {
-      attempt,
-      leaseStartedAt: leaseToken,
-      stepIndex,
-      workflowRunId,
-      report,
-    };
 
     async function readCommittedStepLog(): Promise<StepLog | null> {
       const currentLogs = await workflowService.getStepLogs(workflowRunId);
@@ -596,6 +501,99 @@ export class WorkflowExecutionService {
       );
       return null;
     }
+
+    let shouldSkipStep = false;
+    try {
+      await this.refreshContactContext(context);
+
+      // Resolve per-step inputs into context.stepInputs so executors can
+      // reference them via {{input.<key>}}. Each claimed attempt gets a fresh
+      // resolution so step outputs accumulated in context propagate.
+      context.stepInputs = resolveStepInputs(config.inputs, context);
+      await this.resolveContactQueryInputs(config.inputs, context);
+
+      // Distinct from the "condition" step type which halts the run. This
+      // per-step gate skips only the current step.
+      const stepGate = parseWorkflowCondition(step.condition);
+      shouldSkipStep = Boolean(
+        stepGate && !evaluateWorkflowCondition(stepGate, context),
+      );
+    } catch (err) {
+      const committedLog = await persistLeasedFailure(err);
+      if (committedLog) {
+        await this.enqueueNextOrComplete(
+          run,
+          full.steps,
+          stepIndex,
+          env,
+          committedLog,
+        );
+      }
+      return;
+    }
+
+    if (shouldSkipStep) {
+      claimedLog.status = "skipped";
+      claimedLog.startedAt = null;
+      claimedLog.completedAt = new Date().toISOString();
+      claimedLog.output = { reason: "condition_not_met" };
+      claimedLog.error = null;
+      claimedLog.progress = existingLog?.progress;
+      const finalized = await workflowService.finalizeStepLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        stepLogs,
+        JSON.stringify(context),
+      );
+      if (!finalized) {
+        return;
+      }
+      await this.enqueueNextOrComplete(
+        run,
+        full.steps,
+        stepIndex,
+        env,
+        claimedLog,
+      );
+      return;
+    }
+
+    // ── Step logging: attach resolved inputs to the claimed lease ──
+    claimedLog.input = { config, resolvedInputs: context.stepInputs };
+    const attachedInput = await workflowService.updateStepLogsForLease(
+      workflowRunId,
+      stepIndex,
+      leaseToken,
+      stepLogs,
+    );
+    if (!attachedInput) {
+      return;
+    }
+
+    async function report(
+      progress: NonNullable<StepLog["progress"]>,
+    ): Promise<void> {
+      if (stepLogs[stepIndex]) {
+        stepLogs[stepIndex].progress = progress;
+      }
+      const updated = await workflowService.updateStepProgressForLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        progress,
+      );
+      if (!updated) {
+        throw new StepLeaseLostError();
+      }
+    }
+    const executionProgress: StepExecutionProgress = {
+      attempt,
+      leaseStartedAt: leaseToken,
+      stepIndex,
+      workflowRunId,
+      report,
+    };
 
     const snapshot: StepSnapshot = { resolved: {}, output: {} };
     let shouldContinue: boolean;

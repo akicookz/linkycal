@@ -53,6 +53,7 @@ interface SeedRetryRunOptions {
   firstLog?: Partial<StepLog>;
   includeSecondStep?: boolean;
   stepConfig?: Record<string, unknown>;
+  stepCondition?: Record<string, unknown>;
   stepType?: "ai_research" | "send_email" | "wait" | "webhook";
 }
 
@@ -106,6 +107,7 @@ async function seedRetryRun(options: SeedRetryRunOptions = {}) {
                 }
               : { amount: 1, unit: "minutes" }
       ),
+      condition: options.stepCondition,
     },
     ...(options.includeSecondStep
       ? [{
@@ -973,6 +975,112 @@ describe("workflow execution retry and lease handling", () => {
 
     expect(secondOutcome).toBe("returned");
     expect(calls).toBe(1);
+  });
+
+  test("keeps contact disappearance fenced behind the active attempt lease", async () => {
+    const db = await seedRetryRun();
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    let providerCalls = 0;
+    let releaseResearch: (() => void) | undefined;
+    let reportStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      reportStarted = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releaseResearch = resolve;
+    });
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        providerCalls += 1;
+        reportStarted?.();
+        await blocked;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+    const errorLog = spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      const owner = service.executeStep("run", 0, buildQueueEnv(sent), {
+        attempt: 1,
+      });
+      await started;
+
+      const beforeRedelivery = await readRun(db);
+      const ownerLease =
+        beforeRedelivery.logs[0]?.progress?.leaseStartedAt;
+      expect(typeof ownerLease).toBe("string");
+      await db
+        .delete(dbSchema.contacts)
+        .where(eq(dbSchema.contacts.id, "contact"));
+
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const duringOwner = await readRun(db);
+      expect(providerCalls).toBe(1);
+      expect(duringOwner.run?.status).toBe("running");
+      expect(duringOwner.logs[0]?.status).toBe("running");
+      expect(duringOwner.logs[0]?.progress?.leaseStartedAt).toBe(ownerLease);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]?.body).toEqual({
+        workflowRunId: "run",
+        stepIndex: 0,
+        attempt: 1,
+      });
+      expect(sent[0]?.options?.delaySeconds).toBeGreaterThan(0);
+
+      releaseResearch?.();
+      await owner;
+
+      const afterOwner = await readRun(db);
+      expect(afterOwner.run?.status).toBe("failed");
+      expect(afterOwner.logs[0]?.status).toBe("failed");
+      expect(afterOwner.logs[0]?.error).toBe("Contact unavailable");
+    } finally {
+      releaseResearch?.();
+      errorLog.mockRestore();
+    }
+  });
+
+  test("finalizes a condition skip under its lease without a visible start", async () => {
+    const db = await seedRetryRun({
+      includeSecondStep: true,
+      stepCondition: {
+        when: "all",
+        rules: [
+          {
+            source: "contact.email",
+            operator: "equals",
+            value: "not-jane@example.com",
+          },
+        ],
+      },
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    let providerCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        providerCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+    const { run, logs } = await readRun(db);
+    expect(providerCalls).toBe(0);
+    expect(run?.status).toBe("running");
+    expect(logs[0]?.status).toBe("skipped");
+    expect(logs[0]?.startedAt).toBeNull();
+    expect(logs[0]?.output).toEqual({ reason: "condition_not_met" });
+    expect(logs[1]?.status).toBe("pending");
+    expect(sent).toEqual([
+      {
+        body: { workflowRunId: "run", stepIndex: 1 },
+        options: undefined,
+      },
+    ]);
   });
 
   test("prevents a stale lease owner from mutating the contact or its replacement lease", async () => {
