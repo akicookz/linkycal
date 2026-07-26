@@ -120,6 +120,25 @@ type StepType =
   | "webhook"
   | "update_contact";
 type RunStatus = "running" | "completed" | "failed";
+type WorkflowStepPhase =
+  | "queued"
+  | "preparing"
+  | "connecting"
+  | "matching"
+  | "fetching"
+  | "researching"
+  | "normalizing"
+  | "saving"
+  | "retrying";
+
+interface WorkflowStepProgress {
+  phase: WorkflowStepPhase;
+  message: string;
+  attempt: number;
+  maxAttempts: number;
+  leaseStartedAt?: string;
+  nextRetryAt?: string;
+}
 
 interface WorkflowStep {
   id: string;
@@ -135,12 +154,13 @@ interface StepLogEntry {
   stepIndex: number;
   stepType: string;
   stepLabel: string;
-  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  status: "pending" | "running" | "retrying" | "completed" | "failed" | "skipped";
   input: Record<string, unknown> | null;
   output: Record<string, unknown> | null;
   error: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  progress?: WorkflowStepProgress;
 }
 
 interface WorkflowRun {
@@ -1098,6 +1118,7 @@ export default function WorkflowBuilder() {
                                       {sl.status === "completed" && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />}
                                       {sl.status === "failed" && <XCircle className="h-3.5 w-3.5 text-destructive" />}
                                       {sl.status === "running" && <Loader className="h-3.5 w-3.5 text-blue-600 animate-spin" />}
+                                      {sl.status === "retrying" && <RotateCw className="h-3.5 w-3.5 text-amber-600" />}
                                       {sl.status === "pending" && <Circle className="h-3.5 w-3.5 text-muted-foreground/40" />}
                                       {sl.status === "skipped" && <MinusCircle className="h-3.5 w-3.5 text-muted-foreground/40" />}
                                     </div>
@@ -1115,8 +1136,18 @@ export default function WorkflowBuilder() {
                                       }}
                                       className="w-full flex items-center gap-2 text-left"
                                     >
-                                      <span className={`text-sm font-medium ${sl.status === "skipped" ? "text-muted-foreground/50 line-through" : "text-foreground"}`}>
-                                        {sl.stepLabel}
+                                      <span className="flex min-w-0 flex-col">
+                                        <span className={`text-sm font-medium ${sl.status === "skipped" ? "text-muted-foreground/50 line-through" : "text-foreground"}`}>
+                                          {sl.stepLabel}
+                                        </span>
+                                        {(sl.status === "running" || sl.status === "retrying") && sl.progress?.message && (
+                                          <span className="text-[11px] text-muted-foreground">
+                                            {sl.progress.message}
+                                            {sl.status === "retrying" && sl.progress.nextRetryAt
+                                              ? ` · attempt ${sl.progress.attempt}/${sl.progress.maxAttempts}`
+                                              : ""}
+                                          </span>
+                                        )}
                                       </span>
                                       {sl.startedAt && (
                                         <span className="text-[11px] text-muted-foreground">

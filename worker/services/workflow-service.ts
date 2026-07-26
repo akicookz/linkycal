@@ -11,16 +11,37 @@ type WorkflowTrigger = dbSchema.WorkflowRow["trigger"];
 
 // ─── Step Log Type ───────────────────────────────────────────────────────────
 
+export type WorkflowStepPhase =
+  | "queued"
+  | "preparing"
+  | "connecting"
+  | "matching"
+  | "fetching"
+  | "researching"
+  | "normalizing"
+  | "saving"
+  | "retrying";
+
+export interface WorkflowStepProgress {
+  phase: WorkflowStepPhase;
+  message: string;
+  attempt: number;
+  maxAttempts: number;
+  leaseStartedAt?: string;
+  nextRetryAt?: string;
+}
+
 export interface StepLog {
   stepIndex: number;
   stepType: string;
   stepLabel: string;
-  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  status: "pending" | "running" | "retrying" | "completed" | "failed" | "skipped";
   input: Record<string, unknown> | null;
   output: Record<string, unknown> | null;
   error: string | null;
   startedAt: string | null;
   completedAt: string | null;
+  progress?: WorkflowStepProgress;
 }
 
 // ─── Workflow Service ────────────────────────────────────────────────────────
@@ -367,5 +388,17 @@ export class WorkflowService {
       .update(dbSchema.workflowRuns)
       .set({ stepLogs: stepLogs as unknown as null })
       .where(eq(dbSchema.workflowRuns.id, runId));
+  }
+
+  async updateStepProgress(
+    runId: string,
+    stepIndex: number,
+    progress: WorkflowStepProgress,
+  ): Promise<StepLog[]> {
+    const logs = await this.getStepLogs(runId);
+    if (!logs[stepIndex]) return logs;
+    logs[stepIndex].progress = progress;
+    await this.updateStepLogs(runId, logs);
+    return logs;
   }
 }

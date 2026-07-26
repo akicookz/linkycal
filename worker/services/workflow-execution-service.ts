@@ -246,6 +246,12 @@ export class WorkflowExecutionService {
       error: null,
       startedAt: null,
       completedAt: null,
+      progress: {
+        phase: "queued",
+        message: "Queued for execution",
+        attempt: 1,
+        maxAttempts: 1,
+      },
     }));
     await this.workflowService.updateStepLogs(run.id, pendingLogs);
 
@@ -364,9 +370,17 @@ export class WorkflowExecutionService {
 
     // ── Step logging: mark as running ──
     if (stepLogs[stepIndex]) {
+      const startedAt = new Date().toISOString();
       stepLogs[stepIndex].status = "running";
-      stepLogs[stepIndex].startedAt = new Date().toISOString();
+      stepLogs[stepIndex].startedAt = startedAt;
       stepLogs[stepIndex].input = { config, resolvedInputs: context.stepInputs };
+      stepLogs[stepIndex].progress = {
+        phase: "preparing",
+        message: "Preparing step",
+        attempt: stepLogs[stepIndex].progress?.attempt ?? 1,
+        maxAttempts: stepLogs[stepIndex].progress?.maxAttempts ?? 1,
+        leaseStartedAt: startedAt,
+      };
     }
     await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
 
