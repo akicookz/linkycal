@@ -73,6 +73,10 @@ interface StepExecutionProgress {
   ): Promise<void>;
 }
 
+interface PersistLeasedFailureOptions {
+  actionStarted: boolean;
+}
+
 type WorkflowTrigger = dbSchema.WorkflowRow["trigger"];
 
 const RESEND_API_URL = "https://api.resend.com/emails";
@@ -419,8 +423,9 @@ export class WorkflowExecutionService {
     stepLogs = claimedLogs;
 
     const claimedLog = stepLogs[stepIndex];
-    const leaseStartedAt = claimedLog?.progress?.leaseStartedAt;
-    if (!claimedLog || !leaseStartedAt) {
+    const claimedProgress = claimedLog?.progress;
+    const leaseStartedAt = claimedProgress?.leaseStartedAt;
+    if (!claimedLog || !claimedProgress || !leaseStartedAt) {
       return;
     }
     const leaseToken = leaseStartedAt;
@@ -435,11 +440,28 @@ export class WorkflowExecutionService {
         : null;
     }
 
+    async function readConfirmedActionStartedLogs(): Promise<StepLog[] | null> {
+      try {
+        const currentLogs = await workflowService.getStepLogs(workflowRunId);
+        const currentLog = currentLogs[stepIndex];
+        return currentLog?.status === "running" &&
+            currentLog.progress?.leaseStartedAt === leaseToken &&
+            currentLog.progress.attempt === attempt &&
+            currentLog.progress.actionStarted === true
+          ? currentLogs
+          : null;
+      } catch {
+        return null;
+      }
+    }
+
     async function persistLeasedFailure(
       err: unknown,
+      options: PersistLeasedFailureOptions,
     ): Promise<StepLog | null> {
       const delaySeconds =
-        isWorkflowStepRetrySafe(step.type, config) &&
+        (!options.actionStarted ||
+          isWorkflowStepRetrySafe(step.type, config)) &&
         isTransientWorkflowError(err)
           ? retryDelaySeconds(attempt)
           : null;
@@ -519,7 +541,9 @@ export class WorkflowExecutionService {
         stepGate && !evaluateWorkflowCondition(stepGate, context),
       );
     } catch (err) {
-      const committedLog = await persistLeasedFailure(err);
+      const committedLog = await persistLeasedFailure(err, {
+        actionStarted: false,
+      });
       if (committedLog) {
         await this.enqueueNextOrComplete(
           run,
@@ -574,14 +598,18 @@ export class WorkflowExecutionService {
     async function report(
       progress: NonNullable<StepLog["progress"]>,
     ): Promise<void> {
+      const actionProgress = {
+        ...progress,
+        actionStarted: true,
+      };
       if (stepLogs[stepIndex]) {
-        stepLogs[stepIndex].progress = progress;
+        stepLogs[stepIndex].progress = actionProgress;
       }
       const updated = await workflowService.updateStepProgressForLease(
         workflowRunId,
         stepIndex,
         leaseToken,
-        progress,
+        actionProgress,
       );
       if (!updated) {
         throw new StepLeaseLostError();
@@ -594,6 +622,31 @@ export class WorkflowExecutionService {
       workflowRunId,
       report,
     };
+
+    const actionStartedProgress = {
+      ...claimedProgress,
+      actionStarted: true,
+    };
+    claimedLog.progress = actionStartedProgress;
+    let markedActionStarted: boolean;
+    try {
+      markedActionStarted = await workflowService.updateStepProgressForLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        actionStartedProgress,
+      );
+    } catch (err) {
+      const confirmedLogs = await readConfirmedActionStartedLogs();
+      if (!confirmedLogs) {
+        throw err;
+      }
+      stepLogs = confirmedLogs;
+      markedActionStarted = true;
+    }
+    if (!markedActionStarted) {
+      return;
+    }
 
     const snapshot: StepSnapshot = { resolved: {}, output: {} };
     let shouldContinue: boolean;
@@ -639,7 +692,9 @@ export class WorkflowExecutionService {
         return;
       }
 
-      const committedLog = await persistLeasedFailure(err);
+      const committedLog = await persistLeasedFailure(err, {
+        actionStarted: true,
+      });
       if (committedLog) {
         await this.enqueueNextOrComplete(
           run,
@@ -688,7 +743,9 @@ export class WorkflowExecutionService {
           snapshot.researchApplication.record,
         );
       } catch (err) {
-        const committedLog = await persistLeasedFailure(err);
+        const committedLog = await persistLeasedFailure(err, {
+          actionStarted: true,
+        });
         if (committedLog) {
           await this.enqueueNextOrComplete(
             run,
@@ -766,13 +823,6 @@ export class WorkflowExecutionService {
     config: Record<string, unknown>,
     env: AppEnv,
   ): Promise<void> {
-    // A recovery delivery can eventually re-run the action, so use the same
-    // explicit replay contract as ordinary retries. Email is covered by its
-    // stable idempotency key; unsafe webhook methods remain excluded.
-    if (!isWorkflowStepRetrySafe(stepType, config)) {
-      return;
-    }
-
     const logs = await this.workflowService.getStepLogs(workflowRunId);
     const log = logs[stepIndex];
     const persistedAttempt = log?.progress?.attempt ?? 1;
@@ -782,6 +832,17 @@ export class WorkflowExecutionService {
       log?.status !== "running" ||
       persistedAttempt !== deliveredAttempt ||
       !leaseStartedAt
+    ) {
+      return;
+    }
+
+    // Explicit pre-action leases are safe to recover because no action has
+    // started. Once action execution begins, use the same replay contract as
+    // ordinary retries. Legacy logs have no marker and therefore fail closed
+    // for unsafe steps.
+    if (
+      log.progress?.actionStarted !== false &&
+      !isWorkflowStepRetrySafe(stepType, config)
     ) {
       return;
     }
@@ -926,11 +987,13 @@ export class WorkflowExecutionService {
       const { key, source } = parsed.data;
 
       const tagIds = source.tagIds.filter(Boolean);
-      const contacts = await this.contactService.list(
-        context.projectId,
-        tagIds.length > 0
-          ? { tagIds, matchAllTags: source.matchAllTags }
-          : undefined,
+      const contacts = await this.runPreActionDatabaseRead(
+        () => this.contactService.list(
+          context.projectId,
+          tagIds.length > 0
+            ? { tagIds, matchAllTags: source.matchAllTags }
+            : undefined,
+        ),
       );
 
       context.stepInputs = {
@@ -1529,15 +1592,18 @@ export class WorkflowExecutionService {
   // ─── Helpers ───────────────────────────────────────────────────────────
 
   private async refreshContactContext(context: TriggerContext): Promise<void> {
-    if (!context.contactId) {
+    const contactId = context.contactId;
+    if (!contactId) {
       delete context.contactOperational;
       return;
     }
 
-    const [contact, factsByContact] = await Promise.all([
-      this.contactService.getById(context.contactId),
-      this.contactService.getOperationalFacts([context.contactId]),
-    ]);
+    const [contact, factsByContact] = await this.runPreActionDatabaseRead(
+      () => Promise.all([
+        this.contactService.getById(contactId),
+        this.contactService.getOperationalFacts([contactId]),
+      ]),
+    );
     if (!contact || contact.projectId !== context.projectId) {
       throw new ContactUnavailableError();
     }
@@ -1553,10 +1619,20 @@ export class WorkflowExecutionService {
     context.contactEstimatedRevenue = contact.estimatedRevenue ?? undefined;
     context.contactLinkedinUrl = contact.linkedinUrl ?? undefined;
 
-    const facts = factsByContact[context.contactId];
+    const facts = factsByContact[contactId];
     context.contactOperational = facts
       ? buildWorkflowContactOperationalContext(facts, new Date())
       : { stage: { byTag: {} } };
+  }
+
+  private async runPreActionDatabaseRead<T>(
+    read: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await read();
+    } catch (err) {
+      throw new WorkflowPersistenceError(err);
+    }
   }
 
   /**

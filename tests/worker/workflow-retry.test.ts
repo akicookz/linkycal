@@ -360,6 +360,189 @@ describe("workflow execution retry and lease handling", () => {
     }
   });
 
+  test("retries a plain D1 hydration fault before an unsafe webhook action", async () => {
+    const db = await seedRetryRun({ stepType: "webhook" });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const hydrationError = new Error("D1_ERROR: Network connection lost.");
+    const getById = spyOn(
+      ContactService.prototype,
+      "getById",
+    ).mockImplementation(async () => {
+      throw hydrationError;
+    });
+    let fetchCalls = 0;
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      async () => {
+        fetchCalls += 1;
+        return new Response(null, { status: 204 });
+      },
+    );
+    const errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const service = new WorkflowExecutionService(db);
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      expect(fetchCalls).toBe(0);
+      expect(run?.status).toBe("running");
+      expect(logs[0]?.status).toBe("retrying");
+      expect(logs[0]?.progress).toMatchObject({
+        phase: "retrying",
+        attempt: 2,
+        maxAttempts: 3,
+      });
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 15 },
+        },
+      ]);
+    } finally {
+      errorLog.mockRestore();
+      fetchRequest.mockRestore();
+      getById.mockRestore();
+    }
+  });
+
+  test("recovers an unsafe webhook lease when pre-action retry persistence fails", async () => {
+    const db = await seedRetryRun({ stepType: "webhook" });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const hydrationError = new Error("D1_ERROR: Network connection lost.");
+    const persistenceError = new Error("retry persistence unavailable");
+    let contactReads = 0;
+    const getById = spyOn(
+      ContactService.prototype,
+      "getById",
+    ).mockImplementation(async () => {
+      contactReads += 1;
+      throw hydrationError;
+    });
+    const updateStepLogsForLease = spyOn(
+      WorkflowService.prototype,
+      "updateStepLogsForLease",
+    ).mockImplementation(async () => {
+      throw persistenceError;
+    });
+    let fetchCalls = 0;
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      async () => {
+        fetchCalls += 1;
+        return new Response(null, { status: 204 });
+      },
+    );
+    const service = new WorkflowExecutionService(db);
+
+    try {
+      const firstError = await service
+        .executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 })
+        .then(() => undefined, (error: unknown) => error);
+      expect(firstError).toBe(persistenceError);
+
+      const afterFailure = await readRun(db);
+      const leaseStartedAt =
+        afterFailure.logs[0]?.progress?.leaseStartedAt;
+      expect(afterFailure.run?.status).toBe("running");
+      expect(afterFailure.logs[0]?.status).toBe("running");
+      expect(afterFailure.logs[0]?.progress?.actionStarted).toBe(false);
+      expect(typeof leaseStartedAt).toBe("string");
+      if (!leaseStartedAt) {
+        throw new Error("expected the pre-action attempt lease");
+      }
+
+      const dateNow = spyOn(Date, "now").mockReturnValue(
+        Date.parse(leaseStartedAt) + 1_000,
+      );
+      try {
+        await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+      } finally {
+        dateNow.mockRestore();
+      }
+
+      const afterRedelivery = await readRun(db);
+      expect(contactReads).toBe(1);
+      expect(fetchCalls).toBe(0);
+      expect(afterRedelivery.run?.status).toBe("running");
+      expect(afterRedelivery.logs[0]?.status).toBe("running");
+      expect(afterRedelivery.logs[0]?.progress?.leaseStartedAt).toBe(
+        leaseStartedAt,
+      );
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 1 },
+          options: { delaySeconds: 899 },
+        },
+      ]);
+    } finally {
+      fetchRequest.mockRestore();
+      updateStepLogsForLease.mockRestore();
+      getById.mockRestore();
+    }
+  });
+
+  test("continues after the unsafe webhook action marker commits but rejects", async () => {
+    const db = await seedRetryRun({
+      includeSecondStep: true,
+      stepType: "webhook",
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const responseError = new Error("D1_ERROR: Network connection lost.");
+    const originalUpdateStepProgressForLease =
+      WorkflowService.prototype.updateStepProgressForLease;
+    let progressWrites = 0;
+    const updateStepProgressForLease = spyOn(
+      WorkflowService.prototype,
+      "updateStepProgressForLease",
+    ).mockImplementation(async function (
+      runId,
+      stepIndex,
+      leaseStartedAt,
+      progress,
+    ) {
+      progressWrites += 1;
+      const updated = await originalUpdateStepProgressForLease.call(
+        this,
+        runId,
+        stepIndex,
+        leaseStartedAt,
+        progress,
+      );
+      if (progressWrites === 1) {
+        throw responseError;
+      }
+      return updated;
+    });
+    let fetchCalls = 0;
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      async () => {
+        fetchCalls += 1;
+        return new Response(null, { status: 204 });
+      },
+    );
+    const service = new WorkflowExecutionService(db);
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      expect(progressWrites).toBe(1);
+      expect(fetchCalls).toBe(1);
+      expect(run?.status).toBe("running");
+      expect(logs[0]?.status).toBe("completed");
+      expect(logs[0]?.progress?.actionStarted).toBe(true);
+      expect(logs[1]?.status).toBe("pending");
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 1 },
+          options: undefined,
+        },
+      ]);
+    } finally {
+      fetchRequest.mockRestore();
+      updateStepProgressForLease.mockRestore();
+    }
+  });
+
   test("keeps read-only webhook transport failures retryable", async () => {
     const db = await seedRetryRun({
       stepType: "webhook",
@@ -720,6 +903,7 @@ describe("workflow execution retry and lease handling", () => {
           attempt: 1,
           maxAttempts: 3,
           leaseStartedAt,
+          actionStarted: true,
         },
       },
     });
@@ -730,6 +914,35 @@ describe("workflow execution retry and lease handling", () => {
 
     const { run, logs } = await readRun(db);
     expect(logs[0]?.status).toBe("running");
+    expect(logs[0]?.progress?.actionStarted).toBe(true);
+    expect(run?.status).toBe("running");
+    expect(sent).toEqual([]);
+  });
+
+  test("fails closed for a legacy unsafe webhook lease without action state", async () => {
+    const leaseStartedAt = new Date().toISOString();
+    const db = await seedRetryRun({
+      stepType: "webhook",
+      firstLog: {
+        status: "running",
+        startedAt: leaseStartedAt,
+        progress: {
+          phase: "preparing",
+          message: "Preparing step inputs",
+          attempt: 1,
+          maxAttempts: 3,
+          leaseStartedAt,
+        },
+      },
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const service = new WorkflowExecutionService(db);
+
+    await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+    const { run, logs } = await readRun(db);
+    expect(logs[0]?.status).toBe("running");
+    expect(logs[0]?.progress?.actionStarted).toBeUndefined();
     expect(run?.status).toBe("running");
     expect(sent).toEqual([]);
   });

@@ -315,6 +315,7 @@ describe("WorkflowExecutionService AI research progress", () => {
         attempt: 1,
         maxAttempts: 3,
         leaseStartedAt: expectedLeaseStartedAt,
+        actionStarted: true,
       },
       {
         phase: "normalizing",
@@ -322,6 +323,7 @@ describe("WorkflowExecutionService AI research progress", () => {
         attempt: 1,
         maxAttempts: 3,
         leaseStartedAt: expectedLeaseStartedAt,
+        actionStarted: true,
       },
       {
         phase: "saving",
@@ -329,6 +331,7 @@ describe("WorkflowExecutionService AI research progress", () => {
         attempt: 1,
         maxAttempts: 3,
         leaseStartedAt: expectedLeaseStartedAt,
+        actionStarted: true,
       },
       {
         phase: "saving",
@@ -336,6 +339,7 @@ describe("WorkflowExecutionService AI research progress", () => {
         attempt: 1,
         maxAttempts: 3,
         leaseStartedAt: expectedLeaseStartedAt,
+        actionStarted: true,
       },
     ]);
   });

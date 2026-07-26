@@ -33,6 +33,7 @@ export interface WorkflowStepProgress {
   maxAttempts: number;
   leaseStartedAt?: string;
   nextRetryAt?: string;
+  actionStarted?: boolean;
 }
 
 export interface StepLog {
@@ -423,6 +424,7 @@ export class WorkflowService {
       attempt,
       maxAttempts: MAX_WORKFLOW_ATTEMPTS,
       leaseStartedAt: nowIso,
+      actionStarted: false,
     };
 
     const rows = await this.db
