@@ -1,6 +1,7 @@
-import { eq, and, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
+import { MAX_WORKFLOW_ATTEMPTS } from "../lib/workflow-retry";
 import {
   computeNextRunAt,
   parseWorkflowTriggerConfig,
@@ -388,6 +389,70 @@ export class WorkflowService {
       .update(dbSchema.workflowRuns)
       .set({ stepLogs: stepLogs as unknown as null })
       .where(eq(dbSchema.workflowRuns.id, runId));
+  }
+
+  async claimStepLease(
+    runId: string,
+    stepIndex: number,
+    attempt: number,
+    now: Date,
+  ): Promise<StepLog[] | null> {
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) return null;
+
+    const statusPath = `$[${stepIndex}].status`;
+    const startedPath = `$[${stepIndex}].startedAt`;
+    const progressPath = `$[${stepIndex}].progress`;
+    const nextRetryPath = `$[${stepIndex}].progress.nextRetryAt`;
+    const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const nowIso = now.toISOString();
+    const staleBefore = new Date(now.getTime() - 15 * 60_000).toISOString();
+    const progress: WorkflowStepProgress = {
+      phase: "preparing",
+      message: "Preparing step inputs",
+      attempt,
+      maxAttempts: MAX_WORKFLOW_ATTEMPTS,
+      leaseStartedAt: nowIso,
+    };
+
+    const rows = await this.db
+      .update(dbSchema.workflowRuns)
+      .set({
+        stepLogs: sql`json_set(
+          ${dbSchema.workflowRuns.stepLogs},
+          ${statusPath}, 'running',
+          ${startedPath}, ${nowIso},
+          ${progressPath}, json(${JSON.stringify(progress)})
+        )` as unknown as null,
+      })
+      .where(
+        and(
+          eq(dbSchema.workflowRuns.id, runId),
+          eq(dbSchema.workflowRuns.status, "running"),
+          sql`(
+            json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'pending'
+            OR (
+              json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'retrying'
+              AND json_extract(${dbSchema.workflowRuns.stepLogs}, ${nextRetryPath}) <= ${nowIso}
+            )
+            OR (
+              json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'
+              AND json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) <= ${staleBefore}
+            )
+          )`,
+        ),
+      )
+      .returning({ stepLogs: dbSchema.workflowRuns.stepLogs });
+
+    const raw = rows[0]?.stepLogs;
+    if (!raw) return null;
+    if (typeof raw === "string") {
+      try {
+        return JSON.parse(raw) as StepLog[];
+      } catch {
+        return null;
+      }
+    }
+    return raw as StepLog[];
   }
 
   async updateStepProgress(

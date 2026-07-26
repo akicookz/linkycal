@@ -7828,6 +7828,7 @@ export default {
       workflowRunId: string;
       stepIndex: number;
       remainingDelay?: number;
+      attempt?: number;
     }>,
     env: import("./types").AppEnv,
   ) {
@@ -7836,7 +7837,7 @@ export default {
 
     for (const message of batch.messages) {
       try {
-        const { workflowRunId, stepIndex, remainingDelay } = message.body;
+        const { workflowRunId, stepIndex, remainingDelay, attempt } = message.body;
 
         // If this is a chained wait (delay > 12h), re-enqueue without executing
         if (remainingDelay !== undefined && remainingDelay > 0) {
@@ -7847,7 +7848,12 @@ export default {
             env,
           );
         } else {
-          await executionService.executeStep(workflowRunId, stepIndex, env);
+          await executionService.executeStep(
+            workflowRunId,
+            stepIndex,
+            env,
+            { attempt: attempt ?? 1 },
+          );
         }
         message.ack();
       } catch (err) {

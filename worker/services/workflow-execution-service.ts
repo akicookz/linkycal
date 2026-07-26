@@ -24,6 +24,12 @@ import {
   evaluateWorkflowCondition,
   parseWorkflowCondition,
 } from "../lib/workflow-conditions";
+import {
+  isTransientWorkflowError,
+  MAX_WORKFLOW_ATTEMPTS,
+  retryDelaySeconds,
+  safeWorkflowErrorMessage,
+} from "../lib/workflow-retry";
 import type { AppEnv } from "../types";
 import { WorkflowService, type StepLog } from "./workflow-service";
 import {
@@ -36,6 +42,14 @@ import { TagService } from "./tag-service";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface TriggerContext extends WorkflowTriggerContext {}
+
+export interface WorkflowExecutionDependencies {
+  workflowAiResearchService?: WorkflowAiResearchService;
+}
+
+export interface WorkflowStepExecutionOptions {
+  attempt?: number;
+}
 
 interface StepSnapshot {
   resolved: Record<string, unknown>;
@@ -55,6 +69,7 @@ type WorkflowTrigger = dbSchema.WorkflowRow["trigger"];
 const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_ADDRESS = "LinkyCal <noreply@updates.linkycal.com>";
 const WEBHOOK_TIMEOUT_MS = 10_000;
+const MAX_QUEUE_DELAY_SECONDS = 43_200;
 
 class ContactUnavailableError extends Error {
   constructor() {
@@ -93,11 +108,15 @@ export class WorkflowExecutionService {
   private tagService: TagService;
   private workflowAiResearchService: WorkflowAiResearchService;
 
-  constructor(private db: DrizzleD1Database<Record<string, unknown>>) {
+  constructor(
+    private db: DrizzleD1Database<Record<string, unknown>>,
+    dependencies: WorkflowExecutionDependencies = {},
+  ) {
     this.workflowService = new WorkflowService(db);
     this.contactService = new ContactService(db);
     this.tagService = new TagService(db);
-    this.workflowAiResearchService = new WorkflowAiResearchService();
+    this.workflowAiResearchService =
+      dependencies.workflowAiResearchService ?? new WorkflowAiResearchService();
   }
 
   // ─── Trigger Dispatch ──────────────────────────────────────────────────
@@ -261,7 +280,7 @@ export class WorkflowExecutionService {
         phase: "queued",
         message: "Queued for execution",
         attempt: 1,
-        maxAttempts: 1,
+        maxAttempts: MAX_WORKFLOW_ATTEMPTS,
       },
     }));
     await this.workflowService.updateStepLogs(run.id, pendingLogs);
@@ -279,6 +298,7 @@ export class WorkflowExecutionService {
     workflowRunId: string,
     stepIndex: number,
     env: AppEnv,
+    options?: WorkflowStepExecutionOptions,
   ): Promise<void> {
     // Load the run
     const runs = await this.db
@@ -317,7 +337,13 @@ export class WorkflowExecutionService {
       return;
     }
 
-    const stepLogs = await this.workflowService.getStepLogs(workflowRunId);
+    let stepLogs = await this.workflowService.getStepLogs(workflowRunId);
+    const attempt = options?.attempt ?? 1;
+    const existingLog = stepLogs[stepIndex];
+    if (existingLog?.status === "completed" || existingLog?.status === "skipped") {
+      await this.enqueueNextOrComplete(run, full.steps, stepIndex, env, existingLog);
+      return;
+    }
     const config = (step.config ?? {}) as Record<string, unknown>;
 
     try {
@@ -367,33 +393,36 @@ export class WorkflowExecutionService {
         JSON.stringify(context),
       );
 
-      const nextIndex = stepIndex + 1;
-      if (nextIndex < full.steps.length) {
-        await env.WORKFLOW_QUEUE.send({
-          workflowRunId,
-          stepIndex: nextIndex,
-        });
-      } else {
-        await this.workflowService.completeRun(workflowRunId);
+      const skippedLog = stepLogs[stepIndex];
+      if (skippedLog) {
+        await this.enqueueNextOrComplete(
+          run,
+          full.steps,
+          stepIndex,
+          env,
+          skippedLog,
+        );
       }
       return;
     }
 
-    // ── Step logging: mark as running ──
+    const claimedLogs = await this.workflowService.claimStepLease(
+      workflowRunId,
+      stepIndex,
+      attempt,
+      new Date(),
+    );
+    if (!claimedLogs) {
+      return;
+    }
+    stepLogs = claimedLogs;
+
+    // ── Step logging: attach resolved inputs to the claimed lease ──
     let executionProgress: StepExecutionProgress | undefined;
-    if (stepLogs[stepIndex]) {
-      const startedAt = new Date().toISOString();
-      const attempt = stepLogs[stepIndex].progress?.attempt ?? 1;
-      stepLogs[stepIndex].status = "running";
-      stepLogs[stepIndex].startedAt = startedAt;
-      stepLogs[stepIndex].input = { config, resolvedInputs: context.stepInputs };
-      stepLogs[stepIndex].progress = {
-        phase: "preparing",
-        message: "Preparing step",
-        attempt,
-        maxAttempts: stepLogs[stepIndex].progress?.maxAttempts ?? 1,
-        leaseStartedAt: startedAt,
-      };
+    const claimedLog = stepLogs[stepIndex];
+    if (claimedLog?.progress?.leaseStartedAt) {
+      claimedLog.input = { config, resolvedInputs: context.stepInputs };
+      const leaseStartedAt = claimedLog.progress.leaseStartedAt;
       const workflowService = this.workflowService;
       async function report(
         progress: NonNullable<StepLog["progress"]>,
@@ -409,7 +438,7 @@ export class WorkflowExecutionService {
       }
       executionProgress = {
         attempt,
-        leaseStartedAt: startedAt,
+        leaseStartedAt,
         report,
       };
     }
@@ -442,6 +471,11 @@ export class WorkflowExecutionService {
           ...snapshot.output,
         };
       }
+      if (!shouldContinue) {
+        for (let i = stepIndex + 1; i < stepLogs.length; i++) {
+          if (stepLogs[i]) stepLogs[i].status = "skipped";
+        }
+      }
       await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
 
       // Update run progress
@@ -453,32 +487,19 @@ export class WorkflowExecutionService {
         JSON.stringify(context),
       );
 
-      if (!shouldContinue) {
-        // Condition evaluated to false — mark remaining steps as skipped
-        for (let i = stepIndex + 1; i < stepLogs.length; i++) {
-          if (stepLogs[i]) stepLogs[i].status = "skipped";
-        }
-        await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
-        await this.workflowService.completeRun(workflowRunId);
-        return;
-      }
-
-      // Enqueue next step
-      const nextIndex = stepIndex + 1;
-      if (nextIndex < full.steps.length) {
-        await env.WORKFLOW_QUEUE.send({
-          workflowRunId,
-          stepIndex: nextIndex,
-        });
-      } else {
-        // All steps done
-        await this.workflowService.completeRun(workflowRunId);
+      const completedLog = stepLogs[stepIndex];
+      if (completedLog) {
+        await this.enqueueNextOrComplete(
+          run,
+          full.steps,
+          stepIndex,
+          env,
+          completedLog,
+        );
       }
     } catch (err) {
       // Handle wait step: re-enqueue with delay instead of failing.
       if (err instanceof WaitSignal) {
-        const MAX_DELAY = 43200; // 12 hours
-
         // ── Step logging: mark wait as completed ──
         if (stepLogs[stepIndex]) {
           stepLogs[stepIndex].status = "completed";
@@ -495,27 +516,43 @@ export class WorkflowExecutionService {
           JSON.stringify(context),
         );
 
-        if (err.delaySeconds > MAX_DELAY) {
-          await env.WORKFLOW_QUEUE.send(
-            { workflowRunId, stepIndex, remainingDelay: err.delaySeconds - MAX_DELAY },
-            { delaySeconds: MAX_DELAY },
+        const completedLog = stepLogs[stepIndex];
+        if (completedLog) {
+          await this.enqueueNextOrComplete(
+            run,
+            full.steps,
+            stepIndex,
+            env,
+            completedLog,
           );
-        } else {
-          const nextIndex = stepIndex + 1;
-          if (nextIndex < full.steps.length) {
-            await env.WORKFLOW_QUEUE.send(
-              { workflowRunId, stepIndex: nextIndex },
-              { delaySeconds: err.delaySeconds },
-            );
-          } else {
-            await this.workflowService.completeRun(workflowRunId);
-          }
         }
         return;
       }
 
+      const delaySeconds =
+        isTransientWorkflowError(err) ? retryDelaySeconds(attempt) : null;
+      if (delaySeconds !== null && stepLogs[stepIndex]) {
+        const nextRetryAt = new Date(
+          Date.now() + delaySeconds * 1000,
+        ).toISOString();
+        stepLogs[stepIndex].status = "retrying";
+        stepLogs[stepIndex].progress = {
+          phase: "retrying",
+          message: "Retrying after a temporary provider error",
+          attempt: attempt + 1,
+          maxAttempts: MAX_WORKFLOW_ATTEMPTS,
+          nextRetryAt,
+        };
+        await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
+        await env.WORKFLOW_QUEUE.send(
+          { workflowRunId, stepIndex, attempt: attempt + 1 },
+          { delaySeconds },
+        );
+        return;
+      }
+
       // ── Step logging: mark as failed ──
-      const message = err instanceof Error ? err.message : String(err);
+      const message = safeWorkflowErrorMessage(err);
       if (stepLogs[stepIndex]) {
         stepLogs[stepIndex].status = "failed";
         stepLogs[stepIndex].completedAt = new Date().toISOString();
@@ -528,11 +565,65 @@ export class WorkflowExecutionService {
       await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
 
       console.error(
-        `Workflow step failed: run=${workflowRunId} step=${stepIndex} type=${step.type}`,
-        err,
+        `Workflow step failed: run=${workflowRunId} step=${stepIndex} type=${step.type} message=${message}`,
       );
       await this.workflowService.failRun(workflowRunId, message);
     }
+  }
+
+  private async enqueueNextOrComplete(
+    run: dbSchema.WorkflowRunRow,
+    steps: dbSchema.WorkflowStepRow[],
+    stepIndex: number,
+    env: AppEnv,
+    log: StepLog,
+  ): Promise<void> {
+    if (log.output?.continued === false) {
+      await this.workflowService.completeRun(run.id);
+      return;
+    }
+
+    const nextIndex = stepIndex + 1;
+    if (nextIndex >= steps.length) {
+      await this.workflowService.completeRun(run.id);
+      return;
+    }
+
+    if (
+      log.stepType === "wait" &&
+      log.completedAt &&
+      typeof log.output?.waitSeconds === "number"
+    ) {
+      const notBefore =
+        Date.parse(log.completedAt) + log.output.waitSeconds * 1000;
+      const remainingDelay = Math.max(
+        0,
+        Math.ceil((notBefore - Date.now()) / 1000),
+      );
+      if (remainingDelay > MAX_QUEUE_DELAY_SECONDS) {
+        await env.WORKFLOW_QUEUE.send(
+          {
+            workflowRunId: run.id,
+            stepIndex,
+            remainingDelay: remainingDelay - MAX_QUEUE_DELAY_SECONDS,
+          },
+          { delaySeconds: MAX_QUEUE_DELAY_SECONDS },
+        );
+        return;
+      }
+      if (remainingDelay > 0) {
+        await env.WORKFLOW_QUEUE.send(
+          { workflowRunId: run.id, stepIndex: nextIndex },
+          { delaySeconds: remainingDelay },
+        );
+        return;
+      }
+    }
+
+    await env.WORKFLOW_QUEUE.send({
+      workflowRunId: run.id,
+      stepIndex: nextIndex,
+    });
   }
 
   // ─── Wait Continuation ──────────────────────────────────────────────────
@@ -546,8 +637,6 @@ export class WorkflowExecutionService {
     remainingDelay: number,
     env: AppEnv,
   ): Promise<void> {
-    const MAX_DELAY = 43200; // 12 hours
-
     // Check run is still active before continuing (prevents zombie re-enqueues)
     const runs = await this.db
       .select()
@@ -557,10 +646,14 @@ export class WorkflowExecutionService {
     const run = runs[0];
     if (!run || run.status !== "running") return;
 
-    if (remainingDelay > MAX_DELAY) {
+    if (remainingDelay > MAX_QUEUE_DELAY_SECONDS) {
       await env.WORKFLOW_QUEUE.send(
-        { workflowRunId, stepIndex, remainingDelay: remainingDelay - MAX_DELAY },
-        { delaySeconds: MAX_DELAY },
+        {
+          workflowRunId,
+          stepIndex,
+          remainingDelay: remainingDelay - MAX_QUEUE_DELAY_SECONDS,
+        },
+        { delaySeconds: MAX_QUEUE_DELAY_SECONDS },
       );
     } else {
       const full = await this.workflowService.getFullWorkflow(run.workflowId);
@@ -759,7 +852,7 @@ export class WorkflowExecutionService {
             ? "Researching public sources"
             : "Structuring findings",
         attempt: progress.attempt,
-        maxAttempts: 3,
+        maxAttempts: MAX_WORKFLOW_ATTEMPTS,
         leaseStartedAt: progress.leaseStartedAt,
       });
     }
@@ -775,7 +868,7 @@ export class WorkflowExecutionService {
         phase: "saving",
         message: "Updating the contact",
         attempt: progress.attempt,
-        maxAttempts: 3,
+        maxAttempts: MAX_WORKFLOW_ATTEMPTS,
         leaseStartedAt: progress.leaseStartedAt,
       });
     }

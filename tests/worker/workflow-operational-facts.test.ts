@@ -97,6 +97,25 @@ async function seedWorkflowRun() {
         },
       },
     }),
+    stepLogs: [
+      {
+        stepIndex: 0,
+        stepType: "update_contact",
+        stepLabel: "Update Contact",
+        status: "pending",
+        input: null,
+        output: null,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+        progress: {
+          phase: "queued",
+          message: "Queued for execution",
+          attempt: 1,
+          maxAttempts: 3,
+        },
+      },
+    ],
   });
   return db;
 }
