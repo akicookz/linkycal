@@ -60,7 +60,7 @@ export const WORKFLOW_VARIABLES: WorkflowVariableGroup[] = [
     icon: FileText,
     items: [
       { key: "form.name", label: "Form name" },
-      { key: "form.responseId", label: "Response ID" },
+      { key: "form.responseId", label: "Form response ID (identifier only)" },
     ],
   },
   {

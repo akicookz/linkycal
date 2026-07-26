@@ -92,6 +92,11 @@ import {
   describeContactFilter,
   type WorkflowTriggerConfig,
 } from "@/components/WorkflowTriggerConfigEditor";
+import {
+  applyAiResearchDefaults,
+  DEFAULT_AI_RESEARCH_PROMPT,
+  seedAiResearchInputs,
+} from "@/lib/ai-research-defaults";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -202,7 +207,11 @@ function getDefaultConfig(type: StepType): Record<string, unknown> {
     case "send_email":
       return { toList: ["{{contact.email}}"], subject: "", body: "" };
     case "ai_research":
-      return { provider: "chatgpt", resultKey: "research", prompt: "" };
+      return {
+        provider: "chatgpt",
+        resultKey: "research",
+        prompt: DEFAULT_AI_RESEARCH_PROMPT,
+      };
     case "wait":
       return { duration: 5, unit: "minutes" };
     case "condition":
@@ -217,6 +226,19 @@ function getDefaultConfig(type: StepType): Record<string, unknown> {
     default:
       return {};
   }
+}
+
+function seedInputsForStep(
+  type: StepType,
+  options: {
+    trigger?: TriggerType;
+    formFields?: FormFieldSource[];
+    priorSteps?: PriorStepSource[];
+  },
+): WorkflowStepInput[] {
+  return type === "ai_research"
+    ? seedAiResearchInputs()
+    : seedAllInputs(options);
 }
 
 function parseConfig(raw: unknown): Record<string, unknown> | null {
@@ -662,12 +684,12 @@ export default function WorkflowBuilder() {
     const existing = parseConfig(step.config) ?? {};
     // Merge defaults under existing config so missing fields get filled.
     // If no inputs were configured yet, seed sensible defaults based on the trigger.
-    const merged: Record<string, unknown> = {
-      ...getDefaultConfig(step.type),
-      ...existing,
-    };
+    const merged =
+      step.type === "ai_research"
+        ? applyAiResearchDefaults(existing)
+        : { ...getDefaultConfig(step.type), ...existing };
     if (!Array.isArray(merged.inputs)) {
-      merged.inputs = seedAllInputs({
+      merged.inputs = seedInputsForStep(step.type, {
         trigger: workflow?.trigger,
         formFields: formFieldSources,
         priorSteps: computePriorSteps(),
@@ -1237,7 +1259,7 @@ export default function WorkflowBuilder() {
                       setSelectedStepType(st.type);
                       setStepConfig({
                         ...getDefaultConfig(st.type),
-                        inputs: seedAllInputs({
+                        inputs: seedInputsForStep(st.type, {
                           trigger: workflow?.trigger,
                           formFields: formFieldSources,
                           priorSteps: computePriorSteps(),
