@@ -35,4 +35,10 @@ describe("AI Research defaults", () => {
       "Use my rubric",
     );
   });
+
+  test("preserves exact whitespace in a nonempty edited prompt", () => {
+    const prompt = "\n  Use my rubric exactly.  \t\n";
+
+    expect(applyAiResearchDefaults({ prompt }).prompt).toBe(prompt);
+  });
 });

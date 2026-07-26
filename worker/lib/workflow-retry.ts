@@ -31,6 +31,23 @@ export function retryDelaySeconds(attempt: number): number | null {
   return null;
 }
 
+export function isWorkflowStepRetrySafe(
+  stepType: string,
+  config: Record<string, unknown>,
+): boolean {
+  switch (stepType) {
+    case "ai_research":
+    case "send_email":
+      return true;
+    case "webhook": {
+      const method = String(config.method ?? "POST").toUpperCase();
+      return method === "GET" || method === "HEAD";
+    }
+    default:
+      return false;
+  }
+}
+
 export function isTransientWorkflowError(error: unknown): boolean {
   if (APICallError.isInstance(error)) {
     return error.isRetryable;

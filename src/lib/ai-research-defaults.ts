@@ -35,11 +35,11 @@ export function seedAiResearchInputs(): WorkflowStepInput[] {
 export function applyAiResearchDefaults(
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  const prompt = String(config.prompt ?? "").trim();
+  const prompt = String(config.prompt ?? "");
   return {
     provider: "chatgpt",
     resultKey: "research",
     ...config,
-    prompt: prompt || DEFAULT_AI_RESEARCH_PROMPT,
+    prompt: prompt.trim() ? prompt : DEFAULT_AI_RESEARCH_PROMPT,
   };
 }

@@ -41,6 +41,8 @@ const STRUCTURED_RESULT: WorkflowResearchResult = {
   ],
 };
 
+const UPSTREAM_PROMPT_SENTINEL = "private-upstream-value-7f19";
+
 function buildEnv(): AppEnv {
   return {
     OPENAI_API_KEY: "test-openai-key",
@@ -130,6 +132,13 @@ async function seedAiResearchRun() {
         {
           key: "email",
           source: { kind: "path", path: "contact.email" },
+        },
+        {
+          key: "privateSignal",
+          source: {
+            kind: "literal",
+            value: UPSTREAM_PROMPT_SENTINEL,
+          },
         },
       ],
     },
@@ -221,14 +230,13 @@ describe("WorkflowExecutionService AI research progress", () => {
     const workflowService = new WorkflowService(db);
     const service = new WorkflowExecutionService(db);
     const observedProgress: NonNullable<StepLog["progress"]>[] = [];
-    let progressAtContactUpdate: StepLog["progress"];
+    let progressBeforeAtomicContactApply: StepLog["progress"];
     let providerPrompt: string | undefined;
 
     const record: WorkflowResearchRecord = {
       provider: "chatgpt",
       model: "gpt-5.2",
       resultKey: "lead",
-      prompt: "Research jane@acme.example",
       executedAt: "2026-07-26T10:00:00.000Z",
       result: STRUCTURED_RESULT,
     };
@@ -258,24 +266,22 @@ describe("WorkflowExecutionService AI research progress", () => {
     type ExecutionServiceInternals = {
       workflowAiResearchService: typeof fakeResearchService;
       contactService: {
-        update: (
-          contactId: string,
-          data: Record<string, unknown>,
-        ) => Promise<unknown>;
+        getById: (contactId: string) => Promise<unknown>;
       };
     };
     const internals = service as unknown as ExecutionServiceInternals;
     internals.workflowAiResearchService = fakeResearchService;
-    const updateContact = internals.contactService.update.bind(
+    const getContact = internals.contactService.getById.bind(
       internals.contactService,
     );
-    internals.contactService.update = async function update(
-      contactId,
-      data,
-    ) {
-      const logs = await workflowService.getStepLogs("run");
-      progressAtContactUpdate = logs[0]?.progress;
-      return updateContact(contactId, data);
+    let contactReads = 0;
+    internals.contactService.getById = async function getById(contactId) {
+      contactReads += 1;
+      if (contactReads === 2) {
+        const logs = await workflowService.getStepLogs("run");
+        progressBeforeAtomicContactApply = logs[0]?.progress;
+      }
+      return getContact(contactId);
     };
 
     await service.executeStep("run", 0, buildEnv());
@@ -300,7 +306,7 @@ describe("WorkflowExecutionService AI research progress", () => {
     expect(typeof expectedLeaseStartedAt).toBe("string");
     expect([
       ...observedProgress,
-      progressAtContactUpdate,
+      progressBeforeAtomicContactApply,
       finalProgress,
     ]).toEqual([
       {
@@ -332,6 +338,59 @@ describe("WorkflowExecutionService AI research progress", () => {
         leaseStartedAt: expectedLeaseStartedAt,
       },
     ]);
+  });
+
+  test("does not persist the expanded provider prompt in research metadata", async () => {
+    const db = await seedAiResearchRun();
+    let providerPrompt = "";
+    const fakeResearchService = {
+      async execute(config: {
+        prompt: string;
+      }): Promise<WorkflowResearchRecord> {
+        providerPrompt = config.prompt;
+        return {
+          provider: "chatgpt",
+          model: "gpt-5.2",
+          resultKey: "lead",
+          prompt: config.prompt,
+          executedAt: "2026-07-26T10:00:00.000Z",
+          result: STRUCTURED_RESULT,
+        } as WorkflowResearchRecord;
+      },
+    };
+    const service = new WorkflowExecutionService(db, {
+      workflowAiResearchService:
+        fakeResearchService as unknown as WorkflowAiResearchService,
+    });
+
+    await service.executeStep("run", 0, buildEnv());
+
+    const [run] = await db
+      .select()
+      .from(dbSchema.workflowRuns)
+      .where(eq(dbSchema.workflowRuns.id, "run"));
+    const [contact] = await db
+      .select()
+      .from(dbSchema.contacts)
+      .where(eq(dbSchema.contacts.id, "contact"));
+    const [activity] = await db
+      .select()
+      .from(dbSchema.contactActivity)
+      .where(eq(dbSchema.contactActivity.contactId, "contact"));
+    const runContext = JSON.parse(run?.context ?? "{}") as {
+      metadata?: Record<string, unknown>;
+    };
+
+    expect(providerPrompt).toContain(UPSTREAM_PROMPT_SENTINEL);
+    expect(JSON.stringify(runContext.metadata)).not.toContain(
+      UPSTREAM_PROMPT_SENTINEL,
+    );
+    expect(JSON.stringify(contact?.metadata)).not.toContain(
+      UPSTREAM_PROMPT_SENTINEL,
+    );
+    expect(JSON.stringify(activity?.metadata)).not.toContain(
+      UPSTREAM_PROMPT_SENTINEL,
+    );
   });
 });
 

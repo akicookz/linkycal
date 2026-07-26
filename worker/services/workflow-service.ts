@@ -439,16 +439,29 @@ export class WorkflowService {
         and(
           eq(dbSchema.workflowRuns.id, runId),
           eq(dbSchema.workflowRuns.status, "running"),
-          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${attemptPath}) = ${attempt}`,
           sql`(
-            json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'pending'
+            (
+              json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'pending'
+              AND coalesce(
+                json_extract(${dbSchema.workflowRuns.stepLogs}, ${attemptPath}),
+                1
+              ) = ${attempt}
+            )
             OR (
               json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'retrying'
+              AND json_extract(${dbSchema.workflowRuns.stepLogs}, ${attemptPath}) = ${attempt}
               AND json_extract(${dbSchema.workflowRuns.stepLogs}, ${nextRetryPath}) <= ${nowIso}
             )
             OR (
               json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'running'
-              AND json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) <= ${staleBefore}
+              AND coalesce(
+                json_extract(${dbSchema.workflowRuns.stepLogs}, ${attemptPath}),
+                1
+              ) = ${attempt}
+              AND coalesce(
+                json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}),
+                json_extract(${dbSchema.workflowRuns.stepLogs}, ${startedPath})
+              ) <= ${staleBefore}
             )
           )`,
         ),

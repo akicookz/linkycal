@@ -97,7 +97,6 @@ export class WorkflowAiResearchService {
       provider: "chatgpt",
       model: CHATGPT_MODEL,
       resultKey,
-      prompt,
       output: withFallbackSources(result.output, result.sources),
     });
   }
@@ -163,7 +162,6 @@ export class WorkflowAiResearchService {
       provider: "gemini",
       model: GEMINI_MODEL,
       resultKey,
-      prompt,
       output: withFallbackSources(structured.output, search.sources),
     });
   }
@@ -200,20 +198,17 @@ function buildResearchRecord({
   provider,
   model,
   resultKey,
-  prompt,
   output,
 }: {
   provider: WorkflowResearchProvider;
   model: string;
   resultKey: string;
-  prompt: string;
   output: WorkflowResearchResult;
 }): WorkflowResearchRecord {
   return {
     provider,
     model,
     resultKey,
-    prompt,
     executedAt: new Date().toISOString(),
     result: output,
   };

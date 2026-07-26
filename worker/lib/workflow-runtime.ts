@@ -123,7 +123,6 @@ export interface WorkflowResearchRecord {
   resultKey: string;
   provider: WorkflowResearchProvider;
   model: string;
-  prompt: string;
   executedAt: string;
   result: WorkflowResearchResult;
 }
@@ -131,11 +130,12 @@ export interface WorkflowResearchRecord {
 export function buildWorkflowResearchActivityMetadata(
   record: WorkflowResearchRecord,
 ): Record<string, unknown> {
+  const persistedRecord = withoutProviderPrompt(record);
   return {
-    resultKey: record.resultKey,
-    summary: record.result.summary,
-    sourceCount: record.result.sources.length,
-    research: record,
+    resultKey: persistedRecord.resultKey,
+    summary: persistedRecord.result.summary,
+    sourceCount: persistedRecord.result.sources.length,
+    research: persistedRecord,
   };
 }
 
@@ -328,9 +328,10 @@ export function mergeWorkflowResearchMetadata(
   const workflow = getRecordValue(nextMetadata, "workflow");
   const research = getRecordValue(workflow, "research");
   const byKey = getRecordValue(research, "byKey");
+  const persistedRecord = withoutProviderPrompt(record);
 
-  byKey[record.resultKey] = record;
-  research.latest = record;
+  byKey[persistedRecord.resultKey] = persistedRecord;
+  research.latest = persistedRecord;
   research.byKey = byKey;
   workflow.research = research;
   nextMetadata.workflow = workflow;
@@ -400,4 +401,13 @@ function getRecordValue(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function withoutProviderPrompt(
+  record: WorkflowResearchRecord,
+): WorkflowResearchRecord {
+  const { prompt: _prompt, ...persistedRecord } = record as WorkflowResearchRecord & {
+    prompt?: unknown;
+  };
+  return persistedRecord;
 }

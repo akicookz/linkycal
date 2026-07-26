@@ -16,6 +16,7 @@ import {
   type WorkflowExecutionDependencies,
 } from "../../worker/services/workflow-execution-service";
 import type { WorkflowAiResearchService } from "../../worker/services/workflow-ai-research-service";
+import { ContactService } from "../../worker/services/contact-service";
 import {
   WorkflowService,
   type StepLog,
@@ -27,7 +28,6 @@ const RESEARCH_RECORD: WorkflowResearchRecord = {
   provider: "chatgpt",
   model: "gpt-5.2",
   resultKey: "lead",
-  prompt: "Research Jane",
   executedAt: "2026-07-26T12:00:00.000Z",
   result: {
     summary: "Research summary",
@@ -52,7 +52,8 @@ interface ResearchServiceFake {
 interface SeedRetryRunOptions {
   firstLog?: Partial<StepLog>;
   includeSecondStep?: boolean;
-  stepType?: "ai_research" | "wait";
+  stepConfig?: Record<string, unknown>;
+  stepType?: "ai_research" | "send_email" | "wait" | "webhook";
 }
 
 async function seedRetryRun(options: SeedRetryRunOptions = {}) {
@@ -88,10 +89,23 @@ async function seedRetryRun(options: SeedRetryRunOptions = {}) {
       workflowId: "workflow",
       sortOrder: 0,
       type: stepType,
-      config:
+      config: options.stepConfig ?? (
         stepType === "ai_research"
           ? { provider: "chatgpt", resultKey: "lead", prompt: "Research Jane" }
-          : { amount: 1, unit: "minutes" },
+          : stepType === "send_email"
+            ? {
+                toList: ["{{contact.email}}"],
+                subject: "Hello Jane",
+                body: "Research is ready",
+              }
+            : stepType === "webhook"
+              ? {
+                  url: "https://receiver.example/webhook",
+                  method: "POST",
+                  body: "{\"event\":\"ready\"}",
+                }
+              : { amount: 1, unit: "minutes" }
+      ),
     },
     ...(options.includeSecondStep
       ? [{
@@ -111,7 +125,14 @@ async function seedRetryRun(options: SeedRetryRunOptions = {}) {
   const firstLog: StepLog = {
     stepIndex: 0,
     stepType,
-    stepLabel: stepType === "wait" ? "Wait" : "AI Research",
+    stepLabel:
+      stepType === "wait"
+        ? "Wait"
+        : stepType === "send_email"
+          ? "Send Email"
+          : stepType === "webhook"
+            ? "Webhook"
+            : "AI Research",
     status: "pending",
     input: null,
     output: null,
@@ -262,6 +283,114 @@ describe("workflow retry policy", () => {
 });
 
 describe("workflow execution retry and lease handling", () => {
+  test("retries Resend transport ambiguity with one stable run-and-step idempotency key", async () => {
+    const db = await seedRetryRun({ stepType: "send_email" });
+    const workflowService = new WorkflowService(db);
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const idempotencyKeys: Array<string | null> = [];
+    let fetchCalls = 0;
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      async (_input, init) => {
+        fetchCalls += 1;
+        idempotencyKeys.push(
+          new Headers(init?.headers).get("Idempotency-Key"),
+        );
+        if (fetchCalls === 1) {
+          throw new TypeError("connection closed after request write");
+        }
+        return new Response(JSON.stringify({ id: "email-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    );
+    const service = new WorkflowExecutionService(db);
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const retryLogs = await workflowService.getStepLogs("run");
+      expect(retryLogs[0]?.status).toBe("retrying");
+      if (!retryLogs[0]?.progress) {
+        throw new Error("expected persisted retry progress");
+      }
+      retryLogs[0].progress.nextRetryAt = new Date(
+        Date.now() - 1_000,
+      ).toISOString();
+      await workflowService.updateStepLogs("run", retryLogs);
+
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 2 });
+
+      const { run, logs } = await readRun(db);
+      expect(fetchCalls).toBe(2);
+      expect(idempotencyKeys).toEqual([
+        "workflow-run/run/step/0/send-email",
+        "workflow-run/run/step/0/send-email",
+      ]);
+      expect(logs[0]?.status).toBe("completed");
+      expect(run?.status).toBe("completed");
+    } finally {
+      fetchRequest.mockRestore();
+    }
+  });
+
+  test("does not auto-retry an unsafe webhook after an ambiguous transport failure", async () => {
+    const db = await seedRetryRun({ stepType: "webhook" });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      async () => {
+        throw new TypeError("connection closed after request write");
+      },
+    );
+    const errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const service = new WorkflowExecutionService(db);
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      expect(logs[0]?.status).toBe("failed");
+      expect(run?.status).toBe("failed");
+      expect(sent).toEqual([]);
+    } finally {
+      errorLog.mockRestore();
+      fetchRequest.mockRestore();
+    }
+  });
+
+  test("keeps read-only webhook transport failures retryable", async () => {
+    const db = await seedRetryRun({
+      stepType: "webhook",
+      stepConfig: {
+        url: "https://receiver.example/status",
+        method: "GET",
+      },
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const fetchRequest = spyOn(globalThis, "fetch").mockImplementation(
+      async () => {
+        throw new TypeError("connection closed before response");
+      },
+    );
+    const service = new WorkflowExecutionService(db);
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      expect(logs[0]?.status).toBe("retrying");
+      expect(run?.status).toBe("running");
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 15 },
+        },
+      ]);
+    } finally {
+      fetchRequest.mockRestore();
+    }
+  });
+
   test("re-enqueues a transient provider failure with the bounded delay", async () => {
     const db = await seedRetryRun();
     const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
@@ -288,6 +417,119 @@ describe("workflow execution retry and lease handling", () => {
         options: { delaySeconds: 15 },
       },
     ]);
+  });
+
+  test("repairs retry delivery after the first delayed queue send rejects", async () => {
+    const db = await seedRetryRun();
+    const fixedNow = Date.parse("2026-07-26T12:00:00.000Z");
+    const attempted: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const delivered: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const queueError = new TypeError("queue transport failed");
+    let queueCalls = 0;
+    const env = {
+      WORKFLOW_QUEUE: {
+        async send(
+          body: unknown,
+          options?: QueueSendOptions,
+        ): Promise<void> {
+          queueCalls += 1;
+          attempted.push({ body, options });
+          if (queueCalls === 1) throw queueError;
+          delivered.push({ body, options });
+        },
+      } as Queue,
+      OPENAI_API_KEY: "test-openai-key",
+    } as AppEnv;
+    let actionCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        actionCalls += 1;
+        throw { statusCode: 429 };
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+    const dateNow = spyOn(Date, "now").mockReturnValue(fixedNow);
+
+    try {
+      const sendError = await service
+        .executeStep("run", 0, env, { attempt: 1 })
+        .then(() => undefined, (error: unknown) => error);
+
+      const afterRejection = await readRun(db);
+      expect(sendError).toBe(queueError);
+      expect(afterRejection.logs[0]?.status).toBe("retrying");
+      expect(afterRejection.logs[0]?.progress).toMatchObject({
+        attempt: 2,
+        nextRetryAt: "2026-07-26T12:00:15.000Z",
+      });
+      expect(delivered).toEqual([]);
+
+      await service.executeStep("run", 0, env, { attempt: 1 });
+
+      expect(actionCalls).toBe(1);
+      expect(attempted).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 15 },
+        },
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 15 },
+        },
+      ]);
+      expect(delivered).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 15 },
+        },
+      ]);
+    } finally {
+      dateNow.mockRestore();
+    }
+  });
+
+  test("repairs a persisted retry after termination before the delayed queue send", async () => {
+    const fixedNow = Date.parse("2026-07-26T12:00:00.000Z");
+    const db = await seedRetryRun({
+      firstLog: {
+        status: "retrying",
+        progress: {
+          phase: "retrying",
+          message: "Retrying after a temporary provider error",
+          attempt: 2,
+          maxAttempts: 3,
+          nextRetryAt: "2026-07-26T12:00:30.000Z",
+        },
+      },
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    let actionCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        actionCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+    const dateNow = spyOn(Date, "now").mockReturnValue(fixedNow);
+
+    try {
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+      const { run, logs } = await readRun(db);
+      expect(actionCalls).toBe(0);
+      expect(logs[0]?.status).toBe("retrying");
+      expect(logs[0]?.progress?.attempt).toBe(2);
+      expect(run?.status).toBe("running");
+      expect(sent).toEqual([
+        {
+          body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+          options: { delaySeconds: 30 },
+        },
+      ]);
+    } finally {
+      dateNow.mockRestore();
+    }
   });
 
   test("does not retry a successful action when continuation enqueue fails", async () => {
@@ -420,7 +662,7 @@ describe("workflow execution retry and lease handling", () => {
     expect(calls).toBe(1);
   });
 
-  test("prevents a stale lease owner from overwriting its replacement", async () => {
+  test("prevents a stale lease owner from mutating the contact or its replacement lease", async () => {
     const db = await seedRetryRun({ includeSecondStep: true });
     const workflowService = new WorkflowService(db);
     const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
@@ -469,12 +711,100 @@ describe("workflow execution retry and lease handling", () => {
     await original;
 
     const afterOriginal = await readRun(db);
+    const [contact] = await db
+      .select()
+      .from(dbSchema.contacts)
+      .where(eq(dbSchema.contacts.id, "contact"));
+    const activities = await db
+      .select()
+      .from(dbSchema.contactActivity)
+      .where(eq(dbSchema.contactActivity.contactId, "contact"));
     expect(afterOriginal.logs[0]?.status).toBe("running");
     expect(afterOriginal.logs[0]?.progress?.leaseStartedAt).toBe(
       replacementLease,
     );
     expect(afterOriginal.run?.status).toBe("running");
+    expect(contact?.company).toBeNull();
+    expect(contact?.notes).toBeNull();
+    expect(contact?.metadata).toBeNull();
+    expect(activities).toEqual([]);
     expect(sent).toEqual([]);
+  });
+
+  test("fences contact and activity mutations when ownership changes after the saving report", async () => {
+    const db = await seedRetryRun();
+    const workflowService = new WorkflowService(db);
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    const originalGetById = ContactService.prototype.getById;
+    let releaseContactRead: (() => void) | undefined;
+    let contactReadStarted: (() => void) | undefined;
+    const contactRead = new Promise<void>((resolve) => {
+      contactReadStarted = resolve;
+    });
+    const blockedContactRead = new Promise<void>((resolve) => {
+      releaseContactRead = resolve;
+    });
+    let contactReads = 0;
+    const getById = spyOn(
+      ContactService.prototype,
+      "getById",
+    ).mockImplementation(async function (id) {
+      contactReads += 1;
+      if (contactReads === 1) {
+        return originalGetById.call(this, id);
+      }
+      contactReadStarted?.();
+      await blockedContactRead;
+      return originalGetById.call(this, id);
+    });
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    try {
+      const original = service.executeStep("run", 0, buildQueueEnv(sent));
+      await contactRead;
+
+      const savingLogs = await workflowService.getStepLogs("run");
+      const originalLease = savingLogs[0]?.progress?.leaseStartedAt;
+      expect(savingLogs[0]?.progress?.phase).toBe("saving");
+      expect(typeof originalLease).toBe("string");
+      if (!originalLease) {
+        throw new Error("expected the saving owner lease");
+      }
+      const replacementLogs = await workflowService.claimStepLease(
+        "run",
+        0,
+        1,
+        new Date(Date.parse(originalLease) + 16 * 60_000),
+      );
+      const replacementLease = replacementLogs?.[0]?.progress?.leaseStartedAt;
+      expect(typeof replacementLease).toBe("string");
+      expect(replacementLease).not.toBe(originalLease);
+
+      releaseContactRead?.();
+      await original;
+
+      const [contact] = await db
+        .select()
+        .from(dbSchema.contacts)
+        .where(eq(dbSchema.contacts.id, "contact"));
+      const activities = await db
+        .select()
+        .from(dbSchema.contactActivity)
+        .where(eq(dbSchema.contactActivity.contactId, "contact"));
+      expect(contact?.company).toBeNull();
+      expect(contact?.notes).toBeNull();
+      expect(contact?.metadata).toBeNull();
+      expect(activities).toEqual([]);
+      expect(sent).toEqual([]);
+    } finally {
+      releaseContactRead?.();
+      getById.mockRestore();
+    }
   });
 
   test("finalizes step logs and workflow context in one leased transition", async () => {
@@ -513,6 +843,60 @@ describe("workflow execution retry and lease handling", () => {
     expect(logs[0]?.status).toBe("completed");
     expect(run?.context).toBe(nextContext);
     expect(run?.currentStepIndex).toBe(0);
+  });
+
+  test("claims a legacy pending log with no progress as attempt one", async () => {
+    const db = await seedRetryRun({
+      firstLog: {
+        progress: undefined,
+      },
+    });
+    const workflowService = new WorkflowService(db);
+    const claimed = await workflowService.claimStepLease(
+      "run",
+      0,
+      1,
+      new Date("2026-07-26T12:00:00.000Z"),
+    );
+
+    expect(claimed?.[0]).toMatchObject({
+      status: "running",
+      startedAt: "2026-07-26T12:00:00.000Z",
+      progress: {
+        phase: "preparing",
+        attempt: 1,
+        maxAttempts: 3,
+        leaseStartedAt: "2026-07-26T12:00:00.000Z",
+      },
+    });
+  });
+
+  test("reclaims a stale legacy running log using its started time", async () => {
+    const db = await seedRetryRun({
+      firstLog: {
+        status: "running",
+        startedAt: "2026-07-26T12:00:00.000Z",
+        progress: undefined,
+      },
+    });
+    const workflowService = new WorkflowService(db);
+    const claimed = await workflowService.claimStepLease(
+      "run",
+      0,
+      1,
+      new Date("2026-07-26T12:16:00.000Z"),
+    );
+
+    expect(claimed?.[0]).toMatchObject({
+      status: "running",
+      startedAt: "2026-07-26T12:16:00.000Z",
+      progress: {
+        phase: "preparing",
+        attempt: 1,
+        maxAttempts: 3,
+        leaseStartedAt: "2026-07-26T12:16:00.000Z",
+      },
+    });
   });
 
   test("does not claim a retry lease before its scheduled time", async () => {
@@ -578,6 +962,12 @@ describe("workflow execution retry and lease handling", () => {
     expect(afterStale.logs[0]?.status).toBe("retrying");
     expect(afterStale.logs[0]?.progress?.attempt).toBe(2);
     expect(afterStale.run?.status).toBe("running");
+    expect(sent).toEqual([
+      {
+        body: { workflowRunId: "run", stepIndex: 0, attempt: 2 },
+        options: undefined,
+      },
+    ]);
 
     await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 2 });
 

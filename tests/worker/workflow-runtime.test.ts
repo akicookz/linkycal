@@ -19,7 +19,6 @@ function buildResearchRecord(): WorkflowResearchRecord {
     provider: "chatgpt",
     model: "gpt-5.2",
     resultKey: "lead_research",
-    prompt: "Research this lead",
     executedAt: "2026-03-30T12:00:00.000Z",
     result: {
       summary: "A product leader at Acme.",
@@ -60,7 +59,6 @@ describe("workflow runtime helpers", () => {
       resultKey: "lead",
       provider: "gemini" as const,
       model: "gemini-2.5-flash",
-      prompt: "Research Ada",
       executedAt: "2026-07-01T10:00:00.000Z",
       result: {
         summary: "Strong fit",

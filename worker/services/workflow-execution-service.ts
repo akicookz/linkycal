@@ -1,4 +1,4 @@
-import { eq, and, lte, isNotNull } from "drizzle-orm";
+import { eq, and, lte, isNotNull, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 import {
@@ -26,6 +26,7 @@ import {
 } from "../lib/workflow-conditions";
 import {
   isTransientWorkflowError,
+  isWorkflowStepRetrySafe,
   MAX_WORKFLOW_ATTEMPTS,
   retryDelaySeconds,
   safeWorkflowErrorMessage,
@@ -55,11 +56,17 @@ export interface WorkflowStepExecutionOptions {
 interface StepSnapshot {
   resolved: Record<string, unknown>;
   output: Record<string, unknown>;
+  researchApplication?: {
+    contactId: string;
+    record: WorkflowResearchRecord;
+  };
 }
 
 interface StepExecutionProgress {
   attempt: number;
   leaseStartedAt: string;
+  stepIndex: number;
+  workflowRunId: string;
   report(
     progress: NonNullable<StepLog["progress"]>,
   ): Promise<void>;
@@ -76,6 +83,13 @@ class ContactUnavailableError extends Error {
   constructor() {
     super("Contact unavailable");
     this.name = "ContactUnavailableError";
+  }
+}
+
+class StepLeaseLostError extends Error {
+  constructor() {
+    super("Workflow step lease lost");
+    this.name = "StepLeaseLostError";
   }
 }
 
@@ -359,6 +373,18 @@ export class WorkflowExecutionService {
       await this.enqueueNextOrComplete(run, full.steps, stepIndex, env, existingLog);
       return;
     }
+    if (
+      existingLog &&
+      await this.repairPersistedRetryContinuation(
+        workflowRunId,
+        stepIndex,
+        attempt,
+        existingLog,
+        env,
+      )
+    ) {
+      return;
+    }
     const config = (step.config ?? {}) as Record<string, unknown>;
 
     try {
@@ -457,16 +483,21 @@ export class WorkflowExecutionService {
       if (stepLogs[stepIndex]) {
         stepLogs[stepIndex].progress = progress;
       }
-      await workflowService.updateStepProgressForLease(
+      const updated = await workflowService.updateStepProgressForLease(
         workflowRunId,
         stepIndex,
         leaseToken,
         progress,
       );
+      if (!updated) {
+        throw new StepLeaseLostError();
+      }
     }
     const executionProgress: StepExecutionProgress = {
       attempt,
       leaseStartedAt: leaseToken,
+      stepIndex,
+      workflowRunId,
       report,
     };
 
@@ -515,7 +546,10 @@ export class WorkflowExecutionService {
       }
 
       const delaySeconds =
-        isTransientWorkflowError(err) ? retryDelaySeconds(attempt) : null;
+        isWorkflowStepRetrySafe(step.type, config) &&
+        isTransientWorkflowError(err)
+          ? retryDelaySeconds(attempt)
+          : null;
       if (delaySeconds !== null && stepLogs[stepIndex]) {
         const nextRetryAt = new Date(
           Date.now() + delaySeconds * 1000,
@@ -594,13 +628,23 @@ export class WorkflowExecutionService {
         if (stepLogs[i]) stepLogs[i].status = "skipped";
       }
     }
-    const finalized = await this.workflowService.finalizeStepLease(
-      workflowRunId,
-      stepIndex,
-      leaseToken,
-      stepLogs,
-      JSON.stringify(context),
-    );
+    const finalized = snapshot.researchApplication
+      ? await this.finalizeAiResearchStepLease(
+          workflowRunId,
+          stepIndex,
+          leaseToken,
+          stepLogs,
+          JSON.stringify(context),
+          snapshot.researchApplication.contactId,
+          snapshot.researchApplication.record,
+        )
+      : await this.workflowService.finalizeStepLease(
+          workflowRunId,
+          stepIndex,
+          leaseToken,
+          stepLogs,
+          JSON.stringify(context),
+        );
     if (!finalized) {
       return;
     }
@@ -615,6 +659,39 @@ export class WorkflowExecutionService {
         completedLog,
       );
     }
+  }
+
+  private async repairPersistedRetryContinuation(
+    workflowRunId: string,
+    stepIndex: number,
+    deliveredAttempt: number,
+    log: StepLog,
+    env: AppEnv,
+  ): Promise<boolean> {
+    const expectedAttempt = log.progress?.attempt;
+    const nextRetryAt = Date.parse(log.progress?.nextRetryAt ?? "");
+    if (
+      log.status !== "retrying" ||
+      typeof expectedAttempt !== "number" ||
+      !Number.isInteger(expectedAttempt) ||
+      expectedAttempt <= deliveredAttempt ||
+      expectedAttempt > MAX_WORKFLOW_ATTEMPTS ||
+      !Number.isFinite(nextRetryAt)
+    ) {
+      return false;
+    }
+
+    const delaySeconds = Math.max(
+      0,
+      Math.ceil((nextRetryAt - Date.now()) / 1000),
+    );
+    const body = { workflowRunId, stepIndex, attempt: expectedAttempt };
+    if (delaySeconds > 0) {
+      await env.WORKFLOW_QUEUE.send(body, { delaySeconds });
+    } else {
+      await env.WORKFLOW_QUEUE.send(body);
+    }
+    return true;
   }
 
   private async enqueueNextOrComplete(
@@ -763,11 +840,11 @@ export class WorkflowExecutionService {
     context: TriggerContext,
     env: AppEnv,
     snap: StepSnapshot,
-    progress?: StepExecutionProgress,
+    progress: StepExecutionProgress,
   ): Promise<boolean> {
     switch (type) {
       case "send_email":
-        await this.executeSendEmail(config, context, env, snap);
+        await this.executeSendEmail(config, context, env, snap, progress);
         return true;
 
       case "ai_research":
@@ -812,6 +889,7 @@ export class WorkflowExecutionService {
     context: TriggerContext,
     env: AppEnv,
     snap: StepSnapshot,
+    progress: StepExecutionProgress,
   ): Promise<void> {
     const recipients = normalizeRecipientList(
       config.toList ?? config.to,
@@ -838,6 +916,10 @@ export class WorkflowExecutionService {
       headers: {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": buildResendIdempotencyKey(
+          progress.workflowRunId,
+          progress.stepIndex,
+        ),
       },
       body: JSON.stringify({
         from: FROM_ADDRESS,
@@ -918,7 +1000,7 @@ export class WorkflowExecutionService {
         leaseStartedAt: progress.leaseStartedAt,
       });
     }
-    await this.applyResearchToContact(contactId, record);
+    snap.researchApplication = { contactId, record };
 
     context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
 
@@ -935,6 +1017,99 @@ export class WorkflowExecutionService {
       recommendedTags: record.result.recommendedTags,
       insights: record.result.insights,
     };
+  }
+
+  private async finalizeAiResearchStepLease(
+    workflowRunId: string,
+    stepIndex: number,
+    leaseStartedAt: string,
+    stepLogs: StepLog[],
+    context: string,
+    contactId: string,
+    record: WorkflowResearchRecord,
+  ): Promise<boolean> {
+    const contact = await this.contactService.getById(contactId);
+    if (!contact) {
+      throw new ContactUnavailableError();
+    }
+
+    const contactMetadata = parseRecord(contact.metadata);
+    const nextMetadata = mergeWorkflowResearchMetadata(contactMetadata, record);
+    const fields = enrichContactFromResearch(record.result);
+    const today = new Date().toISOString().slice(0, 10);
+    const nextNotes = appendResearchSummaryToNotes(
+      contact.notes,
+      record.result.summary,
+      today,
+    );
+    const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const leaseCondition = and(
+      eq(dbSchema.workflowRuns.id, workflowRunId),
+      eq(dbSchema.workflowRuns.status, "running"),
+      sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
+    );
+    const leaseExists = sql`exists (
+      select 1
+      from ${dbSchema.workflowRuns}
+      where ${leaseCondition}
+    )`;
+
+    const contactUpdate = this.db
+      .update(dbSchema.contacts)
+      .set({
+        ...fields,
+        metadata: nextMetadata,
+        notes: nextNotes,
+      })
+      .where(
+        and(
+          eq(dbSchema.contacts.id, contactId),
+          leaseExists,
+        ),
+      )
+      .returning({ id: dbSchema.contacts.id });
+    const activityMetadata = buildWorkflowResearchActivityMetadata(record);
+    const activityInsert = this.db
+      .insert(dbSchema.contactActivity)
+      .select(
+        this.db
+          .select({
+            id: sql<string>`${buildWorkflowResearchActivityId(
+              workflowRunId,
+              stepIndex,
+            )}`.as("id"),
+            contactId: sql<string>`${contactId}`.as("contact_id"),
+            type:
+              sql<"workflow_researched">`'workflow_researched'`.as("type"),
+            referenceId: sql<string | null>`null`.as("reference_id"),
+            metadata:
+              sql<Record<string, unknown>>`json(${JSON.stringify(
+                activityMetadata,
+              )})`.as("metadata"),
+            createdAt: sql<Date>`unixepoch()`.as("created_at"),
+          })
+          .from(dbSchema.workflowRuns)
+          .where(leaseCondition)
+          .limit(1),
+      )
+      .onConflictDoNothing({ target: dbSchema.contactActivity.id })
+      .returning({ id: dbSchema.contactActivity.id });
+    const runFinalize = this.db
+      .update(dbSchema.workflowRuns)
+      .set({
+        stepLogs: stepLogs as unknown as null,
+        currentStepIndex: stepIndex,
+        context,
+      })
+      .where(leaseCondition)
+      .returning({ id: dbSchema.workflowRuns.id });
+
+    const results = await runAtomicWorkflowBatch(
+      this.db,
+      [contactUpdate, activityInsert, runFinalize],
+    );
+    const finalizedRows = results[2];
+    return Array.isArray(finalizedRows) && finalizedRows.length > 0;
   }
 
   // Single place that turns a research record into contact updates:
@@ -1308,6 +1483,58 @@ function buildInputContextBlock(
   }
   if (lines.length === 0) return "";
   return ["Context:", ...lines].join("\n");
+}
+
+function buildResendIdempotencyKey(
+  workflowRunId: string,
+  stepIndex: number,
+): string {
+  return `workflow-run/${workflowRunId}/step/${stepIndex}/send-email`;
+}
+
+function buildWorkflowResearchActivityId(
+  workflowRunId: string,
+  stepIndex: number,
+): string {
+  return `workflow-research/${workflowRunId}/step/${stepIndex}`;
+}
+
+interface AtomicWorkflowBatchQuery {
+  all(): unknown;
+}
+
+async function runAtomicWorkflowBatch(
+  database: DrizzleD1Database<Record<string, unknown>>,
+  queries: readonly AtomicWorkflowBatchQuery[],
+): Promise<unknown[]> {
+  const batchDatabase = database as unknown as {
+    batch?: (
+      batchQueries: readonly AtomicWorkflowBatchQuery[],
+    ) => Promise<unknown[]>;
+  };
+  if (typeof batchDatabase.batch === "function") {
+    return batchDatabase.batch.call(database, queries);
+  }
+
+  // Worker tests use the synchronous Bun SQLite Drizzle adapter behind the
+  // D1-compatible service type. Mirror D1 batch atomicity with its native
+  // transaction so the same ownership interleavings are exercised.
+  const syncDatabase = database as unknown as {
+    $client?: {
+      transaction?: (callback: () => void) => () => void;
+    };
+  };
+  const transactionFactory = syncDatabase.$client?.transaction;
+  if (typeof transactionFactory !== "function") {
+    throw new Error("Atomic workflow batch unavailable");
+  }
+
+  let results: unknown[] = [];
+  const transaction = transactionFactory.call(syncDatabase.$client, () => {
+    results = queries.map((query) => query.all());
+  });
+  transaction();
+  return results;
 }
 
 function parseRecord(value: unknown): Record<string, unknown> | undefined {
