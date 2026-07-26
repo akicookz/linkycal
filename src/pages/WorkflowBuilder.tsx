@@ -354,6 +354,7 @@ export default function WorkflowBuilder() {
   const [deleteWorkflowDialogOpen, setDeleteWorkflowDialogOpen] = useState(false);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [expandedStepIndices, setExpandedStepIndices] = useState<Set<string>>(new Set());
+  const runsQueryKey = ["projects", projectId, "workflows", workflowId, "runs"];
 
   // ─── Fetch workflow ─────────────────────────────────────────────────────
 
@@ -431,7 +432,7 @@ export default function WorkflowBuilder() {
   // ─── Fetch runs ─────────────────────────────────────────────────────────
 
   const { data: runs = [] } = useQuery<WorkflowRun[]>({
-    queryKey: ["projects", projectId, "workflows", workflowId, "runs"],
+    queryKey: runsQueryKey,
     queryFn: async () => {
       const res = await fetch(
         `/api/projects/${projectId}/workflows/${workflowId}/runs?limit=50`,
@@ -1203,11 +1204,10 @@ export default function WorkflowBuilder() {
           workflowId={workflowId}
           trigger={workflow.trigger}
           workflowName={workflow.name}
-          onSuccess={() => {
-            queryClient.invalidateQueries({
-              queryKey: ["projects", projectId, "workflows", workflowId, "runs"],
-            });
+          onSuccess={(runId) => {
+            queryClient.invalidateQueries({ queryKey: runsQueryKey });
             setActiveTab("runs");
+            if (runId) setExpandedRunId(runId);
           }}
         />
       )}

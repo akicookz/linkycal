@@ -46,6 +46,11 @@ interface TagItem {
   color: string;
 }
 
+interface RunResponse {
+  runId?: string;
+  started?: number;
+}
+
 interface WorkflowRunDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -53,7 +58,7 @@ interface WorkflowRunDialogProps {
   workflowId: string;
   trigger: TriggerType;
   workflowName: string;
-  onSuccess?: () => void;
+  onSuccess?: (runId: string | null) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -96,7 +101,7 @@ export function WorkflowRunDialog({
     enabled: !!projectId && trigger === "tag_added",
   });
 
-  const runMutation = useMutation({
+  const runMutation = useMutation<RunResponse>({
     mutationFn: async () => {
       if (runMode === "audience") {
         const res = await fetch(
@@ -128,8 +133,8 @@ export function WorkflowRunDialog({
       }
       return res.json();
     },
-    onSuccess: () => {
-      onSuccess?.();
+    onSuccess: (data) => {
+      onSuccess?.(data.runId ?? null);
       onOpenChange(false);
       setContactId("");
       setTagId("");
