@@ -4,8 +4,11 @@ import { eq } from "drizzle-orm";
 import * as dbSchema from "../../worker/db/schema";
 import { buildWorkflowContactOperationalContext } from "../../worker/lib/workflow-runtime";
 import { WorkflowExecutionService } from "../../worker/services/workflow-execution-service";
+import type { StepLog } from "../../worker/services/workflow-service";
 import type { AppEnv } from "../../worker/types";
 import { createTestDb } from "./mcp-test-db";
+
+type UnavailableContactCase = "missing" | "foreign";
 
 async function seedWorkflowRun() {
   const db = createTestDb();
@@ -98,6 +101,112 @@ async function seedWorkflowRun() {
   return db;
 }
 
+async function seedUnavailableContactRun(contactCase: UnavailableContactCase) {
+  const db = createTestDb();
+  await db.insert(dbSchema.schema.users).values({
+    id: "u",
+    name: "User",
+    email: "user@example.com",
+  });
+  await db.insert(dbSchema.projects).values([
+    { id: "p", userId: "u", name: "Project", slug: "project" },
+    { id: "foreign", userId: "u", name: "Foreign", slug: "foreign" },
+  ]);
+  if (contactCase === "foreign") {
+    await db.insert(dbSchema.contacts).values({
+      id: "unavailable-contact",
+      projectId: "foreign",
+      name: "Foreign Contact",
+    });
+  }
+  await db.insert(dbSchema.workflows).values({
+    id: "workflow",
+    projectId: "p",
+    name: "Workflow",
+    trigger: "manual",
+    status: "active",
+  });
+  await db.insert(dbSchema.workflowSteps).values([
+    {
+      id: "step-0",
+      workflowId: "workflow",
+      sortOrder: 0,
+      type: "update_contact",
+      config: { field: "notes", value: "first" },
+    },
+    {
+      id: "step-1",
+      workflowId: "workflow",
+      sortOrder: 1,
+      type: "update_contact",
+      config: { field: "notes", value: "second" },
+    },
+  ]);
+  await db.insert(dbSchema.workflowRuns).values({
+    id: "run",
+    workflowId: "workflow",
+    status: "running",
+    context: JSON.stringify({
+      projectId: "p",
+      contactId: "unavailable-contact",
+    }),
+    stepLogs: [
+      {
+        stepIndex: 0,
+        stepType: "update_contact",
+        stepLabel: "Update Contact",
+        status: "pending",
+        input: null,
+        output: null,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+      },
+      {
+        stepIndex: 1,
+        stepType: "update_contact",
+        stepLabel: "Update Contact",
+        status: "pending",
+        input: null,
+        output: null,
+        error: null,
+        startedAt: null,
+        completedAt: null,
+      },
+    ],
+  });
+  return db;
+}
+
+function buildQueueEnv(enqueued: unknown[]): AppEnv {
+  return {
+    WORKFLOW_QUEUE: {
+      send(message: unknown) {
+        enqueued.push(message);
+        return Promise.resolve();
+      },
+    },
+  } as unknown as AppEnv;
+}
+
+async function executeUnavailableContactRun(contactCase: UnavailableContactCase) {
+  const db = await seedUnavailableContactRun(contactCase);
+  const enqueued: unknown[] = [];
+  const service = new WorkflowExecutionService(db);
+
+  await service.executeStep("run", 0, buildQueueEnv(enqueued));
+
+  const [run] = await db
+    .select()
+    .from(dbSchema.workflowRuns)
+    .where(eq(dbSchema.workflowRuns.id, "run"));
+  return {
+    run,
+    stepLogs: (run?.stepLogs ?? []) as StepLog[],
+    enqueued,
+  };
+}
+
 describe("workflow contact hydration", () => {
   test("keeps undated Next Action text without deadline facts", () => {
     const context = buildWorkflowContactOperationalContext(
@@ -144,5 +253,29 @@ describe("workflow contact hydration", () => {
     expect(context.contactCompany).toBe("Current Company");
     expect(context.contactOperational?.stage?.byTag?.["follow-up"]).toBeDefined();
     expect(context.contactOperational?.stage?.byTag?.lead).toBeUndefined();
+  });
+
+  test("fails safely without enqueueing when the contact was deleted", async () => {
+    const { run, stepLogs, enqueued } =
+      await executeUnavailableContactRun("missing");
+
+    expect(stepLogs[0]?.status).toBe("failed");
+    expect(stepLogs[0]?.error).toBe("Contact unavailable");
+    expect(stepLogs[1]?.status).toBe("skipped");
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toBe("Contact unavailable");
+    expect(enqueued).toEqual([]);
+  });
+
+  test("fails safely without enqueueing when the contact belongs to another project", async () => {
+    const { run, stepLogs, enqueued } =
+      await executeUnavailableContactRun("foreign");
+
+    expect(stepLogs[0]?.status).toBe("failed");
+    expect(stepLogs[0]?.error).toBe("Contact unavailable");
+    expect(stepLogs[1]?.status).toBe("skipped");
+    expect(run?.status).toBe("failed");
+    expect(run?.error).toBe("Contact unavailable");
+    expect(enqueued).toEqual([]);
   });
 });

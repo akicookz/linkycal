@@ -45,6 +45,13 @@ const RESEND_API_URL = "https://api.resend.com/emails";
 const FROM_ADDRESS = "LinkyCal <noreply@updates.linkycal.com>";
 const WEBHOOK_TIMEOUT_MS = 10_000;
 
+class ContactUnavailableError extends Error {
+  constructor() {
+    super("Contact unavailable");
+    this.name = "ContactUnavailableError";
+  }
+}
+
 const STEP_LABELS: Record<string, string> = {
   send_email: "Send Email",
   ai_research: "AI Research",
@@ -296,7 +303,24 @@ export class WorkflowExecutionService {
     const stepLogs = await this.workflowService.getStepLogs(workflowRunId);
     const config = (step.config ?? {}) as Record<string, unknown>;
 
-    await this.refreshContactContext(context);
+    try {
+      await this.refreshContactContext(context);
+    } catch (err) {
+      if (!(err instanceof ContactUnavailableError)) throw err;
+
+      const now = new Date().toISOString();
+      if (stepLogs[stepIndex]) {
+        stepLogs[stepIndex].status = "failed";
+        stepLogs[stepIndex].error = err.message;
+        stepLogs[stepIndex].completedAt = now;
+      }
+      for (let i = stepIndex + 1; i < stepLogs.length; i++) {
+        if (stepLogs[i]) stepLogs[i].status = "skipped";
+      }
+      await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
+      await this.workflowService.failRun(workflowRunId, err.message);
+      return;
+    }
 
     // Resolve per-step inputs into context.stepInputs so executors can
     // reference them via {{input.<key>}}. Each run of executeStep gets a
@@ -1007,7 +1031,7 @@ export class WorkflowExecutionService {
       this.contactService.getOperationalFacts([context.contactId]),
     ]);
     if (!contact || contact.projectId !== context.projectId) {
-      throw new Error("workflow: contact is unavailable in this project");
+      throw new ContactUnavailableError();
     }
 
     context.contactName = contact.name;
