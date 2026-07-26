@@ -27,7 +27,11 @@ async function seedWorkflowRun() {
   await db.insert(dbSchema.contacts).values({
     id: "c",
     projectId: "p",
-    name: "Contact",
+    name: "Current Name",
+    email: "current@example.com",
+    phone: "+1 555 0100",
+    notes: "Current notes",
+    company: "Current Company",
   });
   await db.insert(dbSchema.contactTags).values({
     contactId: "c",
@@ -52,7 +56,13 @@ async function seedWorkflowRun() {
     workflowId: "workflow",
     sortOrder: 0,
     type: "update_contact",
-    config: { field: "notes", value: "matched live stage" },
+    config: {
+      inputs: [
+        { key: "phone", source: { kind: "path", path: "contact.phone" } },
+      ],
+      field: "notes",
+      value: "{{input.phone}}",
+    },
     condition: {
       when: "all",
       rules: [
@@ -70,6 +80,8 @@ async function seedWorkflowRun() {
     context: JSON.stringify({
       projectId: "p",
       contactId: "c",
+      contactName: "Stale Name",
+      contactEmail: "stale@example.com",
       contactOperational: {
         stage: {
           byTag: {
@@ -86,7 +98,7 @@ async function seedWorkflowRun() {
   return db;
 }
 
-describe("workflow contact operational hydration", () => {
+describe("workflow contact hydration", () => {
   test("keeps undated Next Action text without deadline facts", () => {
     const context = buildWorkflowContactOperationalContext(
       {
@@ -99,7 +111,7 @@ describe("workflow contact operational hydration", () => {
     expect(context.nextAction).toEqual({ text: "Follow up" });
   });
 
-  test("refreshes current stage facts before evaluating a step gate", async () => {
+  test("refreshes current contact values and stage facts before resolving step inputs", async () => {
     const db = await seedWorkflowRun();
     const service = new WorkflowExecutionService(db);
 
@@ -109,17 +121,27 @@ describe("workflow contact operational hydration", () => {
       .select()
       .from(dbSchema.contacts)
       .where(eq(dbSchema.contacts.id, "c"));
-    expect(contact?.notes).toBe("matched live stage");
+    expect(contact?.notes).toBe("+1 555 0100");
 
     const [run] = await db
       .select()
       .from(dbSchema.workflowRuns)
       .where(eq(dbSchema.workflowRuns.id, "run"));
     const context = JSON.parse(run?.context ?? "{}") as {
+      contactName?: string;
+      contactEmail?: string;
+      contactPhone?: string;
+      contactNotes?: string;
+      contactCompany?: string;
       contactOperational?: {
         stage?: { byTag?: Record<string, unknown> };
       };
     };
+    expect(context.contactName).toBe("Current Name");
+    expect(context.contactEmail).toBe("current@example.com");
+    expect(context.contactPhone).toBe("+1 555 0100");
+    expect(context.contactNotes).toBe("Current notes");
+    expect(context.contactCompany).toBe("Current Company");
     expect(context.contactOperational?.stage?.byTag?.["follow-up"]).toBeDefined();
     expect(context.contactOperational?.stage?.byTag?.lead).toBeUndefined();
   });

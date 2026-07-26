@@ -25,8 +25,16 @@ export interface WorkflowContactOperationalContext {
 export interface WorkflowTriggerContext {
   projectId: string;
   contactId?: string;
-  contactEmail?: string;
   contactName?: string;
+  contactEmail?: string;
+  contactPhone?: string;
+  contactNotes?: string;
+  contactCompany?: string;
+  contactWebsite?: string;
+  contactPosition?: string;
+  contactCompanySize?: string;
+  contactEstimatedRevenue?: string;
+  contactLinkedinUrl?: string;
   formResponseId?: string;
   bookingId?: string;
   tagId?: string;
@@ -163,8 +171,16 @@ export function buildWorkflowContextView(
     project: { id: context.projectId },
     contact: {
       id: context.contactId ?? "",
-      email: context.contactEmail ?? "",
       name: context.contactName ?? "",
+      email: context.contactEmail ?? "",
+      phone: context.contactPhone ?? "",
+      notes: context.contactNotes ?? "",
+      company: context.contactCompany ?? "",
+      website: context.contactWebsite ?? "",
+      position: context.contactPosition ?? "",
+      companySize: context.contactCompanySize ?? "",
+      estimatedRevenue: context.contactEstimatedRevenue ?? "",
+      linkedinUrl: context.contactLinkedinUrl ?? "",
       ...(context.contactOperational ?? {}),
     },
     booking: { id: context.bookingId ?? "" },

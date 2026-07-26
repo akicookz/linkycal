@@ -296,7 +296,7 @@ export class WorkflowExecutionService {
     const stepLogs = await this.workflowService.getStepLogs(workflowRunId);
     const config = (step.config ?? {}) as Record<string, unknown>;
 
-    await this.refreshContactOperationalContext(context);
+    await this.refreshContactContext(context);
 
     // Resolve per-step inputs into context.stepInputs so executors can
     // reference them via {{input.<key>}}. Each run of executeStep gets a
@@ -996,17 +996,31 @@ export class WorkflowExecutionService {
 
   // ─── Helpers ───────────────────────────────────────────────────────────
 
-  private async refreshContactOperationalContext(
-    context: TriggerContext,
-  ): Promise<void> {
+  private async refreshContactContext(context: TriggerContext): Promise<void> {
     if (!context.contactId) {
       delete context.contactOperational;
       return;
     }
 
-    const factsByContact = await this.contactService.getOperationalFacts([
-      context.contactId,
+    const [contact, factsByContact] = await Promise.all([
+      this.contactService.getById(context.contactId),
+      this.contactService.getOperationalFacts([context.contactId]),
     ]);
+    if (!contact || contact.projectId !== context.projectId) {
+      throw new Error("workflow: contact is unavailable in this project");
+    }
+
+    context.contactName = contact.name;
+    context.contactEmail = contact.email ?? undefined;
+    context.contactPhone = contact.phone ?? undefined;
+    context.contactNotes = contact.notes ?? undefined;
+    context.contactCompany = contact.company ?? undefined;
+    context.contactWebsite = contact.companyWebsite ?? undefined;
+    context.contactPosition = contact.position ?? undefined;
+    context.contactCompanySize = contact.companySize ?? undefined;
+    context.contactEstimatedRevenue = contact.estimatedRevenue ?? undefined;
+    context.contactLinkedinUrl = contact.linkedinUrl ?? undefined;
+
     const facts = factsByContact[context.contactId];
     context.contactOperational = facts
       ? buildWorkflowContactOperationalContext(facts, new Date())

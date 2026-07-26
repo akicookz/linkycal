@@ -46,8 +46,11 @@ function buildContext(): WorkflowTriggerContext {
   return {
     projectId: "proj_123",
     contactId: "ct_123",
-    contactEmail: "ava@example.com",
     contactName: "Ava",
+    contactEmail: "ava@example.com",
+    contactPhone: "+82 10-1234-5678",
+    contactNotes: "Requested enterprise pricing.",
+    contactCompany: "Acme",
   };
 }
 
@@ -150,6 +153,18 @@ describe("workflow runtime helpers", () => {
         context,
       ),
     ).toBe("Hello Ava / ava@example.com");
+  });
+
+  test("exposes current contact details to workflow value resolution", () => {
+    const context = buildContext();
+
+    expect(resolveWorkflowValue(context, "contact.phone")).toBe(
+      "+82 10-1234-5678",
+    );
+    expect(resolveWorkflowValue(context, "contact.notes")).toBe(
+      "Requested enterprise pricing.",
+    );
+    expect(resolveWorkflowValue(context, "contact.company")).toBe("Acme");
   });
 
   test("normalizes multi-recipient email config and interpolates values", () => {
