@@ -736,7 +736,8 @@ export class WorkflowExecutionService {
       throw new Error("ai_research: invalid research configuration");
     }
 
-    const userPrompt = this.interpolate(String(config.prompt ?? ""), context);
+    const researchRequest = String(config.prompt ?? "");
+    const userPrompt = this.interpolate(researchRequest, context);
     const contextBlock = buildInputContextBlock(context.stepInputs);
     const finalPrompt = contextBlock ? `${contextBlock}\n\n${userPrompt}` : userPrompt;
     const resultKey = typeof config.resultKey === "string" ? config.resultKey : undefined;
@@ -744,7 +745,7 @@ export class WorkflowExecutionService {
     snap.resolved = {
       provider,
       resultKey: resultKey ?? "research",
-      finalPrompt,
+      researchRequest,
     };
 
     async function reportResearchPhase(

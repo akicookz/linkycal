@@ -98,6 +98,22 @@ function ResolvedInputs({ input }: { input: Input }) {
   );
 }
 
+function getResearchRequest(input: Input): string {
+  const researchRequest = asString(input?.researchRequest);
+  if (researchRequest) return researchRequest;
+
+  const config = isRecord(input?.config) ? input.config : null;
+  const savedPrompt = asString(config?.prompt);
+  if (savedPrompt) return savedPrompt;
+
+  const resolvedInputs = isRecord(input?.resolvedInputs)
+    ? input.resolvedInputs
+    : null;
+  if (resolvedInputs && Object.keys(resolvedInputs).length > 0) return "";
+
+  return asString(input?.finalPrompt);
+}
+
 // ─── Step-type renderers ────────────────────────────────────────────────────
 
 function SendEmailLog({ input, output }: { input: Input; output: Output }) {
@@ -148,7 +164,7 @@ function SendEmailLog({ input, output }: { input: Input; output: Output }) {
 
 function AiResearchLog({ input, output }: { input: Input; output: Output }) {
   const resultKey = asString(input?.resultKey);
-  const finalPrompt = asString(input?.finalPrompt);
+  const researchRequest = getResearchRequest(input);
   const summary = asString(output?.summary);
   const company = asString(output?.company);
   const role = asString(output?.role);
@@ -166,9 +182,9 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
           <div className="flex flex-wrap gap-1.5">
             {resultKey && <Pill>stored as {`{{${resultKey}.*}}`}</Pill>}
           </div>
-          {finalPrompt && (
+          {researchRequest && (
             <div className="rounded-[8px] border border-border bg-background p-2.5 max-h-[240px] overflow-auto whitespace-pre-wrap text-[12px] font-mono text-foreground">
-              {finalPrompt}
+              {researchRequest}
             </div>
           )}
         </div>

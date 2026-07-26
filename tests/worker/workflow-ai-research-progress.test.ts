@@ -222,6 +222,7 @@ describe("WorkflowExecutionService AI research progress", () => {
     const service = new WorkflowExecutionService(db);
     const observedProgress: NonNullable<StepLog["progress"]>[] = [];
     let progressAtContactUpdate: StepLog["progress"];
+    let providerPrompt: string | undefined;
 
     const record: WorkflowResearchRecord = {
       provider: "chatgpt",
@@ -233,10 +234,11 @@ describe("WorkflowExecutionService AI research progress", () => {
     };
     const fakeResearchService = {
       async execute(
-        _config: unknown,
+        config: { prompt: string },
         _env: AppEnv,
         onPhase?: WorkflowResearchPhaseReporter,
       ): Promise<WorkflowResearchRecord> {
+        providerPrompt = config.prompt;
         if (onPhase) {
           await onPhase("researching");
           const researchingLogs = await workflowService.getStepLogs("run");
@@ -283,56 +285,72 @@ describe("WorkflowExecutionService AI research progress", () => {
       .from(dbSchema.workflowRuns)
       .where(eq(dbSchema.workflowRuns.id, "run"));
     const finalLogs = (run?.stepLogs ?? []) as StepLog[];
+    const finalInput = finalLogs[0]?.input;
     const finalProgress = finalLogs[0]?.progress;
+    const expectedLeaseStartedAt = finalLogs[0]?.startedAt;
 
-    expect(
-      observedProgress.map(({ phase, message, attempt, maxAttempts }) => ({
-        phase,
-        message,
-        attempt,
-        maxAttempts,
-      })),
-    ).toEqual([
+    expect(providerPrompt).toContain("jane@acme.example");
+    expect(finalInput).toMatchObject({
+      resolvedInputs: {
+        email: "jane@acme.example",
+      },
+      researchRequest: "Research {{input.email}}",
+    });
+    expect("finalPrompt" in (finalInput ?? {})).toBe(false);
+    expect(typeof expectedLeaseStartedAt).toBe("string");
+    expect([
+      ...observedProgress,
+      progressAtContactUpdate,
+      finalProgress,
+    ]).toEqual([
       {
         phase: "researching",
         message: "Researching public sources",
         attempt: 1,
         maxAttempts: 3,
+        leaseStartedAt: expectedLeaseStartedAt,
       },
       {
         phase: "normalizing",
         message: "Structuring findings",
         attempt: 1,
         maxAttempts: 3,
+        leaseStartedAt: expectedLeaseStartedAt,
+      },
+      {
+        phase: "saving",
+        message: "Updating the contact",
+        attempt: 1,
+        maxAttempts: 3,
+        leaseStartedAt: expectedLeaseStartedAt,
+      },
+      {
+        phase: "saving",
+        message: "Updating the contact",
+        attempt: 1,
+        maxAttempts: 3,
+        leaseStartedAt: expectedLeaseStartedAt,
       },
     ]);
-    expect(progressAtContactUpdate).toMatchObject({
-      phase: "saving",
-      message: "Updating the contact",
-      attempt: 1,
-      maxAttempts: 3,
-    });
-    expect(finalProgress).toMatchObject({
-      phase: "saving",
-      message: "Updating the contact",
-      attempt: 1,
-      maxAttempts: 3,
-    });
-    expect(finalProgress?.leaseStartedAt).toBe(finalLogs[0]?.startedAt);
   });
 });
 
 describe("WorkflowStepLog AI research evidence", () => {
-  test("separates supplied inputs, AI findings, and public sources", () => {
+  test("renders an upstream product value only in Inputs, never Research request or AI findings", () => {
+    const productValue = "74 exact upstream events";
     const html = renderToStaticMarkup(
       createElement(WorkflowStepLog, {
         stepType: "ai_research",
         input: {
           resolvedInputs: {
-            productActivity: "74 exact upstream events",
+            productActivity: productValue,
           },
           resultKey: "lead",
-          finalPrompt: "Research Jane using public sources",
+          researchRequest:
+            "Research {{input.productActivity}} using public sources",
+          finalPrompt:
+            `Context:\n- productActivity: ${productValue}\n\n` +
+            `Research ${productValue} using public sources`,
         },
         output: {
           summary: STRUCTURED_RESULT.summary,
@@ -359,12 +377,49 @@ describe("WorkflowStepLog AI research evidence", () => {
       findingsIndex > requestIndex,
       sourcesIndex > findingsIndex,
     ]).toEqual([true, true, true, true]);
-    expect(html.slice(findingsIndex, sourcesIndex)).not.toContain(
-      "74 exact upstream events",
+    expect(html.split(productValue)).toHaveLength(2);
+    expect(html.slice(requestIndex, findingsIndex)).not.toContain(productValue);
+    expect(html.slice(findingsIndex, sourcesIndex)).not.toContain(productValue);
+    expect(html.slice(requestIndex, findingsIndex)).toContain(
+      "Research {{input.productActivity}} using public sources",
     );
     expect(html.slice(findingsIndex, sourcesIndex)).toContain(
       "Recently expanded operations",
     );
     expect(html.slice(sourcesIndex)).toContain("https://acme.example/about");
+  });
+
+  test("uses the saved config prompt for legacy logs with expanded finalPrompt", () => {
+    const productValue = "74 exact upstream events";
+    const html = renderToStaticMarkup(
+      createElement(WorkflowStepLog, {
+        stepType: "ai_research",
+        input: {
+          config: {
+            prompt: "Research {{input.productActivity}} using public sources",
+          },
+          resolvedInputs: {
+            productActivity: productValue,
+          },
+          finalPrompt:
+            `Context:\n- productActivity: ${productValue}\n\n` +
+            `Research ${productValue} using public sources`,
+        },
+        output: {
+          summary: STRUCTURED_RESULT.summary,
+          sources: STRUCTURED_RESULT.sources,
+        },
+        error: null,
+      }),
+    );
+
+    const requestIndex = html.indexOf(">Research request<");
+    const findingsIndex = html.indexOf(">AI findings<");
+
+    expect(html.split(productValue)).toHaveLength(2);
+    expect(html.slice(requestIndex, findingsIndex)).toContain(
+      "Research {{input.productActivity}} using public sources",
+    );
+    expect(html.slice(requestIndex, findingsIndex)).not.toContain(productValue);
   });
 });
