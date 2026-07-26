@@ -29,6 +29,7 @@ import {
   MAX_WORKFLOW_ATTEMPTS,
   retryDelaySeconds,
   safeWorkflowErrorMessage,
+  WorkflowFetchError,
 } from "../lib/workflow-retry";
 import type { AppEnv } from "../types";
 import { WorkflowService, type StepLog } from "./workflow-service";
@@ -75,6 +76,20 @@ class ContactUnavailableError extends Error {
   constructor() {
     super("Contact unavailable");
     this.name = "ContactUnavailableError";
+  }
+}
+
+async function workflowFetch(
+  input: Parameters<typeof fetch>[0],
+  init?: Parameters<typeof fetch>[1],
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new WorkflowFetchError(error);
+    }
+    throw error;
   }
 }
 
@@ -418,36 +433,47 @@ export class WorkflowExecutionService {
     stepLogs = claimedLogs;
 
     // ── Step logging: attach resolved inputs to the claimed lease ──
-    let executionProgress: StepExecutionProgress | undefined;
     const claimedLog = stepLogs[stepIndex];
-    if (claimedLog?.progress?.leaseStartedAt) {
-      claimedLog.input = { config, resolvedInputs: context.stepInputs };
-      const leaseStartedAt = claimedLog.progress.leaseStartedAt;
-      const workflowService = this.workflowService;
-      async function report(
-        progress: NonNullable<StepLog["progress"]>,
-      ): Promise<void> {
-        if (stepLogs[stepIndex]) {
-          stepLogs[stepIndex].progress = progress;
-        }
-        await workflowService.updateStepProgress(
-          workflowRunId,
-          stepIndex,
-          progress,
-        );
-      }
-      executionProgress = {
-        attempt,
-        leaseStartedAt,
-        report,
-      };
+    const leaseStartedAt = claimedLog?.progress?.leaseStartedAt;
+    if (!claimedLog || !leaseStartedAt) {
+      return;
     }
-    await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
+    const leaseToken = leaseStartedAt;
+    claimedLog.input = { config, resolvedInputs: context.stepInputs };
+    const attachedInput = await this.workflowService.updateStepLogsForLease(
+      workflowRunId,
+      stepIndex,
+      leaseToken,
+      stepLogs,
+    );
+    if (!attachedInput) {
+      return;
+    }
+
+    const workflowService = this.workflowService;
+    async function report(
+      progress: NonNullable<StepLog["progress"]>,
+    ): Promise<void> {
+      if (stepLogs[stepIndex]) {
+        stepLogs[stepIndex].progress = progress;
+      }
+      await workflowService.updateStepProgressForLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        progress,
+      );
+    }
+    const executionProgress: StepExecutionProgress = {
+      attempt,
+      leaseStartedAt: leaseToken,
+      report,
+    };
 
     const snapshot: StepSnapshot = { resolved: {}, output: {} };
+    let shouldContinue: boolean;
     try {
-      // Execute the step based on type
-      const shouldContinue = await this.executeStepAction(
+      shouldContinue = await this.executeStepAction(
         step.type,
         config,
         context,
@@ -455,48 +481,6 @@ export class WorkflowExecutionService {
         snapshot,
         executionProgress,
       );
-
-      // ── Step logging: mark as completed ──
-      const now = new Date().toISOString();
-      if (stepLogs[stepIndex]) {
-        stepLogs[stepIndex].status = "completed";
-        stepLogs[stepIndex].completedAt = now;
-        stepLogs[stepIndex].input = {
-          config,
-          resolvedInputs: context.stepInputs,
-          ...snapshot.resolved,
-        };
-        stepLogs[stepIndex].output = {
-          continued: shouldContinue,
-          ...snapshot.output,
-        };
-      }
-      if (!shouldContinue) {
-        for (let i = stepIndex + 1; i < stepLogs.length; i++) {
-          if (stepLogs[i]) stepLogs[i].status = "skipped";
-        }
-      }
-      await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
-
-      // Update run progress
-      await this.workflowService.updateRunProgress(
-        workflowRunId,
-        stepIndex,
-        undefined,
-        undefined,
-        JSON.stringify(context),
-      );
-
-      const completedLog = stepLogs[stepIndex];
-      if (completedLog) {
-        await this.enqueueNextOrComplete(
-          run,
-          full.steps,
-          stepIndex,
-          env,
-          completedLog,
-        );
-      }
     } catch (err) {
       // Handle wait step: re-enqueue with delay instead of failing.
       if (err instanceof WaitSignal) {
@@ -506,15 +490,16 @@ export class WorkflowExecutionService {
           stepLogs[stepIndex].completedAt = new Date().toISOString();
           stepLogs[stepIndex].output = { waitSeconds: err.delaySeconds };
         }
-        await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
-
-        await this.workflowService.updateRunProgress(
+        const finalized = await this.workflowService.finalizeStepLease(
           workflowRunId,
           stepIndex,
-          undefined,
-          undefined,
+          leaseToken,
+          stepLogs,
           JSON.stringify(context),
         );
+        if (!finalized) {
+          return;
+        }
 
         const completedLog = stepLogs[stepIndex];
         if (completedLog) {
@@ -543,7 +528,15 @@ export class WorkflowExecutionService {
           maxAttempts: MAX_WORKFLOW_ATTEMPTS,
           nextRetryAt,
         };
-        await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
+        const scheduled = await this.workflowService.updateStepLogsForLease(
+          workflowRunId,
+          stepIndex,
+          leaseToken,
+          stepLogs,
+        );
+        if (!scheduled) {
+          return;
+        }
         await env.WORKFLOW_QUEUE.send(
           { workflowRunId, stepIndex, attempt: attempt + 1 },
           { delaySeconds },
@@ -562,12 +555,65 @@ export class WorkflowExecutionService {
       for (let i = stepIndex + 1; i < stepLogs.length; i++) {
         if (stepLogs[i]) stepLogs[i].status = "skipped";
       }
-      await this.workflowService.updateStepLogs(workflowRunId, stepLogs);
+      const failed = await this.workflowService.failStepLease(
+        workflowRunId,
+        stepIndex,
+        leaseToken,
+        stepLogs,
+        message,
+        new Date(),
+      );
+      if (!failed) {
+        return;
+      }
 
       console.error(
         `Workflow step failed: run=${workflowRunId} step=${stepIndex} type=${step.type} message=${message}`,
       );
-      await this.workflowService.failRun(workflowRunId, message);
+      return;
+    }
+
+    // Action retries end above. Persistence and continuation failures must not
+    // cause a successful side effect to execute again.
+    const now = new Date().toISOString();
+    if (stepLogs[stepIndex]) {
+      stepLogs[stepIndex].status = "completed";
+      stepLogs[stepIndex].completedAt = now;
+      stepLogs[stepIndex].input = {
+        config,
+        resolvedInputs: context.stepInputs,
+        ...snapshot.resolved,
+      };
+      stepLogs[stepIndex].output = {
+        continued: shouldContinue,
+        ...snapshot.output,
+      };
+    }
+    if (!shouldContinue) {
+      for (let i = stepIndex + 1; i < stepLogs.length; i++) {
+        if (stepLogs[i]) stepLogs[i].status = "skipped";
+      }
+    }
+    const finalized = await this.workflowService.finalizeStepLease(
+      workflowRunId,
+      stepIndex,
+      leaseToken,
+      stepLogs,
+      JSON.stringify(context),
+    );
+    if (!finalized) {
+      return;
+    }
+
+    const completedLog = stepLogs[stepIndex];
+    if (completedLog) {
+      await this.enqueueNextOrComplete(
+        run,
+        full.steps,
+        stepIndex,
+        env,
+        completedLog,
+      );
     }
   }
 
@@ -787,7 +833,7 @@ export class WorkflowExecutionService {
       ? body
       : body.replace(/\n/g, "<br>");
 
-    const response = await fetch(RESEND_API_URL, {
+    const response = await workflowFetch(RESEND_API_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${env.RESEND_API_KEY}`,
@@ -1139,7 +1185,7 @@ export class WorkflowExecutionService {
 
     snap.resolved = { url, method, headers, body };
 
-    const response = await fetch(url, {
+    const response = await workflowFetch(url, {
       method,
       headers,
       body,

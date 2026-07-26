@@ -8,6 +8,7 @@ import {
   isTransientWorkflowError,
   retryDelaySeconds,
   safeWorkflowErrorMessage,
+  WorkflowFetchError,
 } from "../../worker/lib/workflow-retry";
 import type { WorkflowResearchRecord } from "../../worker/lib/workflow-runtime";
 import {
@@ -15,7 +16,10 @@ import {
   type WorkflowExecutionDependencies,
 } from "../../worker/services/workflow-execution-service";
 import type { WorkflowAiResearchService } from "../../worker/services/workflow-ai-research-service";
-import type { StepLog } from "../../worker/services/workflow-service";
+import {
+  WorkflowService,
+  type StepLog,
+} from "../../worker/services/workflow-service";
 import type { AppEnv } from "../../worker/types";
 import { createTestDb } from "./mcp-test-db";
 
@@ -223,7 +227,12 @@ describe("workflow retry policy", () => {
     expect(
       isTransientWorkflowError(new DOMException("timed out", "TimeoutError")),
     ).toBe(true);
-    expect(isTransientWorkflowError(new TypeError("fetch failed"))).toBe(true);
+    expect(isTransientWorkflowError(new TypeError("programming bug"))).toBe(false);
+    expect(
+      isTransientWorkflowError(
+        new WorkflowFetchError(new TypeError("network request failed")),
+      ),
+    ).toBe(true);
     expect(isTransientWorkflowError({ status: 408 })).toBe(true);
     expect(isTransientWorkflowError({ statusCode: "429" })).toBe(true);
     expect(isTransientWorkflowError({ status: 500 })).toBe(true);
@@ -279,6 +288,61 @@ describe("workflow execution retry and lease handling", () => {
         options: { delaySeconds: 15 },
       },
     ]);
+  });
+
+  test("does not retry a successful action when continuation enqueue fails", async () => {
+    const db = await seedRetryRun({ includeSecondStep: true });
+    const attempted: unknown[] = [];
+    const delivered: unknown[] = [];
+    const queueError = new TypeError("queue transport failed");
+    let queueCalls = 0;
+    const env = {
+      WORKFLOW_QUEUE: {
+        async send(body: unknown): Promise<void> {
+          queueCalls += 1;
+          attempted.push(body);
+          if (queueCalls === 1) throw queueError;
+          delivered.push(body);
+        },
+      } as Queue,
+      OPENAI_API_KEY: "test-openai-key",
+    } as AppEnv;
+    let actionCalls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        actionCalls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    const continuationError = await service
+      .executeStep("run", 0, env)
+      .then(() => undefined, (error: unknown) => error);
+
+    const afterFailure = await readRun(db);
+    const persistedContext = JSON.parse(afterFailure.run?.context ?? "{}") as {
+      metadata?: {
+        workflow?: { research?: { byKey?: { lead?: unknown } } };
+      };
+    };
+    expect(continuationError).toBe(queueError);
+    expect(actionCalls).toBe(1);
+    expect(afterFailure.logs[0]?.status).toBe("completed");
+    expect(afterFailure.run?.status).toBe("running");
+    expect(
+      persistedContext.metadata?.workflow?.research?.byKey?.lead,
+    ).toBeDefined();
+    expect(delivered).toEqual([]);
+
+    await service.executeStep("run", 0, env);
+
+    expect(actionCalls).toBe(1);
+    expect(attempted).toEqual([
+      { workflowRunId: "run", stepIndex: 1 },
+      { workflowRunId: "run", stepIndex: 1 },
+    ]);
+    expect(delivered).toEqual([{ workflowRunId: "run", stepIndex: 1 }]);
   });
 
   test("fails a permanent authentication error without enqueueing", async () => {
@@ -356,6 +420,101 @@ describe("workflow execution retry and lease handling", () => {
     expect(calls).toBe(1);
   });
 
+  test("prevents a stale lease owner from overwriting its replacement", async () => {
+    const db = await seedRetryRun({ includeSecondStep: true });
+    const workflowService = new WorkflowService(db);
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    let releaseResearch: (() => void) | undefined;
+    let reportStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      reportStarted = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      releaseResearch = resolve;
+    });
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        reportStarted?.();
+        await blocked;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    const original = service.executeStep("run", 0, buildQueueEnv(sent));
+    await started;
+
+    const staleLogs = await workflowService.getStepLogs("run");
+    const originalLease = staleLogs[0]?.progress?.leaseStartedAt;
+    const takeoverAt = new Date(Date.now() + 16 * 60_000);
+    if (staleLogs[0]?.progress) {
+      staleLogs[0].progress.leaseStartedAt = new Date(
+        takeoverAt.getTime() - 16 * 60_000,
+      ).toISOString();
+    }
+    await workflowService.updateStepLogs("run", staleLogs);
+    const replacementLogs = await workflowService.claimStepLease(
+      "run",
+      0,
+      1,
+      takeoverAt,
+    );
+    const replacementLease = replacementLogs?.[0]?.progress?.leaseStartedAt;
+
+    expect(typeof originalLease).toBe("string");
+    expect(typeof replacementLease).toBe("string");
+    expect(replacementLease).not.toBe(originalLease);
+
+    releaseResearch?.();
+    await original;
+
+    const afterOriginal = await readRun(db);
+    expect(afterOriginal.logs[0]?.status).toBe("running");
+    expect(afterOriginal.logs[0]?.progress?.leaseStartedAt).toBe(
+      replacementLease,
+    );
+    expect(afterOriginal.run?.status).toBe("running");
+    expect(sent).toEqual([]);
+  });
+
+  test("finalizes step logs and workflow context in one leased transition", async () => {
+    const db = await seedRetryRun();
+    const workflowService = new WorkflowService(db);
+    const claimedLogs = await workflowService.claimStepLease(
+      "run",
+      0,
+      1,
+      new Date("2026-07-26T12:00:00.000Z"),
+    );
+    const leaseStartedAt = claimedLogs?.[0]?.progress?.leaseStartedAt;
+    expect(typeof leaseStartedAt).toBe("string");
+    if (!claimedLogs || !leaseStartedAt) {
+      throw new Error("expected a claimed lease");
+    }
+    claimedLogs[0].status = "completed";
+    claimedLogs[0].completedAt = "2026-07-26T12:00:01.000Z";
+    claimedLogs[0].output = { continued: true, result: "saved" };
+    const nextContext = JSON.stringify({
+      projectId: "project",
+      contactId: "contact",
+      stepOutputs: { 0: "saved" },
+    });
+
+    const finalized = await workflowService.finalizeStepLease(
+      "run",
+      0,
+      leaseStartedAt,
+      claimedLogs,
+      nextContext,
+    );
+
+    const { run, logs } = await readRun(db);
+    expect(finalized).toBe(true);
+    expect(logs[0]?.status).toBe("completed");
+    expect(run?.context).toBe(nextContext);
+    expect(run?.currentStepIndex).toBe(0);
+  });
+
   test("does not claim a retry lease before its scheduled time", async () => {
     const nextRetryAt = new Date(Date.now() + 60_000).toISOString();
     const db = await seedRetryRun({
@@ -387,6 +546,42 @@ describe("workflow execution retry and lease handling", () => {
     expect(logs[0]?.status).toBe("retrying");
     expect(run?.status).toBe("running");
     expect(sent).toEqual([]);
+  });
+
+  test("does not let a stale lower-attempt message claim a due retry", async () => {
+    const db = await seedRetryRun({
+      firstLog: {
+        status: "retrying",
+        progress: {
+          phase: "retrying",
+          message: "Retrying after a temporary provider error",
+          attempt: 2,
+          maxAttempts: 3,
+          nextRetryAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      },
+    });
+    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+    let calls = 0;
+    const fake = {
+      async execute(): Promise<WorkflowResearchRecord> {
+        calls += 1;
+        return RESEARCH_RECORD;
+      },
+    } as ResearchServiceFake;
+    const service = new WorkflowExecutionService(db, buildDependencies(fake));
+
+    await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+
+    const afterStale = await readRun(db);
+    expect(calls).toBe(0);
+    expect(afterStale.logs[0]?.status).toBe("retrying");
+    expect(afterStale.logs[0]?.progress?.attempt).toBe(2);
+    expect(afterStale.run?.status).toBe("running");
+
+    await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 2 });
+
+    expect(calls).toBe(1);
   });
 
   test("repairs a completed duplicate by enqueueing the next step without rerunning", async () => {

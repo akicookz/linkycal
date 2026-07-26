@@ -1,8 +1,8 @@
 import { APICallError } from "ai";
 
 export const MAX_WORKFLOW_ATTEMPTS = 3;
+export const WORKFLOW_LEASE_MS = 15 * 60_000;
 
-const WORKFLOW_LEASE_MS = 15 * 60_000;
 const SENSITIVE_ERROR_PATTERN =
   /authorization|bearer|api[-_\s]?key|token|secret|password|cookie/i;
 
@@ -12,6 +12,17 @@ interface ErrorRecord {
   status?: unknown;
   statusCode?: unknown;
   transient?: unknown;
+}
+
+export class WorkflowFetchError extends TypeError {
+  readonly cause: unknown;
+  readonly transient = true;
+
+  constructor(cause: unknown) {
+    super("Provider request failed");
+    this.name = "WorkflowFetchError";
+    this.cause = cause;
+  }
 }
 
 export function retryDelaySeconds(attempt: number): number | null {
@@ -25,9 +36,6 @@ export function isTransientWorkflowError(error: unknown): boolean {
     return error.isRetryable;
   }
   if (error instanceof DOMException && error.name === "TimeoutError") {
-    return true;
-  }
-  if (error instanceof TypeError) {
     return true;
   }
   if (!isErrorRecord(error)) {

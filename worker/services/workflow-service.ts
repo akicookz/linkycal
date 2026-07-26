@@ -1,7 +1,10 @@
 import { eq, and, asc, desc, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
-import { MAX_WORKFLOW_ATTEMPTS } from "../lib/workflow-retry";
+import {
+  MAX_WORKFLOW_ATTEMPTS,
+  WORKFLOW_LEASE_MS,
+} from "../lib/workflow-retry";
 import {
   computeNextRunAt,
   parseWorkflowTriggerConfig,
@@ -398,14 +401,22 @@ export class WorkflowService {
     now: Date,
   ): Promise<StepLog[] | null> {
     if (!Number.isInteger(stepIndex) || stepIndex < 0) return null;
+    if (
+      !Number.isInteger(attempt) ||
+      attempt < 1 ||
+      attempt > MAX_WORKFLOW_ATTEMPTS
+    ) {
+      return null;
+    }
 
     const statusPath = `$[${stepIndex}].status`;
     const startedPath = `$[${stepIndex}].startedAt`;
     const progressPath = `$[${stepIndex}].progress`;
     const nextRetryPath = `$[${stepIndex}].progress.nextRetryAt`;
     const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const attemptPath = `$[${stepIndex}].progress.attempt`;
     const nowIso = now.toISOString();
-    const staleBefore = new Date(now.getTime() - 15 * 60_000).toISOString();
+    const staleBefore = new Date(now.getTime() - WORKFLOW_LEASE_MS).toISOString();
     const progress: WorkflowStepProgress = {
       phase: "preparing",
       message: "Preparing step inputs",
@@ -428,6 +439,7 @@ export class WorkflowService {
         and(
           eq(dbSchema.workflowRuns.id, runId),
           eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${attemptPath}) = ${attempt}`,
           sql`(
             json_extract(${dbSchema.workflowRuns.stepLogs}, ${statusPath}) = 'pending'
             OR (
@@ -453,6 +465,113 @@ export class WorkflowService {
       }
     }
     return raw as StepLog[];
+  }
+
+  async updateStepLogsForLease(
+    runId: string,
+    stepIndex: number,
+    leaseStartedAt: string,
+    stepLogs: StepLog[],
+  ): Promise<boolean> {
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const rows = await this.db
+      .update(dbSchema.workflowRuns)
+      .set({ stepLogs: stepLogs as unknown as null })
+      .where(
+        and(
+          eq(dbSchema.workflowRuns.id, runId),
+          eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
+        ),
+      )
+      .returning({ id: dbSchema.workflowRuns.id });
+    return rows.length > 0;
+  }
+
+  async updateStepProgressForLease(
+    runId: string,
+    stepIndex: number,
+    leaseStartedAt: string,
+    progress: WorkflowStepProgress,
+  ): Promise<boolean> {
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const progressPath = `$[${stepIndex}].progress`;
+    const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const rows = await this.db
+      .update(dbSchema.workflowRuns)
+      .set({
+        stepLogs: sql`json_set(
+          ${dbSchema.workflowRuns.stepLogs},
+          ${progressPath}, json(${JSON.stringify(progress)})
+        )` as unknown as null,
+      })
+      .where(
+        and(
+          eq(dbSchema.workflowRuns.id, runId),
+          eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
+        ),
+      )
+      .returning({ id: dbSchema.workflowRuns.id });
+    return rows.length > 0;
+  }
+
+  async finalizeStepLease(
+    runId: string,
+    stepIndex: number,
+    leaseStartedAt: string,
+    stepLogs: StepLog[],
+    context: string,
+  ): Promise<boolean> {
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const rows = await this.db
+      .update(dbSchema.workflowRuns)
+      .set({
+        stepLogs: stepLogs as unknown as null,
+        currentStepIndex: stepIndex,
+        context,
+      })
+      .where(
+        and(
+          eq(dbSchema.workflowRuns.id, runId),
+          eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
+        ),
+      )
+      .returning({ id: dbSchema.workflowRuns.id });
+    return rows.length > 0;
+  }
+
+  async failStepLease(
+    runId: string,
+    stepIndex: number,
+    leaseStartedAt: string,
+    stepLogs: StepLog[],
+    error: string,
+    completedAt: Date,
+  ): Promise<boolean> {
+    if (!Number.isInteger(stepIndex) || stepIndex < 0) return false;
+    const leasePath = `$[${stepIndex}].progress.leaseStartedAt`;
+    const rows = await this.db
+      .update(dbSchema.workflowRuns)
+      .set({
+        stepLogs: stepLogs as unknown as null,
+        currentStepIndex: stepIndex,
+        status: "failed",
+        completedAt,
+        error,
+      })
+      .where(
+        and(
+          eq(dbSchema.workflowRuns.id, runId),
+          eq(dbSchema.workflowRuns.status, "running"),
+          sql`json_extract(${dbSchema.workflowRuns.stepLogs}, ${leasePath}) = ${leaseStartedAt}`,
+        ),
+      )
+      .returning({ id: dbSchema.workflowRuns.id });
+    return rows.length > 0;
   }
 
   async updateStepProgress(
