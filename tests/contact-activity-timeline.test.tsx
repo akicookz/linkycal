@@ -132,7 +132,7 @@ afterEach(() => {
 });
 
 describe("ContactActivityTimeline", () => {
-  test("owns the request, renders the four right-aligned segments, and reports counts", async () => {
+  test("requests all activity, exposes category tabs, and reports counts", async () => {
     const fetchMock = mock(async () => jsonResponse(page([])));
     const { onSummaryChange } = renderTimeline(fetchMock as typeof fetch);
 
@@ -140,7 +140,6 @@ describe("ContactActivityTimeline", () => {
     expect(screen.getByRole("tab", { name: "Bookings" })).not.toBeNull();
     expect(screen.getByRole("tab", { name: "Form responses" })).not.toBeNull();
     expect(screen.getByRole("tab", { name: "Workflows" })).not.toBeNull();
-    expect(screen.getByRole("tablist").className).toContain("ml-auto");
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(

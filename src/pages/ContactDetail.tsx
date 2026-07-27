@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { CSSProperties } from "react";
 import { useLocation, useParams, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Mail,
@@ -51,7 +51,6 @@ import {
   formatNextActionRelative,
   nextActionTimingClass,
 } from "@/lib/contact-time";
-import { queryClient } from "@/lib/query-client";
 import type { ContactActivitySummary } from "@/lib/contact-activity";
 import { cn } from "@/lib/utils";
 
@@ -183,6 +182,7 @@ export default function ContactDetailPage() {
   const { projectId, contactId } = useParams<{ projectId: string; contactId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const queryClient = useQueryClient();
 
   const [addTagOpen, setAddTagOpen] = useState(false);
   const [editingNextAction, setEditingNextAction] = useState(false);
@@ -891,7 +891,12 @@ export default function ContactDetailPage() {
                 ) : activitySummary.status === "error" ? (
                   <span className="text-sm text-muted-foreground" aria-label="Bookings unavailable">—</span>
                 ) : (
-                  <span className="text-sm font-semibold tabular-nums text-foreground">{activitySummary.counts?.bookings ?? 0}</span>
+                  <span
+                    aria-label={`Bookings: ${activitySummary.counts?.bookings ?? 0}`}
+                    className="text-sm font-semibold tabular-nums text-foreground"
+                  >
+                    {activitySummary.counts?.bookings ?? 0}
+                  </span>
                 )}
               </div>
               <div className="flex items-center justify-between rounded-[12px] bg-muted/50 px-4 py-3">
@@ -904,7 +909,10 @@ export default function ContactDetailPage() {
                 ) : activitySummary.status === "error" ? (
                   <span className="text-sm text-muted-foreground" aria-label="Form submissions unavailable">—</span>
                 ) : (
-                  <span className="text-sm font-semibold tabular-nums text-foreground">
+                  <span
+                    aria-label={`Form submissions: ${activitySummary.counts?.formResponses ?? 0}`}
+                    className="text-sm font-semibold tabular-nums text-foreground"
+                  >
                     {activitySummary.counts?.formResponses ?? 0}
                   </span>
                 )}
@@ -933,7 +941,12 @@ export default function ContactDetailPage() {
                 ) : activitySummary.status === "error" ? (
                   <span aria-label="Total activity unavailable">Unavailable</span>
                 ) : (
-                  <span className="tabular-nums">{activitySummary.counts?.all ?? 0} events</span>
+                  <span
+                    aria-label={`Total activity: ${activitySummary.counts?.all ?? 0} events`}
+                    className="tabular-nums"
+                  >
+                    {activitySummary.counts?.all ?? 0} events
+                  </span>
                 )}
               </div>
             </CardContent>
