@@ -109,6 +109,16 @@ class WorkflowPersistenceError extends Error {
   }
 }
 
+class WorkflowProviderResponseError extends Error {
+  readonly status: number;
+
+  constructor(provider: string, status: number) {
+    super(`${provider} request failed`);
+    this.name = "WorkflowProviderResponseError";
+    this.status = status;
+  }
+}
+
 async function workflowFetch(
   input: Parameters<typeof fetch>[0],
   init?: Parameters<typeof fetch>[1],
@@ -584,7 +594,11 @@ export class WorkflowExecutionService {
     }
 
     // ── Step logging: attach resolved inputs to the claimed lease ──
-    claimedLog.input = { config, resolvedInputs: context.stepInputs };
+    const loggedConfig = sanitizeWorkflowConfigForLog(config);
+    claimedLog.input = {
+      config: loggedConfig,
+      resolvedInputs: context.stepInputs,
+    };
     const attachedInput = await workflowService.updateStepLogsForLease(
       workflowRunId,
       stepIndex,
@@ -716,7 +730,7 @@ export class WorkflowExecutionService {
       stepLogs[stepIndex].status = "completed";
       stepLogs[stepIndex].completedAt = now;
       stepLogs[stepIndex].input = {
-        config,
+        config: loggedConfig,
         resolvedInputs: context.stepInputs,
         ...snapshot.resolved,
       };
@@ -1105,8 +1119,10 @@ export class WorkflowExecutionService {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`send_email failed: ${error}`);
+      throw new WorkflowProviderResponseError(
+        "Email provider",
+        response.status,
+      );
     }
 
     snap.output = { sent: true, recipientCount: recipients.length };
@@ -1516,7 +1532,7 @@ export class WorkflowExecutionService {
 
     const method = ((config.method as string) || "POST").toUpperCase();
 
-    let headers: Record<string, string> = {
+    const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
     if (config.headers) {
@@ -1525,7 +1541,16 @@ export class WorkflowExecutionService {
           typeof config.headers === "string"
             ? JSON.parse(config.headers)
             : config.headers;
-        headers = { ...headers, ...parsed };
+        if (
+          typeof parsed === "object" &&
+          parsed !== null &&
+          !Array.isArray(parsed)
+        ) {
+          for (const [name, value] of Object.entries(parsed)) {
+            if (typeof value !== "string") continue;
+            headers[name] = this.interpolate(value, context);
+          }
+        }
       } catch {
         // Ignore malformed headers
       }
@@ -1539,7 +1564,12 @@ export class WorkflowExecutionService {
           )
         : undefined;
 
-    snap.resolved = { url, method, headers, body };
+    snap.resolved = {
+      url,
+      method,
+      headers: sanitizeWorkflowLogValue(headers),
+      body: sanitizeWorkflowLogValue(body),
+    };
 
     const response = await workflowFetch(url, {
       method,
@@ -1549,9 +1579,9 @@ export class WorkflowExecutionService {
     });
 
     if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(
-        `webhook failed: ${response.status} ${response.statusText} — ${text.slice(0, 200)}`,
+      throw new WorkflowProviderResponseError(
+        "Webhook provider",
+        response.status,
       );
     }
 
@@ -1691,6 +1721,55 @@ function buildWorkflowResearchActivityId(
   stepIndex: number,
 ): string {
   return `workflow-research/${workflowRunId}/step/${stepIndex}`;
+}
+
+const SENSITIVE_WORKFLOW_LOG_KEY =
+  /authorization|proxy-authorization|api[-_]?key|token|secret|password|cookie|credential/i;
+
+function sanitizeWorkflowConfigForLog(
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  return sanitizeWorkflowLogValue(config) as Record<string, unknown>;
+}
+
+function sanitizeWorkflowLogValue(
+  value: unknown,
+  key = "",
+): unknown {
+  if (SENSITIVE_WORKFLOW_LOG_KEY.test(key)) {
+    return "[redacted]";
+  }
+  if (Array.isArray(value)) {
+    return value.map(function sanitizeItem(item) {
+      return sanitizeWorkflowLogValue(item);
+    });
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(function sanitizeEntry([entryKey, entryValue]) {
+        return [
+          entryKey,
+          sanitizeWorkflowLogValue(entryValue, entryKey),
+        ];
+      }),
+    );
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (
+      (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+      (trimmed.startsWith("[") && trimmed.endsWith("]"))
+    ) {
+      try {
+        return JSON.stringify(
+          sanitizeWorkflowLogValue(JSON.parse(trimmed)),
+        );
+      } catch {
+        return value;
+      }
+    }
+  }
+  return value;
 }
 
 interface AtomicWorkflowBatchQuery {

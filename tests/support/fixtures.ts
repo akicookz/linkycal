@@ -12,6 +12,14 @@ export const FIXTURE_IDS = {
   booking: "booking-existing",
 } as const;
 
+export const WORKFLOW_FIXTURE_IDS = {
+  owner: "owner-workflow",
+  project: "project-workflow",
+  contact: "contact-hanna",
+  tag: "tag-qualified",
+  booking: "booking-northstar",
+} as const;
+
 export const CROSS_TIMEZONE_SLOT_ISO = "2026-03-23T13:00:00.000Z";
 
 export const CROSS_TIMEZONE_VIEWERS = [
@@ -267,4 +275,72 @@ export async function seedBookingDeliveryScenario(
     endTime: "2026-03-23T13:30:00.000Z",
     notes,
   };
+}
+
+export interface WorkflowFixtureStep {
+  id: string;
+  sortOrder: number;
+  type: dbSchema.NewWorkflowStepRow["type"];
+  config?: Record<string, unknown>;
+  condition?: Record<string, unknown>;
+}
+
+export async function seedWorkflowContactScenario(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  contactOverrides: Partial<dbSchema.NewContactRow> = {},
+): Promise<void> {
+  await db.insert(dbSchema.schema.users).values({
+    id: WORKFLOW_FIXTURE_IDS.owner,
+    name: "Aki Owner",
+    email: "aki@encited.com",
+  });
+  await db.insert(dbSchema.projects).values({
+    id: WORKFLOW_FIXTURE_IDS.project,
+    userId: WORKFLOW_FIXTURE_IDS.owner,
+    name: "Acme",
+    slug: "acme",
+  });
+  await db.insert(dbSchema.contacts).values({
+    id: WORKFLOW_FIXTURE_IDS.contact,
+    projectId: WORKFLOW_FIXTURE_IDS.project,
+    name: "Hanna Guest",
+    email: "hanna@northstar.example",
+    notes: "Initial note",
+    company: "Northstar Oy",
+    ...contactOverrides,
+  });
+  await db.insert(dbSchema.tags).values({
+    id: WORKFLOW_FIXTURE_IDS.tag,
+    projectId: WORKFLOW_FIXTURE_IDS.project,
+    name: "Qualified",
+    color: "#1B4332",
+  });
+}
+
+export async function seedWorkflowDefinition(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  input: {
+    id: string;
+    name: string;
+    trigger?: dbSchema.NewWorkflowRow["trigger"];
+    steps: WorkflowFixtureStep[];
+  },
+): Promise<void> {
+  await db.insert(dbSchema.workflows).values({
+    id: input.id,
+    projectId: WORKFLOW_FIXTURE_IDS.project,
+    name: input.name,
+    trigger: input.trigger ?? "booking_created",
+    status: "active",
+  });
+  await db.insert(dbSchema.workflowSteps).values(
+    input.steps.map(function toRow(currentStep) {
+      return {
+        ...currentStep,
+        workflowId: input.id,
+        config: currentStep.config ?? {},
+        condition: currentStep.condition ?? null,
+      };
+    }),
+  );
 }
