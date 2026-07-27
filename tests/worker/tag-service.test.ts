@@ -39,16 +39,74 @@ async function seed() {
 }
 
 describe("tag validation", () => {
-  test("normalizes tag input and rejects empty updates", () => {
-    expect(createTagSchema.parse({ name: "  Lead  " })).toEqual({ name: "Lead" });
-    expect(updateTagSchema.safeParse({}).success).toBe(false);
-    expect(assignTagSchema.safeParse({ tagId: "" }).success).toBe(false);
-    expect(listTagsQuerySchema.safeParse({ cursor: "cursor" }).success).toBe(
+  test.each([
+    [
+      "create trims a valid name",
+      () => createTagSchema.safeParse({ name: "  Lead  " }),
+      true,
+      { name: "Lead" },
+    ],
+    [
+      "create rejects a whitespace-only name",
+      () => createTagSchema.safeParse({ name: "   " }),
       false,
-    );
-    expect(
-      listTagsQuerySchema.parse({ search: "  vi ", limit: "2" }),
-    ).toEqual({ search: "vi", limit: 2 });
+      null,
+    ],
+    [
+      "update rejects an empty object",
+      () => updateTagSchema.safeParse({}),
+      false,
+      null,
+    ],
+    [
+      "assignment rejects an empty tagId",
+      () => assignTagSchema.safeParse({ tagId: "" }),
+      false,
+      null,
+    ],
+    [
+      "list trims search and coerces an integer limit",
+      () => listTagsQuerySchema.safeParse({ search: "  vi ", limit: "2" }),
+      true,
+      { search: "vi", limit: 2 },
+    ],
+    [
+      "list rejects a zero limit",
+      () => listTagsQuerySchema.safeParse({ limit: "0" }),
+      false,
+      null,
+    ],
+    [
+      "list rejects a limit over 100",
+      () => listTagsQuerySchema.safeParse({ limit: "101" }),
+      false,
+      null,
+    ],
+    [
+      "list rejects a fractional limit",
+      () => listTagsQuerySchema.safeParse({ limit: "2.5" }),
+      false,
+      null,
+    ],
+    [
+      "list rejects an empty cursor",
+      () => listTagsQuerySchema.safeParse({ limit: "2", cursor: "" }),
+      false,
+      null,
+    ],
+    [
+      "list rejects a cursor without a page limit",
+      () => listTagsQuerySchema.safeParse({ cursor: "cursor" }),
+      false,
+      null,
+    ],
+  ] as const)("%s", (_label, parse, expectedSuccess, expectedData) => {
+    const result = parse();
+    expect(result.success).toBe(expectedSuccess);
+    if (expectedSuccess) {
+      if (!result.success) throw result.error;
+      expect(result.data).toEqual(expectedData);
+    }
   });
 });
 
@@ -74,7 +132,7 @@ describe("TagService", () => {
     ).rejects.toThrow("Invalid tag cursor");
   });
 
-  test("gets, updates, and rejects duplicate names within one project", async () => {
+  test("scopes get and filterProjectTagIds to the requested project", async () => {
     const service = new TagService(await seed());
 
     expect((await service.get("p", "lead"))?.name).toBe("Lead");
@@ -82,21 +140,23 @@ describe("TagService", () => {
     expect(
       await service.filterProjectTagIds("p", ["lead", "foreign", "missing"]),
     ).toEqual(["lead"]);
+  });
 
-    const updated = await service.update("p", "lead", {
-      name: "Qualified Lead",
+  test("keeps an existing tag unchanged when a same-project rename conflicts", async () => {
+    const service = new TagService(await seed());
+    const crossProject = await service.create("p2", {
+      name: " vip ",
       color: "#123456",
     });
-    expect(updated).toEqual(
-      expect.objectContaining({ name: "Qualified Lead", color: "#123456" }),
+    expect(crossProject).toEqual(
+      expect.objectContaining({ projectId: "p2", name: "vip" }),
     );
 
+    const before = await service.get("p", "lead");
     await expect(
-      service.create("p", { name: " prospect ", color: "#abcdef" }),
+      service.update("p", "lead", { name: " VIP ", color: "#abcdef" }),
     ).rejects.toBeInstanceOf(TagNameConflictError);
-    await expect(
-      service.update("p", "lead", { name: "VIP" }),
-    ).rejects.toBeInstanceOf(TagNameConflictError);
+    expect(await service.get("p", "lead")).toEqual(before);
   });
 
   test("assigns and removes idempotently and records activity only on change", async () => {

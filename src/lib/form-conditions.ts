@@ -126,7 +126,7 @@ function evaluateRule(
       return left <= right;
     }
     default:
-      return true;
+      return false;
   }
 }
 
