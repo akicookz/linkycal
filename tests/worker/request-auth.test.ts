@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
-import { resolveRequestAuth } from "../../worker/lib/request-auth";
+import {
+  resolveRequestAuth,
+  type DashboardSession,
+  type RequestAuthResult,
+} from "../../worker/lib/request-auth";
 
-const session = {
+const session: DashboardSession = {
   user: {
     id: "user-a",
     name: "Alice",
@@ -17,119 +21,143 @@ const session = {
   },
 };
 
+function summarizeAuthResult(
+  result: RequestAuthResult,
+): Record<string, unknown> {
+  if (!result.ok) {
+    return {
+      ok: false,
+      status: result.status,
+      code: result.code,
+    };
+  }
+  if (result.auth.kind === "apiKey") {
+    return {
+      ok: true,
+      kind: "apiKey",
+      apiKeyId: result.auth.apiKeyId,
+      projectId: result.auth.projectId,
+    };
+  }
+  return {
+    ok: true,
+    kind: "session",
+    userId: result.auth.user.id,
+    sessionId: result.auth.session.id,
+  };
+}
+
 describe("request authentication", () => {
-  test("uses a session when no Bearer credential exists", async () => {
-    const result = await resolveRequestAuth({
-      authorization: undefined,
-      cookie: "better-auth.session_token=value",
-      loadSession: async () => session,
-      validateApiKey: async () => null,
-    });
+  test("resolves the complete session and API-key precedence policy", async () => {
+    const validKey = {
+      apiKeyId: "key-a",
+      projectId: "project-a",
+    };
+    const cases = [
+      [
+        "session without Bearer credential",
+        undefined,
+        "better-auth.session_token=value",
+        session,
+        null,
+        {
+          ok: true,
+          kind: "session",
+          userId: "user-a",
+          sessionId: "session-a",
+        },
+      ],
+      [
+        "valid API key without session",
+        "Bearer lc_live_valid",
+        undefined,
+        null,
+        validKey,
+        {
+          ok: true,
+          kind: "apiKey",
+          apiKeyId: "key-a",
+          projectId: "project-a",
+        },
+      ],
+      [
+        "session plus Bearer credential",
+        "Bearer lc_live_valid",
+        "better-auth.session_token=value",
+        session,
+        validKey,
+        {
+          ok: false,
+          status: 400,
+          code: "ambiguous_credentials",
+        },
+      ],
+      [
+        "malformed Bearer credential",
+        "Basic secret",
+        undefined,
+        null,
+        null,
+        {
+          ok: false,
+          status: 401,
+          code: "invalid_api_key",
+        },
+      ],
+      [
+        "unknown Bearer credential",
+        "Bearer lc_live_unknown",
+        undefined,
+        null,
+        null,
+        {
+          ok: false,
+          status: 401,
+          code: "invalid_api_key",
+        },
+      ],
+      [
+        "valid key with unrelated cookie",
+        "Bearer lc_live_valid",
+        "theme=light",
+        null,
+        validKey,
+        {
+          ok: true,
+          kind: "apiKey",
+          apiKeyId: "key-a",
+          projectId: "project-a",
+        },
+      ],
+      [
+        "no credential",
+        undefined,
+        undefined,
+        null,
+        null,
+        {
+          ok: false,
+          status: 401,
+          code: "unauthorized",
+        },
+      ],
+    ] as const;
 
-    expect(result).toEqual({
-      ok: true,
-      auth: { kind: "session", ...session },
-    });
-  });
-
-  test("uses a valid API key when no valid session exists", async () => {
-    const result = await resolveRequestAuth({
-      authorization: "Bearer lc_live_valid",
-      cookie: undefined,
-      loadSession: async () => null,
-      validateApiKey: async () => ({
-        apiKeyId: "key-a",
-        projectId: "project-a",
-      }),
-    });
-
-    expect(result).toEqual({
-      ok: true,
-      auth: {
-        kind: "apiKey",
-        apiKeyId: "key-a",
-        projectId: "project-a",
-      },
-    });
-  });
-
-  test("rejects a valid session plus any Bearer credential", async () => {
-    const result = await resolveRequestAuth({
-      authorization: "Bearer lc_live_valid",
-      cookie: "better-auth.session_token=value",
-      loadSession: async () => session,
-      validateApiKey: async () => ({
-        apiKeyId: "key-a",
-        projectId: "project-a",
-      }),
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 400,
-      code: "ambiguous_credentials",
-    });
-  });
-
-  test("rejects malformed Bearer credentials without session fallback", async () => {
-    const result = await resolveRequestAuth({
-      authorization: "Basic secret",
-      cookie: undefined,
-      loadSession: async () => null,
-      validateApiKey: async () => null,
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 401,
-      code: "invalid_api_key",
-    });
-  });
-
-  test("rejects unknown Bearer credentials without session fallback", async () => {
-    const result = await resolveRequestAuth({
-      authorization: "Bearer lc_live_unknown",
-      cookie: undefined,
-      loadSession: async () => null,
-      validateApiKey: async () => null,
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 401,
-      code: "invalid_api_key",
-    });
-  });
-
-  test("uses a valid key when an unrelated cookie has no session", async () => {
-    const result = await resolveRequestAuth({
-      authorization: "Bearer lc_live_valid",
-      cookie: "theme=light",
-      loadSession: async () => null,
-      validateApiKey: async () => ({
-        apiKeyId: "key-a",
-        projectId: "project-a",
-      }),
-    });
-
-    expect(result).toMatchObject({
-      ok: true,
-      auth: { kind: "apiKey" },
-    });
-  });
-
-  test("rejects a protected request without either credential", async () => {
-    const result = await resolveRequestAuth({
-      authorization: undefined,
-      cookie: undefined,
-      loadSession: async () => null,
-      validateApiKey: async () => null,
-    });
-
-    expect(result).toMatchObject({
-      ok: false,
-      status: 401,
-      code: "unauthorized",
-    });
+    for (const [
+      name,
+      authorization,
+      cookie,
+      loadedSession,
+      apiKeyIdentity,
+      expected,
+    ] of cases) {
+      const result = await resolveRequestAuth({
+        authorization,
+        cookie,
+        loadSession: async () => loadedSession,
+        validateApiKey: async () => apiKeyIdentity,
+      });
+      expect([name, summarizeAuthResult(result)]).toEqual([name, expected]);
+    }
   });
 });

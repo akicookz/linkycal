@@ -3,70 +3,80 @@ import { describe, expect, test } from "bun:test";
 import { authorizeApiKeyProjectRequest } from "../../worker/lib/project-api-access";
 
 describe("project API key authorization", () => {
-  test("allows a matching entitled key on an API-key route", () => {
-    expect(
-      authorizeApiKeyProjectRequest({
-        apiKeyProjectId: "project-a",
-        routeProjectId: "project-a",
-        routeAccess: "apiKey",
-        apiAccess: true,
-      }),
-    ).toBeNull();
-  });
+  test("enforces the complete fail-closed API-key policy", () => {
+    const cases = [
+      {
+        name: "matching entitled key on API-key route",
+        input: {
+          apiKeyProjectId: "project-a",
+          routeProjectId: "project-a",
+          routeAccess: "apiKey" as const,
+          apiAccess: true,
+        },
+        expected: null,
+      },
+      {
+        name: "key for another project",
+        input: {
+          apiKeyProjectId: "project-b",
+          routeProjectId: "project-a",
+          routeAccess: "apiKey" as const,
+          apiAccess: true,
+        },
+        expected: {
+          status: 403,
+          code: "api_key_project_mismatch",
+        },
+      },
+      {
+        name: "session-only route",
+        input: {
+          apiKeyProjectId: "project-a",
+          routeProjectId: "project-a",
+          routeAccess: "sessionOnly" as const,
+          apiAccess: true,
+        },
+        expected: {
+          status: 403,
+          code: "api_key_route_forbidden",
+        },
+      },
+      {
+        name: "unclassified route",
+        input: {
+          apiKeyProjectId: "project-a",
+          routeProjectId: "project-a",
+          routeAccess: "unclassified" as const,
+          apiAccess: true,
+        },
+        expected: {
+          status: 403,
+          code: "api_key_route_forbidden",
+        },
+      },
+      {
+        name: "project without current API entitlement",
+        input: {
+          apiKeyProjectId: "project-a",
+          routeProjectId: "project-a",
+          routeAccess: "apiKey" as const,
+          apiAccess: false,
+        },
+        expected: {
+          status: 403,
+          code: "api_access_unavailable",
+        },
+      },
+    ];
 
-  test("rejects a key for another project", () => {
-    expect(
-      authorizeApiKeyProjectRequest({
-        apiKeyProjectId: "project-b",
-        routeProjectId: "project-a",
-        routeAccess: "apiKey",
-        apiAccess: true,
-      }),
-    ).toMatchObject({
-      status: 403,
-      code: "api_key_project_mismatch",
-    });
-  });
-
-  test("rejects a session-only route", () => {
-    expect(
-      authorizeApiKeyProjectRequest({
-        apiKeyProjectId: "project-a",
-        routeProjectId: "project-a",
-        routeAccess: "sessionOnly",
-        apiAccess: true,
-      }),
-    ).toMatchObject({
-      status: 403,
-      code: "api_key_route_forbidden",
-    });
-  });
-
-  test("rejects an unclassified route", () => {
-    expect(
-      authorizeApiKeyProjectRequest({
-        apiKeyProjectId: "project-a",
-        routeProjectId: "project-a",
-        routeAccess: "unclassified",
-        apiAccess: true,
-      }),
-    ).toMatchObject({
-      status: 403,
-      code: "api_key_route_forbidden",
-    });
-  });
-
-  test("rejects a project without current API entitlement", () => {
-    expect(
-      authorizeApiKeyProjectRequest({
-        apiKeyProjectId: "project-a",
-        routeProjectId: "project-a",
-        routeAccess: "apiKey",
-        apiAccess: false,
-      }),
-    ).toMatchObject({
-      status: 403,
-      code: "api_access_unavailable",
-    });
+    for (const { name, input, expected } of cases) {
+      const result = authorizeApiKeyProjectRequest(input);
+      expect([
+        name,
+        result
+          ? { status: result.status, code: result.code }
+          : null,
+      ]).toEqual([name, expected]);
+    }
   });
 });

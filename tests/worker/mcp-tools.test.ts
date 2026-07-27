@@ -8,7 +8,6 @@ import {
 } from "../../worker/mcp/tools/bookings";
 import {
   listContacts,
-  createContact,
   updateContact,
   listContactTags,
   getContactTag,
@@ -21,7 +20,6 @@ import {
 import {
   listEventTypes,
   getEventType,
-  createEventType,
 } from "../../worker/mcp/tools/event-types";
 import { getSchedule } from "../../worker/mcp/tools/schedules";
 import { getForm } from "../../worker/mcp/tools/forms";

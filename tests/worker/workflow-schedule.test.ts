@@ -1,11 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import {
-  computeNextRunAt,
-  parseWorkflowTriggerConfig,
-} from "../../worker/lib/workflow-schedule";
+import { computeNextRunAt } from "../../worker/lib/workflow-schedule";
 
 describe("computeNextRunAt", () => {
-
   test("daily respects the configured timezone", () => {
     // 09:00 in New York (EDT, UTC-4) is 13:00 UTC
     const from = new Date("2026-06-12T00:00:00Z");

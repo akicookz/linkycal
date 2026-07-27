@@ -10,17 +10,17 @@ function textField(id: string, overrides: Partial<FormPrefillField> = {}): FormP
   return { id, type: "text", ...overrides };
 }
 
-describe("prefillFromQuery", () => {
+describe("form prefill policy", () => {
+  test("applies file, reserved-key, mapping, and blank-value precedence", () => {
+    expect([
+      "file type",
+      prefillFromQuery(
+        [{ id: "upload", type: "file" }],
+        { upload: "https://x/y.pdf" },
+      ),
+    ]).toEqual(["file type", {}]);
 
-  test("file type is never prefilled", () => {
-    const fields: FormPrefillField[] = [{ id: "upload", type: "file" }];
-    expect(prefillFromQuery(fields, { upload: "https://x/y.pdf" })).toEqual({});
-  });
-});
-
-describe("buildBookingPrefill", () => {
-  test("fills form values by field id and guests from reserved params", () => {
-    const result = buildBookingPrefill({
+    const reserved = buildBookingPrefill({
       fields: [textField("company")],
       query: {
         company: "Acme",
@@ -29,33 +29,49 @@ describe("buildBookingPrefill", () => {
         notes: "Runs late",
       },
     });
-    expect(result.formValues).toEqual({ company: "Acme" });
-    expect(result.guestName).toBe("Ada Lovelace");
-    expect(result.guestEmail).toBe("ada@example.com");
-    expect(result.guestNotes).toBe("Runs late");
-  });
+    expect([
+      "reserved params",
+      reserved.formValues,
+      reserved.guestName,
+      reserved.guestEmail,
+      reserved.guestNotes,
+    ]).toEqual([
+      "reserved params",
+      { company: "Acme" },
+      "Ada Lovelace",
+      "ada@example.com",
+      "Runs late",
+    ]);
 
-  test("a form field with a reserved id wins the collision", () => {
-    const result = buildBookingPrefill({
+    const collision = buildBookingPrefill({
       fields: [textField("name")],
       query: { name: "Ada Lovelace" },
     });
-    expect(result.formValues).toEqual({ name: "Ada Lovelace" });
-    expect(result.guestName).toBeUndefined();
-  });
+    expect([
+      "reserved field collision",
+      collision.formValues,
+      collision.guestName,
+    ]).toEqual([
+      "reserved field collision",
+      { name: "Ada Lovelace" },
+      undefined,
+    ]);
 
-  test("a mapped field that collides with a reserved id still seeds the guest", () => {
-    const result = buildBookingPrefill({
+    const mappedCollision = buildBookingPrefill({
       fields: [textField("name")],
       query: { name: "Ada Lovelace" },
       nameFieldId: "name",
     });
-    expect(result.guestName).toBe("Ada Lovelace");
-  });
+    expect(["mapped reserved field", mappedCollision.guestName]).toEqual([
+      "mapped reserved field",
+      "Ada Lovelace",
+    ]);
 
-  test("prefilled mapped fields seed guests and beat reserved params", () => {
-    const result = buildBookingPrefill({
-      fields: [textField("full-name"), textField("work-email", { type: "email" })],
+    const mapped = buildBookingPrefill({
+      fields: [
+        textField("full-name"),
+        textField("work-email", { type: "email" }),
+      ],
       query: {
         "full-name": "Grace Hopper",
         "work-email": "grace@example.com",
@@ -64,23 +80,30 @@ describe("buildBookingPrefill", () => {
       nameFieldId: "full-name",
       emailFieldId: "work-email",
     });
-    expect(result.guestName).toBe("Grace Hopper");
-    expect(result.guestEmail).toBe("grace@example.com");
-  });
+    expect([
+      "mapped precedence",
+      mapped.guestName,
+      mapped.guestEmail,
+    ]).toEqual([
+      "mapped precedence",
+      "Grace Hopper",
+      "grace@example.com",
+    ]);
 
-  test("blank values are ignored for guests", () => {
     const blankReserved = buildBookingPrefill({
       fields: [],
       query: { name: "   ", notes: "" },
     });
-    expect(blankReserved.guestName).toBeUndefined();
-    expect(blankReserved.guestNotes).toBeUndefined();
-
     const blankMapped = buildBookingPrefill({
       fields: [textField("full-name")],
       query: { "full-name": "   ", name: "Ada Lovelace" },
       nameFieldId: "full-name",
     });
-    expect(blankMapped.guestName).toBe("Ada Lovelace");
+    expect([
+      "blank values",
+      blankReserved.guestName,
+      blankReserved.guestNotes,
+      blankMapped.guestName,
+    ]).toEqual(["blank values", undefined, undefined, "Ada Lovelace"]);
   });
 });

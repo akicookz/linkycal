@@ -34,18 +34,23 @@ describe("evaluateFormCondition", () => {
     { fieldId: "b", operator: "equals", value: "y" },
   ];
 
-  test.each([
-    ["any, first match", "any", { a: "x", b: "nope" }, true],
-    ["any, no matches", "any", { a: "nope", b: "nope" }, false],
-    ["all, both match", "all", { a: "x", b: "y" }, true],
-    ["all, one misses", "all", { a: "x", b: "nope" }, false],
-  ] as const)("%s", (_label, when, values, expected) => {
-    expect(
-      evaluateFormCondition(
-        { when, rules },
-        { values: { ...values }, fieldsById: fields },
-      ),
-    ).toBe(expected);
+  test("applies the any/all rule-group truth table", () => {
+    const cases = [
+      ["any, first match", "any", { a: "x", b: "nope" }, true],
+      ["any, no matches", "any", { a: "nope", b: "nope" }, false],
+      ["all, both match", "all", { a: "x", b: "y" }, true],
+      ["all, one misses", "all", { a: "x", b: "nope" }, false],
+    ] as const;
+
+    for (const [name, when, values, expected] of cases) {
+      expect([
+        name,
+        evaluateFormCondition(
+          { when, rules },
+          { values: { ...values }, fieldsById: fields },
+        ),
+      ]).toEqual([name, expected]);
+    }
   });
 });
 
@@ -60,22 +65,29 @@ describe("SPA/widget condition contract", () => {
     { label: "C", value: "c" },
   ];
 
-  test.each([
-    ["equals scalar choice", "select", "founder", "equals", "founder", true],
-    ["not_equals scalar choice", "select", "founder", "not_equals", "founder", false],
-    ["is_one_of multi-value choice", "multi_select", "a,b", "is_one_of", ["a", "c"], true],
-    ["is_not_one_of multi-value choice", "multi_select", "a,b", "is_not_one_of", ["b", "c"], false],
-    ["contains text case-insensitively", "text", "Hello WORLD", "contains", "world", true],
-    ["not_contains text case-insensitively", "text", "Hello WORLD", "not_contains", "world", false],
-    ["exists for nonblank text", "text", "present", "exists", null, true],
-    ["not_exists for nonblank text", "text", "present", "not_exists", null, false],
-    ["gt rejects an equal numeric boundary", "number", "10", "gt", 10, false],
-    ["lt accepts a lower number", "number", "9", "lt", 10, true],
-    ["gte accepts an equal numeric boundary", "number", "10", "gte", 10, true],
-    ["lte rejects a higher number", "number", "11", "lte", 10, false],
-  ] as const)(
-    "%s",
-    (_label, fieldType, rawValue, operator, ruleValue, expected) => {
+  test("keeps SPA and widget operator behavior identical", () => {
+    const cases = [
+      ["equals scalar choice", "select", "founder", "equals", "founder", true],
+      ["not_equals scalar choice", "select", "founder", "not_equals", "founder", false],
+      ["is_one_of multi-value choice", "multi_select", "a,b", "is_one_of", ["a", "c"], true],
+      ["is_not_one_of multi-value choice", "multi_select", "a,b", "is_not_one_of", ["b", "c"], false],
+      ["contains text case-insensitively", "text", "Hello WORLD", "contains", "world", true],
+      ["not_contains text case-insensitively", "text", "Hello WORLD", "not_contains", "world", false],
+      ["exists for nonblank text", "text", "present", "exists", null, true],
+      ["not_exists for nonblank text", "text", "present", "not_exists", null, false],
+      ["gt rejects an equal numeric boundary", "number", "10", "gt", 10, false],
+      ["lt accepts a lower number", "number", "9", "lt", 10, true],
+      ["gte accepts an equal numeric boundary", "number", "10", "gte", 10, true],
+      ["lte rejects a higher number", "number", "11", "lte", 10, false],
+    ] as const;
+    for (const [
+      name,
+      fieldType,
+      rawValue,
+      operator,
+      ruleValue,
+      expected,
+    ] of cases) {
       const fields = fieldsById([
         {
           id: "source",
@@ -97,36 +109,49 @@ describe("SPA/widget condition contract", () => {
         fieldsById: fields,
       };
 
-      expect(evaluateFormCondition(condition, inputs)).toBe(expected);
-      expect(
+      expect([
+        name,
+        evaluateFormCondition(condition, inputs),
         widgetEvaluate(condition as WidgetFormCondition, inputs),
-      ).toBe(expected);
-    },
-  );
+      ]).toEqual([name, expected, expected]);
+    }
+  });
 
-  test.each([
-    [
-      "deleted source field",
-      {
-        when: "all",
-        rules: [{ fieldId: "ghost", operator: "equals", value: "x" }],
-      },
-    ],
-    [
-      "unknown persisted operator",
-      {
-        when: "all",
-        rules: [{ fieldId: "source", operator: "renamed_operator", value: "x" }],
-      },
-    ],
-  ] as const)("%s fails closed", (_label, persistedCondition) => {
-    const condition = persistedCondition as FormCondition;
-    const inputs = {
-      values: { source: "x", ghost: "x" },
-      fieldsById: fieldsById([{ id: "source", type: "text" }]),
-    };
+  test("fails closed in SPA and widget for unusable persisted rules", () => {
+    const cases = [
+      [
+        "deleted source field",
+        {
+          when: "all",
+          rules: [{ fieldId: "ghost", operator: "equals", value: "x" }],
+        },
+      ],
+      [
+        "unknown persisted operator",
+        {
+          when: "all",
+          rules: [
+            {
+              fieldId: "source",
+              operator: "renamed_operator",
+              value: "x",
+            },
+          ],
+        },
+      ],
+    ] as const;
+    for (const [name, persistedCondition] of cases) {
+      const condition = persistedCondition as FormCondition;
+      const inputs = {
+        values: { source: "x", ghost: "x" },
+        fieldsById: fieldsById([{ id: "source", type: "text" }]),
+      };
 
-    expect(evaluateFormCondition(condition, inputs)).toBe(false);
-    expect(widgetEvaluate(condition as WidgetFormCondition, inputs)).toBe(false);
+      expect([
+        name,
+        evaluateFormCondition(condition, inputs),
+        widgetEvaluate(condition as WidgetFormCondition, inputs),
+      ]).toEqual([name, false, false]);
+    }
   });
 });

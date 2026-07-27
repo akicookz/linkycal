@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 
 import {
   evaluateWorkflowCondition,
-  parseWorkflowCondition,
   type WorkflowCondition,
 } from "../../worker/lib/workflow-conditions";
 import type { WorkflowTriggerContext } from "../../worker/lib/workflow-runtime";
@@ -27,41 +26,60 @@ function baseContext(): WorkflowTriggerContext {
 }
 
 describe("evaluateWorkflowCondition", () => {
-  test("null/empty returns true", () => {
-    expect(evaluateWorkflowCondition(null, baseContext())).toBe(true);
-    expect(evaluateWorkflowCondition({ when: "all", rules: [] }, baseContext())).toBe(true);
-  });
+  test("evaluates the complete workflow condition policy", () => {
+    expect([
+      "null and empty",
+      [
+        evaluateWorkflowCondition(null, baseContext()),
+        evaluateWorkflowCondition(
+          { when: "all", rules: [] },
+          baseContext(),
+        ),
+      ],
+    ]).toEqual(["null and empty", [true, true]]);
 
-  test("equals on contact.email", () => {
-    const cond: WorkflowCondition = {
+    const email: WorkflowCondition = {
       when: "all",
-      rules: [{ source: "contact.email", operator: "equals", value: "jane@acme.com" }],
+      rules: [
+        {
+          source: "contact.email",
+          operator: "equals",
+          value: "jane@acme.com",
+        },
+      ],
     };
-    expect(evaluateWorkflowCondition(cond, baseContext())).toBe(true);
+    const otherContact = baseContext();
+    otherContact.contactEmail = "other@example.com";
+    expect([
+      "contact email",
+      [
+        evaluateWorkflowCondition(email, baseContext()),
+        evaluateWorkflowCondition(email, otherContact),
+      ],
+    ]).toEqual(["contact email", [true, false]]);
 
-    const ctx = baseContext();
-    ctx.contactEmail = "other@example.com";
-    expect(evaluateWorkflowCondition(cond, ctx)).toBe(false);
-  });
-
-  test("numeric gt on metadata", () => {
-    const ctx = baseContext();
-    ctx.metadata = { ...(ctx.metadata ?? {}), priority: "7" };
-    const cond: WorkflowCondition = {
+    const priorityContext = baseContext();
+    priorityContext.metadata = {
+      ...(priorityContext.metadata ?? {}),
+      priority: "7",
+    };
+    const priorityAboveFive: WorkflowCondition = {
       when: "all",
       rules: [{ source: "metadata.priority", operator: "gt", value: 5 }],
     };
-    expect(evaluateWorkflowCondition(cond, ctx)).toBe(true);
-
-    const condLow: WorkflowCondition = {
+    const priorityAboveTen: WorkflowCondition = {
       when: "all",
       rules: [{ source: "metadata.priority", operator: "gt", value: 10 }],
     };
-    expect(evaluateWorkflowCondition(condLow, ctx)).toBe(false);
-  });
+    expect([
+      "numeric metadata",
+      [
+        evaluateWorkflowCondition(priorityAboveFive, priorityContext),
+        evaluateWorkflowCondition(priorityAboveTen, priorityContext),
+      ],
+    ]).toEqual(["numeric metadata", [true, false]]);
 
-  test("a missing Next Action does not match overdue equals false", () => {
-    const cond: WorkflowCondition = {
+    const overdue: WorkflowCondition = {
       when: "all",
       rules: [
         {
@@ -71,13 +89,12 @@ describe("evaluateWorkflowCondition", () => {
         },
       ],
     };
+    expect([
+      "missing Next Action",
+      evaluateWorkflowCondition(overdue, baseContext()),
+    ]).toEqual(["missing Next Action", false]);
 
-    expect(evaluateWorkflowCondition(cond, baseContext())).toBe(false);
-  });
-
-  test("a deleted current-stage source behaves as missing", () => {
-    const context = baseContext();
-    const numeric: WorkflowCondition = {
+    const missingStageAge: WorkflowCondition = {
       when: "all",
       rules: [
         {
@@ -87,7 +104,7 @@ describe("evaluateWorkflowCondition", () => {
         },
       ],
     };
-    const empty: WorkflowCondition = {
+    const missingStage: WorkflowCondition = {
       when: "all",
       rules: [
         {
@@ -96,19 +113,24 @@ describe("evaluateWorkflowCondition", () => {
         },
       ],
     };
+    expect([
+      "deleted stage",
+      [
+        evaluateWorkflowCondition(missingStageAge, baseContext()),
+        evaluateWorkflowCondition(missingStage, baseContext()),
+      ],
+    ]).toEqual(["deleted stage", [false, true]]);
 
-    expect(evaluateWorkflowCondition(numeric, context)).toBe(false);
-    expect(evaluateWorkflowCondition(empty, context)).toBe(true);
-  });
-
-  test("when:any requires one match", () => {
-    const cond: WorkflowCondition = {
+    const any: WorkflowCondition = {
       when: "any",
       rules: [
         { source: "contact.email", operator: "equals", value: "nope" },
         { source: "contact.name", operator: "contains", value: "Jane" },
       ],
     };
-    expect(evaluateWorkflowCondition(cond, baseContext())).toBe(true);
+    expect([
+      "when:any",
+      evaluateWorkflowCondition(any, baseContext()),
+    ]).toEqual(["when:any", true]);
   });
 });

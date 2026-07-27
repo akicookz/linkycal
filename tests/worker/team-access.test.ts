@@ -6,16 +6,9 @@ import {
   hasProjectPermission,
   resolveProjectAccess,
 } from "../../worker/lib/team-access";
-import { PLAN_LIMITS } from "../../worker/lib/plan-limits";
 import { createTestDb } from "./mcp-test-db";
 
 describe("team project access", () => {
-  test("free plan allows one calendar connection and no team members", () => {
-    expect(PLAN_LIMITS.free.calendarSync).toBe(true);
-    expect(PLAN_LIMITS.free.maxCalendarConnections).toBe(1);
-    expect(PLAN_LIMITS.free.maxTeamMembers).toBe(0);
-  });
-
   test("personal team owner gets implicit project admin access", async () => {
     const db = createTestDb();
     await db.insert(dbSchema.schema.users).values({

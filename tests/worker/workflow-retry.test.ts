@@ -246,43 +246,61 @@ describe("workflow retry policy", () => {
     expect(isTransientWorkflowError(permanent)).toBe(false);
   });
 
-  test.each([
-    [
-      "timeout exception",
-      new DOMException("timed out", "TimeoutError"),
-      true,
-    ],
-    [
-      "wrapped fetch failure",
-      new WorkflowFetchError(new TypeError("network request failed")),
-      true,
-    ],
-    ["explicit transient marker", { transient: true }, true],
-    ["timeout status", { status: 408 }, true],
-    ["rate-limit status", { statusCode: "429" }, true],
-    ["provider status lower bound", { status: 500 }, true],
-    ["provider status upper bound", { statusCode: 599 }, true],
-    ["status above provider range", { status: 600 }, false],
-    ["validation status", { status: 422 }, false],
-    ["authentication status", { status: 401 }, false],
-    ["ordinary error", new Error("invalid configuration"), false],
-    ["programming TypeError", new TypeError("programming bug"), false],
-  ] as const)("classifies %s", (_label, error, expected) => {
-    expect(isTransientWorkflowError(error)).toBe(expected);
+  test("classifies the complete retryability matrix", () => {
+    const cases = [
+      [
+        "timeout exception",
+        new DOMException("timed out", "TimeoutError"),
+        true,
+      ],
+      [
+        "wrapped fetch failure",
+        new WorkflowFetchError(new TypeError("network request failed")),
+        true,
+      ],
+      ["explicit transient marker", { transient: true }, true],
+      ["timeout status", { status: 408 }, true],
+      ["rate-limit status", { statusCode: "429" }, true],
+      ["provider status lower bound", { status: 500 }, true],
+      ["provider status upper bound", { statusCode: 599 }, true],
+      ["status above provider range", { status: 600 }, false],
+      ["validation status", { status: 422 }, false],
+      ["authentication status", { status: 401 }, false],
+      ["ordinary error", new Error("invalid configuration"), false],
+      ["programming TypeError", new TypeError("programming bug"), false],
+    ] as const;
+
+    for (const [name, error, expected] of cases) {
+      expect([
+        name,
+        isTransientWorkflowError(error),
+      ]).toEqual([name, expected]);
+    }
   });
 
-  test.each([
-    ["Authorization", "Authorization: Basic private"],
-    ["Bearer", "Bearer sk-private-token"],
-    ["api key", "api_key=private"],
-    ["token", "access token private"],
-    ["secret", "client_secret=private"],
-    ["password", "password=private"],
-    ["cookie", "cookie=session-private"],
-  ] as const)("redacts %s details", (_label, detail) => {
-    const message = safeWorkflowErrorMessage(new Error(detail));
-    expect(message).toBe("Provider request failed");
-    expect(message).not.toContain("private");
+  test("redacts every supported credential marker", () => {
+    const cases = [
+      ["Authorization", "Authorization: Basic private"],
+      ["Bearer", "Bearer sk-private-token"],
+      ["api key", "api_key=private"],
+      ["token", "access token private"],
+      ["secret", "client_secret=private"],
+      ["password", "password=private"],
+      ["cookie", "cookie=session-private"],
+    ] as const;
+
+    for (const [name, detail] of cases) {
+      const message = safeWorkflowErrorMessage(new Error(detail));
+      expect([
+        name,
+        message,
+        message.includes("private"),
+      ]).toEqual([
+        name,
+        "Provider request failed",
+        false,
+      ]);
+    }
   });
 
   test("preserves safe details and replaces provider statuses with stable messages", () => {
@@ -298,15 +316,21 @@ describe("workflow retry policy", () => {
     expect(safeWorkflowErrorMessage("")).toBe("Provider request failed");
   });
 
-  test.each([
-    ["missing", undefined, false],
-    ["invalid", "not-a-date", false],
-    ["one millisecond before", "2026-07-27T11:45:00.001Z", false],
-    ["exactly fifteen minutes", "2026-07-27T11:45:00.000Z", true],
-  ] as const)("handles %s lease timestamps", (_label, startedAt, expected) => {
-    expect(
-      isLeaseStale(startedAt, new Date("2026-07-27T12:00:00.000Z")),
-    ).toBe(expected);
+  test("applies the complete lease-staleness boundary matrix", () => {
+    const now = new Date("2026-07-27T12:00:00.000Z");
+    const cases = [
+      ["missing", undefined, false],
+      ["invalid", "not-a-date", false],
+      ["one millisecond before", "2026-07-27T11:45:00.001Z", false],
+      ["exactly fifteen minutes", "2026-07-27T11:45:00.000Z", true],
+    ] as const;
+
+    for (const [name, startedAt, expected] of cases) {
+      expect([
+        name,
+        isLeaseStale(startedAt, now),
+      ]).toEqual([name, expected]);
+    }
   });
 });
 
@@ -916,39 +940,49 @@ describe("workflow execution retry and lease handling", () => {
     }
   });
 
-  test.each([
-    ["action already started", true],
-    ["legacy action state unknown", undefined],
-  ] as const)("does not recover an unsafe webhook lease when %s", async (
-    _label,
-    actionStarted,
-  ) => {
-    const leaseStartedAt = new Date().toISOString();
-    const db = await seedRetryRun({
-      stepType: "webhook",
-      firstLog: {
-        status: "running",
-        startedAt: leaseStartedAt,
-        progress: {
-          phase: "preparing",
-          message: "Preparing step inputs",
-          attempt: 1,
-          maxAttempts: 3,
-          leaseStartedAt,
-          actionStarted,
+  test("does not recover unsafe webhook leases after ambiguous dispatch", async () => {
+    const cases = [
+      ["action already started", true],
+      ["legacy action state unknown", undefined],
+    ] as const;
+
+    for (const [name, actionStarted] of cases) {
+      const leaseStartedAt = new Date().toISOString();
+      const db = await seedRetryRun({
+        stepType: "webhook",
+        firstLog: {
+          status: "running",
+          startedAt: leaseStartedAt,
+          progress: {
+            phase: "preparing",
+            message: "Preparing step inputs",
+            attempt: 1,
+            maxAttempts: 3,
+            leaseStartedAt,
+            actionStarted,
+          },
         },
-      },
-    });
-    const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
-    const service = new WorkflowExecutionService(db);
+      });
+      const sent: Array<{ body: unknown; options?: QueueSendOptions }> = [];
+      const service = new WorkflowExecutionService(db);
 
-    await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
+      await service.executeStep("run", 0, buildQueueEnv(sent), { attempt: 1 });
 
-    const { run, logs } = await readRun(db);
-    expect(logs[0]?.status).toBe("running");
-    expect(logs[0]?.progress?.actionStarted).toBe(actionStarted);
-    expect(run?.status).toBe("running");
-    expect(sent).toEqual([]);
+      const { run, logs } = await readRun(db);
+      expect([
+        name,
+        logs[0]?.status,
+        logs[0]?.progress?.actionStarted,
+        run?.status,
+        sent,
+      ]).toEqual([
+        name,
+        "running",
+        actionStarted,
+        "running",
+        [],
+      ]);
+    }
   });
 
   test("repairs retry delivery after the first delayed queue send rejects", async () => {

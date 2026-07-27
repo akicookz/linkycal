@@ -39,73 +39,77 @@ async function seed() {
 }
 
 describe("tag validation", () => {
-  test.each([
-    [
-      "create trims a valid name",
-      () => createTagSchema.safeParse({ name: "  Lead  " }),
-      true,
-      { name: "Lead" },
-    ],
-    [
-      "create rejects a whitespace-only name",
-      () => createTagSchema.safeParse({ name: "   " }),
-      false,
-      null,
-    ],
-    [
-      "update rejects an empty object",
-      () => updateTagSchema.safeParse({}),
-      false,
-      null,
-    ],
-    [
-      "assignment rejects an empty tagId",
-      () => assignTagSchema.safeParse({ tagId: "" }),
-      false,
-      null,
-    ],
-    [
-      "list trims search and coerces an integer limit",
-      () => listTagsQuerySchema.safeParse({ search: "  vi ", limit: "2" }),
-      true,
-      { search: "vi", limit: 2 },
-    ],
-    [
-      "list rejects a zero limit",
-      () => listTagsQuerySchema.safeParse({ limit: "0" }),
-      false,
-      null,
-    ],
-    [
-      "list rejects a limit over 100",
-      () => listTagsQuerySchema.safeParse({ limit: "101" }),
-      false,
-      null,
-    ],
-    [
-      "list rejects a fractional limit",
-      () => listTagsQuerySchema.safeParse({ limit: "2.5" }),
-      false,
-      null,
-    ],
-    [
-      "list rejects an empty cursor",
-      () => listTagsQuerySchema.safeParse({ limit: "2", cursor: "" }),
-      false,
-      null,
-    ],
-    [
-      "list rejects a cursor without a page limit",
-      () => listTagsQuerySchema.safeParse({ cursor: "cursor" }),
-      false,
-      null,
-    ],
-  ] as const)("%s", (_label, parse, expectedSuccess, expectedData) => {
-    const result = parse();
-    expect(result.success).toBe(expectedSuccess);
-    if (expectedSuccess) {
-      if (!result.success) throw result.error;
-      expect(result.data).toEqual(expectedData);
+  test("enforces the complete tag schema boundary matrix", () => {
+    const cases = [
+      [
+        "create trims a valid name",
+        () => createTagSchema.safeParse({ name: "  Lead  " }),
+        true,
+        { name: "Lead" },
+      ],
+      [
+        "create rejects a whitespace-only name",
+        () => createTagSchema.safeParse({ name: "   " }),
+        false,
+        null,
+      ],
+      [
+        "update rejects an empty object",
+        () => updateTagSchema.safeParse({}),
+        false,
+        null,
+      ],
+      [
+        "assignment rejects an empty tagId",
+        () => assignTagSchema.safeParse({ tagId: "" }),
+        false,
+        null,
+      ],
+      [
+        "list trims search and coerces an integer limit",
+        () => listTagsQuerySchema.safeParse({ search: "  vi ", limit: "2" }),
+        true,
+        { search: "vi", limit: 2 },
+      ],
+      [
+        "list rejects a zero limit",
+        () => listTagsQuerySchema.safeParse({ limit: "0" }),
+        false,
+        null,
+      ],
+      [
+        "list rejects a limit over 100",
+        () => listTagsQuerySchema.safeParse({ limit: "101" }),
+        false,
+        null,
+      ],
+      [
+        "list rejects a fractional limit",
+        () => listTagsQuerySchema.safeParse({ limit: "2.5" }),
+        false,
+        null,
+      ],
+      [
+        "list rejects an empty cursor",
+        () => listTagsQuerySchema.safeParse({ limit: "2", cursor: "" }),
+        false,
+        null,
+      ],
+      [
+        "list rejects a cursor without a page limit",
+        () => listTagsQuerySchema.safeParse({ cursor: "cursor" }),
+        false,
+        null,
+      ],
+    ] as const;
+
+    for (const [name, parse, expectedSuccess, expectedData] of cases) {
+      const result = parse();
+      expect([
+        name,
+        result.success,
+        result.success ? result.data : null,
+      ]).toEqual([name, expectedSuccess, expectedData]);
     }
   });
 });
