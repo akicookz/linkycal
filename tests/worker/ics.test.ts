@@ -102,24 +102,41 @@ describe("buildIcs", () => {
     ]);
   });
 
-  test("escapes injected text and folds every physical line to 75 octets", () => {
+  test("escapes injected values and folds every physical line to 75 octets", () => {
     const ics = buildIcs({
       ...base,
+      uid: "booking-abc@linkycal.com\r\nX-UID-EVIL:1",
       summary: "Roadmap, phase; path\\folder\r\nX-EVIL:1",
       description: `Résumé ${"漢".repeat(40)}, next; path\\file`,
       url: "https://example.com/book\r\nX-URL-EVIL:1",
       organizerName: "Host\r\nX-CN-EVIL:1",
-      organizerEmail: "host@example.com",
-      attendeeEmail: "guest@example.com",
+      organizerEmail: "host@example.com\r\nX-ORGANIZER-EVIL:1",
+      attendeeEmail: "guest@example.com\r\nX-ATTENDEE-EVIL:1",
     });
 
     const lines = unfoldIcs(ics);
     expect(lines).toContain(
+      "UID:booking-abc@linkycal.comX-UID-EVIL:1",
+    );
+    expect(lines).toContain(
       "SUMMARY:Roadmap\\, phase\\; path\\\\folder\\nX-EVIL:1",
     );
-    expect(lines.some((line) => line.startsWith("X-EVIL:"))).toBe(false);
-    expect(lines.some((line) => line.startsWith("X-URL-EVIL:"))).toBe(false);
-    expect(lines.some((line) => line.startsWith("X-CN-EVIL:"))).toBe(false);
+    expect(lines).toContain(
+      "ORGANIZER;CN=Host  X-CN-EVIL 1:mailto:host@example.comX-ORGANIZER-EVIL:1",
+    );
+    expect(lines).toContain(
+      "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:guest@example.comX-ATTENDEE-EVIL:1",
+    );
+    for (const prefix of [
+      "X-EVIL:",
+      "X-URL-EVIL:",
+      "X-CN-EVIL:",
+      "X-UID-EVIL:",
+      "X-ORGANIZER-EVIL:",
+      "X-ATTENDEE-EVIL:",
+    ]) {
+      expect(lines.some((line) => line.startsWith(prefix))).toBe(false);
+    }
     expect(ics.endsWith("\r\n")).toBe(true);
     expect(ics.replaceAll("\r\n", "")).not.toMatch(/[\r\n]/);
 

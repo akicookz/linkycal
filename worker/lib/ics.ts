@@ -31,6 +31,10 @@ function sanitizeParam(value: string): string {
   return value.replace(/[",;:\r\n]/g, " ").trim();
 }
 
+function sanitizePropertyValue(value: string): string {
+  return value.replace(/[\r\n]/g, "");
+}
+
 function cnParam(name?: string): string {
   if (!name) return "";
   const cn = sanitizeParam(name);
@@ -74,7 +78,7 @@ export function buildIcs(input: IcsInput): string {
     "CALSCALE:GREGORIAN",
     `METHOD:${isRequest ? "REQUEST" : "PUBLISH"}`,
     "BEGIN:VEVENT",
-    `UID:${input.uid}`,
+    `UID:${sanitizePropertyValue(input.uid)}`,
     `DTSTAMP:${formatUtc(input.dtstamp)}`,
     `DTSTART:${formatUtc(input.start)}`,
     `DTEND:${formatUtc(input.end)}`,
@@ -88,14 +92,16 @@ export function buildIcs(input: IcsInput): string {
   if (input.location) lines.push(`LOCATION:${escapeText(input.location)}`);
   if (input.url) lines.push(`URL:${input.url.replace(/[\r\n]/g, "")}`);
   if (input.organizerEmail) {
-    lines.push(`ORGANIZER${cnParam(input.organizerName)}:mailto:${input.organizerEmail}`);
+    lines.push(
+      `ORGANIZER${cnParam(input.organizerName)}:mailto:${sanitizePropertyValue(input.organizerEmail)}`,
+    );
   }
   // A REQUEST's ATTENDEE is only valid alongside an ORGANIZER; skip it otherwise.
   if (input.attendeeEmail && input.organizerEmail) {
     lines.push(
       `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE${cnParam(
         input.attendeeName,
-      )}:mailto:${input.attendeeEmail}`,
+      )}:mailto:${sanitizePropertyValue(input.attendeeEmail)}`,
     );
   }
 
