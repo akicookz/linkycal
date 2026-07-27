@@ -1211,7 +1211,7 @@ app.get("/api/v1/availability/:slug", async (c) => {
     const availabilityService = new AvailabilityService(db);
 
     // Fetch Google Calendar busy times if configured for this event type
-    let externalBusySlots: Array<{ start: string; end: string }> = [];
+    const externalBusySlots: Array<{ start: string; end: string }> = [];
     try {
       // Look up event type to check for busy calendar config
       const [project] = await db
@@ -4665,7 +4665,7 @@ app.get("/api/projects/:projectId/bookings/:id", async (c) => {
       .limit(1);
 
     // Get form response fields if exists
-    let formFields: Array<{ label: string; type: string; value: string }> = [];
+    const formFields: Array<{ label: string; type: string; value: string }> = [];
     if (booking.formResponseId) {
       const fieldValues = await db
         .select()
@@ -7176,19 +7176,20 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
       .sort((a, b) => {
         const now = Date.now();
 
-        function parseTs(val: any) {
-          if (typeof val === "string")
+        function parseTimestamp(value: Date | string | number): number {
+          if (value instanceof Date) return value.getTime();
+          if (typeof value === "string")
             return new Date(
-              String(val).replace(" ", "T") +
-                (String(val).includes("T") ? "" : "Z"),
+              value.replace(" ", "T") +
+                (value.includes("T") ? "" : "Z"),
             ).getTime();
-          return new Date(val).getTime();
+          return new Date(value).getTime();
         }
 
         // Priority: 0 = pending confirmation (future), 1 = upcoming (non-pending, future), 2 = past bookings, 3 = form responses
         function priority(item: typeof a) {
           if (item.type !== "booking") return 3;
-          const start = parseTs((item as any).startTime);
+          const start = parseTimestamp(item.startTime);
           if (item.status === "pending" && start >= now) return 0;
           if (start >= now) return 1;
           return 2;
@@ -7199,10 +7200,17 @@ app.get("/api/projects/:projectId/activity/recent", async (c) => {
         if (pa !== pb) return pa - pb;
 
         // Bookings sort by startTime ascending; form responses by createdAt descending
-        if (pa <= 2) {
-          return parseTs((a as any).startTime) - parseTs((b as any).startTime);
+        if (a.type === "booking" && b.type === "booking") {
+          return (
+            parseTimestamp(a.startTime) - parseTimestamp(b.startTime)
+          );
         }
-        return parseTs(b.createdAt) - parseTs(a.createdAt);
+        if (a.type === "form_response" && b.type === "form_response") {
+          return (
+            parseTimestamp(b.createdAt) - parseTimestamp(a.createdAt)
+          );
+        }
+        return 0;
       })
       .slice(0, 10);
 
@@ -7798,7 +7806,6 @@ export default {
   async scheduled(
     _event: ScheduledEvent,
     env: import("./types").AppEnv,
-    _ctx: ExecutionContext,
   ) {
     try {
       const db = drizzle(env.DB, { schema });

@@ -406,8 +406,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function withoutProviderPrompt(
   record: WorkflowResearchRecord,
 ): WorkflowResearchRecord {
-  const { prompt: _prompt, ...persistedRecord } = record as WorkflowResearchRecord & {
+  const persistedRecord = { ...record } as WorkflowResearchRecord & {
     prompt?: unknown;
   };
+  delete persistedRecord.prompt;
   return persistedRecord;
 }

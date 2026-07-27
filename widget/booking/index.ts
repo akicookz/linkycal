@@ -67,5 +67,12 @@ function initBookingWidget(options: BookingWidgetOptions): void {
   track("widget_view", { projectSlug, resourceSlug: eventTypeSlug }, utms);
 }
 
-(window as any).LinkyCal = (window as any).LinkyCal || {};
-(window as any).LinkyCal.booking = initBookingWidget;
+interface BookingWidgetWindow extends Window {
+  LinkyCal?: {
+    booking?: typeof initBookingWidget;
+  };
+}
+
+const widgetWindow = window as BookingWidgetWindow;
+widgetWindow.LinkyCal ??= {};
+widgetWindow.LinkyCal.booking = initBookingWidget;

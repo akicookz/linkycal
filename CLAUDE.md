@@ -12,9 +12,6 @@ Read `AGENTS.md` first. It is the source of truth for product overview, tech sta
 bun run dev              # Vite dev server on :3001 (Cloudflare plugin runs worker inline)
 bun run build            # cf-typegen → tsc -b → vite build
 bun run lint             # eslint .
-bun test                 # Bun test runner (see tests/ below)
-bun test tests/worker/availability-service.test.ts   # Single test file
-bun test -t "pattern"    # Filter by test name
 
 bun run db:generate      # Generate Drizzle migration from worker/db/schema.ts changes
 bun run db:migrate:dev   # Apply migrations to local D1 (.wrangler/state/...)
@@ -57,10 +54,6 @@ Workflows are the async automation layer. A trigger (form submitted, booking cre
 
 ### Widgets (`widget/`)
 Embeddable booking and form widgets build as self-contained IIFE bundles via separate Vite configs (`widget/booking/vite.config.ts`, `widget/form/vite.config.ts`) and get uploaded to R2 at `widgets/booking.js` and `widgets/form.js`. They share code from `widget/shared/` and cannot import from `src/` — treat them as independent bundles.
-
-## Testing
-
-Tests use Bun's built-in runner (`bun test`). Tests live in `tests/` and `tests/worker/`. They're unit-style — services are instantiated with an in-memory or mocked Drizzle instance rather than spinning up miniflare. When adding a service, add a matching `tests/worker/<service>.test.ts`.
 
 ## Things that bite
 

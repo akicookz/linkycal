@@ -1495,7 +1495,6 @@ export default function EventTypeForm() {
         open={showUpgradeDialog}
         onClose={() => setShowUpgradeDialog(false)}
         projectId={projectId!}
-        feature="calendar connections"
         description="Your current plan allows 1 calendar connection. Upgrade to Pro to connect unlimited Google Calendar accounts."
       />
 

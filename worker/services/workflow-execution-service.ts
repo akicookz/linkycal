@@ -44,7 +44,7 @@ import { TagService } from "./tag-service";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export interface TriggerContext extends WorkflowTriggerContext {}
+export type TriggerContext = WorkflowTriggerContext;
 
 export interface WorkflowExecutionDependencies {
   workflowAiResearchService?: WorkflowAiResearchService;
@@ -1037,7 +1037,7 @@ export class WorkflowExecutionService {
       case "wait":
         // executeWait always throws WaitSignal, caught by executeStep
         // to re-enqueue with a delay. This return is a safety fallback.
-        await this.executeWait(config, context);
+        await this.executeWait(config);
         return false;
 
       case "condition":
@@ -1427,7 +1427,6 @@ export class WorkflowExecutionService {
 
   private async executeWait(
     config: Record<string, unknown>,
-    _context: TriggerContext,
   ): Promise<void> {
     const duration = Number(config.duration) || 0;
     const unit = (config.unit as string) || "minutes";

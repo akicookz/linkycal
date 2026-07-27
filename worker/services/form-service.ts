@@ -26,6 +26,7 @@ const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
 };
 
 const PRIVATE_FORM_UPLOAD_PREFIX = "form-responses/";
+type FormFieldType = dbSchema.FormFieldRow["type"];
 
 function isPrivateFormUploadKey(value: string | null | undefined): boolean {
   return !!value && value.startsWith(PRIVATE_FORM_UPLOAD_PREFIX);
@@ -494,7 +495,7 @@ export class FormService {
   async createField(data: {
     stepId: string;
     sortOrder?: number;
-    type: string;
+    type: FormFieldType;
     label: string;
     description?: string | null;
     placeholder?: string;
@@ -528,7 +529,7 @@ export class FormService {
       formId: step.formId,
       stepId: data.stepId,
       sortOrder,
-      type: data.type as any,
+      type: data.type,
       label: data.label,
       description: data.description ?? null,
       placeholder,
@@ -548,7 +549,7 @@ export class FormService {
     data: {
       stepId?: string;
       sortOrder?: number;
-      type?: string;
+      type?: FormFieldType;
       label?: string;
       description?: string | null;
       placeholder?: string | null;
@@ -880,20 +881,30 @@ export class FormService {
             value.value,
             value.fileUrl,
           ),
-          _stepSortOrder: field
+          stepSortOrder: field
             ? (stepSortOrderById.get(field.stepId) ?? Number.MAX_SAFE_INTEGER)
             : Number.MAX_SAFE_INTEGER,
-          _fieldSortOrder: field?.sortOrder ?? Number.MAX_SAFE_INTEGER,
+          fieldSortOrder: field?.sortOrder ?? Number.MAX_SAFE_INTEGER,
         };
       })
       .sort((a, b) => {
-        if (a._stepSortOrder !== b._stepSortOrder) {
-          return a._stepSortOrder - b._stepSortOrder;
+        if (a.stepSortOrder !== b.stepSortOrder) {
+          return a.stepSortOrder - b.stepSortOrder;
         }
 
-        return a._fieldSortOrder - b._fieldSortOrder;
+        return a.fieldSortOrder - b.fieldSortOrder;
       })
-      .map(({ _stepSortOrder, _fieldSortOrder, ...value }) => value);
+      .map((item) => ({
+        id: item.id,
+        responseId: item.responseId,
+        formId: item.formId,
+        fieldId: item.fieldId,
+        value: item.value,
+        fileUrl: item.fileUrl,
+        fieldLabel: item.fieldLabel,
+        fieldType: item.fieldType,
+        displayValue: item.displayValue,
+      }));
   }
 
   // ─── Full Form with Steps + Fields ───────────────────────────────────────

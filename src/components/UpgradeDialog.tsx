@@ -15,7 +15,6 @@ interface UpgradeDialogProps {
   open: boolean;
   onClose: () => void;
   projectId: string;
-  feature: string;
   description: string;
 }
 
@@ -26,7 +25,7 @@ interface ProjectEntitlements {
   };
 }
 
-export function UpgradeDialog({ open, onClose, projectId, feature: _feature, description }: UpgradeDialogProps) {
+export function UpgradeDialog({ open, onClose, projectId, description }: UpgradeDialogProps) {
   const navigate = useNavigate();
   const { data: entitlements, isLoading } = useQuery<ProjectEntitlements>({
     queryKey: ["projects", projectId, "entitlements"],

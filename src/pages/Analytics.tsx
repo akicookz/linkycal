@@ -181,7 +181,6 @@ function UpgradePrompt({ projectId }: { projectId: string }) {
         open={showUpgradeDialog}
         onClose={() => setShowUpgradeDialog(false)}
         projectId={projectId}
-        feature="analytics"
         description="Analytics requires a Pro or Business plan."
       />
     </>

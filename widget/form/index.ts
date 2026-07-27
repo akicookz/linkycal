@@ -87,5 +87,12 @@ function initFormWidget(options: FormWidgetOptions): void {
   track("widget_view", { projectSlug, resourceSlug: formSlug }, utms);
 }
 
-(window as any).LinkyCal = (window as any).LinkyCal || {};
-(window as any).LinkyCal.form = initFormWidget;
+interface FormWidgetWindow extends Window {
+  LinkyCal?: {
+    form?: typeof initFormWidget;
+  };
+}
+
+const widgetWindow = window as FormWidgetWindow;
+widgetWindow.LinkyCal ??= {};
+widgetWindow.LinkyCal.form = initFormWidget;

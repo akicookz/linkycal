@@ -3,6 +3,7 @@ import { emailOTP } from "better-auth/plugins";
 import {
   withCloudflare,
   type CloudflareGeolocation,
+  type WithCloudflareOptions,
 } from "better-auth-cloudflare";
 import { drizzle } from "drizzle-orm/d1";
 import * as authSchema from "./db/auth.schema";
@@ -23,7 +24,10 @@ export function createAuth(
         geolocationTracking: true,
         cf: (cf as CloudflareGeolocation) || ({} as CloudflareGeolocation),
         d1: {
-          db: db as any,
+          // better-auth-cloudflare bundles Drizzle 0.44 while the app uses
+          // Drizzle 0.45. The runtime API is identical, but their private
+          // type markers are intentionally incompatible across versions.
+          db: db as unknown as NonNullable<WithCloudflareOptions["d1"]>["db"],
           options: {
             usePlural: true,
             debugLogs: false,
