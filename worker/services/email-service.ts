@@ -40,6 +40,7 @@ interface BookingCancellationParams {
   eventTypeName: string;
   startTime: Date;
   endTime: Date;
+  timezone: string;
   reason?: string;
   theme?: EmailTheme;
 }
@@ -293,12 +294,21 @@ export class EmailService {
   async sendBookingCancellation(
     params: BookingCancellationParams,
   ): Promise<void> {
-    const { to, guestName, eventTypeName, startTime, endTime, reason, theme } =
-      params;
+    const {
+      to,
+      guestName,
+      eventTypeName,
+      startTime,
+      endTime,
+      timezone,
+      reason,
+      theme,
+    } = params;
 
     const p = resolveTheme(theme);
-    const dateStr = formatDate(startTime, "UTC");
-    const timeStr = `${formatTime(startTime, "UTC")} - ${formatTime(endTime, "UTC")} UTC`;
+    const dateStr = formatDate(startTime, timezone);
+    const timeStr =
+      `${formatTime(startTime, timezone)} - ${formatTime(endTime, timezone)} ${formatTimeZoneShort(startTime, timezone)}`;
 
     const html = emailWrapper(
       emailHeading("Booking Cancelled", p, "#dc2626") +

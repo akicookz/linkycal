@@ -382,6 +382,8 @@ export const bookings = sqliteTable(
       { onDelete: "set null" },
     ),
     gcalEventId: text("gcal_event_id"),
+    gcalICalUid: text("gcal_ical_uid"),
+    gcalOrganizerEmail: text("gcal_organizer_email"),
     meetingUrl: text("meeting_url"),
     ipAddress: text("ip_address"),
     country: text("country"),

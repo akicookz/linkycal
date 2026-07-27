@@ -86,7 +86,6 @@ import {
   cancelBookingAction,
   confirmBookingAction,
   declineBookingAction,
-  parseProjectTheme,
 } from "./lib/booking-actions";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
 import { LinkyCalMcp } from "./mcp/agent";
@@ -109,7 +108,6 @@ import {
   serializeBusyCalendars,
   serializeInviteConnectionIds,
 } from "./lib/calendar-refs";
-import { EmailService } from "./services/email-service";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
 import {
@@ -121,6 +119,10 @@ import {
   parseContactActivityListOptions,
 } from "./services/contact-activity-service";
 import { ensureContact } from "./lib/contact-actions";
+import {
+  notifyFormResponseCompleted,
+  uploadedFileDisplayValue,
+} from "./lib/form-response-notification";
 import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
 import type { TriggerContext } from "./services/workflow-execution-service";
@@ -461,15 +463,6 @@ async function storePrivateFormUpload(
   };
 }
 
-function uploadedFileDisplayValue(
-  value: string | null,
-  fileUrl: string | null,
-): string {
-  if (value?.trim()) return value.trim();
-  if (isPrivateFormUploadKey(fileUrl)) return "Uploaded file";
-  return fileUrl?.trim() ?? "";
-}
-
 async function getPrivateFormFileObject(
   db: DrizzleD1Database<Record<string, unknown>>,
   env: AppEnv,
@@ -573,10 +566,6 @@ function getFormSettingsRecord(settings: unknown): Record<string, unknown> {
   return {};
 }
 
-function isValidEmailAddress(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
 function getNativeFormSettings(settings: unknown): NativeFormSettings {
   const settingsRecord = getFormSettingsRecord(settings);
   const nativeAction =
@@ -599,15 +588,6 @@ function getNativeFormSettings(settings: unknown): NativeFormSettings {
       : null;
 
   return { successMode, successMessage, redirectUrl };
-}
-
-function getFormResponseNotificationEmail(settings: unknown): string | null {
-  const settingsRecord = getFormSettingsRecord(settings);
-  const rawEmail = settingsRecord.responseNotificationEmail;
-  if (typeof rawEmail !== "string") return null;
-
-  const email = rawEmail.trim();
-  return email && isValidEmailAddress(email) ? email : null;
 }
 
 function getNativeFieldOptions(
@@ -968,99 +948,6 @@ async function dispatchFormSubmittedTrigger(
 }
 
 // ─── Form Response Email Notification (Paid Users) ──────────────────────────
-
-async function notifyFormResponseCompleted(
-  db: DrizzleD1Database<Record<string, unknown>>,
-  env: { RESEND_API_KEY: string },
-  responseId: string,
-  formId: string,
-) {
-  try {
-    // Look up form → project → owner + subscription
-    const [form] = await db
-      .select({
-        id: dbSchema.forms.id,
-        name: dbSchema.forms.name,
-        projectId: dbSchema.forms.projectId,
-        settings: dbSchema.forms.settings,
-      })
-      .from(dbSchema.forms)
-      .where(eq(dbSchema.forms.id, formId))
-      .limit(1);
-    if (!form) return;
-
-    const [project] = await db
-      .select({
-        id: dbSchema.projects.id,
-        userId: dbSchema.projects.userId,
-        teamId: dbSchema.projects.teamId,
-        settings: dbSchema.projects.settings,
-      })
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, form.projectId))
-      .limit(1);
-    if (!project) return;
-
-    const entitlements = await resolveProjectEntitlements(db, project.id);
-    if (!entitlements || entitlements.subscription.plan === "free") return;
-
-    // Get owner details
-    const [owner] = await db
-      .select({
-        name: dbSchema.schema.users.name,
-        email: dbSchema.schema.users.email,
-      })
-      .from(dbSchema.schema.users)
-      .where(eq(dbSchema.schema.users.id, project.userId))
-      .limit(1);
-    if (!owner?.email) return;
-
-    // Get response for respondent email
-    const [formResponse] = await db
-      .select({ respondentEmail: dbSchema.formResponses.respondentEmail })
-      .from(dbSchema.formResponses)
-      .where(eq(dbSchema.formResponses.id, responseId))
-      .limit(1);
-
-    // Get field values with labels
-    const fieldValues = await db
-      .select({
-        label: dbSchema.formFields.label,
-        type: dbSchema.formFields.type,
-        value: dbSchema.formFieldValues.value,
-        fileUrl: dbSchema.formFieldValues.fileUrl,
-      })
-      .from(dbSchema.formFieldValues)
-      .innerJoin(
-        dbSchema.formFields,
-        and(
-          eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
-          eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
-        ),
-      )
-      .where(eq(dbSchema.formFieldValues.responseId, responseId));
-
-    const notificationEmail =
-      getFormResponseNotificationEmail(form.settings) ?? owner.email;
-    const emailService = new EmailService(env.RESEND_API_KEY);
-    await emailService.sendFormResponseNotification({
-      to: notificationEmail,
-      ownerName: owner.name ?? "there",
-      formName: form.name,
-      respondentEmail: formResponse?.respondentEmail ?? null,
-      fields: fieldValues.map((f) => ({
-        label: f.label,
-        value:
-          f.type === "file"
-            ? uploadedFileDisplayValue(f.value, f.fileUrl)
-            : (f.value ?? ""),
-      })),
-      theme: parseProjectTheme(project.settings),
-    });
-  } catch (err) {
-    console.error("Form response notification email failed:", err);
-  }
-}
 
 // ─── Timestamp Normalization ─────────────────────────────────────────────────
 

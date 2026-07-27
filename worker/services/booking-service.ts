@@ -50,6 +50,8 @@ export class BookingService {
         expiresAt: dbSchema.bookings.expiresAt,
         formResponseId: dbSchema.bookings.formResponseId,
         gcalEventId: dbSchema.bookings.gcalEventId,
+        gcalICalUid: dbSchema.bookings.gcalICalUid,
+        gcalOrganizerEmail: dbSchema.bookings.gcalOrganizerEmail,
         meetingUrl: dbSchema.bookings.meetingUrl,
         ipAddress: dbSchema.bookings.ipAddress,
         country: dbSchema.bookings.country,

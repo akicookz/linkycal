@@ -503,7 +503,13 @@ export async function createBookingAction(
 
             await db
               .update(dbSchema.bookings)
-              .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
+              .set({
+                gcalEventId: gcalResult.id,
+                gcalICalUid: gcalResult.iCalUID,
+                gcalOrganizerEmail:
+                  gcalResult.organizer ?? calConnection.email,
+                meetingUrl: gcalResult.meetingUrl,
+              })
               .where(eq(dbSchema.bookings.id, booking.id));
           }
         } catch (err) {
@@ -701,7 +707,10 @@ export async function cancelBookingAction(
     (async () => {
       try {
         const [eventType] = await db
-          .select({ projectId: dbSchema.eventTypes.projectId })
+          .select({
+            projectId: dbSchema.eventTypes.projectId,
+            name: dbSchema.eventTypes.name,
+          })
           .from(dbSchema.eventTypes)
           .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
           .limit(1);
@@ -719,9 +728,10 @@ export async function cancelBookingAction(
         await emailService.sendBookingCancellation({
           to: booking.email,
           guestName: booking.name,
-          eventTypeName: booking.eventTypeId, // fallback
+          eventTypeName: eventType?.name ?? "Meeting",
           startTime: new Date(booking.startTime),
           endTime: new Date(booking.endTime),
+          timezone: booking.timezone,
           reason,
           theme,
         });
@@ -882,7 +892,13 @@ export async function confirmBookingAction(
 
           await db
             .update(dbSchema.bookings)
-            .set({ gcalEventId: gcalResult.id, meetingUrl: gcalResult.meetingUrl })
+            .set({
+              gcalEventId: gcalResult.id,
+              gcalICalUid: gcalResult.iCalUID,
+              gcalOrganizerEmail:
+                gcalResult.organizer ?? calConnection.email,
+              meetingUrl: gcalResult.meetingUrl,
+            })
             .where(eq(dbSchema.bookings.id, booking.id));
         }
       } catch (err) {
