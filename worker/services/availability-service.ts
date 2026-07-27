@@ -8,6 +8,10 @@ import {
   getWeekRangeForLocalDate,
   localTimeToUtc,
 } from "../lib/timezone";
+import {
+  getBookingWindowStart,
+  isBookableStartTime,
+} from "../lib/booking-eligibility";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +20,7 @@ interface GetAvailableSlotsParams {
   eventTypeSlug: string;
   date: string; // YYYY-MM-DD
   timezone: string;
+  now?: Date;
   externalBusySlots?: Array<{ start: string; end: string }>;
 }
 
@@ -218,6 +223,8 @@ export class AvailabilityService {
       duration: eventType.duration,
       bufferBefore: eventType.bufferBefore,
       bufferAfter: eventType.bufferAfter,
+      requiresConfirmation: eventType.requiresConfirmation,
+      now: params.now ?? new Date(),
       blockedScheduleDates,
       externalBusySlots: params.externalBusySlots,
     });
@@ -248,6 +255,8 @@ export class AvailabilityService {
     duration: number;
     bufferBefore: number;
     bufferAfter: number;
+    requiresConfirmation: boolean;
+    now: Date;
     blockedScheduleDates: Set<string>;
     externalBusySlots?: Array<{ start: string; end: string }>;
   }): TimeSlot[] {
@@ -262,12 +271,13 @@ export class AvailabilityService {
       duration,
       bufferBefore,
       bufferAfter,
+      requiresConfirmation,
+      now,
       blockedScheduleDates,
       externalBusySlots,
     } = params;
 
     const slots: TimeSlot[] = [];
-    const now = new Date();
     const allBusySlots = existingBookings.map((booking) => ({
       startTime: new Date(booking.startTime),
       endTime: new Date(booking.endTime),
@@ -315,8 +325,9 @@ export class AvailabilityService {
         });
 
         for (const { start: slotStart, end: slotEnd } of windowSlots) {
-          const bufferedStart = new Date(
-            slotStart.getTime() - bufferBefore * 60 * 1000,
+          const bufferedStart = getBookingWindowStart(
+            slotStart,
+            bufferBefore,
           );
           const bufferedEnd = new Date(
             slotEnd.getTime() + bufferAfter * 60 * 1000,
@@ -329,7 +340,12 @@ export class AvailabilityService {
 
           if (
             !hasConflict &&
-            slotStart > now &&
+            isBookableStartTime(
+              slotStart,
+              requiresConfirmation,
+              bufferBefore,
+              now,
+            ) &&
             slotStart >= viewerDayStart &&
             slotStart < viewerDayEnd
           ) {

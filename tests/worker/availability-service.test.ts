@@ -96,6 +96,10 @@ async function seedEventType(opts: {
   maxPerDay?: number | null;
   maxPerWeek?: number | null;
   weekStart?: "monday" | "sunday";
+  requiresConfirmation?: boolean;
+  date?: Date;
+  bufferBefore?: number;
+  bufferAfter?: number;
 }) {
   const db = createTestDb();
   await db.insert(dbSchema.schema.users).values({
@@ -115,7 +119,7 @@ async function seedEventType(opts: {
     name: "S",
     timezone: "UTC",
   });
-  const base = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+  const base = opts.date ?? new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
   const dateStr = formatDateInTimezone(base, "UTC");
   const dayOfWeek = getDayOfWeekForDate(dateStr, "UTC");
   await db.insert(dbSchema.availabilityRules).values({
@@ -131,10 +135,13 @@ async function seedEventType(opts: {
     name: "Call",
     slug: "call",
     duration: 30,
+    bufferBefore: opts.bufferBefore ?? 0,
+    bufferAfter: opts.bufferAfter ?? 0,
     scheduleId: "s1",
     maxPerDay: opts.maxPerDay ?? null,
     maxPerWeek: opts.maxPerWeek ?? null,
     weekStart: opts.weekStart ?? "monday",
+    requiresConfirmation: opts.requiresConfirmation ?? false,
   });
   return { db, dateStr };
 }
@@ -153,16 +160,37 @@ function bookingAt(id: string, dateStr: string, hour: number, status: BookingSta
   };
 }
 
-async function slotsFor(db: ReturnType<typeof createTestDb>, dateStr: string) {
+async function slotsFor(
+  db: ReturnType<typeof createTestDb>,
+  dateStr: string,
+  now?: Date,
+) {
   return new AvailabilityService(db).getAvailableSlots({
     projectSlug: "p1",
     eventTypeSlug: "call",
     date: dateStr,
     timezone: "UTC",
+    now,
   });
 }
 
 describe("AvailabilityService booking limits", () => {
+  test("uses the pre-buffer for confirmation cutoff without forcing buffers inside working hours", async () => {
+    const now = new Date("2026-07-27T00:00:00.000Z");
+    const { db, dateStr } = await seedEventType({
+      requiresConfirmation: true,
+      date: now,
+      bufferBefore: 480,
+      bufferAfter: 30,
+    });
+
+    const slots = await slotsFor(db, dateStr, now);
+
+    expect(slots).toHaveLength(15);
+    expect(slots[0]?.start).toBe("2026-07-27T09:30:00.000Z");
+    expect(slots.at(-1)?.start).toBe("2026-07-27T16:30:00.000Z");
+  });
+
   test("no limits set → slots are returned", async () => {
     const { db, dateStr } = await seedEventType({});
     expect((await slotsFor(db, dateStr)).length).toBeGreaterThan(0);

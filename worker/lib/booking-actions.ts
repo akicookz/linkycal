@@ -17,6 +17,11 @@ import {
   getWeekRangeForLocalDate,
 } from "./timezone";
 import { parseInviteConnectionIds } from "./calendar-refs";
+import {
+  CONFIRMATION_LEAD_TIME_MS,
+  getBookingWindowStart,
+  isBookableStartTime,
+} from "./booking-eligibility";
 import { buildIcs } from "./ics";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 import { ensureContact } from "./contact-actions";
@@ -241,6 +246,20 @@ export async function createBookingAction(
   const endTime = new Date(
     startTime.getTime() + eventType.duration * 60 * 1000,
   );
+  const isPending = eventType.requiresConfirmation;
+  const now = new Date();
+
+  if (
+    isPending &&
+    !isBookableStartTime(startTime, true, eventType.bufferBefore, now)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        "This event type requires confirmation. Bookings must be made at least 1 hour before the event buffer begins.",
+    };
+  }
 
   const availabilityService = new AvailabilityService(db);
 
@@ -300,24 +319,25 @@ export async function createBookingAction(
     return { ok: false, status: 409, error: "Selected time slot is no longer available" };
   }
 
-  // 5. Determine if booking requires confirmation
-  const isPending = eventType.requiresConfirmation;
-
-  // For pending bookings, calculate expiry: min(now + 24h, startTime - 1h)
+  // Pending requests expire within 24 hours and no later than one hour before
+  // the organizer's pre-event buffer starts.
   let expiresAt: Date | undefined;
   if (isPending) {
-    const twentyFourHoursLater = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const oneHourBefore = new Date(startTime.getTime() - 60 * 60 * 1000);
+    const twentyFourHoursLater = new Date(
+      now.getTime() + 24 * 60 * 60 * 1000,
+    );
+    const bookingWindowStart = getBookingWindowStart(
+      startTime,
+      eventType.bufferBefore,
+    );
+    const confirmationDeadline = new Date(
+      bookingWindowStart.getTime() - CONFIRMATION_LEAD_TIME_MS,
+    );
 
-    if (oneHourBefore <= new Date()) {
-      return {
-        ok: false,
-        status: 400,
-        error: "This event type requires confirmation. Bookings must be made at least 1 hour in advance.",
-      };
-    }
-
-    expiresAt = twentyFourHoursLater < oneHourBefore ? twentyFourHoursLater : oneHourBefore;
+    expiresAt =
+      twentyFourHoursLater < confirmationDeadline
+        ? twentyFourHoursLater
+        : confirmationDeadline;
   }
 
   // 6. Create form response if event type has a booking form
