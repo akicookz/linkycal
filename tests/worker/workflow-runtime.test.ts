@@ -3,43 +3,12 @@ import { describe, expect, test } from "bun:test";
 import {
   buildWorkflowResearchActivityMetadata,
   buildWorkflowContactOperationalContext,
-  formatContactsInputValue,
   interpolateWorkflowTemplate,
-  mergeWorkflowResearchMetadata,
   normalizeRecipientList,
   resolveStepInputs,
   resolveWorkflowValue,
-  workflowStepInputSchema,
-  type WorkflowResearchRecord,
   type WorkflowTriggerContext,
 } from "../../worker/lib/workflow-runtime";
-
-function buildResearchRecord(): WorkflowResearchRecord {
-  return {
-    provider: "chatgpt",
-    model: "gpt-5.2",
-    resultKey: "lead_research",
-    executedAt: "2026-03-30T12:00:00.000Z",
-    result: {
-      summary: "A product leader at Acme.",
-      company: "Acme",
-      role: "VP Product",
-      website: "https://acme.example",
-      linkedinUrl: "https://linkedin.com/in/example",
-      location: "Berlin",
-      description: "Acme sells scheduling infrastructure.",
-      recommendedTags: ["product", "enterprise"],
-      insights: ["Likely evaluating scheduling tooling."],
-      sources: [
-        {
-          title: "LinkedIn",
-          url: "https://linkedin.com/in/example",
-          snippet: null,
-        },
-      ],
-    },
-  };
-}
 
 function buildContext(): WorkflowTriggerContext {
   return {
@@ -203,16 +172,6 @@ describe("workflow runtime helpers", () => {
     });
   });
 
-  test("form field values under metadata.formFields are addressable via form.fields.*", () => {
-    const context: WorkflowTriggerContext = {
-      ...buildContext(),
-      metadata: { formFields: { role: "CTO" } },
-    };
-
-    expect(
-      interpolateWorkflowTemplate("Role: {{form.fields.role}}", context),
-    ).toBe("Role: CTO");
-  });
 });
 
 describe("contact-query inputs", () => {

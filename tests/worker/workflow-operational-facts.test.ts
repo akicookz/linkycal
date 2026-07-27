@@ -274,27 +274,17 @@ describe("workflow contact hydration", () => {
     expect(context.contactOperational?.stage?.byTag?.lead).toBeUndefined();
   });
 
-  test("fails safely without enqueueing when the contact was deleted", async () => {
-    const { run, stepLogs, enqueued } =
-      await executeUnavailableContactRun("missing");
+  test("fails without enqueueing when the contact is missing or foreign", async () => {
+    for (const contactCase of ["missing", "foreign"] as const) {
+      const { run, stepLogs, enqueued } =
+        await executeUnavailableContactRun(contactCase);
 
-    expect(stepLogs[0]?.status).toBe("failed");
-    expect(stepLogs[0]?.error).toBe("Contact unavailable");
-    expect(stepLogs[1]?.status).toBe("skipped");
-    expect(run?.status).toBe("failed");
-    expect(run?.error).toBe("Contact unavailable");
-    expect(enqueued).toEqual([]);
-  });
-
-  test("fails safely without enqueueing when the contact belongs to another project", async () => {
-    const { run, stepLogs, enqueued } =
-      await executeUnavailableContactRun("foreign");
-
-    expect(stepLogs[0]?.status).toBe("failed");
-    expect(stepLogs[0]?.error).toBe("Contact unavailable");
-    expect(stepLogs[1]?.status).toBe("skipped");
-    expect(run?.status).toBe("failed");
-    expect(run?.error).toBe("Contact unavailable");
-    expect(enqueued).toEqual([]);
+      expect(stepLogs[0]?.status).toBe("failed");
+      expect(stepLogs[0]?.error).toBe("Contact unavailable");
+      expect(stepLogs[1]?.status).toBe("skipped");
+      expect(run?.status).toBe("failed");
+      expect(run?.error).toBe("Contact unavailable");
+      expect(enqueued).toEqual([]);
+    }
   });
 });
