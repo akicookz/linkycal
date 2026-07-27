@@ -18,19 +18,26 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-function renderDialog(runResponse: unknown, onSuccess: (runId: string | null) => void) {
-  const fetchMock = mock(async (input: RequestInfo | URL) => {
-    const url = String(input);
-    if (url.endsWith("/contacts")) {
-      return jsonResponse({
-        contacts: [{ id: "contact-1", name: "Ada Lovelace", email: "ada@example.com" }],
-      });
-    }
-    if (url.endsWith("/test") || url.endsWith("/trigger")) {
-      return jsonResponse(runResponse);
-    }
-    return jsonResponse({ error: "Unexpected request" });
-  });
+function renderDialog(
+  runResponse: unknown,
+  onSuccess: (runId: string | null) => void,
+  onOpenChange: (open: boolean) => void,
+) {
+  const fetchMock = mock(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      void init;
+      const url = String(input);
+      if (url.endsWith("/contacts")) {
+        return jsonResponse({
+          contacts: [{ id: "contact-1", name: "Ada Lovelace", email: "ada@example.com" }],
+        });
+      }
+      if (url.endsWith("/test") || url.endsWith("/trigger")) {
+        return jsonResponse(runResponse);
+      }
+      return jsonResponse({ error: "Unexpected request" });
+    },
+  );
   globalThis.fetch = fetchMock as typeof fetch;
 
   const queryClient = new QueryClient({
@@ -43,7 +50,7 @@ function renderDialog(runResponse: unknown, onSuccess: (runId: string | null) =>
     <QueryClientProvider client={queryClient}>
       <WorkflowRunDialog
         open
-        onOpenChange={() => undefined}
+        onOpenChange={onOpenChange}
         projectId="project-1"
         workflowId="workflow-1"
         trigger="manual"
@@ -52,6 +59,7 @@ function renderDialog(runResponse: unknown, onSuccess: (runId: string | null) =>
       />
     </QueryClientProvider>,
   );
+  return fetchMock;
 }
 
 afterEach(() => {
@@ -59,29 +67,33 @@ afterEach(() => {
   appQueryClient.clear();
 });
 
-test("passes the persisted test run ID to the success callback", async () => {
+test("posts an audience trigger without contact data, closes, and resets", async () => {
   const onSuccess = mock(() => undefined);
-  renderDialog({ success: true, runId: "run-123" }, onSuccess);
-
-  fireEvent.keyDown(screen.getByLabelText("Contact"), { key: "ArrowDown" });
-  fireEvent.click(await screen.findByRole("option", { name: /Ada Lovelace/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Run Workflow" }));
-
-  await waitFor(() => {
-    expect(onSuccess).toHaveBeenCalledWith("run-123");
-  });
-});
-
-test("passes no run ID to the success callback for an audience run", async () => {
-  const onSuccess = mock(() => undefined);
-  renderDialog({ success: true, started: 4 }, onSuccess);
+  const onOpenChange = mock(() => undefined);
+  const fetchMock = renderDialog(
+    { success: true, started: 4 },
+    onSuccess,
+    onOpenChange,
+  );
 
   fireEvent.keyDown(screen.getByLabelText("Run Mode"), { key: "ArrowDown" });
   fireEvent.click(await screen.findByRole("option", { name: "Run for all matching contacts" }));
   fireEvent.click(screen.getByRole("button", { name: "Run Workflow" }));
 
   await waitFor(() => {
+    const triggerCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        String(input) ===
+          "/api/projects/project-1/workflows/workflow-1/trigger" &&
+        init?.method === "POST",
+    );
+    expect(triggerCall).toBeDefined();
+    expect(triggerCall?.[1]?.body).toBeUndefined();
     expect(onSuccess).toHaveBeenCalledWith(null);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(screen.getByLabelText("Run Mode").textContent).toContain(
+      "Test with one contact",
+    );
   });
 });
 
@@ -225,4 +237,14 @@ test("builder invalidates runs, activates Runs, and expands the exact returned r
     expect(screen.getByText("Returned run expanded marker")).not.toBeNull();
   });
   expect(screen.queryByText("Other run hidden marker")).toBeNull();
+  const testCall = fetchMock.mock.calls.find(
+    ([input, init]) =>
+      String(input) ===
+        "/api/projects/project-1/workflows/workflow-1/test" &&
+      init?.method === "POST",
+  );
+  expect(testCall).toBeDefined();
+  expect(JSON.parse(String(testCall?.[1]?.body))).toEqual({
+    contactId: "contact-1",
+  });
 });

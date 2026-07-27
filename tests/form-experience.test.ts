@@ -7,6 +7,7 @@ import {
   shouldCollectDetailsWithForm,
   type FormExperienceField,
   type FormExperienceForm,
+  type FormExperienceModel,
 } from "../src/lib/form-experience";
 
 function field(
@@ -46,13 +47,29 @@ function form(overrides: Partial<FormExperienceForm> = {}): FormExperienceForm {
         settings: null,
         visibility: null,
         fields: [
-          field("first", { sortOrder: 0 }),
-          field("second", { sortOrder: 1 }),
+          field("first", { sortOrder: 0, label: "Company" }),
+          field("second", { sortOrder: 1, label: "Role" }),
         ],
       },
     ],
     ...overrides,
   };
+}
+
+function questionLabels(model: FormExperienceModel): string[] {
+  return model.screens.flatMap((screen) => {
+    if (screen.kind === "question") return [screen.field.label];
+    if (screen.kind === "group") {
+      return screen.fields.map((currentField) => currentField.label);
+    }
+    return [];
+  });
+}
+
+function visibleStepTitles(
+  model: FormExperienceModel,
+): Array<string | null> {
+  return model.steps.map((step) => step.title);
 }
 
 describe("buildFormExperienceModel", () => {
@@ -67,11 +84,7 @@ describe("buildFormExperienceModel", () => {
       "question",
       "question",
     ]);
-    expect(model.screens.map((screen) => screen.key)).toEqual([
-      "statement-s1",
-      "field-first",
-      "field-second",
-    ]);
+    expect(questionLabels(model)).toEqual(["Company", "Role"]);
   });
 
   test("conditions react to values", () => {
@@ -82,19 +95,23 @@ describe("buildFormExperienceModel", () => {
       rules: [{ fieldId: "first", operator: "equals", value: "show" }],
     };
     expect(
-      buildFormExperienceModel({
-        form: input,
-        values: { first: "hide" },
-        surface: "standalone",
-      }).screens.map((screen) => screen.key),
-    ).toEqual(["field-first"]);
+      questionLabels(
+        buildFormExperienceModel({
+          form: input,
+          values: { first: "hide" },
+          surface: "standalone",
+        }),
+      ),
+    ).toEqual(["Company"]);
     expect(
-      buildFormExperienceModel({
-        form: input,
-        values: { first: "show" },
-        surface: "standalone",
-      }).screens.map((screen) => screen.key),
-    ).toEqual(["field-first", "field-second"]);
+      questionLabels(
+        buildFormExperienceModel({
+          form: input,
+          values: { first: "show" },
+          surface: "standalone",
+        }),
+      ),
+    ).toEqual(["Company", "Role"]);
   });
 
   test("step conditions react to values", () => {
@@ -112,24 +129,33 @@ describe("buildFormExperienceModel", () => {
             when: "all",
             rules: [{ fieldId: "first", operator: "equals", value: "show" }],
           },
-          fields: [field("third", { stepId: "s2" })],
+          fields: [
+            field("third", {
+              stepId: "s2",
+              label: "Work email",
+            }),
+          ],
         },
       ],
     });
     expect(
-      buildFormExperienceModel({
-        form: input,
-        values: { first: "hide" },
-        surface: "standalone",
-      }).screens.map((screen) => screen.key),
-    ).toEqual(["field-first", "field-second"]);
+      questionLabels(
+        buildFormExperienceModel({
+          form: input,
+          values: { first: "hide" },
+          surface: "standalone",
+        }),
+      ),
+    ).toEqual(["Company", "Role"]);
     expect(
-      buildFormExperienceModel({
-        form: input,
-        values: { first: "show" },
-        surface: "standalone",
-      }).screens.map((screen) => screen.key),
-    ).toEqual(["field-first", "field-second", "field-third"]);
+      questionLabels(
+        buildFormExperienceModel({
+          form: input,
+          values: { first: "show" },
+          surface: "standalone",
+        }),
+      ),
+    ).toEqual(["Company", "Role", "Work email"]);
   });
 
   test("reports populated fields that become hidden", () => {
@@ -151,6 +177,7 @@ describe("buildFormExperienceModel", () => {
     const input = form();
     input.steps[0].title = null;
     input.steps[0].fields[0].contactMapping = "name";
+    input.steps[0].fields[0].label = "Full name";
     input.steps[0].fields[1].visibility = {
       when: "all",
       rules: [{ fieldId: "first", operator: "equals", value: "Ada" }],
@@ -161,8 +188,7 @@ describe("buildFormExperienceModel", () => {
       excludedFieldIds: new Set(["first"]),
       surface: "booking",
     });
-    expect(model.screens.map((screen) => screen.key)).toEqual(["field-second"]);
-    expect(model.fieldsById.first.id).toBe("first");
+    expect(questionLabels(model)).toEqual(["Role"]);
   });
 
   test("drops titled steps whose fields are all hidden on standalone", () => {
@@ -180,6 +206,7 @@ describe("buildFormExperienceModel", () => {
           fields: [
             field("third", {
               stepId: "s2",
+              label: "Extra context",
               visibility: {
                 when: "all",
                 rules: [{ fieldId: "first", operator: "equals", value: "show" }],
@@ -194,11 +221,8 @@ describe("buildFormExperienceModel", () => {
       values: { first: "hide" },
       surface: "standalone",
     });
-    expect(model.steps.map((step) => step.id)).toEqual(["s1"]);
-    expect(model.screens.map((screen) => screen.key)).toEqual([
-      "field-first",
-      "field-second",
-    ]);
+    expect(visibleStepTitles(model)).toEqual([null]);
+    expect(questionLabels(model)).toEqual(["Company", "Role"]);
   });
 
   test("booking clears answers in hidden parent steps while standalone retains them", () => {
@@ -284,7 +308,7 @@ describe("createFormTransitionLock", () => {
 });
 
 describe("getContactMappedFieldIds", () => {
-  test("returns the first name- and email-mapped field ids", () => {
+  test("returns the first mapped fields or an empty result when none exist", () => {
     const model = form({
       steps: [
         {
@@ -307,9 +331,6 @@ describe("getContactMappedFieldIds", () => {
       nameFieldId: "full-name",
       emailFieldId: "work-email",
     });
-  });
-
-  test("returns empty object when nothing is mapped", () => {
     expect(getContactMappedFieldIds(form())).toEqual({});
   });
 });
@@ -339,13 +360,10 @@ describe("shouldCollectDetailsWithForm", () => {
     ).toBe(true);
   });
 
-  test("false without a form", () => {
+  test("false when the form or settings are ineligible", () => {
     expect(
       shouldCollectDetailsWithForm({ collectDetailsWithForm: true }, null),
     ).toBe(false);
-  });
-
-  test("false when settings are missing or the flag is off", () => {
     expect(shouldCollectDetailsWithForm(null, mappedForm)).toBe(false);
     expect(shouldCollectDetailsWithForm(undefined, mappedForm)).toBe(false);
     expect(
