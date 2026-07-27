@@ -82,6 +82,10 @@ interface TimeSlot {
   end: string;
 }
 
+interface PublicBookingProps {
+  viewerTimezone?: string;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
@@ -186,7 +190,9 @@ function getGmtOffset(tz: string): string {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export default function PublicBooking() {
+export default function PublicBooking({
+  viewerTimezone,
+}: PublicBookingProps = {}) {
   const { projectSlug, slug: eventSlug } = useParams<{
     projectSlug: string;
     slug: string;
@@ -248,7 +254,8 @@ export default function PublicBooking() {
     setMobileSubStep(target);
   }, []);
 
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timezone =
+    viewerTimezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
   const gmtOffset = useMemo(() => getGmtOffset(timezone), [timezone]);
   const containerRef = useRef<HTMLDivElement>(null);
 

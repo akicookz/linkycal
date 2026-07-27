@@ -27,3 +27,10 @@ class TestResizeObserver implements ResizeObserver {
 }
 
 globalThis.ResizeObserver = TestResizeObserver;
+
+Object.defineProperty(navigator, "sendBeacon", {
+  configurable: true,
+  value: function sendBeacon() {
+    return true;
+  },
+});
