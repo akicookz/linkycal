@@ -5,9 +5,14 @@ import * as dbSchema from "../../worker/db/schema";
 import {
   cancelBookingAction,
   confirmBookingAction,
+  createBookingAction,
   declineBookingAction,
 } from "../../worker/lib/booking-actions";
 import type { BookingActionDeps } from "../../worker/lib/booking-actions";
+import {
+  formatDateInTimezone,
+  getDayOfWeekForDate,
+} from "../../worker/lib/timezone";
 import type { AppEnv } from "../../worker/types";
 import { seedTwoProjects } from "./mcp-test-db";
 
@@ -25,6 +30,14 @@ beforeAll(() => {
 afterAll(() => {
   globalThis.fetch = realFetch;
 });
+
+function decodeBase64Utf8(value: string): string {
+  const binary = atob(value);
+  const bytes = Uint8Array.from(binary, (character) =>
+    character.charCodeAt(0),
+  );
+  return new TextDecoder().decode(bytes);
+}
 
 async function seedFixture() {
   const { db } = await seedTwoProjects();
@@ -105,7 +118,120 @@ async function seedFixture() {
   return { db, deps, pending, settle: () => Promise.all(pending) };
 }
 
+async function seedPrivateBookingFixture() {
+  const { db } = await seedTwoProjects();
+  await db.insert(dbSchema.schedules).values({
+    id: "schedule-private",
+    projectId: "proj-a",
+    name: "Private schedule",
+    timezone: "UTC",
+  });
+  const dateStr = formatDateInTimezone(
+    new Date(Date.now() + 60 * 24 * 60 * 60 * 1000),
+    "UTC",
+  );
+  await db.insert(dbSchema.availabilityRules).values({
+    id: "rule-private",
+    scheduleId: "schedule-private",
+    dayOfWeek: getDayOfWeekForDate(dateStr, "UTC"),
+    startTime: "09:00",
+    endTime: "17:00",
+  });
+  await db.insert(dbSchema.forms).values({
+    id: "form-private",
+    projectId: "proj-a",
+    name: "Private intake",
+    slug: "private-intake",
+    status: "active",
+  });
+  await db.insert(dbSchema.formSteps).values({
+    id: "step-private",
+    formId: "form-private",
+    sortOrder: 0,
+    title: "Private details",
+  });
+  await db.insert(dbSchema.formFields).values({
+    id: "budget",
+    formId: "form-private",
+    stepId: "step-private",
+    sortOrder: 0,
+    type: "text",
+    label: "Confidential Budget",
+  });
+  await db.insert(dbSchema.eventTypes).values({
+    id: "et-private",
+    projectId: "proj-a",
+    name: "Private Call",
+    slug: "private-call",
+    duration: 30,
+    scheduleId: "schedule-private",
+    bookingFormId: "form-private",
+  });
+
+  const pending: Promise<unknown>[] = [];
+  const deps: BookingActionDeps = {
+    db,
+    env: { RESEND_API_KEY: "re_test" } as AppEnv,
+    waitUntil: (promise) => {
+      pending.push(promise.catch(() => {}));
+    },
+  };
+  return {
+    deps,
+    dateStr,
+    settle: () => Promise.all(pending),
+  };
+}
+
 describe("booking actions", () => {
+  test("keeps submitted form details in the owner email and out of the guest email", async () => {
+    fetchCalls = [];
+    const { deps, dateStr, settle } = await seedPrivateBookingFixture();
+
+    const result = await createBookingAction(deps, {
+      projectSlug: "project-a",
+      eventTypeSlug: "private-call",
+      name: "Ava",
+      email: "ava@example.com",
+      startTime: `${dateStr}T10:00:00.000Z`,
+      timezone: "UTC",
+      formFields: { budget: "$500,000" },
+    });
+    expect(result.ok).toBe(true);
+    await settle();
+
+    const resendPayloads = fetchCalls
+      .filter((call) => call.url.includes("api.resend.com"))
+      .map(
+        (call) =>
+          JSON.parse(call.body) as {
+            to: string[];
+            html: string;
+            attachments?: Array<{ filename: string; content: string }>;
+          },
+      );
+    const guestPayload = resendPayloads.find((payload) =>
+      payload.to.includes("ava@example.com"),
+    );
+    const ownerPayload = resendPayloads.find((payload) =>
+      payload.to.includes("alice@example.com"),
+    );
+
+    expect(guestPayload).toBeDefined();
+    expect(ownerPayload).toBeDefined();
+    const guestIcs = decodeBase64Utf8(
+      guestPayload!.attachments!.find(
+        (attachment) => attachment.filename === "invite.ics",
+      )!.content,
+    );
+    expect(guestPayload!.html).not.toContain("Confidential Budget");
+    expect(guestPayload!.html).not.toContain("$500,000");
+    expect(guestIcs).not.toContain("Confidential Budget");
+    expect(guestIcs).not.toContain("$500,000");
+    expect(ownerPayload!.html).toContain("Confidential Budget");
+    expect(ownerPayload!.html).toContain("$500,000");
+  });
+
   test("cancels an owned booking, emails the reason, and records one activity", async () => {
     fetchCalls = [];
     const { db, deps, settle } = await seedFixture();
