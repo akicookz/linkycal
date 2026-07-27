@@ -60,6 +60,7 @@ export default function PublicForm() {
 
   const [values, setValues] = useState<Record<string, string>>({});
   const [files, setFiles] = useState<Record<string, File | null>>({});
+  const [clearedFieldIds, setClearedFieldIds] = useState<string[]>([]);
   const [responseId, setResponseId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -215,6 +216,9 @@ export default function PublicForm() {
 
   function setValue(fieldId: string, value: string) {
     setValues((previous) => ({ ...previous, [fieldId]: value }));
+    setClearedFieldIds((previous) =>
+      previous.filter((id) => id !== fieldId),
+    );
   }
 
   function setFileValue(fieldId: string, file: File | null) {
@@ -232,6 +236,9 @@ export default function PublicForm() {
       for (const id of fieldIds) delete next[id];
       return next;
     });
+    setClearedFieldIds((previous) =>
+      Array.from(new Set([...previous, ...fieldIds])),
+    );
   }
 
   async function ensureResponseId(): Promise<string> {
@@ -327,11 +334,15 @@ export default function PublicForm() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fields,
+            ...(clearedFieldIds.length > 0 ? { clearedFieldIds } : {}),
             complete: checkpoint.isFinal,
           }),
         },
       );
       if (!res.ok) throw new Error("Failed to submit");
+      if (clearedFieldIds.length > 0) {
+        setClearedFieldIds([]);
+      }
       if (checkpoint.isFinal) {
         posthog?.capture("form_submitted", {
           form_slug: formSlug,

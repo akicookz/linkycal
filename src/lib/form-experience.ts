@@ -322,8 +322,7 @@ export function buildFormExperienceModel(
         currentField.type !== "completion" &&
         values[currentField.id] !== undefined &&
         !(surface === "booking" && excludedFieldIds.has(currentField.id)) &&
-        ((surface === "booking" &&
-          !conditionallyVisibleStepIds.has(currentField.stepId)) ||
+        (!conditionallyVisibleStepIds.has(currentField.stepId) ||
           !isFieldVisible(
             {
               id: currentField.id,

@@ -767,7 +767,10 @@ export class FormService {
       value?: string | null;
       fileUrl?: string | null;
     }>,
-    options: { complete?: boolean } = {},
+    options: {
+      complete?: boolean;
+      clearedFieldIds?: string[];
+    } = {},
   ) {
     const response = await this.getResponseById(responseId);
     if (!response) return null;
@@ -778,6 +781,23 @@ export class FormService {
     // Drop unknown field IDs (stale clients, renamed fields) instead of failing
     // the whole submission on the composite (form_id, field_id) FK.
     const fieldById = new Map(allFields.map((field) => [field.id, field]));
+    const replacedFieldIds = Array.from(
+      new Set([
+        ...fields.map((field) => field.fieldId),
+        ...(options.clearedFieldIds ?? []),
+      ]),
+    ).filter((fieldId) => fieldById.has(fieldId));
+
+    if (replacedFieldIds.length > 0) {
+      await this.db
+        .delete(dbSchema.formFieldValues)
+        .where(
+          and(
+            eq(dbSchema.formFieldValues.responseId, responseId),
+            inArray(dbSchema.formFieldValues.fieldId, replacedFieldIds),
+          ),
+        );
+    }
 
     for (const field of fields) {
       const fieldConfig = fieldById.get(field.fieldId);

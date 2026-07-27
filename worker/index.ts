@@ -1557,7 +1557,10 @@ app.patch(
         responseId,
         stepIndex,
         data.fields,
-        { complete: data.complete === true },
+        {
+          complete: data.complete === true,
+          clearedFieldIds: data.clearedFieldIds,
+        },
       );
 
       if (!response) {
@@ -2017,7 +2020,10 @@ app.patch(
         responseId,
         stepIndex,
         data.fields,
-        { complete: data.complete === true },
+        {
+          complete: data.complete === true,
+          clearedFieldIds: data.clearedFieldIds,
+        },
       );
 
       if (!response) {

@@ -102,6 +102,7 @@ export function FocusedFieldInput({
     return (
       <FocusedTextarea
         inputId={field.id}
+        ariaLabel={field.label}
         value={value}
         onChange={onChange}
         onCommit={onCommit}
@@ -186,6 +187,7 @@ export function FocusedFieldInput({
     <div className="space-y-2" data-control-density={density}>
       <input
         id={field.id}
+        aria-label={field.label}
         type={inputTypeFor(field.type)}
         value={value}
         autoFocus={autoFocus}
@@ -301,6 +303,7 @@ function FocusedFileInput({
 
 function FocusedTextarea({
   inputId,
+  ariaLabel,
   value,
   onChange,
   onCommit,
@@ -310,6 +313,7 @@ function FocusedTextarea({
   density,
 }: {
   inputId: string;
+  ariaLabel: string;
   value: string;
   onChange: (value: string) => void;
   onCommit?: (trigger: "enter" | "choice") => void;
@@ -332,6 +336,7 @@ function FocusedTextarea({
     <div className="space-y-2" data-control-density={density}>
       <textarea
         id={inputId}
+        aria-label={ariaLabel}
         ref={ref}
         rows={1}
         value={value}

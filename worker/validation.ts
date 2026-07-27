@@ -397,6 +397,7 @@ export const submitFormStepSchema = z.object({
       fileUrl: z.string().min(1).max(2048).nullable().optional(),
     }),
   ),
+  clearedFieldIds: z.array(z.string().min(1)).max(200).optional(),
   // Client-authoritative flag: true when the user is on their last visible
   // step. Needed because conditional steps can shrink the visible count below
   // the server-side step count, so the server can't derive completion from
