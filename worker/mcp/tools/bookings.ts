@@ -169,6 +169,7 @@ export async function declineBooking(
 
   const result = await declineBookingAction(
     { db, env: ctx.env(), waitUntil: ctx.waitUntil },
+    projectId,
     input.bookingId,
     { reason: input.reason, notify: input.notify ?? true },
   );

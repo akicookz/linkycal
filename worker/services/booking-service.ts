@@ -81,6 +81,27 @@ export class BookingService {
     return rows[0] ?? null;
   }
 
+  async getByIdForProject(
+    projectId: string,
+    id: string,
+  ): Promise<dbSchema.BookingRow | null> {
+    const rows = await this.db
+      .select({ booking: dbSchema.bookings })
+      .from(dbSchema.bookings)
+      .innerJoin(
+        dbSchema.eventTypes,
+        eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id),
+      )
+      .where(
+        and(
+          eq(dbSchema.bookings.id, id),
+          eq(dbSchema.eventTypes.projectId, projectId),
+        ),
+      )
+      .limit(1);
+    return rows[0]?.booking ?? null;
+  }
+
   // ─── Create ───────────────────────────────────────────────────────────────
 
   async create(data: CreateBookingInput): Promise<dbSchema.BookingRow> {
@@ -112,10 +133,10 @@ export class BookingService {
   // ─── Cancel ───────────────────────────────────────────────────────────────
 
   async cancel(
+    projectId: string,
     id: string,
-    _reason?: string,
   ): Promise<dbSchema.BookingRow | null> {
-    const existing = await this.getById(id);
+    const existing = await this.getByIdForProject(projectId, id);
     if (!existing) return null;
 
     await this.db
@@ -123,13 +144,16 @@ export class BookingService {
       .set({ status: "cancelled" })
       .where(eq(dbSchema.bookings.id, id));
 
-    return (await this.getById(id))!;
+    return (await this.getByIdForProject(projectId, id))!;
   }
 
   // ─── Confirm ──────────────────────────────────────────────────────────────
 
-  async confirm(id: string): Promise<dbSchema.BookingRow | null> {
-    const existing = await this.getById(id);
+  async confirm(
+    projectId: string,
+    id: string,
+  ): Promise<dbSchema.BookingRow | null> {
+    const existing = await this.getByIdForProject(projectId, id);
     if (!existing || existing.status !== "pending") return null;
 
     await this.db
@@ -137,13 +161,16 @@ export class BookingService {
       .set({ status: "confirmed", expiresAt: null })
       .where(eq(dbSchema.bookings.id, id));
 
-    return (await this.getById(id))!;
+    return (await this.getByIdForProject(projectId, id))!;
   }
 
   // ─── Decline ──────────────────────────────────────────────────────────────
 
-  async decline(id: string): Promise<dbSchema.BookingRow | null> {
-    const existing = await this.getById(id);
+  async decline(
+    projectId: string,
+    id: string,
+  ): Promise<dbSchema.BookingRow | null> {
+    const existing = await this.getByIdForProject(projectId, id);
     if (!existing || existing.status !== "pending") return null;
 
     await this.db
@@ -151,7 +178,7 @@ export class BookingService {
       .set({ status: "declined", expiresAt: null })
       .where(eq(dbSchema.bookings.id, id));
 
-    return (await this.getById(id))!;
+    return (await this.getByIdForProject(projectId, id))!;
   }
 
   // ─── Expire Past Pending Bookings ─────────────────────────────────────────

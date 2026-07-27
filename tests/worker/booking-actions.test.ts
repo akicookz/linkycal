@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 import * as dbSchema from "../../worker/db/schema";
 import {
@@ -31,6 +31,7 @@ async function seedFixture() {
 
   await db.insert(dbSchema.eventTypes).values([
     { id: "et-a1", projectId: "proj-a", name: "Intro Call", slug: "intro-call" },
+    { id: "et-b1", projectId: "proj-b", name: "Private Call", slug: "private-call" },
   ]);
 
   const future = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -68,6 +69,27 @@ async function seedFixture() {
       endTime: pastEnd,
       timezone: "UTC",
       status: "pending",
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    },
+    {
+      id: "bk-foreign-confirmed",
+      eventTypeId: "et-b1",
+      name: "Foreign Guest",
+      email: "foreign@example.com",
+      startTime: future,
+      endTime: futureEnd,
+      timezone: "UTC",
+      status: "confirmed",
+    },
+    {
+      id: "bk-foreign-pending",
+      eventTypeId: "et-b1",
+      name: "Foreign Guest",
+      email: "foreign@example.com",
+      startTime: future,
+      endTime: futureEnd,
+      timezone: "UTC",
+      status: "pending",
     },
   ]);
 
@@ -80,11 +102,12 @@ async function seedFixture() {
     },
   };
 
-  return { db, deps, settle: () => Promise.all(pending) };
+  return { db, deps, pending, settle: () => Promise.all(pending) };
 }
 
 describe("booking actions", () => {
-  test("cancelBookingAction cancels and records the reason", async () => {
+  test("cancels an owned booking, emails the reason, and records one activity", async () => {
+    fetchCalls = [];
     const { db, deps, settle } = await seedFixture();
 
     const result = await cancelBookingAction(deps, "proj-a", "bk-confirmed", "Schedule conflict");
@@ -99,30 +122,109 @@ describe("booking actions", () => {
 
     await settle();
 
-    // The cancel flow links/creates a contact for the guest
-    const [contact] = await db
+    const cancellationCall = fetchCalls.find(
+      (call) =>
+        call.url.includes("api.resend.com") &&
+        call.body.includes("Booking Cancelled"),
+    );
+    expect(cancellationCall).toBeDefined();
+    const cancellationPayload = JSON.parse(cancellationCall!.body) as {
+      html: string;
+    };
+    expect(cancellationPayload.html).toContain("Schedule conflict");
+
+    const contacts = await db
       .select()
       .from(dbSchema.contacts)
-      .where(eq(dbSchema.contacts.email, "guest@example.com"))
-      .limit(1);
-    expect(contact?.projectId).toBe("proj-a");
+      .where(eq(dbSchema.contacts.email, "guest@example.com"));
+    expect(contacts.map((contact) => contact.projectId)).toEqual(["proj-a"]);
+
+    const activities = await db
+      .select()
+      .from(dbSchema.contactActivity)
+      .where(eq(dbSchema.contactActivity.contactId, contacts[0]!.id));
+    expect(
+      activities.filter(
+        (activity) =>
+          activity.type === "cancelled" &&
+          activity.referenceId === "bk-confirmed",
+      ),
+    ).toHaveLength(1);
   });
 
-  test("confirmBookingAction rejects a booking whose time has passed", async () => {
-    const { db, deps } = await seedFixture();
+  test("rejects a past booking before changing its pending state", async () => {
+    const { db, deps, pending } = await seedFixture();
 
     const result = await confirmBookingAction(deps, "proj-a", "bk-pending-past");
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.status).toBe(400);
+    expect(result).toEqual({
+      ok: false,
+      status: 400,
+      error: "Cannot confirm a booking whose time has already passed",
+    });
 
-    // BookingService.confirm flips status before the time check; the action
-    // mirrors the route exactly, so just assert the rejection surfaced.
     const [row] = await db
-      .select()
+      .select({
+        status: dbSchema.bookings.status,
+        expiresAt: dbSchema.bookings.expiresAt,
+      })
       .from(dbSchema.bookings)
       .where(eq(dbSchema.bookings.id, "bk-pending-past"))
       .limit(1);
-    expect(row).toBeDefined();
+    expect(row.status).toBe("pending");
+    expect(row.expiresAt).not.toBeNull();
+    expect(pending).toHaveLength(0);
+  });
+
+  test("does not mutate another project's booking through any organizer action", async () => {
+    const { db, deps, pending } = await seedFixture();
+
+    expect(
+      await cancelBookingAction(
+        deps,
+        "proj-a",
+        "bk-foreign-confirmed",
+        "No",
+      ),
+    ).toEqual({ ok: false, status: 404, error: "Booking not found" });
+    expect(
+      await confirmBookingAction(deps, "proj-a", "bk-foreign-pending"),
+    ).toEqual({
+      ok: false,
+      status: 404,
+      error: "Booking not found or not pending",
+    });
+    expect(
+      await declineBookingAction(
+        deps,
+        "proj-a",
+        "bk-foreign-pending",
+        { notify: true, reason: "No" },
+      ),
+    ).toEqual({
+      ok: false,
+      status: 404,
+      error: "Booking not found or not pending",
+    });
+
+    const rows = await db
+      .select({
+        id: dbSchema.bookings.id,
+        status: dbSchema.bookings.status,
+      })
+      .from(dbSchema.bookings)
+      .where(
+        inArray(dbSchema.bookings.id, [
+          "bk-foreign-confirmed",
+          "bk-foreign-pending",
+        ]),
+      );
+    expect(new Map(rows.map((row) => [row.id, row.status]))).toEqual(
+      new Map([
+        ["bk-foreign-confirmed", "confirmed"],
+        ["bk-foreign-pending", "pending"],
+      ]),
+    );
+    expect(pending).toHaveLength(0);
   });
 
   test("confirmBookingAction returns 404 for a non-pending booking", async () => {

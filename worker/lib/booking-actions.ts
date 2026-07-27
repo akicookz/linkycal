@@ -602,7 +602,7 @@ export async function cancelBookingAction(
   const { db, env, waitUntil } = deps;
 
   const bookingService = new BookingService(db);
-  const booking = await bookingService.cancel(bookingId, reason);
+  const booking = await bookingService.cancel(projectId, bookingId);
 
   if (!booking) {
     return { ok: false, status: 404, error: "Booking not found" };
@@ -750,15 +750,22 @@ export async function confirmBookingAction(
   const { db, env, waitUntil } = deps;
 
   const bookingService = new BookingService(db);
-  const booking = await bookingService.confirm(bookingId);
+  const candidate = await bookingService.getByIdForProject(
+    projectId,
+    bookingId,
+  );
 
-  if (!booking) {
+  if (!candidate || candidate.status !== "pending") {
     return { ok: false, status: 404, error: "Booking not found or not pending" };
   }
 
-  // Check if the event time has already passed
-  if (new Date(booking.startTime) <= new Date()) {
+  if (new Date(candidate.startTime) <= new Date()) {
     return { ok: false, status: 400, error: "Cannot confirm a booking whose time has already passed" };
+  }
+
+  const booking = await bookingService.confirm(projectId, bookingId);
+  if (!booking) {
+    return { ok: false, status: 404, error: "Booking not found or not pending" };
   }
 
   // Look up event type and project for calendar + email
@@ -933,6 +940,7 @@ export async function confirmBookingAction(
 
 export async function declineBookingAction(
   deps: BookingActionDeps,
+  projectId: string,
   bookingId: string,
   opts: { reason?: string; notify: boolean },
 ): Promise<BookingActionResult> {
@@ -940,7 +948,7 @@ export async function declineBookingAction(
   const { reason, notify } = opts;
 
   const bookingService = new BookingService(db);
-  const booking = await bookingService.decline(bookingId);
+  const booking = await bookingService.decline(projectId, bookingId);
 
   if (!booking) {
     return { ok: false, status: 404, error: "Booking not found or not pending" };

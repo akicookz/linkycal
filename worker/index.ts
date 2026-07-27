@@ -4825,6 +4825,7 @@ app.patch("/api/projects/:projectId/bookings/:id/confirm", async (c) => {
 app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
   try {
     const id = c.req.param("id");
+    const projectId = c.req.param("projectId");
     const db = c.get("db");
 
     const body = await c.req.json().catch(() => ({}));
@@ -4832,6 +4833,7 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
 
     const result = await declineBookingAction(
       { db, env: c.env, waitUntil: (p) => c.executionCtx.waitUntil(p) },
+      projectId,
       id,
       { reason, notify },
     );
