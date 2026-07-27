@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 
 import * as dbSchema from "../../worker/db/schema";
 import { createBookingAction } from "../../worker/lib/booking-actions";
@@ -117,7 +118,9 @@ describe("createBookingAction enforces booking limits", () => {
   });
 
   test("allows the booking when below the cap", async () => {
-    const { dateStr, deps } = await seed({ maxPerDay: 2 });
+    const { db, dateStr, deps } = await seed({ maxPerDay: 2 });
+    await db.insert(dbSchema.bookings).values(bookingRow("b1", dateStr, 9, "confirmed"));
+
     const result = await createBookingAction(deps, {
       projectSlug: "p1",
       eventTypeSlug: "call",
@@ -126,6 +129,15 @@ describe("createBookingAction enforces booking limits", () => {
       startTime: `${dateStr}T10:00:00.000Z`,
       timezone: "UTC",
     });
+
     expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.error);
+
+    const rows = await db
+      .select({ id: dbSchema.bookings.id })
+      .from(dbSchema.bookings)
+      .where(eq(dbSchema.bookings.eventTypeId, "et1"));
+    expect(rows).toHaveLength(2);
+    expect(rows.some((row) => row.id === result.booking.id)).toBe(true);
   });
 });

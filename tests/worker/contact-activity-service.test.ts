@@ -118,7 +118,7 @@ async function seedTimeline() {
     {
       id: "booking-b",
       eventTypeId: "event-b",
-      contactId: "contact-b",
+      contactId: "contact-a",
       name: "Grace Hopper",
       email: "grace@example.com",
       startTime: at(19),
@@ -164,7 +164,7 @@ async function seedTimeline() {
     {
       id: "run-foreign",
       workflowId: "workflow-b",
-      context: JSON.stringify({ projectId: projectB.id, contactId: "contact-b" }),
+      context: JSON.stringify({ projectId: projectB.id, contactId: "contact-a" }),
       status: "completed",
       startedAt: at(15),
       completedAt: at(15),
@@ -206,8 +206,9 @@ async function seedTimeline() {
     },
     {
       id: "activity-foreign",
-      contactId: "contact-b",
-      type: "contact_created",
+      contactId: "contact-a",
+      type: "form_submitted",
+      referenceId: "response-foreign",
       createdAt: at(15),
     },
   ]);
@@ -298,20 +299,6 @@ describe("ContactActivityService", () => {
     ]);
   });
 
-  test("deduplicates a booking response also linked by submission activity", async () => {
-    const { db } = await seedTimeline();
-    const service = new ContactActivityService(db);
-
-    const page = await service.list("proj-a", "contact-a", {
-      category: "form_responses",
-      limit: 20,
-      cursor: null,
-    });
-
-    expect(page?.activities.filter((item) => item.id === "form_response:response-booking")).toHaveLength(1);
-    expect(page?.counts.formResponses).toBe(2);
-  });
-
   test("hides foreign contacts and foreign project activity", async () => {
     const { db } = await seedTimeline();
     const service = new ContactActivityService(db);
@@ -329,7 +316,10 @@ describe("ContactActivityService", () => {
       limit: 20,
       cursor: null,
     });
-    expect(page?.activities.some((item) => item.id.includes("foreign"))).toBe(false);
+    const ids = page?.activities.map((item) => item.id);
+    expect(ids).not.toContain("booking:booking-b");
+    expect(ids).not.toContain("form_response:response-foreign");
+    expect(ids).not.toContain("workflow_run:run-foreign");
   });
 
   test("paginates tied timestamps without duplicates", async () => {

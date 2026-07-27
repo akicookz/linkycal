@@ -432,7 +432,7 @@ export class ContactService {
   async getWithDetails(id: string, projectId?: string) {
     const [contact, tags] = await Promise.all([
       projectId ? this.getByIdInProject(projectId, id) : this.getById(id),
-      this.getContactTags(id),
+      this.getContactTags(id, projectId),
     ]);
     if (!contact) return null;
 
@@ -544,7 +544,12 @@ export class ContactService {
 
   // ─── Tags ────────────────────────────────────────────────────────────────
 
-  async getContactTags(contactId: string) {
+  async getContactTags(contactId: string, projectId?: string) {
+    const predicates = [eq(dbSchema.contactTags.contactId, contactId)];
+    if (projectId) {
+      predicates.push(eq(dbSchema.tags.projectId, projectId));
+    }
+
     const rows = await this.db
       .select({
         id: dbSchema.contactTags.tagId,
@@ -553,7 +558,7 @@ export class ContactService {
       })
       .from(dbSchema.contactTags)
       .innerJoin(dbSchema.tags, eq(dbSchema.contactTags.tagId, dbSchema.tags.id))
-      .where(eq(dbSchema.contactTags.contactId, contactId));
+      .where(and(...predicates));
     return rows;
   }
 

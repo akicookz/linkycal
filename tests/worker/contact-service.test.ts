@@ -92,16 +92,48 @@ describe("ContactService.findOrCreate dedup", () => {
 });
 
 describe("ContactService.getWithDetails", () => {
-  test("returns tags without embedding activity", async () => {
+  test("returns only project-owned tags without embedding activity", async () => {
     const db = createTestDb();
     await seedProject(db);
+    await db.insert(dbSchema.projects).values({
+      id: "foreign-project",
+      userId: "u",
+      name: "Foreign",
+      slug: "foreign",
+    });
     const svc = new ContactService(db);
     const contact = await svc.create("p", { name: "Jane" });
+    await db.insert(dbSchema.tags).values([
+      {
+        id: "owned-tag",
+        projectId: "p",
+        name: "Qualified",
+        color: "#123456",
+      },
+      {
+        id: "foreign-tag",
+        projectId: "foreign-project",
+        name: "Private",
+        color: "#abcdef",
+      },
+    ]);
+    await db.insert(dbSchema.contactTags).values([
+      { contactId: contact.id, tagId: "owned-tag" },
+      { contactId: contact.id, tagId: "foreign-tag" },
+    ]);
+    await db.insert(dbSchema.contactActivity).values({
+      id: "same-project-activity",
+      contactId: contact.id,
+      type: "tag_added",
+      referenceId: "owned-tag",
+    });
 
     const detail = await svc.getWithDetails(contact.id, "p");
 
     expect(detail).not.toBeNull();
-    expect(detail).toHaveProperty("tags");
+    expect(detail?.tags).toEqual([
+      { id: "owned-tag", name: "Qualified", color: "#123456" },
+    ]);
     expect(detail && "activity" in detail).toBe(false);
   });
 });

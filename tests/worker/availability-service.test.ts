@@ -177,7 +177,7 @@ describe("AvailabilityService booking limits", () => {
     expect(await slotsFor(db, dateStr)).toEqual([]);
   });
 
-  test("daily cap ignores declined/cancelled/rescheduled", async () => {
+  test("daily cap counts active bookings and stays open below the limit", async () => {
     const { db, dateStr } = await seedEventType({ maxPerDay: 2 });
     await db.insert(dbSchema.bookings).values([
       bookingAt("b1", dateStr, 9, "confirmed"),
@@ -186,14 +186,6 @@ describe("AvailabilityService booking limits", () => {
       bookingAt("b4", dateStr, 13, "rescheduled"),
     ]);
     // Only the confirmed one counts (1 < 2), so the day stays open.
-    expect((await slotsFor(db, dateStr)).length).toBeGreaterThan(0);
-  });
-
-  test("daily cap stays open while below the limit", async () => {
-    const { db, dateStr } = await seedEventType({ maxPerDay: 3 });
-    await db.insert(dbSchema.bookings).values([
-      bookingAt("b1", dateStr, 9, "confirmed"),
-    ]);
     expect((await slotsFor(db, dateStr)).length).toBeGreaterThan(0);
   });
 

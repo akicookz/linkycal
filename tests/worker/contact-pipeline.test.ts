@@ -119,19 +119,69 @@ describe("ContactService.listPage", () => {
       projectId: "p",
       name: `Paged ${i}`,
       email: `pg-${i}@x.com`,
+      createdAt: new Date(
+        new Date("2026-06-01T00:00:00.000Z").getTime() + i * 1000,
+      ),
     }));
+    await db
+      .update(dbSchema.contacts)
+      .set({ createdAt: new Date("2026-01-01T00:00:00.000Z") });
     await db.insert(dbSchema.contacts).values(rows);
     return { db, svc, total: n + 1 };
   }
 
-  test("returns the first page and the full filtered total", async () => {
+  test("slices one stable filtered collection across pages", async () => {
     const { svc, total } = await seedMany(120);
-    const { contacts, total: reported } = await svc.listPage("p", undefined, {
+    const first = await svc.listPage("p", undefined, {
       limit: 50,
       offset: 0,
     });
-    expect(reported).toBe(total); // 121
-    expect(contacts).toHaveLength(50);
+    const second = await svc.listPage("p", undefined, {
+      limit: 50,
+      offset: 50,
+    });
+    const third = await svc.listPage("p", undefined, {
+      limit: 50,
+      offset: 100,
+    });
+
+    expect([first.total, second.total, third.total]).toEqual([
+      total,
+      total,
+      total,
+    ]);
+    expect([
+      first.contacts.length,
+      second.contacts.length,
+      third.contacts.length,
+    ]).toEqual([50, 50, 21]);
+
+    const pageIds = [first, second, third].flatMap((page) =>
+      page.contacts.map((contact) => contact.id),
+    );
+    const expectedIds = [
+      ...Array.from(
+        { length: 120 },
+        (_, index) => `pg-${String(119 - index).padStart(3, "0")}`,
+      ),
+      "c",
+    ];
+    expect(new Set(pageIds).size).toBe(total);
+    expect(pageIds).toEqual(expectedIds);
+
+    const filtered = await svc.listPage(
+      "p",
+      { search: "Paged 11" },
+      { limit: 5, offset: 0 },
+    );
+    expect(filtered.total).toBe(11);
+    expect(filtered.contacts.map((contact) => contact.id)).toEqual([
+      "pg-119",
+      "pg-118",
+      "pg-117",
+      "pg-116",
+      "pg-115",
+    ]);
   });
 });
 

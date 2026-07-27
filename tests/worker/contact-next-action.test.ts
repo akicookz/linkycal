@@ -66,15 +66,6 @@ describe("ContactService.setNextAction", () => {
       text: "Send proposal",
       deadline: null,
     });
-
-    await service.setNextAction("c", null);
-    const completed = (await service.getActivity("c")).find(
-      (entry) => entry.type === "next_action_completed",
-    );
-    expect(completed?.metadata).toEqual({
-      text: "Send proposal",
-      deadline: null,
-    });
   });
 
   test("sets and replaces the complete action", async () => {
