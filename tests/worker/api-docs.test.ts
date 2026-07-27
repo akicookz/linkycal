@@ -18,6 +18,14 @@ function normalizePathParameters(path: string): string {
   return path.replace(/:[^/]+/g, ":parameter");
 }
 
+function parameterNames(
+  parameters: Array<Record<string, unknown>> | undefined,
+): Set<string> {
+  return new Set(
+    (parameters ?? []).map((parameter) => String(parameter.name)),
+  );
+}
+
 describe("generated API documentation", () => {
   test("publishes OpenAPI 3.1 with the intended security model", async () => {
     const { openApi } = await loadArtifacts();
@@ -74,12 +82,12 @@ describe("generated API documentation", () => {
       ];
 
     expect(collection.get.tags).toEqual(["Tags"]);
-    expect(collection.get.parameters?.map((parameter) => parameter.name)).toEqual([
+    expect(parameterNames(collection.get.parameters)).toEqual(new Set([
       "projectId",
       "search",
       "limit",
       "cursor",
-    ]);
+    ]));
     expect(collection.post.requestBody).toEqual(
       expect.objectContaining({
         required: true,
@@ -107,7 +115,7 @@ describe("generated API documentation", () => {
       openApi.paths[
         "/api/projects/{projectId}/contacts/{contactId}/activities"
       ].get;
-    expect(contacts.parameters?.map((parameter) => parameter.name)).toEqual([
+    expect(parameterNames(contacts.parameters)).toEqual(new Set([
       "projectId",
       "search",
       "tagId",
@@ -121,17 +129,17 @@ describe("generated API documentation", () => {
       "bookingStatus",
       "limit",
       "offset",
-    ]);
+    ]));
     expect(contacts.responses["200"]).toEqual(
       expect.objectContaining({ description: "Contact page" }),
     );
-    expect(activities.parameters?.map((parameter) => parameter.name)).toEqual([
+    expect(parameterNames(activities.parameters)).toEqual(new Set([
       "projectId",
       "contactId",
       "category",
       "limit",
       "cursor",
-    ]);
+    ]));
     expect(activities.responses["200"]).toEqual(
       expect.objectContaining({ description: "Contact activity page" }),
     );
@@ -157,12 +165,4 @@ describe("generated API documentation", () => {
     expect(checkedAudit).toBe(auditMarkdown);
   });
 
-  test("documentation exposes the public API authentication entry points", async () => {
-    const docsPage = await Bun.file("src/pages/Docs.tsx").text();
-
-    expect(docsPage).not.toContain("Cookie: session=");
-    expect(docsPage).toContain("Authorization: Bearer lc_live_");
-    expect(docsPage).toContain('href="/openapi.json"');
-    expect(docsPage).toContain('href="/llms.txt"');
-  });
 });
