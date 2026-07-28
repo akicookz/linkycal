@@ -4,7 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Primary reference
 
-Read `AGENTS.md` first. It is the source of truth for product overview, tech stack, code conventions (function declarations, naming, imports, TS rules), DB schema conventions, and UI/branding rules (squircle radii, forest-green palette, icon+text buttons, no border separators, card-style toggle rows). Do not duplicate those conventions — follow them.
+Read `README.md` first. It is the source of truth for product scope,
+architecture, repository layout, commands, and the test-admission standard.
+Then read `AGENTS.md` for code conventions (function declarations, naming,
+imports, and TypeScript rules), database conventions, and UI/branding rules.
+Do not duplicate those conventions—follow them.
 
 ## Commands
 

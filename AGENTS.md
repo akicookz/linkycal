@@ -1,5 +1,11 @@
 # LinkyCal - Form & Scheduling infrastructure
 
+## Primary repository guide
+
+Read `README.md` first for product scope, architecture, repository layout,
+commands, and the test-admission standard. This file adds implementation,
+database, and UI conventions for coding agents.
+
 ## Product Overview
 
 LinkyCal is a form and Scheduling infrastructure SaaS. Users create projects, build multi-step forms, set up booking/calendar links, manage contacts with tagging (mini CRM), and automate workflows. Everything is API-first with embeddable widgets.
@@ -53,7 +59,7 @@ app/
 │       ├── schema.ts       # 24 domain tables
 │       ├── index.ts
 │       └── drizzle/        # SQL migrations
-├── widget/                 # Embeddable IIFE widgets (TODO)
+├── widget/                 # Embeddable IIFE widgets
 │   ├── booking/
 │   └── form/
 ├── wrangler.jsonc
