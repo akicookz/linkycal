@@ -87,6 +87,11 @@ import {
   confirmBookingAction,
   declineBookingAction,
 } from "./lib/booking-actions";
+import {
+  loadPublicFormAction,
+  submitPublicFormStepAction,
+} from "./lib/public-form-actions";
+import { loadPublicEventTypeAction } from "./lib/public-event-type-actions";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
 import { LinkyCalMcp } from "./mcp/agent";
 import type { McpProps } from "./mcp/agent";
@@ -100,7 +105,6 @@ import { AvailabilityService } from "./services/availability-service";
 import { CalendarService } from "./services/calendar-service";
 import {
   getUtcRangeForLocalDate,
-  getViewerAvailableWeekdays,
 } from "./lib/timezone";
 import {
   parseBusyCalendars,
@@ -1659,105 +1663,15 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
     const projectSlug = c.req.param("projectSlug");
     const eventSlug = c.req.param("eventSlug");
     const db = drizzle(c.env.DB, { schema });
-
-    const [project] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.slug, projectSlug))
-      .limit(1);
-
-    if (!project) {
-      return c.json({ error: "Project not found" }, 404);
-    }
-
-    const service = new EventTypeService(db);
-    const eventType = await service.getBySlug(project.id, eventSlug);
-
-    if (!eventType || !eventType.enabled) {
-      return c.json({ error: "Event type not found" }, 404);
-    }
-
-    const settings = project.settings
-      ? JSON.parse(project.settings as string)
-      : {};
-
-    // Fetch project owner info for display
-    const [owner] = await db
-      .select({
-        name: dbSchema.schema.users.name,
-        image: dbSchema.schema.users.image,
-      })
-      .from(dbSchema.schema.users)
-      .where(eq(dbSchema.schema.users.id, project.userId))
-      .limit(1);
-
-    // If event type has a booking form, fetch its steps + fields
-    let bookingForm = null;
-    if (eventType.bookingFormId) {
-      const formService = new FormService(db);
-      const fullForm = await formService.getFullForm(eventType.bookingFormId);
-      if (fullForm && fullForm.status === "active") {
-        bookingForm = fullForm;
-      }
-    }
-
-    // Fetch available days-of-week from schedule rules.
-    // If the caller supplies ?timezone (booker's IANA TZ), project each weekly
-    // rule window through UTC and emit the weekdays the window covers *in the
-    // booker's timezone* — so a booker in Tokyo viewing an NY owner sees the
-    // days shifted by the UTC offset instead of a 1:1 weekday match.
-    let availableDays: number[] = [];
-    if (eventType.scheduleId) {
-      const rules = await db
-        .select({
-          dayOfWeek: dbSchema.availabilityRules.dayOfWeek,
-          startTime: dbSchema.availabilityRules.startTime,
-          endTime: dbSchema.availabilityRules.endTime,
-        })
-        .from(dbSchema.availabilityRules)
-        .where(eq(dbSchema.availabilityRules.scheduleId, eventType.scheduleId));
-
-      const viewerTz = c.req.query("timezone");
-      let projected: number[] | null = null;
-      if (viewerTz && rules.length > 0) {
-        const [scheduleRow] = await db
-          .select({ timezone: dbSchema.schedules.timezone })
-          .from(dbSchema.schedules)
-          .where(eq(dbSchema.schedules.id, eventType.scheduleId))
-          .limit(1);
-        if (scheduleRow) {
-          try {
-            projected = getViewerAvailableWeekdays(
-              rules,
-              scheduleRow.timezone,
-              viewerTz,
-            );
-          } catch {
-            projected = null;
-          }
-        }
-      }
-      availableDays = projected ?? [...new Set(rules.map((r) => r.dayOfWeek))];
-    }
-
-    const entitlements = await resolveProjectEntitlements(db, project.id);
-    const canHideBranding =
-      entitlements?.subscription.plan === "pro" ||
-      entitlements?.subscription.plan === "business";
-
-    return c.json({
-      project: {
-        id: project.id,
-        name: project.name,
-        slug: project.slug,
-        settings,
-      },
-      owner: owner ? { name: owner.name, image: owner.image } : null,
-      eventType,
-      bookingForm,
-      availableDays,
-      canHideBranding,
-    });
+    const result = await loadPublicEventTypeAction(
+      db,
+      projectSlug,
+      eventSlug,
+      c.req.query("timezone"),
+    );
+    return result.ok
+      ? c.json(result.body)
+      : c.json(result.body, result.status);
   } catch (err) {
     console.error("Event type detail error:", err);
     return c.json({ error: "Failed to load event type" }, 500);
@@ -1874,44 +1788,10 @@ app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
     const projectSlug = c.req.param("projectSlug");
     const formSlug = c.req.param("formSlug");
     const db = drizzle(c.env.DB, { schema });
-
-    const [project] = await db
-      .select({
-        id: dbSchema.projects.id,
-        name: dbSchema.projects.name,
-        slug: dbSchema.projects.slug,
-        settings: dbSchema.projects.settings,
-        userId: dbSchema.projects.userId,
-        teamId: dbSchema.projects.teamId,
-      })
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.slug, projectSlug))
-      .limit(1);
-
-    if (!project) {
-      return c.json({ error: "Form not found" }, 404);
-    }
-
-    const service = new FormService(db);
-    const form = await service.getFullFormBySlug(project.id, formSlug);
-
-    if (!form || form.status !== "active") {
-      return c.json({ error: "Form not found" }, 404);
-    }
-
-    const projectInfo = {
-      id: project.id,
-      name: project.name,
-      slug: project.slug,
-      settings: project.settings ? JSON.parse(project.settings as string) : {},
-    };
-
-    const entitlements = await resolveProjectEntitlements(db, project.id);
-    const canHideBranding =
-      entitlements?.subscription.plan === "pro" ||
-      entitlements?.subscription.plan === "business";
-
-    return c.json({ form, project: projectInfo, canHideBranding });
+    const result = await loadPublicFormAction(db, projectSlug, formSlug);
+    return result.ok
+      ? c.json(result.body)
+      : c.json(result.body, result.status);
   } catch (err) {
     console.error("Public form fetch error:", err);
     return c.json({ error: "Failed to load form" }, 500);
@@ -2011,24 +1891,17 @@ app.patch(
 
     try {
       const body = await c.req.json();
-      const data = validate(submitFormStepSchema, body);
-
       const db = drizzle(c.env.DB, { schema });
-      const service = new FormService(db);
-
-      const response = await service.submitStep(
+      const result = await submitPublicFormStepAction(
+        db,
         responseId,
         stepIndex,
-        data.fields,
-        {
-          complete: data.complete === true,
-          clearedFieldIds: data.clearedFieldIds,
-        },
+        body,
       );
-
-      if (!response) {
-        return c.json({ error: "Response not found" }, 404);
+      if (!result.ok) {
+        return c.json(result.body, result.status);
       }
+      const { response } = result.body;
 
       // Notify owner on completion (paid users only) + dispatch workflows
       if (response.status === "completed" && response.formId) {

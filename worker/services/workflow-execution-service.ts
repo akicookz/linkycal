@@ -317,7 +317,7 @@ export class WorkflowExecutionService {
     const run = await this.workflowService.createRun(
       workflowId,
       context.formResponseId ?? context.bookingId ?? context.contactId ?? undefined,
-      JSON.stringify(context),
+      serializeWorkflowContextForPersistence(context),
     );
     if (!run) return null;
 
@@ -578,7 +578,7 @@ export class WorkflowExecutionService {
         stepIndex,
         leaseToken,
         stepLogs,
-        JSON.stringify(context),
+        serializeWorkflowContextForPersistence(context),
       );
       if (!finalized) {
         return;
@@ -594,10 +594,13 @@ export class WorkflowExecutionService {
     }
 
     // ── Step logging: attach resolved inputs to the claimed lease ──
-    const loggedConfig = sanitizeWorkflowConfigForLog(config);
+    const loggedConfig = sanitizeWorkflowConfigForLog(
+      config,
+      context.stepInputs,
+    );
     claimedLog.input = {
       config: loggedConfig,
-      resolvedInputs: context.stepInputs,
+      resolvedInputs: sanitizeResolvedWorkflowInputs(context.stepInputs),
     };
     const attachedInput = await workflowService.updateStepLogsForLease(
       workflowRunId,
@@ -687,7 +690,7 @@ export class WorkflowExecutionService {
           stepIndex,
           leaseToken,
           stepLogs,
-          JSON.stringify(context),
+          serializeWorkflowContextForPersistence(context),
         );
         if (!finalized) {
           return;
@@ -731,12 +734,18 @@ export class WorkflowExecutionService {
       stepLogs[stepIndex].completedAt = now;
       stepLogs[stepIndex].input = {
         config: loggedConfig,
-        resolvedInputs: context.stepInputs,
-        ...snapshot.resolved,
+        resolvedInputs: sanitizeResolvedWorkflowInputs(context.stepInputs),
+        ...sanitizeWorkflowRecordForLog(
+          snapshot.resolved,
+          context.stepInputs,
+        ),
       };
       stepLogs[stepIndex].output = {
         continued: shouldContinue,
-        ...snapshot.output,
+        ...sanitizeWorkflowRecordForLog(
+          snapshot.output,
+          context.stepInputs,
+        ),
       };
     }
     if (!shouldContinue) {
@@ -752,7 +761,7 @@ export class WorkflowExecutionService {
           stepIndex,
           leaseToken,
           stepLogs,
-          JSON.stringify(context),
+          serializeWorkflowContextForPersistence(context),
           snapshot.researchApplication.contactId,
           snapshot.researchApplication.record,
         );
@@ -777,7 +786,7 @@ export class WorkflowExecutionService {
         stepIndex,
         leaseToken,
         stepLogs,
-        JSON.stringify(context),
+        serializeWorkflowContextForPersistence(context),
       );
     }
     if (!finalized) {
@@ -1728,8 +1737,98 @@ const SENSITIVE_WORKFLOW_LOG_KEY =
 
 function sanitizeWorkflowConfigForLog(
   config: Record<string, unknown>,
+  stepInputs: Record<string, unknown> | undefined,
 ): Record<string, unknown> {
-  return sanitizeWorkflowLogValue(config) as Record<string, unknown>;
+  return sanitizeWorkflowRecordForLog(config, stepInputs);
+}
+
+function sanitizeWorkflowRecordForLog(
+  value: Record<string, unknown>,
+  stepInputs: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const sanitized = sanitizeWorkflowLogValue(value);
+  const sensitiveValues = Object.entries(stepInputs ?? {})
+    .filter(function isSensitiveInput([key]) {
+      return SENSITIVE_WORKFLOW_LOG_KEY.test(key);
+    })
+    .map(function inputValue([, inputValue]) {
+      return inputValue;
+    });
+
+  return redactWorkflowValues(
+    sanitized,
+    sensitiveValues,
+  ) as Record<string, unknown>;
+}
+
+function redactWorkflowValues(
+  value: unknown,
+  sensitiveValues: unknown[],
+): unknown {
+  if (typeof value === "string") {
+    let redacted = value;
+    for (const sensitiveValue of sensitiveValues) {
+      if (
+        typeof sensitiveValue === "string" &&
+        sensitiveValue.length > 0
+      ) {
+        redacted = redacted.replaceAll(sensitiveValue, "[redacted]");
+      }
+    }
+    return redacted;
+  }
+  if (
+    value !== null &&
+    typeof value !== "object" &&
+    sensitiveValues.some(function matchesSecret(sensitiveValue) {
+      return Object.is(value, sensitiveValue);
+    })
+  ) {
+    return "[redacted]";
+  }
+  if (Array.isArray(value)) {
+    return value.map(function redactItem(item) {
+      return redactWorkflowValues(item, sensitiveValues);
+    });
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(function redactEntry([key, entryValue]) {
+        return [
+          key,
+          redactWorkflowValues(entryValue, sensitiveValues),
+        ];
+      }),
+    );
+  }
+  return value;
+}
+
+function sanitizeResolvedWorkflowInputs(
+  stepInputs: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!stepInputs) return undefined;
+  return Object.fromEntries(
+    Object.entries(stepInputs).map(function sanitizeInput([key, value]) {
+      return [
+        key,
+        SENSITIVE_WORKFLOW_LOG_KEY.test(key)
+          ? "[redacted]"
+          : sanitizeWorkflowLogValue(value, key),
+      ];
+    }),
+  );
+}
+
+function serializeWorkflowContextForPersistence(
+  context: TriggerContext,
+): string {
+  return JSON.stringify({
+    ...context,
+    ...(context.stepInputs
+      ? { stepInputs: sanitizeResolvedWorkflowInputs(context.stepInputs) }
+      : {}),
+  });
 }
 
 function sanitizeWorkflowLogValue(

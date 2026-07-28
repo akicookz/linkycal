@@ -122,13 +122,20 @@ export async function resolveInviteAttendees(
   eventType: { inviteConnectionIds: string | null },
   destinationConnectionId: string,
   guestEmail: string,
-): Promise<string[]> {
+  guestName: string,
+): Promise<Array<{ email: string; displayName?: string }>> {
   const inviteIds = parseInviteConnectionIds(eventType.inviteConnectionIds).filter(
     (id) => id !== destinationConnectionId,
   );
 
-  const emails = new Set<string>();
-  if (guestEmail) emails.add(guestEmail.toLowerCase());
+  const attendees = new Map<
+    string,
+    { email: string; displayName?: string }
+  >();
+  if (guestEmail) {
+    const email = guestEmail.toLowerCase();
+    attendees.set(email, { email, displayName: guestName });
+  }
 
   if (inviteIds.length > 0) {
     const rows = await db
@@ -136,11 +143,13 @@ export async function resolveInviteAttendees(
       .from(dbSchema.calendarConnections)
       .where(inArray(dbSchema.calendarConnections.id, inviteIds));
     for (const row of rows) {
-      if (row.email) emails.add(row.email.toLowerCase());
+      if (!row.email) continue;
+      const email = row.email.toLowerCase();
+      if (!attendees.has(email)) attendees.set(email, { email });
     }
   }
 
-  return Array.from(emails);
+  return Array.from(attendees.values());
 }
 
 // ─── Booking invite (.ics) ───────────────────────────────────────────────────
@@ -477,11 +486,12 @@ export async function createBookingAction(
               calConnection.refreshToken,
             );
 
-            const attendeeEmails = await resolveInviteAttendees(
+            const attendees = await resolveInviteAttendees(
               db,
               eventType,
               calConnection.id,
               input.email,
+              input.name,
             );
 
             const gcalResult = await calendarService.createEvent(
@@ -492,8 +502,7 @@ export async function createBookingAction(
                 start: startTime.toISOString(),
                 end: endTime.toISOString(),
                 description: input.notes,
-                attendees: attendeeEmails,
-                guestName: input.name,
+                attendees,
               },
             );
 
@@ -866,11 +875,12 @@ export async function confirmBookingAction(
             calConnection.refreshToken,
           );
 
-          const attendeeEmails = await resolveInviteAttendees(
+          const attendees = await resolveInviteAttendees(
             db,
             eventType,
             calConnection.id,
             booking.email,
+            booking.name,
           );
 
           const gcalResult = await calendarService.createEvent(
@@ -881,8 +891,7 @@ export async function confirmBookingAction(
               start: new Date(booking.startTime).toISOString(),
               end: new Date(booking.endTime).toISOString(),
               description: booking.notes ?? undefined,
-              attendees: attendeeEmails,
-              guestName: booking.name,
+              attendees,
             },
           );
 

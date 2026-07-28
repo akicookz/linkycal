@@ -32,8 +32,10 @@ interface CreateEventInput {
   start: string; // ISO 8601
   end: string; // ISO 8601
   description?: string;
-  attendees?: string[];
-  guestName?: string;
+  attendees?: Array<{
+    email: string;
+    displayName?: string;
+  }>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -251,10 +253,12 @@ export class CalendarService {
     const attendees: Array<Record<string, unknown>> = [];
 
     if (event.attendees && event.attendees.length > 0) {
-      for (const email of event.attendees) {
+      for (const attendee of event.attendees) {
         attendees.push({
-          email,
-          displayName: event.guestName || email,
+          email: attendee.email,
+          ...(attendee.displayName
+            ? { displayName: attendee.displayName }
+            : {}),
         });
       }
     }

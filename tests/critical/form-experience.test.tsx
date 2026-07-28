@@ -23,6 +23,10 @@ import type {
   FormExperienceStep,
 } from "../../src/lib/form-experience";
 import * as dbSchema from "../../worker/db/schema";
+import {
+  loadPublicFormAction,
+  submitPublicFormStepAction,
+} from "../../worker/lib/public-form-actions";
 import { FormService } from "../../worker/services/form-service";
 import {
   restoreRealTime,
@@ -43,6 +47,7 @@ interface FormApiCapture {
   http: HttpCapture;
   patches: CapturedRequest[];
   starts: CapturedRequest[];
+  responseId(): string | null;
 }
 
 afterEach(function restoreClock() {
@@ -100,32 +105,24 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 function installFormApi(
-  form: FormExperienceForm,
-  theme?: {
-    primaryBg: string;
-    primaryText: string;
-    borderRadius: number;
-  },
+  testDatabase: TestDatabase,
 ): FormApiCapture {
   const patches: CapturedRequest[] = [];
   const starts: CapturedRequest[] = [];
+  let responseId: string | null = null;
   const http = installHttpCapture([
     {
       method: "GET",
       matches: function matchesForm(url) {
         return url.pathname === "/api/public/forms/acme/project-intake";
       },
-      respond: function respondForm() {
-        return jsonResponse({
-          form,
-          project: {
-            id: "project-acme",
-            name: "Acme",
-            slug: "acme",
-            settings: theme ? { theme } : {},
-          },
-          canHideBranding: false,
-        });
+      respond: async function respondForm() {
+        const result = await loadPublicFormAction(
+          testDatabase.db,
+          "acme",
+          "project-intake",
+        );
+        return jsonResponse(result.body, result.status);
       },
     },
     {
@@ -134,10 +131,19 @@ function installFormApi(
         return url.pathname ===
           "/api/public/forms/acme/project-intake/responses";
       },
-      respond: function respondResponseStart(request) {
+      respond: async function respondResponseStart(request) {
         starts.push(request);
+        const form = await new FormService(testDatabase.db).getBySlug(
+          "project-acme",
+          "project-intake",
+        );
+        if (!form) return jsonResponse({ error: "Form not found" }, 404);
+        const response = await new FormService(
+          testDatabase.db,
+        ).createResponse(form.id);
+        responseId = response.id;
         return jsonResponse({
-          response: { id: "response-hanna" },
+          response,
         }, 201);
       },
     },
@@ -145,18 +151,30 @@ function installFormApi(
       method: "PATCH",
       matches: function matchesStep(url) {
         return url.pathname.startsWith(
-          "/api/public/forms/acme/project-intake/responses/response-hanna/steps/",
+          "/api/public/forms/acme/project-intake/responses/",
         );
       },
-      respond: function respondStep(request) {
+      respond: async function respondStep(request) {
         patches.push(request);
-        return jsonResponse({
-          response: { id: "response-hanna", status: "completed" },
-        });
+        const pathParts = request.url.pathname.split("/");
+        const result = await submitPublicFormStepAction(
+          testDatabase.db,
+          pathParts.at(-3) ?? "",
+          Number(pathParts.at(-1)),
+          request.json,
+        );
+        return jsonResponse(result.body, result.status);
       },
     },
   ]);
-  return { http, patches, starts };
+  return {
+    http,
+    patches,
+    starts,
+    responseId: function getResponseId() {
+      return responseId;
+    },
+  };
 }
 
 function renderPublicForm(): void {
@@ -211,7 +229,9 @@ describe("public form experience", () => {
         ]),
       ],
     };
-    const api = installFormApi(form);
+    const testDatabase = createTestDb();
+    await seedPublicForm(testDatabase, form);
+    const api = installFormApi(testDatabase);
 
     try {
       const user = userEvent.setup();
@@ -261,6 +281,7 @@ describe("public form experience", () => {
       ).toBeTruthy();
     } finally {
       api.http.restore();
+      testDatabase.close();
     }
   });
 
@@ -299,7 +320,9 @@ describe("public form experience", () => {
         ]),
       ],
     };
-    const api = installFormApi(form);
+    const testDatabase = createTestDb();
+    await seedPublicForm(testDatabase, form);
+    const api = installFormApi(testDatabase);
 
     try {
       const user = userEvent.setup();
@@ -333,6 +356,7 @@ describe("public form experience", () => {
       });
     } finally {
       api.http.restore();
+      testDatabase.close();
     }
   });
 
@@ -361,11 +385,13 @@ describe("public form experience", () => {
         ]),
       ],
     };
-    const api = installFormApi(form, {
+    const testDatabase = createTestDb();
+    await seedPublicForm(testDatabase, form, {
       primaryBg: "#123456",
       primaryText: "#fefefe",
       borderRadius: 18,
     });
+    const api = installFormApi(testDatabase);
 
     try {
       const user = userEvent.setup();
@@ -395,13 +421,19 @@ describe("public form experience", () => {
       });
     } finally {
       api.http.restore();
+      testDatabase.close();
     }
   });
 });
 
-async function seedConditionalForm(
+async function seedPublicForm(
   testDatabase: TestDatabase,
   form: FormExperienceForm,
+  theme?: {
+    primaryBg: string;
+    primaryText: string;
+    borderRadius: number;
+  },
 ): Promise<void> {
   await testDatabase.db.insert(dbSchema.schema.users).values({
     id: "owner-form",
@@ -413,6 +445,7 @@ async function seedConditionalForm(
     userId: "owner-form",
     name: "Acme",
     slug: "acme",
+    settings: theme ? JSON.stringify({ theme }) : null,
   });
   await testDatabase.db.insert(dbSchema.forms).values({
     id: form.id,
@@ -533,70 +566,8 @@ test("conditional answers hidden before completion are removed from payload and 
     ],
   };
   const testDatabase = createTestDb();
-  await seedConditionalForm(testDatabase, form);
-  const service = new FormService(testDatabase.db);
-  const patches: CapturedRequest[] = [];
-  let responseId: string | null = null;
-  const http = installHttpCapture([
-    {
-      method: "GET",
-      matches: function matchesForm(url) {
-        return url.pathname === "/api/public/forms/acme/project-intake";
-      },
-      respond: function respondForm() {
-        return jsonResponse({
-          form,
-          project: {
-            id: "project-acme",
-            name: "Acme",
-            slug: "acme",
-            settings: {},
-          },
-        });
-      },
-    },
-    {
-      method: "POST",
-      matches: function matchesStart(url) {
-        return url.pathname.endsWith("/responses");
-      },
-      respond: async function respondStart() {
-        const response = await service.createResponse(form.id);
-        responseId = response.id;
-        return jsonResponse({ response }, 201);
-      },
-    },
-    {
-      method: "PATCH",
-      matches: function matchesPatch(url) {
-        return url.pathname.includes("/responses/") &&
-          url.pathname.includes("/steps/");
-      },
-      respond: async function respondPatch(request) {
-        patches.push(request);
-        const body = request.json as {
-          fields: Array<{
-            fieldId: string;
-            value?: string | null;
-            fileUrl?: string | null;
-          }>;
-          clearedFieldIds?: string[];
-          complete?: boolean;
-        };
-        const stepIndex = Number(request.url.pathname.split("/").at(-1));
-        const response = await service.submitStep(
-          responseId!,
-          stepIndex,
-          body.fields,
-          {
-            complete: body.complete,
-            clearedFieldIds: body.clearedFieldIds,
-          },
-        );
-        return jsonResponse({ response });
-      },
-    },
-  ]);
+  await seedPublicForm(testDatabase, form);
+  const api = installFormApi(testDatabase);
 
   try {
     const user = userEvent.setup();
@@ -634,7 +605,7 @@ test("conditional answers hidden before completion are removed from payload and 
     await screen.findByRole("heading", {
       name: "Conditional response received",
     });
-    const finalPatch = patches.at(-1)!;
+    const finalPatch = api.patches.at(-1)!;
     expect(finalPatch.json).toEqual({
       fields: [
         { fieldId: "implementation-help", value: "no" },
@@ -651,12 +622,12 @@ test("conditional answers hidden before completion are removed from payload and 
         value: dbSchema.formFieldValues.value,
       })
       .from(dbSchema.formFieldValues)
-      .where(eq(dbSchema.formFieldValues.responseId, responseId!));
+      .where(eq(dbSchema.formFieldValues.responseId, api.responseId()!));
     expect(persistedValues).toEqual([
       { fieldId: "implementation-help", value: "no" },
     ]);
   } finally {
-    http.restore();
+    api.http.restore();
     testDatabase.close();
   }
 });

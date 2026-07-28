@@ -15,6 +15,7 @@ import {
   type BookingActionDeps,
 } from "../../worker/lib/booking-actions";
 import { notifyFormResponseCompleted } from "../../worker/lib/form-response-notification";
+import { AvailabilityService } from "../../worker/services/availability-service";
 import type { AppEnv } from "../../worker/types";
 import {
   createFakeQueue,
@@ -74,7 +75,18 @@ function installDeliveryHttp(): HttpCapture {
       matches: function matchesGoogleToken(url) {
         return url.toString() === "https://oauth2.googleapis.com/token";
       },
-      respond: function respondGoogleToken() {
+      respond: function respondGoogleToken(request) {
+        expect(request.headers.get("Content-Type")).toBe(
+          "application/x-www-form-urlencoded",
+        );
+        expect(
+          Object.fromEntries(new URLSearchParams(request.text)),
+        ).toEqual({
+          refresh_token: "destination-refresh-token",
+          client_id: "google-calendar-client",
+          client_secret: "google-calendar-secret",
+          grant_type: "refresh_token",
+        });
         return jsonResponse({
           access_token: "google-access-token",
           expires_in: 3600,
@@ -111,7 +123,11 @@ function installDeliveryHttp(): HttpCapture {
       matches: function matchesResend(url) {
         return url.toString() === "https://api.resend.com/emails";
       },
-      respond: function respondResend() {
+      respond: function respondResend(request) {
+        expect(request.headers.get("Authorization")).toBe(
+          "Bearer resend-test-key",
+        );
+        expect(request.headers.get("Content-Type")).toBe("application/json");
         resendSequence += 1;
         return jsonResponse({ id: `resend-message-${resendSequence}` });
       },
@@ -281,7 +297,6 @@ describe("booking delivery", () => {
           },
           {
             email: "observer@example.com",
-            displayName: "Hanna Guest",
           },
         ],
       });
@@ -501,6 +516,47 @@ describe("booking delivery", () => {
           request.url.origin === "https://www.googleapis.com";
       });
       expect(googleCreates).toHaveLength(1);
+      expect(googleCreates[0]!.url.pathname).toBe(
+        "/calendar/v3/calendars/team%2Fcalendar%40group.calendar.google.com/events",
+      );
+      expect(Object.fromEntries(googleCreates[0]!.url.searchParams)).toEqual({
+        sendUpdates: "all",
+        conferenceDataVersion: "1",
+      });
+      expect(googleCreates[0]!.headers.get("Authorization")).toBe(
+        "Bearer google-access-token",
+      );
+      expect(googleCreates[0]!.json).toEqual({
+        summary: "Discovery call with Hanna Guest",
+        start: { dateTime: fixture.startTime },
+        end: { dateTime: fixture.endTime },
+        guestsCanSeeOtherGuests: true,
+        reminders: {
+          useDefault: false,
+          overrides: [
+            { method: "email", minutes: 60 },
+            { method: "popup", minutes: 10 },
+          ],
+        },
+        conferenceData: {
+          createRequest: {
+            requestId: expect.stringMatching(
+              /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+            ),
+            conferenceSolutionKey: { type: "hangoutsMeet" },
+          },
+        },
+        description: fixture.notes,
+        attendees: [
+          {
+            email: "hanna@example.com",
+            displayName: "Hanna Guest",
+          },
+          {
+            email: "observer@example.com",
+          },
+        ],
+      });
       const [confirmedBooking] = await testDatabase.db
         .select()
         .from(dbSchema.bookings)
@@ -526,11 +582,31 @@ describe("booking delivery", () => {
         "hanna@example.com",
         "Booking Confirmed: Discovery call",
       );
-      expect(
-        unfoldIcs(
-          decodeBase64Utf8(confirmationEmail.attachments![0]!.content),
-        ),
-      ).toContain("UID:google-uid-123@google.com");
+      const confirmationText = renderedText(confirmationEmail.html);
+      for (const expected of [
+        "Hanna Guest",
+        "Discovery call",
+        "Monday, March 23, 2026",
+        "3:00 PM - 3:30 PM GMT+2",
+        "Remote studio",
+        "Bring roadmap, budget; and path\\notes.",
+        "https://meet.google.com/abc-defg-hij",
+      ]) {
+        expect(confirmationText).toContain(expected);
+      }
+      const confirmationIcs = unfoldIcs(
+        decodeBase64Utf8(confirmationEmail.attachments![0]!.content),
+      );
+      for (const expected of [
+        "METHOD:REQUEST",
+        "UID:google-uid-123@google.com",
+        "DTSTART:20260323T130000Z",
+        "DTEND:20260323T133000Z",
+        "ORGANIZER:mailto:calendar-owner@example.com",
+        "ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=Hanna Guest:mailto:hanna@example.com",
+      ]) {
+        expect(confirmationIcs).toContain(expected);
+      }
 
       const [workflowRun] = await testDatabase.db
         .select()
@@ -554,6 +630,127 @@ describe("booking delivery", () => {
         },
       ]);
     } finally {
+      http.restore();
+      testDatabase.close();
+    }
+  });
+
+  test("host-local caps hide slots and reject booking while cancelled and declined rows stay excluded", async () => {
+    setFixedTime("2026-03-20T12:00:00.000Z");
+    const testDatabase = createTestDb();
+    const queue = createFakeQueue<WorkflowQueueBody>();
+    const collector = createWaitUntilCollector();
+    const http = installDeliveryHttp();
+
+    try {
+      const fixture = await seedBookingDeliveryScenario(testDatabase.db);
+      await testDatabase.db
+        .update(dbSchema.eventTypes)
+        .set({ maxPerDay: 2, maxPerWeek: 5 })
+        .where(eq(dbSchema.eventTypes.id, fixture.eventTypeId));
+      await testDatabase.db.insert(dbSchema.bookings).values([
+        {
+          id: "booking-counted-monday",
+          eventTypeId: fixture.eventTypeId,
+          name: "Counted Monday",
+          email: "monday@example.com",
+          startTime: new Date("2026-03-23T16:00:00.000Z"),
+          endTime: new Date("2026-03-23T16:30:00.000Z"),
+          timezone: "America/New_York",
+          status: "confirmed",
+        },
+        {
+          id: "booking-counted-tuesday",
+          eventTypeId: fixture.eventTypeId,
+          name: "Counted Tuesday",
+          email: "tuesday@example.com",
+          startTime: new Date("2026-03-24T13:00:00.000Z"),
+          endTime: new Date("2026-03-24T13:30:00.000Z"),
+          timezone: "America/New_York",
+          status: "pending",
+        },
+        {
+          id: "booking-cancelled-monday",
+          eventTypeId: fixture.eventTypeId,
+          name: "Cancelled Monday",
+          email: "cancelled@example.com",
+          startTime: new Date("2026-03-23T17:00:00.000Z"),
+          endTime: new Date("2026-03-23T17:30:00.000Z"),
+          timezone: "America/New_York",
+          status: "cancelled",
+        },
+        {
+          id: "booking-declined-monday",
+          eventTypeId: fixture.eventTypeId,
+          name: "Declined Monday",
+          email: "declined@example.com",
+          startTime: new Date("2026-03-23T18:00:00.000Z"),
+          endTime: new Date("2026-03-23T18:30:00.000Z"),
+          timezone: "America/New_York",
+          status: "declined",
+        },
+      ]);
+      const service = new AvailabilityService(testDatabase.db);
+      const request = {
+        projectSlug: "acme",
+        eventTypeSlug: "discovery-call",
+        date: "2026-03-23",
+        timezone: "America/New_York",
+        now: new Date("2026-03-20T12:00:00.000Z"),
+      };
+
+      expect(await service.getAvailableSlots(request)).toEqual([
+        {
+          start: fixture.startTime,
+          end: fixture.endTime,
+        },
+      ]);
+
+      await testDatabase.db
+        .update(dbSchema.eventTypes)
+        .set({ maxPerDay: 1 })
+        .where(eq(dbSchema.eventTypes.id, fixture.eventTypeId));
+      expect(await service.getAvailableSlots(request)).toEqual([]);
+      const deps = createDeps(
+        testDatabase.db,
+        makeTestEnv(queue),
+        collector,
+      );
+      const dailyResult = await createBookingAction(deps, {
+        projectSlug: "acme",
+        eventTypeSlug: "discovery-call",
+        name: "Hanna Guest",
+        email: "hanna@example.com",
+        startTime: fixture.startTime,
+        timezone: "America/New_York",
+      });
+      expect(dailyResult).toEqual({
+        ok: false,
+        status: 409,
+        error: "This day is fully booked",
+      });
+
+      await testDatabase.db
+        .update(dbSchema.eventTypes)
+        .set({ maxPerDay: null, maxPerWeek: 2 })
+        .where(eq(dbSchema.eventTypes.id, fixture.eventTypeId));
+      expect(await service.getAvailableSlots(request)).toEqual([]);
+      const weeklyResult = await createBookingAction(deps, {
+        projectSlug: "acme",
+        eventTypeSlug: "discovery-call",
+        name: "Hanna Guest",
+        email: "hanna@example.com",
+        startTime: fixture.startTime,
+        timezone: "America/New_York",
+      });
+      expect(weeklyResult).toEqual({
+        ok: false,
+        status: 409,
+        error: "This week is fully booked",
+      });
+      expect(http.requests).toEqual([]);
+    } finally {
+      await collector.flush();
       http.restore();
       testDatabase.close();
     }
@@ -607,6 +804,9 @@ describe("booking delivery", () => {
       expect(Object.fromEntries(deletes[0]!.url.searchParams)).toEqual({
         sendUpdates: "all",
       });
+      expect(deletes[0]!.headers.get("Authorization")).toBe(
+        "Bearer google-access-token",
+      );
       const email = findPayloadFor(
         getResendPayloads(http),
         "hanna@example.com",

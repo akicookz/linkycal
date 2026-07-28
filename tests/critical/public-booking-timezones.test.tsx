@@ -3,6 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import PublicBooking from "../../src/pages/PublicBooking";
+import { loadPublicEventTypeAction } from "../../worker/lib/public-event-type-actions";
 import { AvailabilityService } from "../../worker/services/availability-service";
 import {
   CROSS_TIMEZONE_SLOT_ISO,
@@ -45,7 +46,6 @@ describe("public booking renders and submits the same instant across timezones",
       const testDatabase = createTestDb();
       await seedAvailabilityScenario(testDatabase.db);
       const availabilityService = new AvailabilityService(testDatabase.db);
-      const availableDay = scenario.timezone === "Pacific/Kiritimati" ? 2 : 1;
       let bookingRequest: CapturedRequest | undefined;
       const http = installHttpCapture([
         {
@@ -54,35 +54,17 @@ describe("public booking renders and submits the same instant across timezones",
             return url.pathname ===
               "/api/v1/event-types/acme/discovery-call";
           },
-          respond: function respondEventType() {
-            return jsonResponse({
-              project: {
-                id: "project-acme",
-                name: "Acme",
-                slug: "acme",
-                settings: {
-                  theme: {
-                    primaryBg: "#1B4332",
-                    primaryText: "#ffffff",
-                    borderRadius: 16,
-                  },
-                },
-              },
-              owner: { name: "Aki Owner", image: null },
-              eventType: {
-                id: "event-discovery",
-                name: "Discovery call",
-                slug: "discovery-call",
-                duration: 30,
-                description: "A focused planning call",
-                location: "Google Meet",
-                color: "#1B4332",
-                settings: null,
-              },
-              bookingForm: null,
-              availableDays: [availableDay],
-              canHideBranding: false,
-            });
+          respond: async function respondEventType(request) {
+            expect(
+              Object.fromEntries(request.url.searchParams),
+            ).toEqual({ timezone: scenario.timezone });
+            const result = await loadPublicEventTypeAction(
+              testDatabase.db,
+              "acme",
+              "discovery-call",
+              request.url.searchParams.get("timezone") ?? undefined,
+            );
+            return jsonResponse(result.body, result.status);
           },
         },
         {
@@ -124,10 +106,16 @@ describe("public booking renders and submits the same instant across timezones",
         renderRoute(
           <PublicBooking viewerTimezone={scenario.timezone} />,
           {
-            route: `/acme/discovery-call?date=${scenario.date}`,
+            route: "/acme/discovery-call",
             routePattern: "/:projectSlug/:slug",
           },
         );
+
+        const calendarDay = await screen.findByRole("button", {
+          name: String(Number(scenario.date.slice(-2))),
+        });
+        expect(calendarDay).toHaveProperty("disabled", false);
+        await user.click(calendarDay);
 
         const slot = await screen.findByRole("button", {
           name: `${scenario.startLabel} - ${scenario.endLabel}`,
@@ -136,9 +124,14 @@ describe("public booking renders and submits the same instant across timezones",
           "GET",
           "/api/v1/availability/acme",
         );
-        expect(availabilityRequests).toHaveLength(1);
+        const selectedDateRequests = availabilityRequests.filter(
+          function matchesSelectedDate(request) {
+            return request.url.searchParams.get("date") === scenario.date;
+          },
+        );
+        expect(selectedDateRequests).toHaveLength(1);
         expect(
-          Object.fromEntries(availabilityRequests[0]!.url.searchParams),
+          Object.fromEntries(selectedDateRequests[0]!.url.searchParams),
         ).toEqual({
           date: scenario.date,
           timezone: scenario.timezone,

@@ -49,6 +49,10 @@ interface WorkflowQueueBody {
   remainingDelay?: number;
 }
 
+const CONDITION_SECRET = "workflow-condition-secret";
+const EMAIL_SECRET = "workflow-email-secret";
+const WEBHOOK_SECRET = "workflow-header-secret";
+
 const FULL_WORKFLOW_STEPS: WorkflowFixtureStep[] = [
   {
     id: "step-condition",
@@ -74,6 +78,15 @@ const FULL_WORKFLOW_STEPS: WorkflowFixtureStep[] = [
     sortOrder: 2,
     type: "send_email",
     config: {
+      inputs: [
+        {
+          key: "deliveryToken",
+          source: {
+            kind: "literal",
+            value: EMAIL_SECRET,
+          },
+        },
+      ],
       toList: [
         "{{contact.email}}",
         "ops@acme.example",
@@ -82,7 +95,8 @@ const FULL_WORKFLOW_STEPS: WorkflowFixtureStep[] = [
       subject: "Booking {{booking.id}}: {{contact.name}}",
       body:
         "Hello {{contact.name}}\n" +
-        "Booking {{booking.id}} for {{contact.company}}.",
+        "Booking {{booking.id}} for {{contact.company}}.\n" +
+        "Delivery token: {{input.deliveryToken}}",
     },
   },
   {
@@ -91,16 +105,27 @@ const FULL_WORKFLOW_STEPS: WorkflowFixtureStep[] = [
     type: "webhook",
     config: {
       url:
-        "https://hooks.example.test/bookings/{{booking.id}}",
+        "https://hooks.example.test/bookings/{{booking.id}}" +
+        "?api_key={{input.webhookToken}}",
       method: "POST",
+      inputs: [
+        {
+          key: "webhookToken",
+          source: {
+            kind: "literal",
+            value: WEBHOOK_SECRET,
+          },
+        },
+      ],
       headers: JSON.stringify({
-        Authorization: "Bearer workflow-header-secret",
+        Authorization: "Bearer {{input.webhookToken}}",
         "X-Contact": "{{contact.email}}",
       }),
       body: JSON.stringify({
         bookingId: "{{booking.id}}",
         contactId: "{{contact.id}}",
         email: "{{contact.email}}",
+        credential: "{{input.webhookToken}}",
       }),
     },
   },
@@ -115,6 +140,29 @@ const FULL_WORKFLOW_STEPS: WorkflowFixtureStep[] = [
     },
   },
 ];
+
+function fullWorkflowStepsWithSensitiveCondition(): WorkflowFixtureStep[] {
+  return FULL_WORKFLOW_STEPS.map(function addSensitiveConditionInput(step) {
+    if (step.id !== "step-condition") return step;
+    return {
+      ...step,
+      config: {
+        inputs: [
+          {
+            key: "conditionSecret",
+            source: {
+              kind: "literal",
+              value: CONDITION_SECRET,
+            },
+          },
+        ],
+        field: "input.conditionSecret",
+        operator: "equals",
+        value: CONDITION_SECRET,
+      },
+    };
+  });
+}
 
 const RESEARCH_RECORD: WorkflowResearchRecord = {
   resultKey: "research-northstar",
@@ -263,7 +311,8 @@ function installSuccessfulWorkflowHttp(): HttpCapture {
       method: "POST",
       matches: function matchesWebhook(url) {
         return url.toString() ===
-          "https://hooks.example.test/bookings/booking-northstar";
+          "https://hooks.example.test/bookings/booking-northstar" +
+            `?api_key=${WEBHOOK_SECRET}`;
       },
       respond: function respondWebhook() {
         return new Response(null, { status: 204 });
@@ -280,7 +329,7 @@ describe("workflow execution journeys", () => {
     await seedWorkflowDefinition(testDatabase.db, {
       id: "workflow-booking",
       name: "Booking qualification",
-      steps: FULL_WORKFLOW_STEPS,
+      steps: fullWorkflowStepsWithSensitiveCondition(),
     });
     const queue = createFakeQueue<WorkflowQueueBody>();
     const env = makeTestEnv(queue);
@@ -319,7 +368,8 @@ describe("workflow execution journeys", () => {
         subject: "Booking booking-northstar: Hanna Guest",
         html:
           "Hello Hanna Guest<br>" +
-          "Booking booking-northstar for Northstar Oy.",
+          "Booking booking-northstar for Northstar Oy.<br>" +
+          `Delivery token: ${EMAIL_SECRET}`,
       });
 
       const webhook = requests.find(function isWebhook(request) {
@@ -327,7 +377,8 @@ describe("workflow execution journeys", () => {
       })!;
       expect(webhook.method).toBe("POST");
       expect(webhook.url.toString()).toBe(
-        "https://hooks.example.test/bookings/booking-northstar",
+        "https://hooks.example.test/bookings/booking-northstar" +
+          `?api_key=${WEBHOOK_SECRET}`,
       );
       expect(webhook.headers.get("Authorization")).toBe(
         "Bearer workflow-header-secret",
@@ -339,6 +390,7 @@ describe("workflow execution journeys", () => {
         bookingId: "booking-northstar",
         contactId: "contact-hanna",
         email: "hanna@northstar.example",
+        credential: WEBHOOK_SECRET,
       });
 
       const [contact] = await testDatabase.db
@@ -379,10 +431,10 @@ describe("workflow execution journeys", () => {
         "completed",
       ]);
       expect(logs[0]!.input).toMatchObject({
-        field: "contact.company",
+        field: "input.conditionSecret",
         operator: "equals",
-        value: "Northstar Oy",
-        actual: "Northstar Oy",
+        value: "[redacted]",
+        actual: "[redacted]",
       });
       expect(logs[0]!.output).toEqual({
         continued: true,
@@ -394,6 +446,10 @@ describe("workflow execution journeys", () => {
           "ops@acme.example",
         ],
         subject: "Booking booking-northstar: Hanna Guest",
+        body:
+          "Hello Hanna Guest\n" +
+          "Booking booking-northstar for Northstar Oy.\n" +
+          "Delivery token: [redacted]",
       });
       expect(logs[2]!.output).toEqual({
         continued: true,
@@ -402,12 +458,14 @@ describe("workflow execution journeys", () => {
       });
       expect(logs[3]!.input).toMatchObject({
         url:
-          "https://hooks.example.test/bookings/booking-northstar",
+          "https://hooks.example.test/bookings/booking-northstar" +
+          "?api_key=[redacted]",
         method: "POST",
         body: JSON.stringify({
           bookingId: "booking-northstar",
           contactId: "contact-hanna",
           email: "hanna@northstar.example",
+          credential: "[redacted]",
         }),
       });
       expect(logs[3]!.output).toEqual({
@@ -415,9 +473,10 @@ describe("workflow execution journeys", () => {
         status: 204,
         ok: true,
       });
-      expect(JSON.stringify(logs)).not.toContain(
-        "workflow-header-secret",
-      );
+      const persistedRun = JSON.stringify(run);
+      expect(persistedRun).not.toContain(CONDITION_SECRET);
+      expect(persistedRun).not.toContain(EMAIL_SECRET);
+      expect(persistedRun).not.toContain(WEBHOOK_SECRET);
     } finally {
       http.restore();
       testDatabase.close();
@@ -796,9 +855,17 @@ describe("workflow execution journeys", () => {
           config: {
             url: "https://hooks.example.test/failure",
             method: "POST",
+            inputs: [
+              {
+                key: "webhookToken",
+                source: {
+                  kind: "literal",
+                  value: "configured-authorization-secret",
+                },
+              },
+            ],
             headers: JSON.stringify({
-              Authorization:
-                "Bearer configured-authorization-secret",
+              Authorization: "Bearer {{input.webhookToken}}",
             }),
             body: JSON.stringify({
               bookingId: "{{booking.id}}",
