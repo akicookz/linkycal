@@ -9,6 +9,11 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import {
+  normalizeWorkflowResearchResultKey,
+  WORKFLOW_RESEARCH_FIELD_DEFINITIONS,
+} from "../../shared/workflow-research-fields";
+
 export interface WorkflowVariable {
   key: string;
   label: string;
@@ -33,6 +38,33 @@ export interface PriorStepSource {
   label: string;
   resultKey?: string;
 }
+
+const WORKFLOW_RESEARCH_FORMATTED_VARIABLES = [
+  {
+    key: "recommendedTagsText",
+    label: "Recommended tags (text)",
+  },
+  {
+    key: "insightsText",
+    label: "Insights (bulleted text)",
+  },
+  {
+    key: "sourcesText",
+    label: "Public sources (text)",
+  },
+  {
+    key: "sourcesHtml",
+    label: "Public sources (HTML body)",
+  },
+  {
+    key: "reportText",
+    label: "Complete research report (text)",
+  },
+  {
+    key: "reportHtml",
+    label: "Complete research report (HTML body)",
+  },
+] as const;
 
 export const WORKFLOW_VARIABLES: WorkflowVariableGroup[] = [
   {
@@ -67,13 +99,14 @@ export const WORKFLOW_VARIABLES: WorkflowVariableGroup[] = [
     group: "Research",
     icon: Brain,
     items: [
-      { key: "research.summary", label: "Research summary" },
-      { key: "research.company", label: "Company name" },
-      { key: "research.role", label: "Contact role" },
-      { key: "research.website", label: "Company website" },
-      { key: "research.linkedinUrl", label: "LinkedIn URL" },
-      { key: "research.location", label: "Location" },
-      { key: "research.description", label: "Company description" },
+      ...WORKFLOW_RESEARCH_FIELD_DEFINITIONS.map((field) => ({
+        key: `research.${field.key}`,
+        label: field.label,
+      })),
+      ...WORKFLOW_RESEARCH_FORMATTED_VARIABLES.map((field) => ({
+        key: `research.${field.key}`,
+        label: field.label,
+      })),
     ],
   },
   {
@@ -130,18 +163,28 @@ export function buildWorkflowVariableGroups(opts: {
   }
 
   if (opts.priorSteps && opts.priorSteps.length > 0) {
-    const researchKeys = opts.priorSteps
+    const researchSteps = opts.priorSteps
       .filter((s) => s.type === "ai_research")
-      .map((s) => s.resultKey)
-      .filter((k): k is string => !!k);
-    if (researchKeys.length > 1) {
+      .filter((step): step is PriorStepSource & { resultKey: string } =>
+        typeof step.resultKey === "string" && step.resultKey.length > 0
+      )
+      .map((step) => ({
+        key: normalizeWorkflowResearchResultKey(step.resultKey),
+        label: step.label,
+      }));
+    if (researchSteps.length > 1) {
       groups.push({
         group: "Research (by key)",
         icon: Brain,
-        items: researchKeys.flatMap((key) => [
-          { key: `research.byKey.${key}.result.summary`, label: `${key} · summary` },
-          { key: `research.byKey.${key}.result.company`, label: `${key} · company` },
-          { key: `research.byKey.${key}.result.role`, label: `${key} · role` },
+        items: researchSteps.flatMap((step) => [
+          ...WORKFLOW_RESEARCH_FIELD_DEFINITIONS.map((field) => ({
+            key: `research.byKey.${step.key}.result.${field.key}`,
+            label: `${step.label} · ${field.label}`,
+          })),
+          ...WORKFLOW_RESEARCH_FORMATTED_VARIABLES.map((field) => ({
+            key: `research.byKey.${step.key}.${field.key}`,
+            label: `${step.label} · ${field.label}`,
+          })),
         ]),
       });
     }

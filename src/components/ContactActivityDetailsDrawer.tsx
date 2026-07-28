@@ -2,8 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
   Brain,
-  CheckCircle2,
-  ExternalLink,
   Loader,
   RefreshCw,
   Workflow,
@@ -19,6 +17,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { WorkflowResearchResult } from "@/components/WorkflowResearchResult";
 import { WorkflowStepLog } from "@/components/WorkflowStepLog";
 import type { ContactTimelineItem } from "@/lib/contact-activity";
 
@@ -58,10 +57,6 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
 function formatDateTime(value: string | null): string {
   if (!value) return "Not completed";
   return new Date(value).toLocaleString("en-US", {
@@ -81,86 +76,15 @@ function statusVariant(status: string) {
 
 function ResearchDetails({ item }: { item: Extract<ContactTimelineItem, { kind: "research" }> }) {
   const record = asRecord(item.research);
-  const result = asRecord(record.result);
-  const summary = asString(result.summary) || asString(record.summary) || item.description;
-  const company = asString(result.company);
-  const role = asString(result.role);
-  const website = asString(result.website);
-  const linkedinUrl = asString(result.linkedinUrl);
-  const location = asString(result.location);
-  const insights = Array.isArray(result.insights)
-    ? result.insights.filter((entry): entry is string => typeof entry === "string")
-    : [];
-  const sources = Array.isArray(result.sources)
-    ? result.sources.map(asRecord).filter((source) => asString(source.url))
-    : [];
   const sourceCount =
-    typeof record.sourceCount === "number" ? record.sourceCount : sources.length;
+    typeof record.sourceCount === "number" ? record.sourceCount : undefined;
 
   return (
-    <div className="space-y-5">
-      <section className="space-y-2 rounded-[16px] bg-muted/50 px-4 py-3">
-        <h3 className="text-sm font-medium">Summary</h3>
-        <p className="text-sm text-muted-foreground text-pretty">{summary}</p>
-      </section>
-
-      {(company || role || website || linkedinUrl || location) && (
-        <section className="space-y-3 rounded-[16px] bg-muted/50 px-4 py-3">
-          <h3 className="text-sm font-medium">Findings</h3>
-          <dl className="space-y-2 text-sm">
-            {company && <DetailRow label="Company" value={company} />}
-            {role && <DetailRow label="Role" value={role} />}
-            {location && <DetailRow label="Location" value={location} />}
-            {website && <DetailLink label="Website" value={website} />}
-            {linkedinUrl && <DetailLink label="LinkedIn" value={linkedinUrl} />}
-          </dl>
-        </section>
-      )}
-
-      {insights.length > 0 && (
-        <section className="space-y-2 rounded-[16px] bg-muted/50 px-4 py-3">
-          <h3 className="text-sm font-medium">Insights</h3>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            {insights.map((insight) => (
-              <li key={insight} className="flex gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                <span>{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {(sources.length > 0 || sourceCount > 0) && (
-        <section className="space-y-2 rounded-[16px] bg-muted/50 px-4 py-3">
-          <h3 className="text-sm font-medium">Sources</h3>
-          {sources.length > 0 ? (
-            <div className="space-y-2">
-              {sources.map((source) => {
-                const url = asString(source.url);
-                const title = asString(source.title) || url;
-                return (
-                  <a
-                    key={url}
-                    href={url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex min-h-10 items-center gap-2 rounded-[12px] bg-background px-3 py-2 text-sm text-primary transition-[background-color,color] hover:bg-primary/5"
-                  >
-                    <ExternalLink className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{title}</span>
-                  </a>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {sourceCount} source{sourceCount === 1 ? "" : "s"} were used, but links were not stored for this historical result.
-            </p>
-          )}
-        </section>
-      )}
-    </div>
+    <WorkflowResearchResult
+      value={record}
+      fallbackSummary={item.description}
+      sourceCount={sourceCount}
+    />
   );
 }
 
@@ -169,25 +93,6 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-start justify-between gap-4">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-right font-medium">{value}</dd>
-    </div>
-  );
-}
-
-function DetailLink({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd>
-        <a
-          href={value}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 text-primary hover:underline"
-        >
-          <ExternalLink className="h-3.5 w-3.5" />
-          Open
-        </a>
-      </dd>
     </div>
   );
 }

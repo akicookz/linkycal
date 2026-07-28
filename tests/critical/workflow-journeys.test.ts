@@ -631,7 +631,7 @@ describe("workflow execution journeys", () => {
     }
   });
 
-  test("AI research persists public evidence and never stores expanded provider instructions", async () => {
+  test("AI research persists every finding and delivers reusable reports without provider instructions", async () => {
     setFixedTime("2026-03-23T12:00:00.000Z");
     const testDatabase = createTestDb();
     await seedWorkflowContactScenario(testDatabase.db);
@@ -650,6 +650,25 @@ describe("workflow execution journeys", () => {
             prompt: "Research {{contact.email}} using public sources",
           },
         },
+        {
+          id: "email-research",
+          sortOrder: 1,
+          type: "send_email",
+          config: {
+            toList: ["ops@northstar.example"],
+            subject:
+              "Research ready: {{research.company}} ({{research.companySize}})",
+            body:
+              "Description: {{research.description}}\n" +
+              "Revenue: {{research.estimatedRevenue}}\n" +
+              "Tags: {{research.recommendedTagsText}}\n" +
+              "{{research.insightsText}}\n" +
+              "{{research.sourcesText}}\n\n" +
+              "{{research.reportText}}\n" +
+              "{{research.sourcesHtml}}" +
+              "{{research.reportHtml}}",
+          },
+        },
       ],
     });
     const queue = createFakeQueue<WorkflowQueueBody>();
@@ -658,6 +677,17 @@ describe("workflow execution journeys", () => {
     const service = new WorkflowExecutionService(testDatabase.db, {
       workflowAiResearchService: researchService,
     });
+    const http = installHttpCapture([
+      {
+        method: "POST",
+        matches: function matchesResend(url) {
+          return url.toString() === "https://api.resend.com/emails";
+        },
+        respond: function respondResend() {
+          return new Response(JSON.stringify({ id: "email-research" }));
+        },
+      },
+    ]);
 
     try {
       const workflowRunId = await service.dispatchTestRun(
@@ -726,15 +756,52 @@ describe("workflow execution journeys", () => {
 
       const run = await getRun(testDatabase, workflowRunId!);
       expect(run.status).toBe("completed");
-      expect(stepLogs(run)[0]!.output).toMatchObject({
+      expect(stepLogs(run)[0]!.output).toEqual({
         continued: true,
-        summary:
-          "Northstar builds scheduling software for clinics.",
-        company: "Northstar Oy",
-        role: "Operations Lead",
-        location: "Helsinki, Finland",
-        sources: RESEARCH_RECORD.result.sources,
+        ...RESEARCH_RECORD.result,
       });
+
+      const resendRequests = http.requestsFor("POST", "/emails");
+      expect(resendRequests).toHaveLength(1);
+      const resendPayload = resendRequests[0]!.json as {
+        from: string;
+        to: string[];
+        subject: string;
+        html: string;
+      };
+      expect({
+        from: resendPayload.from,
+        to: resendPayload.to,
+        subject: resendPayload.subject,
+      }).toEqual({
+        from: "LinkyCal <noreply@updates.linkycal.com>",
+        to: ["ops@northstar.example"],
+        subject: "Research ready: Northstar Oy (51-200)",
+      });
+      expect(resendPayload.html).toContain(
+        "Description: Clinic scheduling infrastructure",
+      );
+      expect(resendPayload.html).toContain(
+        "Revenue: €10M-€25M",
+      );
+      expect(resendPayload.html).toContain(
+        "Tags: healthtech, qualified",
+      );
+      expect(resendPayload.html).toContain(
+        "- Expanding across the Nordic region",
+      );
+      expect(resendPayload.html).toContain(
+        "1. Northstar company profile — https://northstar.example/about",
+      );
+      expect(resendPayload.html).toContain(
+        "Scheduling infrastructure for clinics",
+      );
+      expect(resendPayload.html).toContain(
+        "<a href=\"https://northstar.example/about\">Northstar company profile</a>",
+      );
+      expect(resendPayload.html).toContain(
+        "<h3>Estimated revenue</h3><p>€10M-€25M</p>",
+      );
       const persisted = JSON.stringify({
         contact,
         activity,
@@ -744,6 +811,7 @@ describe("workflow execution journeys", () => {
       expect(persisted).not.toContain("openai-workflow-api-key");
       expect(persisted).not.toContain("gemini-workflow-api-key");
     } finally {
+      http.restore();
       testDatabase.close();
     }
   });

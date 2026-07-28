@@ -1,6 +1,8 @@
 import { useState } from "react";
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { RichTextContent } from "@/components/RichTextContent";
+import { WorkflowResearchResult } from "@/components/WorkflowResearchResult";
+import { normalizeWorkflowResearchResultKey } from "../../shared/workflow-research-fields";
 
 type Input = Record<string, unknown> | null;
 type Output = Record<string, unknown> | null;
@@ -164,15 +166,8 @@ function SendEmailLog({ input, output }: { input: Input; output: Output }) {
 
 function AiResearchLog({ input, output }: { input: Input; output: Output }) {
   const resultKey = asString(input?.resultKey);
+  const normalizedResultKey = normalizeWorkflowResearchResultKey(resultKey);
   const researchRequest = getResearchRequest(input);
-  const summary = asString(output?.summary);
-  const company = asString(output?.company);
-  const role = asString(output?.role);
-  const website = asString(output?.website);
-  const location = asString(output?.location);
-  const linkedinUrl = asString(output?.linkedinUrl);
-  const insights = asStringArray(output?.insights);
-  const sources = Array.isArray(output?.sources) ? (output!.sources as Array<Record<string, unknown>>) : [];
 
   return (
     <div className="space-y-2">
@@ -180,7 +175,12 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
       <Section title="Research request">
         <div className="space-y-2">
           <div className="flex flex-wrap gap-1.5">
-            {resultKey && <Pill>stored as {`{{${resultKey}.*}}`}</Pill>}
+            <Pill>latest: {"{{research.*}}"}</Pill>
+            {resultKey && (
+              <Pill>
+                named: {`{{research.byKey.${normalizedResultKey}.result.*}}`}
+              </Pill>
+            )}
           </div>
           {researchRequest && (
             <div className="rounded-[8px] border border-border bg-background p-2.5 max-h-[240px] overflow-auto whitespace-pre-wrap text-[12px] font-mono text-foreground">
@@ -189,56 +189,7 @@ function AiResearchLog({ input, output }: { input: Input; output: Output }) {
           )}
         </div>
       </Section>
-      {(summary || company || role || insights.length > 0) && (
-        <Section title="AI findings">
-          <div className="space-y-2">
-            {summary && <Field label="Summary">{summary}</Field>}
-            {company && <Field label="Company">{company}</Field>}
-            {role && <Field label="Role">{role}</Field>}
-            {website && (
-              <Field label="Website">
-                <a href={website} target="_blank" rel="noreferrer" className="text-primary underline inline-flex items-center gap-1">
-                  {website} <ExternalLink className="h-3 w-3" />
-                </a>
-              </Field>
-            )}
-            {linkedinUrl && (
-              <Field label="LinkedIn">
-                <a href={linkedinUrl} target="_blank" rel="noreferrer" className="text-primary underline inline-flex items-center gap-1">
-                  {linkedinUrl} <ExternalLink className="h-3 w-3" />
-                </a>
-              </Field>
-            )}
-            {location && <Field label="Location">{location}</Field>}
-            {insights.length > 0 && (
-              <Field label="Insights">
-                <ul className="list-disc space-y-1 pl-4">
-                  {insights.map((insight, index) => (
-                    <li key={`${insight}-${index}`}>{insight}</li>
-                  ))}
-                </ul>
-              </Field>
-            )}
-          </div>
-        </Section>
-      )}
-      {sources.length > 0 && (
-        <Section title="Public sources">
-          <ul className="space-y-1">
-            {sources.map((s, i) => {
-              const url = asString(s.url);
-              const title = asString(s.title) || url;
-              return (
-                <li key={i} className="text-[12px]">
-                  <a href={url} target="_blank" rel="noreferrer" className="text-primary underline inline-flex items-center gap-1">
-                    {title} <ExternalLink className="h-3 w-3" />
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </Section>
-      )}
+      <WorkflowResearchResult value={output} />
     </div>
   );
 }

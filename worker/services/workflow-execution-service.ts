@@ -1205,17 +1205,7 @@ export class WorkflowExecutionService {
     context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
 
     snap.output = {
-      summary: record.result.summary,
-      company: record.result.company,
-      role: record.result.role,
-      website: record.result.website,
-      location: record.result.location,
-      linkedinUrl: record.result.linkedinUrl,
-      companySize: record.result.companySize,
-      estimatedRevenue: record.result.estimatedRevenue,
-      sources: record.result.sources,
-      recommendedTags: record.result.recommendedTags,
-      insights: record.result.insights,
+      ...record.result,
     };
   }
 

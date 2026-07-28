@@ -1,6 +1,13 @@
 import { z } from "zod";
 
+import {
+  normalizeWorkflowResearchResultKey,
+  type WorkflowResearchFieldKey,
+} from "../../shared/workflow-research-fields";
 import type { ContactOperationalFacts } from "../services/contact-service";
+import {
+  buildWorkflowResearchFormattedValues,
+} from "./workflow-research-format";
 
 export interface WorkflowContactOperationalContext {
   stage: {
@@ -96,7 +103,7 @@ export const workflowResearchProviderSchema = z.enum(["chatgpt", "gemini"]);
 
 export type WorkflowResearchProvider = z.infer<typeof workflowResearchProviderSchema>;
 
-export const workflowResearchResultSchema = z.object({
+const workflowResearchResultShape = {
   summary: z.string(),
   company: z.string().nullable(),
   role: z.string().nullable(),
@@ -115,7 +122,11 @@ export const workflowResearchResultSchema = z.object({
       snippet: z.string().nullable(),
     }),
   ),
-});
+} satisfies Record<WorkflowResearchFieldKey, z.ZodTypeAny>;
+
+export const workflowResearchResultSchema = z.object(
+  workflowResearchResultShape,
+);
 
 export type WorkflowResearchResult = z.infer<typeof workflowResearchResultSchema>;
 
@@ -164,6 +175,10 @@ export function buildWorkflowContextView(
     "research",
     "byKey",
   ]);
+  const latestResearchView = isRecord(latestResearch)
+    ? latestResearch
+    : {};
+  const researchByKeyView = buildResearchByKeyView(researchByKey);
 
   const formFields = getNestedValue(metadata, ["formFields"]);
 
@@ -201,8 +216,9 @@ export function buildWorkflowContextView(
     },
     metadata,
     research: {
-      ...(isRecord(latestResearch) ? latestResearch : {}),
-      byKey: isRecord(researchByKey) ? researchByKey : {},
+      ...latestResearchView,
+      ...buildWorkflowResearchFormattedValues(latestResearchView),
+      byKey: researchByKeyView,
     },
     input: isRecord(context.stepInputs) ? context.stepInputs : {},
   };
@@ -361,13 +377,7 @@ export function stringifyWorkflowValue(value: unknown): string {
 }
 
 export function slugifyWorkflowKey(value: string | undefined): string {
-  const normalized = (value ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-
-  return normalized || "research";
+  return normalizeWorkflowResearchResultKey(value);
 }
 
 function getNestedValue(
@@ -397,6 +407,21 @@ function getRecordValue(
   const next: Record<string, unknown> = {};
   source[key] = next;
   return next;
+}
+
+function buildResearchByKeyView(source: unknown): Record<string, unknown> {
+  if (!isRecord(source)) return {};
+
+  const view: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (!isRecord(value)) continue;
+    const result = isRecord(value.result) ? value.result : {};
+    view[key] = {
+      ...value,
+      ...buildWorkflowResearchFormattedValues(result),
+    };
+  }
+  return view;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
