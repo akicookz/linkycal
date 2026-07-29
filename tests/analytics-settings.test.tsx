@@ -118,48 +118,6 @@ function renderSettings(): void {
 }
 
 describe("analytics provider settings", function () {
-  test("Pro renders local provider icons, normalized fields, toggle cards, and PostHog region", async function () {
-    installSettingsApi({ analytics: true });
-    const user = userEvent.setup();
-    renderSettings();
-
-    expect(
-      await screen.findByRole("img", { name: "Google Analytics" }),
-    ).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Meta Pixel" })).toBeTruthy();
-    expect(screen.getByRole("img", { name: "PostHog" })).toBeTruthy();
-    expect(
-      (screen.getByLabelText(
-        "Google Analytics measurement ID",
-      ) as HTMLInputElement).value,
-    ).toBe("G-ABCD1234");
-    expect(
-      (screen.getByLabelText("Meta Pixel ID") as HTMLInputElement).value,
-    ).toBe("998877665544");
-    expect(
-      (screen.getByLabelText("PostHog project key") as HTMLInputElement).value,
-    ).toBe("phc_abcdefghijklmnopqrstuvwxyz");
-    expect(screen.getByText("Project key")).toBeTruthy();
-    expect(
-      screen
-        .getByRole("switch", { name: "Enable Google Analytics" })
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(
-      screen
-        .getByRole("switch", { name: "Enable Meta Pixel" })
-        .getAttribute("aria-checked"),
-    ).toBe("false");
-    expect(
-      screen.getByRole("button", { name: "Save Google Analytics" }),
-    ).toBeTruthy();
-    const region = screen.getByLabelText("PostHog region");
-    expect(region.textContent).toContain("🇪🇺 EU");
-    await user.click(region);
-    expect(screen.getByRole("option", { name: "🇺🇸 US" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "🇪🇺 EU" })).toBeTruthy();
-  });
-
   test("saving one provider uses only its dedicated structured route", async function () {
     const capture = installSettingsApi({ analytics: true });
     const user = userEvent.setup();

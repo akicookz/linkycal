@@ -85,7 +85,7 @@ export function AnalyticsIntegrationCard({
     ? "Google Analytics measurement ID"
     : config.provider === "meta_pixel"
       ? "Meta Pixel ID"
-      : "PostHog project key";
+      : "PostHog Key";
   const placeholder = config.provider === "ga4"
     ? "G-XXXXXXXXXX"
     : config.provider === "meta_pixel"
@@ -123,13 +123,13 @@ export function AnalyticsIntegrationCard({
 
         {config.provider === "posthog"
           ? (
-            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_7.5rem]">
               <div className="space-y-2">
                 <label
                   className="text-sm font-medium"
                   htmlFor={`${config.provider}-id`}
                 >
-                  Project key
+                  {inputLabel}
                 </label>
                 <Input
                   id={`${config.provider}-id`}
@@ -139,9 +139,6 @@ export function AnalyticsIntegrationCard({
                   placeholder={placeholder}
                   autoComplete="off"
                 />
-                <p className="text-pretty text-xs text-muted-foreground">
-                  This is public client configuration, not a secret.
-                </p>
               </div>
 
               <div className="space-y-2">
@@ -183,9 +180,6 @@ export function AnalyticsIntegrationCard({
                 placeholder={placeholder}
                 autoComplete="off"
               />
-              <p className="text-pretty text-xs text-muted-foreground">
-                This is public client configuration, not a secret.
-              </p>
             </div>
           )}
 
