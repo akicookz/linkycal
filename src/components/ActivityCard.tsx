@@ -44,7 +44,8 @@ function statusVariant(status: string) {
 
 export function getRelativeTime(startTime: string, endTime: string): { label: string; isHappening: boolean; isUpcoming: boolean; isPast: boolean } {
   const now = Date.now();
-  const start = new Date(startTime).getTime();
+  const startDate = new Date(startTime);
+  const start = startDate.getTime();
   const end = new Date(endTime).getTime();
 
   const timeStr = new Date(startTime).toLocaleTimeString("en-US", {
@@ -52,9 +53,12 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
     minute: "2-digit",
     hour12: true,
   });
-  const dateStr = new Date(startTime).toLocaleDateString("en-US", {
+  const dateStr = startDate.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
+    ...(startDate.getFullYear() !== new Date(now).getFullYear()
+      ? { year: "numeric" as const }
+      : {}),
   });
 
   if (now >= start && now <= end) {
@@ -85,6 +89,15 @@ export function getRelativeTime(startTime: string, endTime: string): { label: st
   const diffMs = now - end;
   const diffMin = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
+
+  if (diffMs >= 86400000) {
+    return {
+      label: `${dateStr}, ${timeStr}`,
+      isHappening: false,
+      isUpcoming: false,
+      isPast: true,
+    };
+  }
 
   let label: string;
   if (diffMin < 60) label = `${timeStr} (${diffMin}m ago)`;
