@@ -145,6 +145,23 @@ export interface FunnelStageReport {
   contextBreakdowns?: FunnelContextBreakdowns;
 }
 
+export interface DetailedFunnelReport {
+  availableSince: string | null;
+  stages: FunnelStageReport[];
+  bySource: Array<{
+    source: AnalyticsSource;
+    visitors: number;
+  }>;
+  byDevice: Array<{
+    deviceType: AnalyticsDeviceType;
+    visitors: number;
+  }>;
+  failures: Array<{
+    category: AnalyticsFailureCategory;
+    count: number;
+  }>;
+}
+
 export interface Ga4AnalyticsIntegration {
   provider: "ga4";
   enabled: boolean;

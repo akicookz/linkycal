@@ -31,12 +31,20 @@
 // double5: event duration in minutes
 // ─────────────────────────────────────────────────────────────────────────────
 
+import {
+  ANALYTICS_FAILURE_CATEGORIES,
+} from "../../shared/funnel-analytics";
 import type {
+  AnalyticsFailureCategory,
   AnalyticsDeviceType,
   AnalyticsEventName,
   AnalyticsSource,
+  DetailedFunnelReport,
   FunnelEventContext,
+  FunnelContextBreakdowns,
+  FunnelContextValue,
   FunnelStageKind,
+  FunnelStageReport,
   FunnelType,
 } from "../../shared/funnel-analytics";
 
@@ -143,7 +151,11 @@ export function writeAnalyticsEvent(
 
 function buildDateFilter(params: AnalyticsQueryParams): string {
   if (params.period === "custom" && params.start && params.end) {
-    return `AND timestamp >= '${params.start}' AND timestamp <= '${params.end}'`;
+    const endExclusive = new Date(`${params.end}T00:00:00.000Z`);
+    endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
+    return `AND timestamp >= '${params.start}' AND timestamp < '${
+      endExclusive.toISOString().slice(0, 10)
+    }'`;
   }
 
   const days = params.period === "7d" ? 7 : params.period === "30d" ? 30 : 90;
@@ -176,6 +188,351 @@ interface SqlApiResponse {
   rows: number;
 }
 
+export interface DetailedAnalyticsRow {
+  timestamp: string;
+  event: AnalyticsEventName;
+  context: string;
+  journeyId: string;
+  funnelType: string;
+  stageKey: string;
+  stageLabel: string;
+  stageKind: string;
+  primaryValue: string;
+  source: string;
+  deviceType: string;
+  stageOrder: number;
+  slotCount: number;
+  daysAhead: number;
+  durationMinutes: number;
+}
+
+interface StageAccumulator {
+  key: string;
+  label: string;
+  kind: string;
+  order: number;
+  visitors: Set<string>;
+  presence: Set<string>;
+  skipped: Set<string>;
+  selectedDates: Map<string, Set<string>>;
+  availabilityOutcomes: Map<string, Set<string>>;
+  offeredTimes: Map<string, Set<string>>;
+  selectedTimes: Map<string, Set<string>>;
+  validationFailures: Map<string, Set<string>>;
+  submitFailures: Map<string, Set<string>>;
+}
+
+const ANALYTICS_SOURCE_SET = new Set<string>(["direct", "widget"]);
+const ANALYTICS_DEVICE_SET = new Set<string>([
+  "mobile",
+  "tablet",
+  "desktop",
+]);
+const ANALYTICS_FAILURE_SET = new Set<string>(
+  ANALYTICS_FAILURE_CATEGORIES,
+);
+const ANALYTICS_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ANALYTICS_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
+
+export function emptyDetailedFunnel(): DetailedFunnelReport {
+  return {
+    availableSince: null,
+    stages: [],
+    bySource: [],
+    byDevice: [],
+    failures: [],
+  };
+}
+
+function createStageAccumulator(row: DetailedAnalyticsRow): StageAccumulator {
+  return {
+    key: row.stageKey,
+    label: row.stageLabel,
+    kind: row.stageKind,
+    order: Number(row.stageOrder),
+    visitors: new Set(),
+    presence: new Set(),
+    skipped: new Set(),
+    selectedDates: new Map(),
+    availabilityOutcomes: new Map(),
+    offeredTimes: new Map(),
+    selectedTimes: new Map(),
+    validationFailures: new Map(),
+    submitFailures: new Map(),
+  };
+}
+
+function addJourneyValue(
+  values: Map<string, Set<string>>,
+  value: string,
+  journeyId: string,
+): void {
+  const journeys = values.get(value) ?? new Set<string>();
+  journeys.add(journeyId);
+  values.set(value, journeys);
+}
+
+function breakdown(
+  values: Map<string, Set<string>>,
+): FunnelContextValue[] | undefined {
+  if (values.size === 0) return undefined;
+  return [...values.entries()]
+    .map(function toBreakdown([value, journeys]) {
+      return { value, visitors: journeys.size };
+    })
+    .sort(function sortBreakdown(left, right) {
+      return right.visitors - left.visitors ||
+        left.value.localeCompare(right.value);
+    });
+}
+
+function safeContext(raw: string): FunnelEventContext {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      !("context" in parsed) ||
+      !parsed.context ||
+      typeof parsed.context !== "object"
+    ) {
+      return {};
+    }
+    const input = parsed.context as Record<string, unknown>;
+    const result: FunnelEventContext = {};
+    if (
+      typeof input.selectedDate === "string" &&
+      ANALYTICS_DATE_PATTERN.test(input.selectedDate)
+    ) {
+      result.selectedDate = input.selectedDate;
+    }
+    if (
+      Array.isArray(input.offeredSlotStarts) &&
+      input.offeredSlotStarts.length <= 48 &&
+      input.offeredSlotStarts.every(function validTime(value) {
+        return typeof value === "string" &&
+          ANALYTICS_TIME_PATTERN.test(value);
+      })
+    ) {
+      result.offeredSlotStarts = input.offeredSlotStarts as string[];
+    }
+    if (
+      input.availabilityOutcome === "available" ||
+      input.availabilityOutcome === "none" ||
+      input.availabilityOutcome === "error"
+    ) {
+      result.availabilityOutcome = input.availabilityOutcome;
+    }
+    if (
+      typeof input.selectedTime === "string" &&
+      ANALYTICS_TIME_PATTERN.test(input.selectedTime)
+    ) {
+      result.selectedTime = input.selectedTime;
+    }
+    if (
+      typeof input.failureCategory === "string" &&
+      ANALYTICS_FAILURE_SET.has(input.failureCategory)
+    ) {
+      result.failureCategory =
+        input.failureCategory as AnalyticsFailureCategory;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function stageBreakdowns(
+  stage: StageAccumulator,
+): FunnelContextBreakdowns | undefined {
+  const result: FunnelContextBreakdowns = {
+    selectedDates: breakdown(stage.selectedDates),
+    availabilityOutcomes: breakdown(stage.availabilityOutcomes),
+    offeredTimes: breakdown(stage.offeredTimes),
+    selectedTimes: breakdown(stage.selectedTimes),
+    validationFailures: breakdown(stage.validationFailures),
+    submitFailures: breakdown(stage.submitFailures),
+  };
+  if (Object.values(result).every(function isEmpty(value) {
+    return value === undefined;
+  })) {
+    return undefined;
+  }
+  return result;
+}
+
+export function aggregateDetailedFunnel(
+  rows: DetailedAnalyticsRow[],
+): DetailedFunnelReport {
+  const stages = new Map<string, StageAccumulator>();
+  const sourceJourneys = new Map<AnalyticsSource, Set<string>>();
+  const deviceJourneys = new Map<AnalyticsDeviceType, Set<string>>();
+  const failureJourneys = new Map<
+    AnalyticsFailureCategory,
+    Set<string>
+  >();
+  let availableSince: string | null = null;
+
+  for (const row of rows) {
+    const journeyId = String(row.journeyId ?? "");
+    if (!journeyId) continue;
+    const timestamp = String(row.timestamp ?? "");
+    if (timestamp && (!availableSince || timestamp < availableSince)) {
+      availableSince = timestamp;
+    }
+
+    if (ANALYTICS_SOURCE_SET.has(row.source)) {
+      const source = row.source as AnalyticsSource;
+      const journeys = sourceJourneys.get(source) ?? new Set<string>();
+      journeys.add(journeyId);
+      sourceJourneys.set(source, journeys);
+    }
+    if (ANALYTICS_DEVICE_SET.has(row.deviceType)) {
+      const deviceType = row.deviceType as AnalyticsDeviceType;
+      const journeys = deviceJourneys.get(deviceType) ?? new Set<string>();
+      journeys.add(journeyId);
+      deviceJourneys.set(deviceType, journeys);
+    }
+
+    const context = safeContext(String(row.context ?? ""));
+    if (context.failureCategory) {
+      const journeys =
+        failureJourneys.get(context.failureCategory) ?? new Set<string>();
+      journeys.add(journeyId);
+      failureJourneys.set(context.failureCategory, journeys);
+    }
+
+    const stageKey = String(row.stageKey ?? "");
+    const stageOrder = Number(row.stageOrder);
+    if (
+      !stageKey ||
+      !Number.isInteger(stageOrder) ||
+      stageOrder < 1 ||
+      row.event === "form_started"
+    ) {
+      continue;
+    }
+
+    const stage = stages.get(stageKey) ?? createStageAccumulator(row);
+    if (stageOrder < stage.order) stage.order = stageOrder;
+    if (!stage.label && row.stageLabel) stage.label = row.stageLabel;
+    if (!stage.kind && row.stageKind) stage.kind = row.stageKind;
+    stage.presence.add(journeyId);
+    if (row.event === "form_stage_skipped") {
+      stage.skipped.add(journeyId);
+    } else {
+      stage.visitors.add(journeyId);
+    }
+
+    if (context.selectedDate) {
+      addJourneyValue(
+        stage.selectedDates,
+        context.selectedDate,
+        journeyId,
+      );
+    }
+    if (context.availabilityOutcome) {
+      addJourneyValue(
+        stage.availabilityOutcomes,
+        context.availabilityOutcome,
+        journeyId,
+      );
+    }
+    for (const time of context.offeredSlotStarts ?? []) {
+      addJourneyValue(stage.offeredTimes, time, journeyId);
+    }
+    if (context.selectedTime) {
+      addJourneyValue(stage.selectedTimes, context.selectedTime, journeyId);
+    }
+    if (
+      row.event === "form_stage_validation_failed" &&
+      context.failureCategory
+    ) {
+      addJourneyValue(
+        stage.validationFailures,
+        stage.label || stage.key,
+        journeyId,
+      );
+    }
+    if (
+      (row.event === "booking_submit_failed" ||
+        row.event === "form_submit_failed") &&
+      context.failureCategory
+    ) {
+      addJourneyValue(
+        stage.submitFailures,
+        context.failureCategory,
+        journeyId,
+      );
+    }
+    stages.set(stageKey, stage);
+  }
+
+  const ordered = [...stages.values()].sort(function sortStages(left, right) {
+    return left.order - right.order || left.key.localeCompare(right.key);
+  });
+  const stageReports: FunnelStageReport[] = ordered.map(
+    function toStageReport(stage, index) {
+      const next = ordered[index + 1];
+      const continued = next
+        ? [...stage.visitors].filter(function reachedNext(journeyId) {
+            return next.presence.has(journeyId);
+          }).length
+        : stage.visitors.size;
+      const visitors = stage.visitors.size;
+      const dropOffs = Math.max(0, visitors - continued);
+      const contextBreakdowns = stageBreakdowns(stage);
+      return {
+        key: stage.key,
+        label: stage.label || stage.key,
+        kind: stage.kind || "step",
+        order: stage.order,
+        visitors,
+        continued,
+        continuationRate: visitors > 0
+          ? (continued / visitors) * 100
+          : 0,
+        dropOffs,
+        dropOffRate: visitors > 0 ? (dropOffs / visitors) * 100 : 0,
+        skipped: stage.skipped.size,
+        ...(contextBreakdowns ? { contextBreakdowns } : {}),
+      };
+    },
+  );
+
+  return {
+    availableSince,
+    stages: stageReports,
+    bySource: [...sourceJourneys.entries()]
+      .map(function sourceCount([source, journeys]) {
+        return { source, visitors: journeys.size };
+      })
+      .sort(function sortSources(left, right) {
+        return right.visitors - left.visitors ||
+          left.source.localeCompare(right.source);
+      }),
+    byDevice: [...deviceJourneys.entries()]
+      .map(function deviceCount([deviceType, journeys]) {
+        return { deviceType, visitors: journeys.size };
+      })
+      .sort(function sortDevices(left, right) {
+        return right.visitors - left.visitors ||
+          left.deviceType.localeCompare(right.deviceType);
+      }),
+    failures: ANALYTICS_FAILURE_CATEGORIES
+      .filter(function hasFailures(category) {
+        return failureJourneys.has(category);
+      })
+      .map(function failureCount(category) {
+        return {
+          category,
+          count: failureJourneys.get(category)?.size ?? 0,
+        };
+      }),
+  };
+}
+
 async function querySql(
   accountId: string,
   apiToken: string,
@@ -199,6 +556,42 @@ async function querySql(
   }
 
   return res.json();
+}
+
+async function queryDetailedFunnel(
+  accountId: string,
+  apiToken: string,
+  params: AnalyticsQueryParams,
+  funnelType: FunnelType,
+): Promise<DetailedFunnelReport> {
+  const filters = buildFilters(params);
+  const result = await querySql(accountId, apiToken, `
+    SELECT
+      timestamp,
+      blob2 AS event,
+      blob13 AS context,
+      blob14 AS journeyId,
+      blob15 AS funnelType,
+      blob16 AS stageKey,
+      blob17 AS stageLabel,
+      blob18 AS stageKind,
+      blob19 AS primaryValue,
+      blob12 AS source,
+      blob20 AS deviceType,
+      double2 AS stageOrder,
+      double3 AS slotCount,
+      double4 AS daysAhead,
+      double5 AS durationMinutes
+    FROM linkycal_analytics
+    ${filters}
+    AND blob14 != ''
+    AND blob15 = '${escSql(funnelType)}'
+    ORDER BY timestamp ASC
+    LIMIT 10000
+  `);
+  return aggregateDetailedFunnel(
+    result.data as unknown as DetailedAnalyticsRow[],
+  );
 }
 
 // ─── Overview Query ──────────────────────────────────────────────────────────
@@ -337,10 +730,10 @@ export async function queryBookings(
   funnel: { pageViews: number; bookingsCreated: number; conversionRate: number };
   byEventType: Array<{ slug: string; views: number; bookings: number; rate: number }>;
   timeSeries: Array<{ date: string; views: number; bookings: number }>;
-}> {
+} & DetailedFunnelReport> {
   const filters = buildFilters(params);
 
-  const [funnelRes, byTypeRes, tsRes] = await Promise.all([
+  const [funnelRes, byTypeRes, tsRes, detailed] = await Promise.all([
     querySql(accountId, apiToken, `
       SELECT
         blob2 AS event,
@@ -372,6 +765,9 @@ export async function queryBookings(
       GROUP BY date, blob2
       ORDER BY date ASC
     `),
+    params.resourceSlug
+      ? queryDetailedFunnel(accountId, apiToken, params, "booking")
+      : Promise.resolve(emptyDetailedFunnel()),
   ]);
 
   const eventCounts: Record<string, number> = {};
@@ -411,6 +807,7 @@ export async function queryBookings(
     funnel: { pageViews, bookingsCreated, conversionRate: pageViews > 0 ? (bookingsCreated / pageViews) * 100 : 0 },
     byEventType,
     timeSeries,
+    ...detailed,
   };
 }
 
@@ -424,10 +821,10 @@ export async function queryForms(
   funnel: { views: number; started: number; completed: number; startRate: number; completionRate: number };
   byForm: Array<{ slug: string; views: number; started: number; completed: number; completionRate: number }>;
   timeSeries: Array<{ date: string; views: number; started: number; completed: number }>;
-}> {
+} & DetailedFunnelReport> {
   const filters = buildFilters(params);
 
-  const [funnelRes, byFormRes, tsRes] = await Promise.all([
+  const [funnelRes, byFormRes, tsRes, detailed] = await Promise.all([
     querySql(accountId, apiToken, `
       SELECT
         blob2 AS event,
@@ -459,6 +856,9 @@ export async function queryForms(
       GROUP BY date, blob2
       ORDER BY date ASC
     `),
+    params.resourceSlug
+      ? queryDetailedFunnel(accountId, apiToken, params, "form")
+      : Promise.resolve(emptyDetailedFunnel()),
   ]);
 
   const eventCounts: Record<string, number> = {};
@@ -511,6 +911,7 @@ export async function queryForms(
     },
     byForm,
     timeSeries,
+    ...detailed,
   };
 }
 
@@ -524,8 +925,10 @@ export async function queryFilterOptions(
   utmSources: string[];
   utmMediums: string[];
   utmCampaigns: string[];
+  sources: AnalyticsSource[];
+  deviceTypes: AnalyticsDeviceType[];
 }> {
-  const [srcRes, medRes, campRes] = await Promise.all([
+  const [srcRes, medRes, campRes, sourceRes, deviceRes] = await Promise.all([
     querySql(accountId, apiToken, `
       SELECT blob4 AS val FROM linkycal_analytics
       WHERE blob1 = '${escSql(projectId)}' AND blob4 != ''
@@ -547,11 +950,35 @@ export async function queryFilterOptions(
       GROUP BY blob6
       LIMIT 100
     `),
+    querySql(accountId, apiToken, `
+      SELECT blob12 AS val FROM linkycal_analytics
+      WHERE blob1 = '${escSql(projectId)}' AND blob12 != ''
+      AND timestamp >= NOW() - INTERVAL '90' DAY
+      GROUP BY blob12
+      LIMIT 10
+    `),
+    querySql(accountId, apiToken, `
+      SELECT blob20 AS val FROM linkycal_analytics
+      WHERE blob1 = '${escSql(projectId)}' AND blob20 != ''
+      AND timestamp >= NOW() - INTERVAL '90' DAY
+      GROUP BY blob20
+      LIMIT 10
+    `),
   ]);
 
   return {
     utmSources: srcRes.data.map((r) => r.val as string),
     utmMediums: medRes.data.map((r) => r.val as string),
     utmCampaigns: campRes.data.map((r) => r.val as string),
+    sources: sourceRes.data
+      .map((row) => String(row.val))
+      .filter(function validSource(value): value is AnalyticsSource {
+        return ANALYTICS_SOURCE_SET.has(value);
+      }),
+    deviceTypes: deviceRes.data
+      .map((row) => String(row.val))
+      .filter(function validDevice(value): value is AnalyticsDeviceType {
+        return ANALYTICS_DEVICE_SET.has(value);
+      }),
   };
 }
