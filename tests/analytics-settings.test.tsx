@@ -138,6 +138,7 @@ describe("analytics provider settings", function () {
     expect(
       (screen.getByLabelText("PostHog project key") as HTMLInputElement).value,
     ).toBe("phc_abcdefghijklmnopqrstuvwxyz");
+    expect(screen.getByText("Project key")).toBeTruthy();
     expect(
       screen
         .getByRole("switch", { name: "Enable Google Analytics" })
@@ -149,7 +150,7 @@ describe("analytics provider settings", function () {
         .getAttribute("aria-checked"),
     ).toBe("false");
     expect(screen.getByLabelText("PostHog region").textContent).toContain(
-      "European Union",
+      "🇪🇺 EU",
     );
     expect(
       screen.getByRole("button", { name: "Save Google Analytics" }),

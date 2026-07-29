@@ -121,46 +121,73 @@ export function AnalyticsIntegrationCard({
           />
         </div>
 
-        <div className="space-y-2">
-          <label className="text-sm font-medium" htmlFor={`${config.provider}-id`}>
-            {inputLabel}
-          </label>
-          <Input
-            id={`${config.provider}-id`}
-            aria-label={inputLabel}
-            value={identifier}
-            onChange={(event) => setIdentifier(event.target.value)}
-            placeholder={placeholder}
-            autoComplete="off"
-          />
-          <p className="text-pretty text-xs text-muted-foreground">
-            This is public client configuration, not a secret.
-          </p>
-        </div>
+        {config.provider === "posthog"
+          ? (
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_9rem]">
+              <div className="space-y-2">
+                <label
+                  className="text-sm font-medium"
+                  htmlFor={`${config.provider}-id`}
+                >
+                  Project key
+                </label>
+                <Input
+                  id={`${config.provider}-id`}
+                  aria-label={inputLabel}
+                  value={identifier}
+                  onChange={(event) => setIdentifier(event.target.value)}
+                  placeholder={placeholder}
+                  autoComplete="off"
+                />
+                <p className="text-pretty text-xs text-muted-foreground">
+                  This is public client configuration, not a secret.
+                </p>
+              </div>
 
-        {config.provider === "posthog" && (
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="posthog-region">
-              Data region
-            </label>
-            <Select
-              value={host}
-              onValueChange={(value) => setHost(value as "us" | "eu")}
-            >
-              <SelectTrigger
-                id="posthog-region"
-                aria-label="PostHog region"
-                className="min-h-10"
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor="posthog-region">
+                  Data region
+                </label>
+                <Select
+                  value={host}
+                  onValueChange={(value) => setHost(value as "us" | "eu")}
+                >
+                  <SelectTrigger
+                    id="posthog-region"
+                    aria-label="PostHog region"
+                    className="min-h-10"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="us">🇺🇸 US</SelectItem>
+                    <SelectItem value="eu">🇪🇺 EU</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )
+          : (
+            <div className="space-y-2">
+              <label
+                className="text-sm font-medium"
+                htmlFor={`${config.provider}-id`}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="us">United States</SelectItem>
-                <SelectItem value="eu">European Union</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+                {inputLabel}
+              </label>
+              <Input
+                id={`${config.provider}-id`}
+                aria-label={inputLabel}
+                value={identifier}
+                onChange={(event) => setIdentifier(event.target.value)}
+                placeholder={placeholder}
+                autoComplete="off"
+              />
+              <p className="text-pretty text-xs text-muted-foreground">
+                This is public client configuration, not a secret.
+              </p>
+            </div>
+          )}
 
         {error && (
           <p role="alert" className="text-pretty text-sm text-destructive">

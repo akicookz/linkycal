@@ -905,9 +905,9 @@ export default function Analytics() {
               onValueChange={(value) => setPeriod(value as Period)}
             >
               <SelectTrigger aria-label="Period" className="min-h-10 w-[155px]">
-                <span className="flex items-center gap-2">
-                  <CalendarRange className="size-4 text-muted-foreground" />
-                  <SelectValue />
+                <span className="flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap">
+                  <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
+                  <SelectValue className="truncate" />
                 </span>
               </SelectTrigger>
               <SelectContent>
