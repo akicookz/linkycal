@@ -197,6 +197,11 @@ export const PROJECT_API_KEY_ROUTES: ApiRoutePolicyEntry[] = [
   { method: "GET", path: "/api/projects/:projectId/analytics/overview" },
   { method: "GET", path: "/api/projects/:projectId/analytics/bookings" },
   { method: "GET", path: "/api/projects/:projectId/analytics/forms" },
+  { method: "GET", path: "/api/projects/:projectId/analytics/integrations" },
+  {
+    method: "PUT",
+    path: "/api/projects/:projectId/analytics/integrations/:provider",
+  },
 ];
 
 export const PROJECT_SESSION_ONLY_ROUTES: ApiRoutePolicyEntry[] = [

@@ -55,7 +55,7 @@ import {
   updateEventTypeCalendarsSchema,
   reorderFieldsSchema,
   checkoutSchema,
-  trackEventSchema,
+  trackEventRequestSchema,
   analyticsQuerySchema,
   updateTeamSchema,
   createTeamInviteSchema,
@@ -99,6 +99,15 @@ import {
 } from "./lib/form-analytics";
 import { writeBookingCreatedAnalytics } from "./lib/booking-analytics";
 import {
+  configureAnalyticsIntegrationAction,
+  getAnalyticsFiltersAction,
+  getAnalyticsOverviewAction,
+  getBookingAnalyticsAction,
+  getFormAnalyticsAction,
+  listAnalyticsIntegrationsAction,
+  writeAnonymousAnalyticsEvents,
+} from "./lib/analytics-actions";
+import {
   mergeProjectSettingsPreservingAnalyticsIntegrations,
 } from "./services/analytics-integration-service";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
@@ -141,13 +150,6 @@ import { WorkflowExecutionService } from "./services/workflow-execution-service"
 import type { TriggerContext } from "./services/workflow-execution-service";
 import { parseWorkflowTriggerConfig } from "./lib/workflow-schedule";
 import { ApiKeyService } from "./services/api-key-service";
-import {
-  writeAnalyticsEvent,
-  queryOverview,
-  queryBookings,
-  queryForms,
-  queryFilterOptions,
-} from "./services/analytics-service";
 import {
   ensureOwnerMembership,
   ensurePersonalTeam,
@@ -1216,27 +1218,26 @@ app.get("/api/v1/availability/:slug", async (c) => {
 // ─── Analytics Tracking (public) ─────────────────────────────────────────────
 
 app.post("/api/v1/t", async (c) => {
+  const ip = c.req.header("cf-connecting-ip") ?? "unknown";
+  if (!checkRateLimit(`analytics:${ip}`, 120, 60_000)) {
+    return c.body(null, 204);
+  }
+
   try {
     const body = await c.req.json();
-    const data = validate(trackEventSchema, body);
+    const data = validate(trackEventRequestSchema, body);
+    const events = "events" in data ? data.events : [data];
 
     const db = drizzle(c.env.DB, { schema });
-    const [project] = await db
-      .select({ id: dbSchema.projects.id })
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.slug, data.projectSlug))
-      .limit(1);
-
-    if (!project) return c.body(null, 204);
-
     const cf = c.req.raw.cf as Record<string, unknown> | undefined;
     const country =
       (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? "";
     const city = (cf?.city as string) ?? "";
 
-    writeAnalyticsEvent(c.env.ANALYTICS, {
-      ...data,
-      projectId: project.id,
+    await writeAnonymousAnalyticsEvents({
+      db,
+      analytics: c.env.ANALYTICS,
+      events,
       country,
       city,
     });
@@ -7355,20 +7356,15 @@ app.post("/api/onboarding/default-form", async (c) => {
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/analytics/filters", async (c) => {
-  const planLimits = c.get("planLimits");
-  if (!planLimits.analytics) {
-    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
-  }
-
   try {
     const projectId = c.req.param("projectId");
-
-    const filters = await queryFilterOptions(
-      c.env.CF_ACCOUNT_ID,
-      c.env.WAE_API_TOKEN,
+    const result = await getAnalyticsFiltersAction({
+      db: c.get("db"),
+      env: c.env,
       projectId,
-    );
-    return c.json(filters);
+      planLimits: c.get("projectPlanLimits") ?? c.get("planLimits"),
+    });
+    return c.json(result.body, result.status);
   } catch (err) {
     console.error("Analytics filters error:", err);
     return c.json({ error: "Failed to fetch filter options" }, 500);
@@ -7376,76 +7372,112 @@ app.get("/api/projects/:projectId/analytics/filters", async (c) => {
 });
 
 app.get("/api/projects/:projectId/analytics/overview", async (c) => {
-  const planLimits = c.get("planLimits");
-  if (!planLimits.analytics) {
-    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
-  }
-
   try {
     const projectId = c.req.param("projectId");
-
     const query = validate(
       analyticsQuerySchema,
       Object.fromEntries(new URL(c.req.url).searchParams),
     );
-    const data = await queryOverview(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, {
+    const result = await getAnalyticsOverviewAction({
+      db: c.get("db"),
+      env: c.env,
       projectId,
-      ...query,
+      planLimits: c.get("projectPlanLimits") ?? c.get("planLimits"),
+      query,
     });
-    return c.json(data);
+    return c.json(result.body, result.status);
   } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid analytics query" }, 400);
+    }
     console.error("Analytics overview error:", err);
     return c.json({ error: "Failed to fetch analytics" }, 500);
   }
 });
 
 app.get("/api/projects/:projectId/analytics/bookings", async (c) => {
-  const planLimits = c.get("planLimits");
-  if (!planLimits.analytics) {
-    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
-  }
-
   try {
     const projectId = c.req.param("projectId");
-
     const query = validate(
       analyticsQuerySchema,
       Object.fromEntries(new URL(c.req.url).searchParams),
     );
-    const data = await queryBookings(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, {
+    const result = await getBookingAnalyticsAction({
+      db: c.get("db"),
+      env: c.env,
       projectId,
-      ...query,
+      planLimits: c.get("projectPlanLimits") ?? c.get("planLimits"),
+      query,
     });
-    return c.json(data);
+    return c.json(result.body, result.status);
   } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid analytics query" }, 400);
+    }
     console.error("Analytics bookings error:", err);
     return c.json({ error: "Failed to fetch booking analytics" }, 500);
   }
 });
 
 app.get("/api/projects/:projectId/analytics/forms", async (c) => {
-  const planLimits = c.get("planLimits");
-  if (!planLimits.analytics) {
-    return c.json({ error: "Analytics requires a Pro or Business plan" }, 403);
-  }
-
   try {
     const projectId = c.req.param("projectId");
-
     const query = validate(
       analyticsQuerySchema,
       Object.fromEntries(new URL(c.req.url).searchParams),
     );
-    const data = await queryForms(c.env.CF_ACCOUNT_ID, c.env.WAE_API_TOKEN, {
+    const result = await getFormAnalyticsAction({
+      db: c.get("db"),
+      env: c.env,
       projectId,
-      ...query,
+      planLimits: c.get("projectPlanLimits") ?? c.get("planLimits"),
+      query,
     });
-    return c.json(data);
+    return c.json(result.body, result.status);
   } catch (err) {
+    if (err instanceof Error && err.name === "ZodError") {
+      return c.json({ error: "Invalid analytics query" }, 400);
+    }
     console.error("Analytics forms error:", err);
     return c.json({ error: "Failed to fetch form analytics" }, 500);
   }
 });
+
+app.get("/api/projects/:projectId/analytics/integrations", async (c) => {
+  try {
+    const result = await listAnalyticsIntegrationsAction({
+      db: c.get("db"),
+      env: c.env,
+      projectId: c.req.param("projectId"),
+      planLimits: c.get("projectPlanLimits") ?? c.get("planLimits"),
+    });
+    return c.json(result.body, result.status);
+  } catch (err) {
+    console.error("Analytics integrations error:", err);
+    return c.json({ error: "Failed to fetch analytics integrations" }, 500);
+  }
+});
+
+app.put(
+  "/api/projects/:projectId/analytics/integrations/:provider",
+  async (c) => {
+    try {
+      const body = await c.req.json();
+      const result = await configureAnalyticsIntegrationAction({
+        db: c.get("db"),
+        env: c.env,
+        projectId: c.req.param("projectId"),
+        planLimits: c.get("projectPlanLimits") ?? c.get("planLimits"),
+        provider: c.req.param("provider"),
+        body,
+      });
+      return c.json(result.body, result.status);
+    } catch (err) {
+      console.error("Analytics integration update error:", err);
+      return c.json({ error: "Failed to update analytics integration" }, 500);
+    }
+  },
+);
 
 // ─── SPA Fallback ────────────────────────────────────────────────────────────
 

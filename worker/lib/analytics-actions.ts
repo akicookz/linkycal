@@ -1,6 +1,10 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
+import type {
+  AnalyticsProvider,
+  CanonicalFunnelEvent,
+} from "../../shared/funnel-analytics";
 import type { AnalyticsQueryParams } from "../services/analytics-service";
 import {
   emptyDetailedFunnel,
@@ -8,9 +12,12 @@ import {
   queryFilterOptions,
   queryForms,
   queryOverview,
+  writeAnalyticsEvent,
 } from "../services/analytics-service";
 import * as dbSchema from "../db/schema";
 import type { PlanLimits } from "../types";
+import { AnalyticsIntegrationService } from "../services/analytics-integration-service";
+import { configureAnalyticsIntegrationSchema } from "../validation";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 type CommonAnalyticsQuery = Omit<AnalyticsQueryParams, "projectId">;
@@ -25,6 +32,12 @@ interface AnalyticsActionInput {
   env: AnalyticsActionEnv;
   projectId: string;
   planLimits: PlanLimits;
+}
+
+interface ConfigureAnalyticsIntegrationActionInput
+  extends AnalyticsActionInput {
+  provider: string;
+  body: unknown;
 }
 
 interface AnalyticsQueryActionInput extends AnalyticsActionInput {
@@ -216,4 +229,135 @@ export async function getAnalyticsFiltersAction(
       forms,
     },
   };
+}
+
+export async function listAnalyticsIntegrationsAction(
+  input: AnalyticsActionInput,
+) {
+  if (!input.planLimits.analytics) return analyticsForbidden();
+  const integrations = await new AnalyticsIntegrationService(input.db).list(
+    input.projectId,
+  );
+  if (!integrations) {
+    return {
+      ok: false as const,
+      status: 404 as const,
+      body: { error: "Project not found" },
+    };
+  }
+  return {
+    ok: true as const,
+    status: 200 as const,
+    body: { integrations },
+  };
+}
+
+function isAnalyticsProvider(value: string): value is AnalyticsProvider {
+  return value === "ga4" ||
+    value === "meta_pixel" ||
+    value === "posthog";
+}
+
+export async function configureAnalyticsIntegrationAction(
+  input: ConfigureAnalyticsIntegrationActionInput,
+) {
+  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!isAnalyticsProvider(input.provider)) {
+    return {
+      ok: false as const,
+      status: 400 as const,
+      body: { error: "Invalid analytics integration provider" },
+    };
+  }
+  const body =
+    input.body && typeof input.body === "object" && !Array.isArray(input.body)
+      ? input.body as Record<string, unknown>
+      : {};
+  if (
+    typeof body.provider === "string" &&
+    body.provider !== input.provider
+  ) {
+    return {
+      ok: false as const,
+      status: 400 as const,
+      body: { error: "Invalid analytics integration" },
+    };
+  }
+  const parsed = configureAnalyticsIntegrationSchema.safeParse({
+    ...body,
+    provider: input.provider,
+  });
+  if (!parsed.success) {
+    return {
+      ok: false as const,
+      status: 400 as const,
+      body: { error: "Invalid analytics integration" },
+    };
+  }
+  if (
+    parsed.data.enabled &&
+    ((parsed.data.provider === "ga4" && !parsed.data.measurementId) ||
+      (parsed.data.provider === "meta_pixel" && !parsed.data.pixelId) ||
+      (parsed.data.provider === "posthog" && !parsed.data.projectKey))
+  ) {
+    return {
+      ok: false as const,
+      status: 400 as const,
+      body: { error: "Invalid analytics integration" },
+    };
+  }
+
+  const integration = await new AnalyticsIntegrationService(
+    input.db,
+  ).configure(input.projectId, parsed.data);
+  if (!integration) {
+    return {
+      ok: false as const,
+      status: 404 as const,
+      body: { error: "Project not found" },
+    };
+  }
+  return {
+    ok: true as const,
+    status: 200 as const,
+    body: { integration },
+  };
+}
+
+export async function writeAnonymousAnalyticsEvents(input: {
+  db: AppDatabase;
+  analytics: AnalyticsEngineDataset;
+  events: CanonicalFunnelEvent[];
+  country?: string;
+  city?: string;
+}): Promise<void> {
+  const events = input.events.slice(0, 20);
+  const projectSlugs = [...new Set(events.map(function projectSlug(event) {
+    return event.projectSlug;
+  }))];
+  if (projectSlugs.length === 0) return;
+
+  const projects = await input.db
+    .select({
+      id: dbSchema.projects.id,
+      slug: dbSchema.projects.slug,
+    })
+    .from(dbSchema.projects)
+    .where(inArray(dbSchema.projects.slug, projectSlugs));
+  const projectIds = new Map(
+    projects.map(function projectEntry(project) {
+      return [project.slug, project.id] as const;
+    }),
+  );
+
+  for (const event of events) {
+    const projectId = projectIds.get(event.projectSlug);
+    if (!projectId) continue;
+    writeAnalyticsEvent(input.analytics, {
+      ...event,
+      projectId,
+      country: input.country,
+      city: input.city,
+    });
+  }
 }
