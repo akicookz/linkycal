@@ -3,19 +3,31 @@ import { useParams } from "react-router-dom";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
+  BarChart3,
   Loader,
   CalendarDays,
+  LockKeyhole,
+  Sparkles,
   Unplug,
   ExternalLink,
   Trash2,
   Save,
 } from "lucide-react";
+import { AnalyticsIntegrationCard } from "@/components/analytics/AnalyticsIntegrationCard";
+import { GoogleAnalyticsIcon } from "@/components/icons/GoogleAnalyticsIcon";
+import { MetaPixelIcon } from "@/components/icons/MetaPixelIcon";
+import { PostHogIcon } from "@/components/icons/PostHogIcon";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import type {
+  AnalyticsIntegrationConfig,
+  AnalyticsProvider,
+  ConfigureAnalyticsIntegrationInput,
+} from "../../shared/funnel-analytics";
 import {
   Select,
   SelectContent,
@@ -63,6 +75,16 @@ interface CalendarConnection {
   createdAt: string;
 }
 
+interface ProjectEntitlements {
+  planLimits: {
+    analytics: boolean;
+  };
+}
+
+interface AnalyticsIntegrationsResponse {
+  integrations: AnalyticsIntegrationConfig[];
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const COMMON_TIMEZONES = [
@@ -85,6 +107,27 @@ const COMMON_TIMEZONES = [
   "UTC",
 ];
 
+const ANALYTICS_PROVIDER_DETAILS = [
+  {
+    provider: "ga4",
+    name: "Google Analytics",
+    description:
+      "Send namespaced funnel events to your GA4 web data stream.",
+  },
+  {
+    provider: "meta_pixel",
+    name: "Meta Pixel",
+    description:
+      "Send safe custom events, booking schedules, and form leads to Meta.",
+  },
+  {
+    provider: "posthog",
+    name: "PostHog",
+    description:
+      "Capture canonical booking and form events in your PostHog project.",
+  },
+] as const;
+
 import { FONT_OPTIONS } from "@/lib/constants";
 
 function slugifyProjectName(value: string): string {
@@ -94,6 +137,24 @@ function slugifyProjectName(value: string): string {
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
     .slice(0, 50);
+}
+
+function providerIcon(provider: AnalyticsProvider) {
+  if (provider === "ga4") {
+    return <GoogleAnalyticsIcon className="size-6" />;
+  }
+  if (provider === "meta_pixel") {
+    return <MetaPixelIcon className="size-6" />;
+  }
+  return <PostHogIcon className="size-6" />;
+}
+
+function defaultIntegration(
+  provider: AnalyticsProvider,
+): AnalyticsIntegrationConfig {
+  if (provider === "ga4") return { provider, enabled: false };
+  if (provider === "meta_pixel") return { provider, enabled: false };
+  return { provider, enabled: false, host: "us" };
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -109,6 +170,9 @@ export default function Settings() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const [upgradeDescription, setUpgradeDescription] = useState(
+    "Upgrade to Pro to unlock this project feature.",
+  );
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   // Theme state
@@ -172,6 +236,42 @@ export default function Settings() {
     enabled: !!projectId,
   });
 
+  const {
+    data: entitlements,
+    isLoading: loadingEntitlements,
+  } = useQuery<ProjectEntitlements>({
+    queryKey: ["projects", projectId, "entitlements"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/entitlements`);
+      if (!res.ok) throw new Error("Failed to fetch project entitlements");
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+  const hasAnalyticsAccess =
+    entitlements?.planLimits.analytics === true;
+
+  const {
+    data: analyticsIntegrations,
+    isLoading: loadingAnalyticsIntegrations,
+    error: analyticsIntegrationsError,
+  } = useQuery<AnalyticsIntegrationsResponse>({
+    queryKey: ["projects", projectId, "analytics-integrations"],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/projects/${projectId}/analytics/integrations`,
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(
+          body.error || "Failed to fetch analytics integrations",
+        );
+      }
+      return res.json();
+    },
+    enabled: !!projectId && hasAnalyticsAccess,
+  });
+
   // Update project mutation
   const updateProjectMutation = useMutation({
     mutationFn: async (data: { name?: string; slug?: string; timezone?: string }) => {
@@ -222,6 +322,44 @@ export default function Settings() {
     },
   });
 
+  const saveAnalyticsIntegrationMutation = useMutation({
+    mutationFn: async (input: ConfigureAnalyticsIntegrationInput) => {
+      const { provider, ...config } = input;
+      const res = await fetch(
+        `/api/projects/${projectId}/analytics/integrations/${provider}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(
+          body.error || "Failed to save analytics integration",
+        );
+      }
+      return res.json() as Promise<{
+        integration: AnalyticsIntegrationConfig;
+      }>;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData<AnalyticsIntegrationsResponse>(
+        ["projects", projectId, "analytics-integrations"],
+        function updateSavedIntegration(current) {
+          if (!current) return { integrations: [data.integration] };
+          return {
+            integrations: current.integrations.map(function replace(config) {
+              return config.provider === data.integration.provider
+                ? data.integration
+                : config;
+            }),
+          };
+        },
+      );
+    },
+  });
+
   // Connect Google Calendar mutation
   const connectCalendarMutation = useMutation({
     mutationFn: async () => {
@@ -242,6 +380,9 @@ export default function Settings() {
     },
     onError: (err: Error) => {
       if (err.message.includes("Plan limit")) {
+        setUpgradeDescription(
+          "Your current plan allows 1 calendar connection. Upgrade to Pro to connect unlimited Google Calendar accounts.",
+        );
         setShowUpgradeDialog(true);
       }
     },
@@ -533,6 +674,133 @@ export default function Settings() {
           </CardContent>
         </Card>
 
+        {/* Analytics Integrations */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <BarChart3 className="size-4 text-muted-foreground" />
+              Analytics integrations
+            </CardTitle>
+            <CardDescription>
+              Send safe funnel events to your own analytics account using
+              structured public identifiers. Raw scripts and arbitrary hosts
+              are not accepted.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingEntitlements ||
+            (hasAnalyticsAccess && loadingAnalyticsIntegrations) ? (
+              <div className="grid gap-4 lg:grid-cols-3">
+                {[1, 2, 3].map(function integrationSkeleton(index) {
+                  return (
+                    <Skeleton
+                      key={index}
+                      className="h-72 rounded-[20px]"
+                    />
+                  );
+                })}
+              </div>
+            ) : !hasAnalyticsAccess ? (
+              <div className="space-y-5">
+                <div className="grid gap-4 lg:grid-cols-3">
+                  {ANALYTICS_PROVIDER_DETAILS.map(function lockedProvider(
+                    provider,
+                  ) {
+                    return (
+                      <div
+                        key={provider.provider}
+                        className="rounded-[20px] bg-muted/45 p-5 shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_1px_2px_-1px_rgba(0,0,0,0.06)]"
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="flex size-11 shrink-0 items-center justify-center rounded-[14px] bg-background">
+                            {providerIcon(provider.provider)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold">
+                                {provider.name}
+                              </p>
+                              <LockKeyhole className="size-3.5 text-muted-foreground" />
+                            </div>
+                            <p className="mt-1 text-pretty text-xs text-muted-foreground">
+                              {provider.description}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex flex-col items-start justify-between gap-4 rounded-[16px] bg-primary/10 px-4 py-3 sm:flex-row sm:items-center">
+                  <div>
+                    <p className="text-sm font-medium">
+                      Configure providers with Pro
+                    </p>
+                    <p className="text-pretty text-xs text-muted-foreground">
+                      Pro and Business projects can publish enabled provider
+                      identifiers on booking pages, forms, and widgets.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    aria-label="Upgrade to configure analytics"
+                    onClick={() => {
+                      setUpgradeDescription(
+                        "Analytics integrations require a Pro or Business plan.",
+                      );
+                      setShowUpgradeDialog(true);
+                    }}
+                  >
+                    <Sparkles className="size-4" />
+                    Upgrade to Pro
+                  </Button>
+                </div>
+              </div>
+            ) : analyticsIntegrationsError ? (
+              <p role="alert" className="text-sm text-destructive">
+                {(analyticsIntegrationsError as Error).message}
+              </p>
+            ) : (
+              <div className="grid gap-4 lg:grid-cols-3">
+                {ANALYTICS_PROVIDER_DETAILS.map(function providerCard(
+                  provider,
+                ) {
+                  const config =
+                    analyticsIntegrations?.integrations.find(
+                      function matchingIntegration(integration) {
+                        return integration.provider === provider.provider;
+                      },
+                    ) ?? defaultIntegration(provider.provider);
+                  const currentProvider =
+                    saveAnalyticsIntegrationMutation.variables?.provider;
+                  return (
+                    <AnalyticsIntegrationCard
+                      key={provider.provider}
+                      config={config}
+                      name={provider.name}
+                      description={provider.description}
+                      icon={providerIcon(provider.provider)}
+                      isSaving={
+                        saveAnalyticsIntegrationMutation.isPending &&
+                        currentProvider === provider.provider
+                      }
+                      error={
+                        saveAnalyticsIntegrationMutation.isError &&
+                        currentProvider === provider.provider
+                          ? saveAnalyticsIntegrationMutation.error.message
+                          : undefined
+                      }
+                      onSave={(input) =>
+                        saveAnalyticsIntegrationMutation.mutate(input)
+                      }
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         {/* Calendar Integration */}
         <Card>
           <CardHeader>
@@ -713,7 +981,7 @@ export default function Settings() {
         open={showUpgradeDialog}
         onClose={() => setShowUpgradeDialog(false)}
         projectId={projectId!}
-        description="Your current plan allows 1 calendar connection. Upgrade to Pro to connect unlimited Google Calendar accounts."
+        description={upgradeDescription}
       />
     </div>
   );
