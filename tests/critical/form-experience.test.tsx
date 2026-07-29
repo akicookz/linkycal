@@ -50,6 +50,15 @@ interface FormApiCapture {
   responseId(): string | null;
 }
 
+const ANALYTICS_JOURNEY_ID =
+  "123e4567-e89b-42d3-a456-426614174000";
+const FORM_ANALYTICS_BASE = {
+  journeyId: ANALYTICS_JOURNEY_ID,
+  funnelType: "form",
+  source: "direct",
+  deviceType: "tablet",
+} as const;
+
 afterEach(function restoreClock() {
   restoreRealTime();
 });
@@ -179,7 +188,8 @@ function installFormApi(
 
 function renderPublicForm(): void {
   renderRoute(<PublicForm />, {
-    route: "/acme/project-intake",
+    route:
+      `/acme/project-intake?lc_journey=${ANALYTICS_JOURNEY_ID}`,
     routePattern: "/:projectSlug/:slug",
   });
 }
@@ -267,6 +277,7 @@ describe("public form experience", () => {
         _token: btoa(String(new Date(
           "2026-03-20T12:00:00.000Z",
         ).getTime())),
+        analytics: FORM_ANALYTICS_BASE,
       });
       expect(api.patches).toHaveLength(1);
       expect(api.patches[0]!.json).toEqual({
@@ -275,6 +286,13 @@ describe("public form experience", () => {
           { fieldId: "team-size", value: "small" },
         ],
         complete: true,
+        analytics: {
+          ...FORM_ANALYTICS_BASE,
+          stageKey: "field-team-size",
+          stageLabel: "Team size",
+          stageKind: "question",
+          stageOrder: 4,
+        },
       });
       expect(
         screen.getByText("Your project details are on their way."),
@@ -353,8 +371,134 @@ describe("public form experience", () => {
           { fieldId: "work-email", value: "hanna@example.com" },
         ],
         complete: true,
+        analytics: {
+          ...FORM_ANALYTICS_BASE,
+          stageKey: "group-step-grouped",
+          stageLabel: "Questions 1–2",
+          stageKind: "group",
+          stageOrder: 2,
+        },
       });
     } finally {
+      api.http.restore();
+      testDatabase.close();
+    }
+  });
+
+  test("focused form persists every step even when analytics delivery throws", async () => {
+    setFixedTime("2026-03-20T12:00:00.000Z");
+    const form: FormExperienceForm = {
+      id: "form-checkpoints",
+      name: "Checkpoint intake",
+      type: "multi_step",
+      status: "active",
+      steps: [
+        step(
+          "step-person",
+          0,
+          [
+            field("full-name", "step-person", 0, "Full name", {
+              required: true,
+            }),
+          ],
+          { title: "About you" },
+        ),
+        step(
+          "step-company",
+          1,
+          [
+            field("company", "step-company", 0, "Company", {
+              required: true,
+            }),
+          ],
+          { title: "Your company" },
+        ),
+        step("step-completion", 2, [
+          field(
+            "completion-checkpoints",
+            "step-completion",
+            0,
+            "Response saved",
+            { type: "completion" },
+          ),
+        ]),
+      ],
+    };
+    const testDatabase = createTestDb();
+    await seedPublicForm(testDatabase, form);
+    const api = installFormApi(testDatabase);
+    const originalSendBeacon = navigator.sendBeacon;
+    Object.defineProperty(navigator, "sendBeacon", {
+      configurable: true,
+      value: function throwFromAnalytics() {
+        throw new Error("analytics offline");
+      },
+    });
+
+    try {
+      const user = userEvent.setup();
+      renderRoute(<PublicForm />, {
+        route:
+          "/acme/project-intake?lc_journey=123e4567-e89b-42d3-a456-426614174000",
+        routePattern: "/:projectSlug/:slug",
+      });
+
+      await screen.findByRole("heading", { name: "About you" });
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "Full name" }),
+        "Hanna Guest{Enter}",
+      );
+      await screen.findByRole("heading", { name: "Your company" });
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      await user.type(
+        screen.getByRole("textbox", { name: "Company" }),
+        "Northstar Oy{Enter}",
+      );
+
+      await screen.findByRole("heading", { name: "Response saved" });
+      expect(api.starts).toHaveLength(1);
+      expect(api.patches).toHaveLength(2);
+      expect(api.starts[0]!.json).toEqual({
+        website: "",
+        _token: btoa(String(new Date(
+          "2026-03-20T12:00:00.000Z",
+        ).getTime())),
+        analytics: {
+          ...FORM_ANALYTICS_BASE,
+        },
+      });
+      expect(api.patches[0]!.json).toEqual({
+        fields: [
+          { fieldId: "full-name", value: "Hanna Guest" },
+        ],
+        complete: false,
+        analytics: {
+          ...FORM_ANALYTICS_BASE,
+          stageKey: "field-full-name",
+          stageLabel: "Full name",
+          stageKind: "question",
+          stageOrder: 3,
+        },
+      });
+      expect(api.patches[1]!.json).toEqual({
+        fields: [
+          { fieldId: "company", value: "Northstar Oy" },
+        ],
+        complete: true,
+        analytics: {
+          ...FORM_ANALYTICS_BASE,
+          stageKey: "field-company",
+          stageLabel: "Company",
+          stageKind: "question",
+          stageOrder: 5,
+        },
+      });
+    } finally {
+      Object.defineProperty(navigator, "sendBeacon", {
+        configurable: true,
+        value: originalSendBeacon,
+      });
       api.http.restore();
       testDatabase.close();
     }
@@ -418,6 +562,13 @@ describe("public form experience", () => {
           { fieldId: "role", value: "Operations Lead" },
         ],
         complete: true,
+        analytics: {
+          ...FORM_ANALYTICS_BASE,
+          stageKey: "step-step-classic",
+          stageLabel: "Step 1",
+          stageKind: "step",
+          stageOrder: 2,
+        },
       });
     } finally {
       api.http.restore();
@@ -615,6 +766,13 @@ test("conditional answers hidden before completion are removed from payload and 
         "technical-details",
       ],
       complete: true,
+      analytics: {
+        ...FORM_ANALYTICS_BASE,
+        stageKey: "step-step-needs",
+        stageLabel: "Step 1",
+        stageKind: "step",
+        stageOrder: 2,
+      },
     });
     const persistedValues = await testDatabase.db
       .select({

@@ -16,10 +16,19 @@ import {
   getAllFormFields,
   getCompletionField,
   getSortedFormSteps,
+  type FormExperienceAnalyticsEvent,
+  type FormExperienceAnalyticsStage,
   type FormExperienceForm,
 } from "@/lib/form-experience";
+import type {
+  AnalyticsFailureCategory,
+  AnalyticsIntegrationConfig,
+} from "../../shared/funnel-analytics";
+import {
+  createFunnelAnalyticsDispatcher,
+  type FunnelAnalyticsDispatcher,
+} from "@/lib/funnel-analytics";
 import { prefillFromQuery, parseQueryString } from "@/lib/form-prefill";
-import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -48,6 +57,7 @@ export default function PublicForm() {
   const [searchParams] = useSearchParams();
   const posthog = usePostHog();
   const isEmbedded = searchParams.get("embed") === "1";
+  const analyticsSearch = searchParams.toString();
   const themeOverride = useMemo<FormExperienceTheme | undefined>(() => {
     const raw = searchParams.get("theme");
     if (!raw) return undefined;
@@ -65,6 +75,8 @@ export default function PublicForm() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const currentAnalyticsStageRef =
+    useRef<FormExperienceAnalyticsStage | null>(null);
 
   // Spam prevention
   const [spamField, setSpamField] = useState("");
@@ -78,6 +90,7 @@ export default function PublicForm() {
     form: FormExperienceForm;
     project: ProjectInfo | null;
     canHideBranding?: boolean;
+    analyticsIntegrations?: AnalyticsIntegrationConfig[];
   }>({
     queryKey: ["public-form", projectSlug, formSlug],
     queryFn: async () => {
@@ -94,6 +107,7 @@ export default function PublicForm() {
   const form = formData?.form;
   const project = formData?.project;
   const canHideBranding = formData?.canHideBranding;
+  const analyticsIntegrations = formData?.analyticsIntegrations;
   const themeFromProject = project?.settings?.theme;
   const theme = useMemo<FormExperienceTheme | undefined>(() => {
     if (!themeOverride && !themeFromProject) return undefined;
@@ -101,14 +115,85 @@ export default function PublicForm() {
   }, [themeFromProject, themeOverride]);
 
   const isFocusedExperience = form?.type === "multi_step";
+  const analytics = useMemo<FunnelAnalyticsDispatcher | null>(() => {
+    if (!formSlug || !project) return null;
+    return createFunnelAnalyticsDispatcher({
+      projectSlug: project.slug,
+      resourceSlug: formSlug,
+      funnelType: "form",
+      integrations: analyticsIntegrations,
+      search: `?${analyticsSearch}`,
+    });
+  }, [analyticsIntegrations, analyticsSearch, formSlug, project]);
 
-  // ─── Track page view ────────────────────────────────────────────────────
+  // ─── Analytics ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (formSlug && form && project) {
-      track("form_view", { projectSlug: project.slug, resourceSlug: formSlug });
+    if (!analytics || !form) return;
+    analytics.emit({
+      event: "form_view",
+      stageKey: "form-view",
+      stageLabel: form.name.slice(0, 160),
+      stageKind: "page",
+      stageOrder: 1,
+      context: { stageOutcome: "viewed" },
+    });
+  }, [analytics, form]);
+
+  function handleFormAnalyticsEvent(
+    event: FormExperienceAnalyticsEvent,
+  ): void {
+    if (event.type === "viewed") {
+      currentAnalyticsStageRef.current = event.screen;
     }
-  }, [formSlug, form, project]);
+    if (!analytics) return;
+    const eventName = event.type === "viewed"
+      ? "form_stage_viewed"
+      : event.type === "completed"
+        ? "form_stage_completed"
+        : event.type === "skipped"
+          ? "form_stage_skipped"
+          : "form_stage_validation_failed";
+    analytics.emit({
+      event: eventName,
+      stageKey: event.screen.key,
+      stageLabel: event.screen.label,
+      stageKind: event.screen.kind,
+      stageOrder: event.screen.order + 1,
+      context: {
+        ...(event.screen.fieldType
+          ? { fieldType: event.screen.fieldType }
+          : {}),
+        ...(event.screen.required !== undefined
+          ? { required: event.screen.required }
+          : {}),
+        stageOutcome: event.type,
+        ...(event.failureCategory
+          ? { failureCategory: event.failureCategory }
+          : {}),
+      },
+    });
+  }
+
+  function analyticsCorrelation(
+    stage: FormExperienceAnalyticsStage | null = null,
+  ) {
+    if (!analytics) return undefined;
+    return {
+      journeyId: analytics.journeyId,
+      funnelType: "form" as const,
+      source: analytics.source,
+      deviceType: analytics.deviceType,
+      ...(stage
+        ? {
+            stageKey: stage.key,
+            stageLabel: stage.label,
+            stageKind: stage.kind,
+            stageOrder: stage.order + 1,
+          }
+        : {}),
+    };
+  }
 
   // ─── Apply theme ───────────────────────────────────────────────────────
 
@@ -246,13 +331,24 @@ export default function PublicForm() {
     const res = await fetch(`/api/public/forms/${projectSlug}/${formSlug}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ website: spamField, _token: formToken }),
+      body: JSON.stringify({
+        website: spamField,
+        _token: formToken,
+        ...(analytics ? { analytics: analyticsCorrelation() } : {}),
+      }),
     });
     if (!res.ok) throw new Error("Failed to start form response");
     const data = await res.json();
     const id = data.response?.id;
     if (!id) throw new Error("No response ID returned");
     setResponseId(id);
+    analytics?.emitProviderOnly({
+      event: "form_started",
+      stageKey: "form-started",
+      stageLabel: "Form started",
+      stageKind: "page",
+      stageOrder: 1,
+    });
     return id;
   }
 
@@ -298,6 +394,17 @@ export default function PublicForm() {
   async function submitStepValues(
     checkpoint: FormExperienceCheckpoint,
   ): Promise<boolean> {
+    const analyticsStage = currentAnalyticsStageRef.current;
+    const submitStageOrder = (analyticsStage?.order ?? 0) + 2;
+    if (checkpoint.isFinal) {
+      analytics?.emit({
+        event: "form_submit_attempted",
+        stageKey: "form-submit",
+        stageLabel: "Submit form",
+        stageKind: "submit",
+        stageOrder: submitStageOrder,
+      });
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -336,6 +443,9 @@ export default function PublicForm() {
             fields,
             ...(clearedFieldIds.length > 0 ? { clearedFieldIds } : {}),
             complete: checkpoint.isFinal,
+            ...(analytics
+              ? { analytics: analyticsCorrelation(analyticsStage) }
+              : {}),
           }),
         },
       );
@@ -344,6 +454,13 @@ export default function PublicForm() {
         setClearedFieldIds([]);
       }
       if (checkpoint.isFinal) {
+        analytics?.emitProviderOnly({
+          event: "form_completed",
+          stageKey: "form-complete",
+          stageLabel: "Form completed",
+          stageKind: "completion",
+          stageOrder: submitStageOrder + 1,
+        });
         posthog?.capture("form_submitted", {
           form_slug: formSlug,
           form_name: form?.name,
@@ -353,6 +470,18 @@ export default function PublicForm() {
       }
       return true;
     } catch (caught) {
+      if (checkpoint.isFinal) {
+        const failureCategory: AnalyticsFailureCategory =
+          caught instanceof TypeError ? "network" : "server";
+        analytics?.emit({
+          event: "form_submit_failed",
+          stageKey: "form-submit",
+          stageLabel: "Submit form",
+          stageKind: "submit",
+          stageOrder: submitStageOrder,
+          context: { failureCategory },
+        });
+      }
       setError(
         caught instanceof Error
           ? caught.message
@@ -507,6 +636,7 @@ export default function PublicForm() {
       onFileChange={setFileValue}
       onClearFields={clearFields}
       onCheckpoint={submitStepValues}
+      onAnalyticsEvent={handleFormAnalyticsEvent}
     />
   );
 }

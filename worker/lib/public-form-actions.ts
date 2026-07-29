@@ -109,5 +109,6 @@ export async function submitPublicFormStepAction(
     ok: true as const,
     status: 200 as const,
     body: { response },
+    analytics: parsed.data.analytics,
   };
 }

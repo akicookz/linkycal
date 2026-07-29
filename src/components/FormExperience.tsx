@@ -32,7 +32,10 @@ import {
   buildFormExperienceModel,
   createFormExperienceCheckpoint,
   createFormTransitionLock,
+  buildFormExperienceAnalyticsStages,
   validateFormExperienceField,
+  type FormExperienceAnalyticsEvent,
+  type FormExperienceAnalyticsStage,
   type FormExperienceCheckpoint as FormExperienceCheckpointData,
   type FormExperienceField,
   type FormExperienceForm,
@@ -76,6 +79,7 @@ export interface FormExperienceProps {
   onFileChange?: (fieldId: string, file: File | null) => void;
   onClearFields: (fieldIds: string[]) => void;
   onCheckpoint: (checkpoint: FormExperienceCheckpoint) => Promise<boolean>;
+  onAnalyticsEvent?: (event: FormExperienceAnalyticsEvent) => void;
   onExitBack?: () => void;
 }
 
@@ -142,6 +146,7 @@ export function FormExperience(props: FormExperienceProps) {
     onFileChange,
     onClearFields,
     onCheckpoint,
+    onAnalyticsEvent,
     onExitBack,
   } = props;
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -162,13 +167,39 @@ export function FormExperience(props: FormExperienceProps) {
     [form, values, surface, excludedFieldIds, requiredFieldIds],
   );
   const { steps, screens } = model;
+  const analyticsStages = useMemo(
+    () =>
+      buildFormExperienceAnalyticsStages({
+        formType: form.type,
+        steps,
+        screens,
+      }),
+    [form.type, steps, screens],
+  );
   const currentStep = steps[currentStepIndex];
   const currentFields = currentStep?.fields ?? [];
   const currentScreen = screens[screenIndex] ?? null;
   const isLastStep = currentStepIndex === steps.length - 1;
   const isLastScreen = screenIndex === screens.length - 1;
+  const currentAnalyticsStage =
+    form.type === "multi_step"
+      ? analyticsStages[screenIndex] ?? null
+      : analyticsStages[currentStepIndex] ?? null;
   const requiredMessage =
     surface === "standalone" ? "Please fill this in" : "This field is required";
+  const analyticsObserverRef = useRef(onAnalyticsEvent);
+  analyticsObserverRef.current = onAnalyticsEvent;
+  const previousAnalyticsStagesRef = useRef<FormExperienceAnalyticsStage[]>(
+    analyticsStages,
+  );
+
+  function emitAnalyticsEvent(event: FormExperienceAnalyticsEvent): void {
+    try {
+      analyticsObserverRef.current?.(event);
+    } catch {
+      // Analytics cannot affect validation, persistence, or navigation.
+    }
+  }
 
   const primaryStyle: CSSProperties | undefined =
     theme?.primaryBg || theme?.borderRadius != null
@@ -258,6 +289,14 @@ export function FormExperience(props: FormExperienceProps) {
       const errors = validateScreen(screen);
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
+        const analyticsStage = analyticsStages[screenIndex];
+        if (analyticsStage) {
+          emitAnalyticsEvent({
+            type: "validation_failed",
+            screen: analyticsStage,
+            failureCategory: "validation",
+          });
+        }
         return false;
       }
 
@@ -265,7 +304,23 @@ export function FormExperience(props: FormExperienceProps) {
       const leavingStep = isLastScreen || next?.stepIndex !== screen.stepIndex;
       if (leavingStep) {
         const accepted = await checkpoint(screen.stepIndex, isLastScreen);
-        if (!accepted || isLastScreen) return accepted;
+        if (!accepted) return false;
+        const analyticsStage = analyticsStages[screenIndex];
+        if (analyticsStage) {
+          emitAnalyticsEvent({
+            type: "completed",
+            screen: analyticsStage,
+          });
+        }
+        if (isLastScreen) return true;
+      } else {
+        const analyticsStage = analyticsStages[screenIndex];
+        if (analyticsStage) {
+          emitAnalyticsEvent({
+            type: "completed",
+            screen: analyticsStage,
+          });
+        }
       }
 
       setDirection("forward");
@@ -287,9 +342,24 @@ export function FormExperience(props: FormExperienceProps) {
       const errors = validateFields(currentFields);
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
+        const analyticsStage = analyticsStages[currentStepIndex];
+        if (analyticsStage) {
+          emitAnalyticsEvent({
+            type: "validation_failed",
+            screen: analyticsStage,
+            failureCategory: "validation",
+          });
+        }
         return false;
       }
       const accepted = await checkpoint(currentStepIndex, isLastStep);
+      const analyticsStage = analyticsStages[currentStepIndex];
+      if (accepted && analyticsStage) {
+        emitAnalyticsEvent({
+          type: "completed",
+          screen: analyticsStage,
+        });
+      }
       if (accepted && !isLastStep) {
         setCurrentStepIndex((previous) => previous + 1);
       }
@@ -336,6 +406,30 @@ export function FormExperience(props: FormExperienceProps) {
     if (model.hiddenValueFieldIds.length === 0) return;
     onClearFields(model.hiddenValueFieldIds);
   }, [model.hiddenValueFieldIds, onClearFields]);
+
+  useEffect(() => {
+    if (!currentAnalyticsStage) return;
+    emitAnalyticsEvent({
+      type: "viewed",
+      screen: currentAnalyticsStage,
+    });
+  }, [currentAnalyticsStage?.key]);
+
+  useEffect(() => {
+    const currentKeys = new Set(
+      analyticsStages.map(function stageKey(stage) {
+        return stage.key;
+      }),
+    );
+    for (const previous of previousAnalyticsStagesRef.current) {
+      if (currentKeys.has(previous.key)) continue;
+      emitAnalyticsEvent({
+        type: "skipped",
+        screen: previous,
+      });
+    }
+    previousAnalyticsStagesRef.current = analyticsStages;
+  }, [analyticsStages]);
 
   // Latest-closure refs so the global keyboard listener and auto-advance
   // timers never act on stale state.

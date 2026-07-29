@@ -29,7 +29,10 @@ export type FunnelAnalyticsEventInput = Omit<
 
 export interface FunnelAnalyticsDispatcher {
   readonly journeyId: string;
+  readonly source: AnalyticsSource;
+  readonly deviceType: AnalyticsDeviceType;
   emit(event: FunnelAnalyticsEventInput): void;
+  emitProviderOnly(event: FunnelAnalyticsEventInput): void;
 }
 
 export interface DeviceDetectionInput {
@@ -212,14 +215,15 @@ export function createFunnelAnalyticsDispatcher(
   ).slice(0, 2000);
   const integrations = input.integrations ?? [];
   const sent = new Set<string>();
+  const providerSent = new Set<string>();
   const send = dependencies.send ?? sendToLinkyCal;
   const dispatchProviders =
     dependencies.dispatchProviders ?? dispatchAnalyticsProviders;
 
-  return {
-    journeyId,
-    emit: function emit(eventInput) {
-      const event: CanonicalFunnelEvent = {
+  function buildEvent(
+    eventInput: FunnelAnalyticsEventInput,
+  ): CanonicalFunnelEvent {
+    return {
         ...eventInput,
         ...attribution,
         event: eventInput.event,
@@ -231,6 +235,33 @@ export function createFunnelAnalyticsDispatcher(
         deviceType,
         ...(referrer ? { referrer } : {}),
       };
+  }
+
+  function providerDedupeKey(event: CanonicalFunnelEvent): string {
+    return [
+      journeyId,
+      event.event,
+      event.stageKey ?? "",
+    ].join(":");
+  }
+
+  function dispatchToProvidersOnce(event: CanonicalFunnelEvent): void {
+    const key = providerDedupeKey(event);
+    if (shouldDedupe(event) && providerSent.has(key)) return;
+    if (shouldDedupe(event)) providerSent.add(key);
+    try {
+      dispatchProviders(event, integrations);
+    } catch {
+      // Customer telemetry is isolated from LinkyCal and the public flow.
+    }
+  }
+
+  return {
+    journeyId,
+    source,
+    deviceType,
+    emit: function emit(eventInput) {
+      const event = buildEvent(eventInput);
       const dedupeKey = [
         journeyId,
         event.event,
@@ -244,12 +275,10 @@ export function createFunnelAnalyticsDispatcher(
       } catch {
         // LinkyCal telemetry is observational.
       }
-      try {
-        dispatchProviders(event, integrations);
-      } catch {
-        // Customer telemetry is isolated from LinkyCal and the public flow.
-      }
+      dispatchToProvidersOnce(event);
+    },
+    emitProviderOnly: function emitProviderOnly(eventInput) {
+      dispatchToProvidersOnce(buildEvent(eventInput));
     },
   };
 }
-

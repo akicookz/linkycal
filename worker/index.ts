@@ -93,6 +93,11 @@ import {
 } from "./lib/public-form-actions";
 import { loadPublicEventTypeAction } from "./lib/public-event-type-actions";
 import {
+  parsePublicAnalyticsCorrelation,
+  writeFormStartedAnalytics,
+  writePersistedFormCheckpointAnalytics,
+} from "./lib/form-analytics";
+import {
   mergeProjectSettingsPreservingAnalyticsIntegrations,
 } from "./services/analytics-integration-service";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
@@ -1377,12 +1382,12 @@ app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
 
     const fullForm = await service.getFullForm(form.id);
 
-    // Track form_started event
+    // Record response creation only after the real response exists.
     try {
-      writeAnalyticsEvent(c.env.ANALYTICS, {
+      writeFormStartedAnalytics(c.env.ANALYTICS, {
         projectId: project.id,
-        event: "form_started",
         resourceSlug: formSlug,
+        correlation: parsePublicAnalyticsCorrelation(body.analytics),
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
@@ -1574,6 +1579,26 @@ app.patch(
         return c.json({ error: "Response not found" }, 404);
       }
 
+      try {
+        if (response.formId) {
+          const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+          await writePersistedFormCheckpointAnalytics(
+            db,
+            c.env.ANALYTICS,
+            {
+              formId: response.formId,
+              resourceSlug: c.req.param("formSlug"),
+              correlation: data.analytics,
+              completed: response.status === "completed",
+              country: (cf?.country as string) ?? "",
+              city: (cf?.city as string) ?? "",
+            },
+          );
+        }
+      } catch {
+        /* tracking should never fail */
+      }
+
       // Notify owner on completion (paid users only) + dispatch workflows
       if (response.status === "completed" && response.formId) {
         c.executionCtx.waitUntil(
@@ -1587,28 +1612,6 @@ app.patch(
             response.formId,
           ),
         );
-
-        // Track form_completed event
-        try {
-          const formSlug = c.req.param("formSlug");
-          const [form] = await db
-            .select({ projectId: dbSchema.forms.projectId })
-            .from(dbSchema.forms)
-            .where(eq(dbSchema.forms.id, response.formId))
-            .limit(1);
-          if (form) {
-            const cf = c.req.raw.cf as Record<string, unknown> | undefined;
-            writeAnalyticsEvent(c.env.ANALYTICS, {
-              projectId: form.projectId,
-              event: "form_completed",
-              resourceSlug: formSlug,
-              country: (cf?.country as string) ?? "",
-              city: (cf?.city as string) ?? "",
-            });
-          }
-        } catch {
-          /* tracking should never fail */
-        }
       }
 
       return c.json({ response });
@@ -1861,12 +1864,12 @@ app.post("/api/public/forms/:projectSlug/:formSlug/responses", async (c) => {
         .where(eq(dbSchema.formResponses.id, response.id));
     }
 
-    // Track form_started event
+    // Record response creation only after the real response exists.
     try {
-      writeAnalyticsEvent(c.env.ANALYTICS, {
+      writeFormStartedAnalytics(c.env.ANALYTICS, {
         projectId: form.projectId,
-        event: "form_started",
         resourceSlug: formSlug,
+        correlation: parsePublicAnalyticsCorrelation(body.analytics),
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });
@@ -1906,6 +1909,26 @@ app.patch(
       }
       const { response } = result.body;
 
+      try {
+        if (response.formId) {
+          const cf = c.req.raw.cf as Record<string, unknown> | undefined;
+          await writePersistedFormCheckpointAnalytics(
+            db,
+            c.env.ANALYTICS,
+            {
+              formId: response.formId,
+              resourceSlug: c.req.param("formSlug"),
+              correlation: result.analytics,
+              completed: response.status === "completed",
+              country: (cf?.country as string) ?? "",
+              city: (cf?.city as string) ?? "",
+            },
+          );
+        }
+      } catch {
+        /* tracking should never fail */
+      }
+
       // Notify owner on completion (paid users only) + dispatch workflows
       if (response.status === "completed" && response.formId) {
         c.executionCtx.waitUntil(
@@ -1919,28 +1942,6 @@ app.patch(
             response.formId,
           ),
         );
-
-        // Track form_completed event
-        try {
-          const formSlug = c.req.param("formSlug");
-          const [form] = await db
-            .select({ projectId: dbSchema.forms.projectId })
-            .from(dbSchema.forms)
-            .where(eq(dbSchema.forms.id, response.formId))
-            .limit(1);
-          if (form) {
-            const cf = c.req.raw.cf as Record<string, unknown> | undefined;
-            writeAnalyticsEvent(c.env.ANALYTICS, {
-              projectId: form.projectId,
-              event: "form_completed",
-              resourceSlug: formSlug,
-              country: (cf?.country as string) ?? "",
-              city: (cf?.city as string) ?? "",
-            });
-          }
-        } catch {
-          /* tracking should never fail */
-        }
       }
 
       return c.json({ response });

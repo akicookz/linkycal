@@ -81,6 +81,21 @@ export interface FormExperienceCheckpoint {
   fields: FormExperienceField[];
 }
 
+export interface FormExperienceAnalyticsStage {
+  key: string;
+  label: string;
+  kind: "statement" | "question" | "group" | "step";
+  order: number;
+  fieldType?: string;
+  required?: boolean;
+}
+
+export interface FormExperienceAnalyticsEvent {
+  type: "viewed" | "completed" | "skipped" | "validation_failed";
+  screen: FormExperienceAnalyticsStage;
+  failureCategory?: "validation";
+}
+
 export interface CreateFormExperienceCheckpointInput {
   formType: FormExperienceForm["type"];
   surface: "standalone" | "booking";
@@ -252,6 +267,73 @@ function buildFocusedScreens(
   });
 
   return screens;
+}
+
+function boundedAnalyticsLabel(value: string, fallback: string): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return (normalized || fallback).slice(0, 160);
+}
+
+export function buildFormExperienceAnalyticsStages(input: {
+  formType: FormExperienceForm["type"];
+  steps: VisibleFormExperienceStep[];
+  screens: FormExperienceScreen[];
+}): FormExperienceAnalyticsStage[] {
+  if (input.formType === "single") {
+    return input.steps.map(function mapStep(step, index) {
+      return {
+        key: `step-${step.id}`,
+        label: boundedAnalyticsLabel(
+          step.title ?? "",
+          `Step ${index + 1}`,
+        ),
+        kind: "step" as const,
+        order: index + 1,
+        required: step.fields.some(function isRequired(field) {
+          return field.required;
+        }),
+      };
+    });
+  }
+
+  return input.screens.map(function mapScreen(screen, index) {
+    const step = input.steps[screen.stepIndex];
+    if (screen.kind === "statement") {
+      return {
+        key: screen.key,
+        label: boundedAnalyticsLabel(
+          screen.title ?? "",
+          "Introduction",
+        ),
+        kind: "statement" as const,
+        order: index + 1,
+      };
+    }
+    if (screen.kind === "question") {
+      return {
+        key: screen.key,
+        label: boundedAnalyticsLabel(screen.field.label, "Question"),
+        kind: "question" as const,
+        order: index + 1,
+        fieldType: screen.field.type,
+        required: screen.field.required,
+      };
+    }
+    const first = screen.firstQuestionNumber;
+    const last = first + screen.fields.length - 1;
+    return {
+      key: screen.key,
+      label: boundedAnalyticsLabel(
+        step?.title ?? "",
+        first === last ? `Question ${first}` : `Questions ${first}–${last}`,
+      ),
+      kind: "group" as const,
+      order: index + 1,
+      required: screen.fields.some(function isRequired(field) {
+        return field.required;
+      }),
+    };
+  });
 }
 
 export function buildFormExperienceModel(

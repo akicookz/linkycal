@@ -400,6 +400,24 @@ export const updateFormFieldSchema = z.object({
   visibility: formConditionSchema.nullable().optional(),
 });
 
+export const publicAnalyticsCorrelationSchema = z
+  .object({
+    journeyId: z.uuid(),
+    funnelType: z.enum(FUNNEL_TYPES),
+    source: z.enum(ANALYTICS_SOURCES),
+    deviceType: z.enum(ANALYTICS_DEVICE_TYPES),
+    stageKey: z
+      .string()
+      .min(1)
+      .max(160)
+      .regex(/^[a-zA-Z0-9._:-]+$/)
+      .optional(),
+    stageLabel: z.string().min(1).max(160).optional(),
+    stageKind: z.enum(FUNNEL_STAGE_KINDS).optional(),
+    stageOrder: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
 export const submitFormStepSchema = z.object({
   fields: z.array(
     z.object({
@@ -414,6 +432,7 @@ export const submitFormStepSchema = z.object({
   // the server-side step count, so the server can't derive completion from
   // stepIndex alone.
   complete: z.boolean().optional(),
+  analytics: publicAnalyticsCorrelationSchema.optional(),
 });
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
