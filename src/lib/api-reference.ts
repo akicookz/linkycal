@@ -272,11 +272,15 @@ export const API_REFERENCE_SECTIONS: ApiReferenceSection[] = [
     id: "analytics-activity-api",
     title: "Analytics and recent activity",
     description:
-      "Read project-level activity and aggregated visitor, booking, and form performance.",
+      "Read project-level activity and unique-journey booking/form funnels, then configure validated customer analytics providers.",
     notes: [
-      "Analytics supports 7d, 30d, 90d, or custom date periods.",
-      "Queries may filter by start, end, UTM source, medium, campaign, or resource slug and can group by source, country, resource, or campaign dimensions.",
-      "Use the filters endpoint to populate valid resource and campaign filters before requesting a breakdown.",
+      "Detailed analytics and provider configuration require a Pro or Business project. The Worker enforces entitlement and project scope for sessions, API keys, and MCP.",
+      "Analytics supports period=7d|30d|90d|custom. Custom requires both inclusive start and end ISO dates; preset periods omit them.",
+      "Queries may filter by resourceSlug, UTM source/medium/campaign, direct or widget source, and mobile/tablet/desktop device type.",
+      "Choose one project-owned event type or form for exact stages. All resources remains a backward-compatible high-level summary.",
+      "Detailed reports count unique journeys and expose availableSince, stage visitors, continuation/drop-off rates, conditional skips, booking date/time availability context, and safe failures.",
+      "Reports never return names, emails, raw answers, journey IDs, IP addresses, or raw errors.",
+      "Provider writes accept only public GA4 measurement IDs, numeric Meta Pixel IDs, and PostHog project keys with an allowlisted US/EU host. Raw scripts and arbitrary URLs are rejected.",
     ],
     operations: [
       { method: "GET", path: `${PROJECT_BASE}/activity/recent`, description: "Get recent project activity." },
@@ -284,6 +288,16 @@ export const API_REFERENCE_SECTIONS: ApiReferenceSection[] = [
       { method: "GET", path: `${PROJECT_BASE}/analytics/overview`, description: "Get conversion and traffic overview metrics." },
       { method: "GET", path: `${PROJECT_BASE}/analytics/bookings`, description: "Get booking analytics." },
       { method: "GET", path: `${PROJECT_BASE}/analytics/forms`, description: "Get form analytics." },
+      {
+        method: "GET",
+        path: `${PROJECT_BASE}/analytics/integrations`,
+        description: "List normalized GA4, Meta Pixel, and PostHog configuration.",
+      },
+      {
+        method: "PUT",
+        path: `${PROJECT_BASE}/analytics/integrations/:provider`,
+        description: "Configure one allowlisted analytics provider.",
+      },
     ],
   },
   {

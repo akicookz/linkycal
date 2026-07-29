@@ -1,15 +1,259 @@
 export type PublicApiAuth = "anonymous" | "apiKey";
 
+export interface PublicApiQueryParameter {
+  name: string;
+  description: string;
+  schema: Record<string, unknown>;
+}
+
 export interface PublicApiOperationDefinition {
-  method: "GET" | "POST" | "PATCH";
+  method: "GET" | "POST" | "PUT" | "PATCH";
   path: string;
   summary: string;
   tag: string;
   auth: PublicApiAuth;
   notes: string;
+  queryParameters?: PublicApiQueryParameter[];
+  requestSchema?: string;
+  responseSchema?: string;
+  successStatus?: string;
+  successDescription?: string;
 }
 
+export interface McpToolGroup {
+  domain: string;
+  tools: string[];
+  notes: string;
+}
+
+export const MCP_TOOL_GROUPS: McpToolGroup[] = [
+  {
+    domain: "Bookings",
+    tools: [
+      "list_bookings",
+      "get_booking",
+      "get_available_slots",
+      "create_booking",
+      "cancel_booking",
+      "confirm_booking",
+      "decline_booking",
+    ],
+    notes: "Read and manage bookings and public availability.",
+  },
+  {
+    domain: "Event Types",
+    tools: [
+      "list_event_types",
+      "get_event_type",
+      "create_event_type",
+      "update_event_type",
+    ],
+    notes: "Define bookable meeting types.",
+  },
+  {
+    domain: "Schedules",
+    tools: ["list_schedules", "get_schedule"],
+    notes: "Inspect the working hours behind event types.",
+  },
+  {
+    domain: "Contacts",
+    tools: [
+      "list_contacts",
+      "get_contact",
+      "create_contact",
+      "update_contact",
+      "set_contact_next_action",
+      "complete_contact_next_action",
+      "delete_contact",
+      "get_contact_activity",
+    ],
+    notes: "Manage CRM records and their activity.",
+  },
+  {
+    domain: "Tags",
+    tools: [
+      "list_contact_tags",
+      "get_contact_tag",
+      "create_contact_tag",
+      "update_contact_tag",
+      "delete_contact_tag",
+      "add_tag_to_contact",
+      "remove_tag_from_contact",
+    ],
+    notes: "Manage tags and contact assignments.",
+  },
+  {
+    domain: "Forms",
+    tools: [
+      "list_forms",
+      "get_form",
+      "create_form",
+      "update_form",
+      "list_form_responses",
+    ],
+    notes: "Build forms and inspect aggregate submissions.",
+  },
+  {
+    domain: "Workflows",
+    tools: ["list_workflows", "get_workflow"],
+    notes: "Inspect workflows; writes remain REST/dashboard-only.",
+  },
+  {
+    domain: "Analytics",
+    tools: [
+      "get_analytics_overview",
+      "get_booking_funnel_analytics",
+      "get_form_funnel_analytics",
+      "list_analytics_integrations",
+      "configure_analytics_integration",
+    ],
+    notes:
+      "Read aggregate funnels and configure validated GA4, Meta Pixel, and PostHog public identifiers.",
+  },
+];
+
+export const MCP_TOOL_COUNT = MCP_TOOL_GROUPS.reduce(
+  function countTools(total, group) {
+    return total + group.tools.length;
+  },
+  0,
+);
+
+const ANALYTICS_REPORT_QUERY_PARAMETERS: PublicApiQueryParameter[] = [
+  {
+    name: "period",
+    description: "Preset period or custom date range.",
+    schema: {
+      type: "string",
+      enum: ["7d", "30d", "90d", "custom"],
+      default: "30d",
+    },
+  },
+  {
+    name: "start",
+    description: "Inclusive ISO date; accepted only when period=custom.",
+    schema: { type: "string", format: "date" },
+  },
+  {
+    name: "end",
+    description: "Inclusive ISO date; accepted only when period=custom.",
+    schema: { type: "string", format: "date" },
+  },
+  {
+    name: "resourceSlug",
+    description:
+      "Project-owned event type or form slug. Required for exact stage reports.",
+    schema: { type: "string" },
+  },
+  {
+    name: "utmSource",
+    description: "Filter by UTM source.",
+    schema: { type: "string" },
+  },
+  {
+    name: "utmMedium",
+    description: "Filter by UTM medium.",
+    schema: { type: "string" },
+  },
+  {
+    name: "utmCampaign",
+    description: "Filter by UTM campaign.",
+    schema: { type: "string" },
+  },
+  {
+    name: "source",
+    description: "Filter direct pages or widget journeys.",
+    schema: { type: "string", enum: ["direct", "widget"] },
+  },
+  {
+    name: "deviceType",
+    description: "Filter by coarse device class.",
+    schema: {
+      type: "string",
+      enum: ["mobile", "tablet", "desktop"],
+    },
+  },
+];
+
 export const PUBLIC_API_OPERATIONS: PublicApiOperationDefinition[] = [
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/analytics/filters",
+    summary: "List analytics filters and project resources",
+    tag: "Analytics",
+    auth: "apiKey",
+    notes:
+      "Pro or Business required. Returns project-owned event types/forms plus observed UTM, source, and device values.",
+    responseSchema: "AnalyticsFiltersResponse",
+    successStatus: "200",
+    successDescription: "Analytics filter catalog",
+  },
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/analytics/overview",
+    summary: "Get analytics overview",
+    tag: "Analytics",
+    auth: "apiKey",
+    notes:
+      "Pro or Business required. Returns aggregate traffic and conversion totals without visitor histories.",
+    queryParameters: ANALYTICS_REPORT_QUERY_PARAMETERS.filter(
+      (parameter) => parameter.name !== "resourceSlug",
+    ),
+    responseSchema: "AnalyticsOverviewResponse",
+    successStatus: "200",
+    successDescription: "Analytics overview",
+  },
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/analytics/bookings",
+    summary: "Get booking funnel analytics",
+    tag: "Analytics",
+    auth: "apiKey",
+    notes:
+      "Pro or Business required. Select an event type for unique-journey stage continuation, drop-offs, dates, availability, offered times, selected times, and safe failures.",
+    queryParameters: ANALYTICS_REPORT_QUERY_PARAMETERS,
+    responseSchema: "BookingAnalyticsResponse",
+    successStatus: "200",
+    successDescription: "Booking funnel analytics",
+  },
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/analytics/forms",
+    summary: "Get form funnel analytics",
+    tag: "Analytics",
+    auth: "apiKey",
+    notes:
+      "Pro or Business required. Select a form for unique-journey question/step continuation, skips, drop-offs, and safe validation failures.",
+    queryParameters: ANALYTICS_REPORT_QUERY_PARAMETERS,
+    responseSchema: "FormAnalyticsResponse",
+    successStatus: "200",
+    successDescription: "Form funnel analytics",
+  },
+  {
+    method: "GET",
+    path: "/api/projects/:projectId/analytics/integrations",
+    summary: "List analytics integrations",
+    tag: "Analytics",
+    auth: "apiKey",
+    notes:
+      "Pro or Business required. Returns normalized public GA4, Meta Pixel, and PostHog configuration.",
+    responseSchema: "AnalyticsIntegrationsResponse",
+    successStatus: "200",
+    successDescription: "Analytics integrations",
+  },
+  {
+    method: "PUT",
+    path: "/api/projects/:projectId/analytics/integrations/:provider",
+    summary: "Configure an analytics integration",
+    tag: "Analytics",
+    auth: "apiKey",
+    notes:
+      "Pro or Business required. Provider is ga4, meta_pixel, or posthog. Raw scripts, script URLs, secrets, and arbitrary PostHog hosts are rejected.",
+    requestSchema: "ConfigureAnalyticsIntegrationRequest",
+    responseSchema: "AnalyticsIntegrationResponse",
+    successStatus: "200",
+    successDescription: "Analytics integration saved",
+  },
   {
     method: "GET",
     path: "/api/v1/availability/:slug",
@@ -24,7 +268,11 @@ export const PUBLIC_API_OPERATIONS: PublicApiOperationDefinition[] = [
     summary: "Record a public tracking event",
     tag: "Visitor tracking",
     auth: "anonymous",
-    notes: "Visitor-facing telemetry endpoint.",
+    notes:
+      "Visitor-facing telemetry endpoint; accepts one event or a batch of at most 20 and is rate limited to 120 requests per minute per IP.",
+    requestSchema: "AnonymousAnalyticsEventsRequest",
+    successStatus: "204",
+    successDescription: "Events accepted",
   },
   {
     method: "POST",

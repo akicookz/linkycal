@@ -29,6 +29,10 @@ import {
   type ApiReferenceSection,
 } from "@/lib/api-reference";
 import { cn } from "@/lib/utils";
+import {
+  MCP_TOOL_COUNT,
+  MCP_TOOL_GROUPS,
+} from "../../scripts/api-docs-catalog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -202,7 +206,7 @@ const API_MANAGEMENT_DOMAINS = [
   {
     id: "analytics-activity-api",
     name: "Activity and analytics",
-    routes: "Recent activity, filters, overview, booking analytics, and form analytics",
+    routes: "Recent activity, exact booking/form funnels, and provider configuration",
   },
   {
     id: "files-calendars-api",
@@ -1783,64 +1787,50 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               Available Tools
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              The server exposes 35 tools for the project, grouped by
+              The server exposes {MCP_TOOL_COUNT} tools for the project, grouped by
               domain. Read tools return JSON; write tools enforce the same plan
               limits and validation as the dashboard.
             </p>
 
-            <div className="rounded-[16px] border border-border overflow-hidden my-4">
-              <div className="bg-muted/40 px-4 py-2.5 grid grid-cols-[130px_1fr] text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                <span>Domain</span>
-                <span>Tools</span>
-              </div>
-              {[
-                {
-                  domain: "Bookings",
-                  tools:
-                    "list_bookings · get_booking · get_available_slots · create_booking · cancel_booking · confirm_booking · decline_booking",
-                },
-                {
-                  domain: "Event Types",
-                  tools:
-                    "list_event_types · get_event_type · create_event_type · update_event_type",
-                },
-                {
-                  domain: "Schedules",
-                  tools: "list_schedules · get_schedule",
-                },
-                {
-                  domain: "Contacts",
-                  tools:
-                    "list_contacts · get_contact · create_contact · update_contact · set_contact_next_action · complete_contact_next_action · delete_contact · get_contact_activity",
-                },
-                {
-                  domain: "Tags",
-                  tools:
-                    "list_contact_tags · get_contact_tag · create_contact_tag · update_contact_tag · delete_contact_tag · add_tag_to_contact · remove_tag_from_contact",
-                },
-                {
-                  domain: "Forms",
-                  tools:
-                    "list_forms · get_form · create_form · update_form · list_form_responses",
-                },
-                {
-                  domain: "Workflows",
-                  tools: "list_workflows · get_workflow",
-                },
-              ].map((row) => (
+            <div className="my-4 space-y-2">
+              {MCP_TOOL_GROUPS.map((row) => (
                 <div
                   key={row.domain}
-                  className="px-4 py-3 border-t border-border text-sm grid grid-cols-[130px_1fr] items-start"
+                  className="grid grid-cols-1 items-start gap-1 rounded-[16px] bg-muted/50 px-4 py-3 text-sm sm:grid-cols-[130px_1fr] sm:gap-4"
                 >
                   <span className="text-foreground font-medium">
                     {row.domain}
                   </span>
-                  <span className="font-mono text-[13px] text-muted-foreground leading-relaxed">
-                    {row.tools}
+                  <span>
+                    <span className="font-mono text-[13px] text-muted-foreground leading-relaxed">
+                      {row.tools.join(" · ")}
+                    </span>
+                    <span className="mt-1 block text-xs text-muted-foreground">
+                      {row.notes}
+                    </span>
                   </span>
                 </div>
               ))}
             </div>
+
+            <Callout type="info">
+              Analytics tools use the same project-scoped aggregate actions as
+              REST. Pass an event type ID or form ID for exact stages; common
+              inputs support preset/custom dates, UTM filters, direct/widget
+              source, and device type. Detailed reports and provider
+              configuration require Pro or Business.
+            </Callout>
+
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              <IC>get_booking_funnel_analytics</IC> and{" "}
+              <IC>get_form_funnel_analytics</IC> return unique-journey stage
+              visitors, continuation, drop-offs, skips, safe context
+              distributions, and the detailed-data boundary. Aggregate outputs
+              exclude names, emails, raw answers, journey IDs, IP addresses,
+              and raw errors. <IC>configure_analytics_integration</IC> accepts
+              only GA4, Meta Pixel, or PostHog public identifiers and an
+              allowlisted US/EU PostHog host.
+            </p>
 
             <Callout type="info">
               Workflows are read-only over MCP by design — agents can inspect

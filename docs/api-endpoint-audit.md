@@ -4,11 +4,11 @@
 
 ## Result
 
-- Registered route/method pairs: 144
-- API-key-supported or API-key-required routes: 91
+- Registered route/method pairs: 146
+- API-key-supported or API-key-required routes: 93
 - Anonymous visitor routes: 15
 - Session-only routes: 33
-- Operations in the public OpenAPI contract: 106
+- Operations in the public OpenAPI contract: 108
 
 All project resource routes approved for external automation use the canonical `/api/projects/:projectId/*` contract and accept either a dashboard session or a project-scoped API key. Account, team, billing, onboarding, OAuth lifecycle, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
 
@@ -22,7 +22,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 - Invite token: 1
 - Invite token + session: 1
 - Session: 33
-- Session or API key: 89
+- Session or API key: 91
 - Stripe signature: 1
 
 ## Endpoint inventory
@@ -52,6 +52,8 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | GET | `/api/projects/:projectId/analytics/bookings` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/analytics/filters` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/analytics/forms` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| GET | `/api/projects/:projectId/analytics/integrations` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| PUT | `/api/projects/:projectId/analytics/integrations/:provider` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/analytics/overview` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/api-keys` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
 | POST | `/api/projects/:projectId/api-keys` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
@@ -170,6 +172,6 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | GET | `/api/v1/forms/:projectSlug/:formSlug/responses/:responseId/files/:valueId` | API key | Required | No | Yes | Project-scoped API key required; the key project must own the form. |
 | PATCH | `/api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex` | Anonymous | Not used | No | Yes | Visitor-facing; rate limited to 60 requests per minute per IP. |
 | POST | `/api/v1/forms/:projectSlug/:formSlug/responses/:responseId/uploads` | Anonymous | Not used | No | Yes | Visitor-facing multipart upload; rate limited to 30 requests per minute per IP. |
-| POST | `/api/v1/t` | Anonymous | Not used | No | Yes | Visitor-facing telemetry endpoint. |
+| POST | `/api/v1/t` | Anonymous | Not used | No | Yes | Visitor-facing telemetry endpoint; accepts one event or a batch of at most 20 and is rate limited to 120 requests per minute per IP. |
 | GET | `/api/widget/booking/:projectSlug/config` | Anonymous | Not used | No | Yes | Visitor-facing widget bootstrap endpoint. |
 | GET | `/api/widget/form/:projectSlug/:formSlug/config` | Anonymous | Not used | No | Yes | Visitor-facing widget bootstrap endpoint. |

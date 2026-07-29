@@ -26,6 +26,10 @@ also follow [CLAUDE.md](CLAUDE.md).
   tag, update, wait, condition, and AI-research operations.
 - Exposes a REST API, generated OpenAPI/LLM documentation, project-scoped MCP
   tools, and self-contained booking and form widgets.
+- Reports unique-journey booking and form funnels down to rendered dates,
+  availability, times, questions, conditional skips, validation, submit
+  failures, and completion; Pro/Business projects may also publish validated
+  GA4, Meta Pixel, and PostHog identifiers.
 - Handles team access, subscriptions, plan entitlements, onboarding,
   authentication, product analytics, and Stripe billing.
 
@@ -61,11 +65,34 @@ The main boundaries are:
 | Google Calendar | Free/busy checks and event lifecycle |
 | Resend | Transactional and workflow email |
 | Stripe | Plans, checkout, subscriptions, and billing webhooks |
-| PostHog / Analytics Engine | Product and application analytics |
+| PostHog / Analytics Engine | Internal product analytics and additive, PII-free customer funnel analytics |
 
 All dashboard and API data is project-scoped. MCP authentication resolves a
 project from an API key before tools execute; callers do not choose an
 untrusted `projectId` tool argument.
+
+Detailed customer analytics uses the existing Cloudflare Analytics Engine
+dataset rather than D1 tables. The existing high-level event names remain
+stable; detailed booking/form events add resource-scoped anonymous journey,
+stage, source, device, and bounded safe context fields. Reports never expose
+names, emails, raw answers, journey IDs, IP addresses, or raw errors.
+
+The canonical analytics REST contract is:
+
+```text
+GET /api/projects/:projectId/analytics/filters
+GET /api/projects/:projectId/analytics/overview
+GET /api/projects/:projectId/analytics/bookings
+GET /api/projects/:projectId/analytics/forms
+GET /api/projects/:projectId/analytics/integrations
+PUT /api/projects/:projectId/analytics/integrations/:provider
+```
+
+All six routes accept a dashboard session or a project-scoped API key and are
+Pro/Business-gated by the Worker. The MCP server exposes 40 tools, including
+five analytics tools that call the same reporting and integration actions.
+Public booking pages, forms, and widgets receive only enabled public provider
+identifiers; raw scripts, arbitrary URLs, and provider secrets are not stored.
 
 ## Repository map
 
@@ -83,7 +110,7 @@ untrusted `projectId` tool argument.
 | `widget/shared/` | Code shared by widget bundles |
 | `tests/critical/` | Small, user-outcome-oriented product test suite |
 | `tests/support/` | Migration-backed database, HTTP capture, queue, clock, and render infrastructure |
-| `scripts/` | Generated API documentation tooling |
+| `scripts/` | Checked REST/MCP inventories plus deterministic OpenAPI, endpoint-audit, and llms.txt generators |
 | `public/openapi.json` | Generated OpenAPI document |
 | `public/llms.txt` | Generated AI-readable API documentation |
 | `docs/superpowers/specs/` | Approved feature and remediation designs |
@@ -147,8 +174,8 @@ migrations to local D1 state; it does not migrate production.
 
 | Command | Purpose |
 | --- | --- |
-| `bun run docs:generate` | Regenerate OpenAPI and LLM-facing API documents |
-| `bun run docs:check` | Fail when generated API documents are stale |
+| `bun run docs:generate` | Regenerate OpenAPI, endpoint audit, and LLM-facing API documentation |
+| `bun run docs:check` | Fail when OpenAPI, endpoint audit, or llms.txt is stale |
 
 ### Widgets and deployment
 
@@ -267,8 +294,9 @@ understood rather than ignored.
 
 ## Operational cautions
 
-- `worker-configuration.d.ts`, `public/openapi.json`, and `public/llms.txt` are
-  generated. Change their sources and rerun the owning generator.
+- `worker-configuration.d.ts`, `public/openapi.json`,
+  `docs/api-endpoint-audit.md`, and `public/llms.txt` are generated. Change the
+  REST/MCP catalogs or llms template and rerun the owning generator.
 - D1 schema changes require a checked-in migration. Local and production
   migrations are separate operations.
 - Every authenticated service, route, API key, and MCP tool must preserve

@@ -4,8 +4,10 @@ import {
 } from "../worker/lib/api-route-policy";
 import {
   PUBLIC_API_OPERATIONS,
+  type PublicApiQueryParameter,
   type PublicApiOperationDefinition,
 } from "./api-docs-catalog";
+import { buildLlmsText } from "./llms-template";
 
 type RegisteredMethod =
   | "GET"
@@ -47,6 +49,7 @@ interface OpenApiSecurityRequirement {
 export interface OpenApiOperation {
   operationId: string;
   summary: string;
+  description?: string;
   tags: string[];
   security: OpenApiSecurityRequirement[];
   parameters?: Array<Record<string, unknown>>;
@@ -80,6 +83,7 @@ export interface GeneratedApiArtifacts {
   openApi: OpenApiDocument;
   openApiJson: string;
   auditMarkdown: string;
+  llmsText: string;
   auditRows: AuditRow[];
   routes: RegisteredRoute[];
 }
@@ -88,6 +92,12 @@ interface OperationMetadata {
   summary: string;
   tag: string;
   auth: "anonymous" | "apiKey";
+  notes?: string;
+  queryParameters?: PublicApiQueryParameter[];
+  requestSchema?: string;
+  responseSchema?: string;
+  successStatus?: string;
+  successDescription?: string;
 }
 
 const METHOD_ORDER: RegisteredMethod[] = [
@@ -775,18 +785,62 @@ function createOperation(
   metadata: OperationMetadata,
 ): OpenApiOperation {
   const openApiPath = toOpenApiPath(path);
-  const parameters = pathParameters(openApiPath);
-  const body = requestBody(method, path);
+  const parameters = [
+    ...pathParameters(openApiPath).map(function enrichProviderParameter(
+      parameter,
+    ) {
+      if (
+        parameter.name === "provider" &&
+        path.includes("/analytics/integrations/")
+      ) {
+        return {
+          ...parameter,
+          schema: {
+            type: "string",
+            enum: ["ga4", "meta_pixel", "posthog"],
+          },
+        };
+      }
+      return parameter;
+    }),
+    ...(metadata.queryParameters ?? []).map(function toQueryParameter(
+      parameter,
+    ) {
+      return {
+        name: parameter.name,
+        in: "query",
+        required: false,
+        description: parameter.description,
+        schema: parameter.schema,
+      };
+    }),
+  ];
+  const body = metadata.requestSchema
+    ? jsonRequestBody(metadata.requestSchema)
+    : requestBody(method, path);
 
   const operation: OpenApiOperation = {
     operationId: operationId(method, path),
     summary: metadata.summary,
+    ...(metadata.notes ? { description: metadata.notes } : {}),
     tags: [metadata.tag],
     security: metadata.auth === "apiKey" ? [{ bearerAuth: [] }] : [],
     ...(parameters.length > 0 ? { parameters } : {}),
     ...(body ? { requestBody: body } : {}),
     responses: responsesFor(metadata.auth),
   };
+  if (metadata.successStatus) {
+    delete operation.responses["2XX"];
+    operation.responses[metadata.successStatus] = metadata.responseSchema
+      ? jsonResponse(
+          metadata.successDescription ?? "Successful response",
+          metadata.responseSchema,
+        )
+      : {
+          description:
+            metadata.successDescription ?? "Successful response",
+        };
+  }
   return applyContactApiContract(
     method,
     path,
@@ -812,20 +866,27 @@ function addOperation(
 function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
   const routeKeys = new Set(routes.map((route) => routeKey(route.method, route.path)));
   const paths: OpenApiDocument["paths"] = {};
+  const operationMetadata = metadataByRoute();
 
   for (const route of PROJECT_API_KEY_ROUTES) {
     if (!routeKeys.has(routeKey(route.method, route.path))) {
       throw new Error(`Documented project route is not registered: ${route.method} ${route.path}`);
     }
     const method = route.method.toLowerCase() as OpenApiMethod;
-    addOperation(paths, method, route.path, {
-      summary: projectSummary(method, route.path),
-      tag: tagForProjectPath(route.path),
-      auth: "apiKey",
-    });
+    addOperation(
+      paths,
+      method,
+      route.path,
+      operationMetadata.get(routeKey(route.method, route.path)) ?? {
+        summary: projectSummary(method, route.path),
+        tag: tagForProjectPath(route.path),
+        auth: "apiKey",
+      },
+    );
   }
 
   for (const operation of PUBLIC_API_OPERATIONS) {
+    if (operation.path.startsWith("/api/projects/")) continue;
     const registeredMethod = operation.path === "/api/mcp" ? "ALL" : operation.method;
     if (!routeKeys.has(routeKey(registeredMethod, operation.path))) {
       throw new Error(
@@ -872,6 +933,533 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
         },
       },
       schemas: {
+        FunnelContextValue: {
+          type: "object",
+          additionalProperties: false,
+          required: ["value", "visitors"],
+          properties: {
+            value: { type: "string" },
+            visitors: { type: "integer", minimum: 0 },
+          },
+        },
+        FunnelContextBreakdowns: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            selectedDates: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelContextValue" },
+            },
+            availabilityOutcomes: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelContextValue" },
+            },
+            offeredTimes: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelContextValue" },
+            },
+            selectedTimes: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelContextValue" },
+            },
+            validationFailures: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelContextValue" },
+            },
+            submitFailures: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelContextValue" },
+            },
+          },
+        },
+        FunnelStageReport: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "key",
+            "label",
+            "kind",
+            "order",
+            "visitors",
+            "continued",
+            "continuationRate",
+            "dropOffs",
+            "dropOffRate",
+          ],
+          properties: {
+            key: { type: "string" },
+            label: {
+              type: "string",
+              description:
+                "Dashboard-only stage label. It is not sent to external analytics providers.",
+            },
+            kind: {
+              type: "string",
+              enum: [
+                "page",
+                "date",
+                "availability",
+                "time",
+                "details",
+                "statement",
+                "question",
+                "group",
+                "step",
+                "submit",
+                "completion",
+              ],
+            },
+            order: { type: "integer", minimum: 0 },
+            visitors: { type: "integer", minimum: 0 },
+            continued: { type: "integer", minimum: 0 },
+            continuationRate: { type: "number", minimum: 0, maximum: 100 },
+            dropOffs: { type: "integer", minimum: 0 },
+            dropOffRate: { type: "number", minimum: 0, maximum: 100 },
+            skipped: { type: "integer", minimum: 0 },
+            contextBreakdowns: {
+              $ref: "#/components/schemas/FunnelContextBreakdowns",
+            },
+          },
+        },
+        DetailedFunnelReport: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "availableSince",
+            "stages",
+            "bySource",
+            "byDevice",
+            "failures",
+          ],
+          properties: {
+            availableSince: {
+              anyOf: [
+                { type: "string", format: "date-time" },
+                { type: "null" },
+              ],
+              description:
+                "First detailed event in the selected report. Earlier high-level history may exist.",
+            },
+            stages: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FunnelStageReport" },
+            },
+            bySource: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["source", "visitors"],
+                properties: {
+                  source: {
+                    type: "string",
+                    enum: ["direct", "widget"],
+                  },
+                  visitors: { type: "integer", minimum: 0 },
+                },
+              },
+            },
+            byDevice: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["deviceType", "visitors"],
+                properties: {
+                  deviceType: {
+                    type: "string",
+                    enum: ["mobile", "tablet", "desktop"],
+                  },
+                  visitors: { type: "integer", minimum: 0 },
+                },
+              },
+            },
+            failures: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["category", "count"],
+                properties: {
+                  category: {
+                    type: "string",
+                    enum: [
+                      "validation",
+                      "slot_unavailable",
+                      "rate_limited",
+                      "network",
+                      "server",
+                      "unknown",
+                    ],
+                  },
+                  count: { type: "integer", minimum: 0 },
+                },
+              },
+            },
+          },
+        },
+        AnalyticsOverviewResponse: {
+          type: "object",
+          required: ["totals", "timeSeries", "topSources", "topCountries"],
+          properties: {
+            totals: {
+              type: "object",
+              required: [
+                "views",
+                "conversions",
+                "conversionRate",
+                "uniqueSources",
+              ],
+              properties: {
+                views: { type: "integer", minimum: 0 },
+                conversions: { type: "integer", minimum: 0 },
+                conversionRate: {
+                  type: "number",
+                  minimum: 0,
+                  maximum: 100,
+                },
+                uniqueSources: { type: "integer", minimum: 0 },
+              },
+            },
+            timeSeries: { type: "array", items: { type: "object" } },
+            topSources: { type: "array", items: { type: "object" } },
+            topCountries: { type: "array", items: { type: "object" } },
+          },
+        },
+        BookingAnalyticsResponse: {
+          allOf: [
+            { $ref: "#/components/schemas/DetailedFunnelReport" },
+            {
+              type: "object",
+              required: ["funnel", "byEventType", "timeSeries"],
+              properties: {
+                funnel: {
+                  type: "object",
+                  required: [
+                    "pageViews",
+                    "bookingsCreated",
+                    "conversionRate",
+                  ],
+                  properties: {
+                    pageViews: { type: "integer", minimum: 0 },
+                    bookingsCreated: { type: "integer", minimum: 0 },
+                    conversionRate: {
+                      type: "number",
+                      minimum: 0,
+                      maximum: 100,
+                    },
+                  },
+                },
+                byEventType: { type: "array", items: { type: "object" } },
+                timeSeries: { type: "array", items: { type: "object" } },
+              },
+            },
+          ],
+        },
+        FormAnalyticsResponse: {
+          allOf: [
+            { $ref: "#/components/schemas/DetailedFunnelReport" },
+            {
+              type: "object",
+              required: ["funnel", "byForm", "timeSeries"],
+              properties: {
+                funnel: {
+                  type: "object",
+                  required: [
+                    "views",
+                    "started",
+                    "completed",
+                    "startRate",
+                    "completionRate",
+                  ],
+                  properties: {
+                    views: { type: "integer", minimum: 0 },
+                    started: { type: "integer", minimum: 0 },
+                    completed: { type: "integer", minimum: 0 },
+                    startRate: {
+                      type: "number",
+                      minimum: 0,
+                      maximum: 100,
+                    },
+                    completionRate: {
+                      type: "number",
+                      minimum: 0,
+                      maximum: 100,
+                    },
+                  },
+                },
+                byForm: { type: "array", items: { type: "object" } },
+                timeSeries: { type: "array", items: { type: "object" } },
+              },
+            },
+          ],
+        },
+        AnalyticsFiltersResponse: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "utmSources",
+            "utmMediums",
+            "utmCampaigns",
+            "sources",
+            "deviceTypes",
+            "eventTypes",
+            "forms",
+          ],
+          properties: {
+            utmSources: { type: "array", items: { type: "string" } },
+            utmMediums: { type: "array", items: { type: "string" } },
+            utmCampaigns: { type: "array", items: { type: "string" } },
+            sources: {
+              type: "array",
+              items: { type: "string", enum: ["direct", "widget"] },
+            },
+            deviceTypes: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["mobile", "tablet", "desktop"],
+              },
+            },
+            eventTypes: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AnalyticsResource" },
+            },
+            forms: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AnalyticsResource" },
+            },
+          },
+        },
+        AnalyticsResource: {
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "slug", "name"],
+          properties: {
+            id: { type: "string" },
+            slug: { type: "string" },
+            name: { type: "string" },
+          },
+        },
+        Ga4AnalyticsIntegration: {
+          type: "object",
+          additionalProperties: false,
+          required: ["provider", "enabled"],
+          properties: {
+            provider: { type: "string", const: "ga4" },
+            enabled: { type: "boolean" },
+            measurementId: {
+              type: "string",
+              pattern: "^G-[A-Z0-9]{4,20}$",
+            },
+          },
+        },
+        MetaPixelAnalyticsIntegration: {
+          type: "object",
+          additionalProperties: false,
+          required: ["provider", "enabled"],
+          properties: {
+            provider: { type: "string", const: "meta_pixel" },
+            enabled: { type: "boolean" },
+            pixelId: { type: "string", pattern: "^\\d{5,30}$" },
+          },
+        },
+        PostHogAnalyticsIntegration: {
+          type: "object",
+          additionalProperties: false,
+          required: ["provider", "enabled", "host"],
+          properties: {
+            provider: { type: "string", const: "posthog" },
+            enabled: { type: "boolean" },
+            projectKey: {
+              type: "string",
+              pattern: "^phc_[A-Za-z0-9_-]{10,200}$",
+            },
+            host: { type: "string", enum: ["us", "eu"] },
+          },
+        },
+        AnalyticsIntegration: {
+          oneOf: [
+            { $ref: "#/components/schemas/Ga4AnalyticsIntegration" },
+            { $ref: "#/components/schemas/MetaPixelAnalyticsIntegration" },
+            { $ref: "#/components/schemas/PostHogAnalyticsIntegration" },
+          ],
+        },
+        AnalyticsIntegrationsResponse: {
+          type: "object",
+          additionalProperties: false,
+          required: ["integrations"],
+          properties: {
+            integrations: {
+              type: "array",
+              items: { $ref: "#/components/schemas/AnalyticsIntegration" },
+            },
+          },
+        },
+        ConfigureAnalyticsIntegrationRequest: {
+          oneOf: [
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["enabled"],
+              properties: {
+                enabled: { type: "boolean" },
+                measurementId: {
+                  type: "string",
+                  pattern: "^G-[A-Z0-9]{4,20}$",
+                },
+              },
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["enabled"],
+              properties: {
+                enabled: { type: "boolean" },
+                pixelId: { type: "string", pattern: "^\\d{5,30}$" },
+              },
+            },
+            {
+              type: "object",
+              additionalProperties: false,
+              required: ["enabled"],
+              properties: {
+                enabled: { type: "boolean" },
+                projectKey: {
+                  type: "string",
+                  pattern: "^phc_[A-Za-z0-9_-]{10,200}$",
+                },
+                host: { type: "string", enum: ["us", "eu"] },
+              },
+            },
+          ],
+        },
+        AnalyticsIntegrationResponse: {
+          type: "object",
+          additionalProperties: false,
+          required: ["integration"],
+          properties: {
+            integration: {
+              $ref: "#/components/schemas/AnalyticsIntegration",
+            },
+          },
+        },
+        AnonymousAnalyticsEventContext: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            selectedDate: { type: "string", format: "date" },
+            weekday: { type: "string" },
+            viewerTimezone: { type: "string" },
+            offeredSlotStarts: {
+              type: "array",
+              maxItems: 48,
+              items: {
+                type: "string",
+                pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+              },
+            },
+            earliestSlot: { type: "string" },
+            latestSlot: { type: "string" },
+            availabilityOutcome: {
+              type: "string",
+              enum: ["available", "none", "error"],
+            },
+            selectedTime: { type: "string" },
+            fieldType: { type: "string" },
+            required: { type: "boolean" },
+            stageOutcome: {
+              type: "string",
+              enum: [
+                "viewed",
+                "completed",
+                "skipped",
+                "validation_failed",
+              ],
+            },
+            failureCategory: {
+              type: "string",
+              enum: [
+                "validation",
+                "slot_unavailable",
+                "rate_limited",
+                "network",
+                "server",
+                "unknown",
+              ],
+            },
+          },
+        },
+        AnonymousAnalyticsEvent: {
+          type: "object",
+          additionalProperties: false,
+          description:
+            "PII-free funnel event. Names, emails, answers, notes, filenames, raw errors, and IP addresses are not accepted.",
+          required: ["event", "projectSlug"],
+          properties: {
+            event: {
+              type: "string",
+              enum: [
+                "page_view",
+                "booking_created",
+                "form_view",
+                "form_started",
+                "form_completed",
+                "booking_date_selected",
+                "booking_availability_shown",
+                "booking_time_selected",
+                "booking_details_viewed",
+                "booking_submit_attempted",
+                "booking_submit_failed",
+                "form_stage_viewed",
+                "form_stage_completed",
+                "form_stage_skipped",
+                "form_stage_validation_failed",
+                "form_submit_attempted",
+                "form_submit_failed",
+              ],
+            },
+            projectSlug: { type: "string" },
+            resourceSlug: { type: "string" },
+            journeyId: { type: "string", format: "uuid" },
+            funnelType: { type: "string", enum: ["booking", "form"] },
+            stageKey: { type: "string" },
+            stageLabel: { type: "string" },
+            stageKind: { type: "string" },
+            stageOrder: { type: "integer", minimum: 0 },
+            primaryValue: { type: "string" },
+            deviceType: {
+              type: "string",
+              enum: ["mobile", "tablet", "desktop"],
+            },
+            source: { type: "string", enum: ["direct", "widget"] },
+            slotCount: { type: "integer", minimum: 0 },
+            daysAhead: { type: "integer" },
+            durationMinutes: { type: "integer", minimum: 1 },
+            context: {
+              $ref: "#/components/schemas/AnonymousAnalyticsEventContext",
+            },
+            utmSource: { type: "string" },
+            utmMedium: { type: "string" },
+            utmCampaign: { type: "string" },
+            utmTerm: { type: "string" },
+            utmContent: { type: "string" },
+            referrer: { type: "string" },
+          },
+        },
+        AnonymousAnalyticsEventsRequest: {
+          oneOf: [
+            { $ref: "#/components/schemas/AnonymousAnalyticsEvent" },
+            {
+              type: "array",
+              minItems: 1,
+              maxItems: 20,
+              items: {
+                $ref: "#/components/schemas/AnonymousAnalyticsEvent",
+              },
+            },
+          ],
+        },
         ContactTag: {
           type: "object",
           required: ["id", "name", "color"],
@@ -1215,41 +1803,68 @@ export function generateApiArtifacts(source: string): GeneratedApiArtifacts {
   const openApi = buildOpenApi(routes);
   const openApiJson = `${JSON.stringify(openApi, null, 2)}\n`;
   const auditMarkdown = buildAuditMarkdown(auditRows);
+  const llmsText = buildLlmsText();
 
-  return { openApi, openApiJson, auditMarkdown, auditRows, routes };
+  return {
+    openApi,
+    openApiJson,
+    auditMarkdown,
+    llmsText,
+    auditRows,
+    routes,
+  };
 }
 
-async function checkArtifact(path: string, expected: string): Promise<boolean> {
-  const file = Bun.file(path);
-  if (!(await file.exists())) {
-    console.error(`${path} is missing. Run bun run docs:generate.`);
-    return false;
+export function generatedArtifactFiles(
+  artifacts: GeneratedApiArtifacts,
+): Record<string, string> {
+  return {
+    "public/openapi.json": artifacts.openApiJson,
+    "docs/api-endpoint-audit.md": artifacts.auditMarkdown,
+    "public/llms.txt": artifacts.llmsText,
+  };
+}
+
+export async function findStaleGeneratedArtifacts(
+  artifacts: GeneratedApiArtifacts,
+  readFile: (path: string) => Promise<string | null> = async function readFile(
+    path,
+  ) {
+    const file = Bun.file(path);
+    return (await file.exists()) ? file.text() : null;
+  },
+): Promise<string[]> {
+  const stale: string[] = [];
+  for (const [path, expected] of Object.entries(
+    generatedArtifactFiles(artifacts),
+  )) {
+    if ((await readFile(path)) !== expected) stale.push(path);
   }
-  if ((await file.text()) !== expected) {
-    console.error(`${path} is stale. Run bun run docs:generate.`);
-    return false;
-  }
-  return true;
+  return stale;
 }
 
 async function main(): Promise<void> {
   const source = await Bun.file("worker/index.ts").text();
-  const { openApiJson, auditMarkdown } = generateApiArtifacts(source);
+  const artifacts = generateApiArtifacts(source);
+  const files = generatedArtifactFiles(artifacts);
 
   if (process.argv.includes("--check")) {
-    const results = await Promise.all([
-      checkArtifact("public/openapi.json", openApiJson),
-      checkArtifact("docs/api-endpoint-audit.md", auditMarkdown),
-    ]);
-    if (results.some((result) => !result)) process.exitCode = 1;
+    const stale = await findStaleGeneratedArtifacts(artifacts);
+    for (const path of stale) {
+      console.error(`${path} is stale or missing. Run bun run docs:generate.`);
+    }
+    if (stale.length > 0) process.exitCode = 1;
     return;
   }
 
-  await Promise.all([
-    Bun.write("public/openapi.json", openApiJson),
-    Bun.write("docs/api-endpoint-audit.md", auditMarkdown),
-  ]);
-  console.log("Generated public/openapi.json and docs/api-endpoint-audit.md");
+  await Promise.all(
+    Object.entries(files).map(function writeArtifact([path, contents]) {
+      return Bun.write(path, contents);
+    }),
+  );
+  console.log(
+    "Generated public/openapi.json, docs/api-endpoint-audit.md, and public/llms.txt",
+  );
 }
 
 if (import.meta.main) {

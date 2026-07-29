@@ -1,4 +1,28 @@
-# LinkyCal
+import {
+  MCP_TOOL_COUNT,
+  MCP_TOOL_GROUPS,
+  PUBLIC_API_OPERATIONS,
+} from "./api-docs-catalog";
+
+function mcpInventory(): string {
+  return MCP_TOOL_GROUPS.map(function renderGroup(group) {
+    return `- ${group.domain}: ${group.tools.join(", ")} — ${group.notes}`;
+  }).join("\n");
+}
+
+function analyticsRestInventory(): string {
+  return PUBLIC_API_OPERATIONS
+    .filter(function isAnalyticsOperation(operation) {
+      return operation.path.includes("/analytics/");
+    })
+    .map(function renderOperation(operation) {
+      return `- ${operation.method} ${operation.path} — ${operation.summary}. ${operation.notes}`;
+    })
+    .join("\n");
+}
+
+export function buildLlmsText(): string {
+  return `# LinkyCal
 
 > Headless forms, scheduling, contacts, workflows, aggregate funnel analytics, and embeddable widgets. LinkyCal is API-first and includes a project-scoped MCP server an AI agent can drive.
 
@@ -36,12 +60,7 @@ Project creation/deletion, membership, API-key management, teams, billing, onboa
 
 Detailed reports and provider configuration require Pro or Business. The Worker enforces this entitlement for dashboard sessions, API keys, MCP, provider mutation, and provider publication.
 
-- GET /api/projects/:projectId/analytics/filters — List analytics filters and project resources. Pro or Business required. Returns project-owned event types/forms plus observed UTM, source, and device values.
-- GET /api/projects/:projectId/analytics/overview — Get analytics overview. Pro or Business required. Returns aggregate traffic and conversion totals without visitor histories.
-- GET /api/projects/:projectId/analytics/bookings — Get booking funnel analytics. Pro or Business required. Select an event type for unique-journey stage continuation, drop-offs, dates, availability, offered times, selected times, and safe failures.
-- GET /api/projects/:projectId/analytics/forms — Get form funnel analytics. Pro or Business required. Select a form for unique-journey question/step continuation, skips, drop-offs, and safe validation failures.
-- GET /api/projects/:projectId/analytics/integrations — List analytics integrations. Pro or Business required. Returns normalized public GA4, Meta Pixel, and PostHog configuration.
-- PUT /api/projects/:projectId/analytics/integrations/:provider — Configure an analytics integration. Pro or Business required. Provider is ga4, meta_pixel, or posthog. Raw scripts, script URLs, secrets, and arbitrary PostHog hosts are rejected.
+${analyticsRestInventory()}
 
 Report filters:
 - period: 7d, 30d, 90d, or custom.
@@ -74,15 +93,8 @@ Auth: project API key as a Bearer token
 
 Every tool is hard-scoped to the API key project, so no tool accepts projectId.
 
-The server exposes 40 tools:
-- Bookings: list_bookings, get_booking, get_available_slots, create_booking, cancel_booking, confirm_booking, decline_booking — Read and manage bookings and public availability.
-- Event Types: list_event_types, get_event_type, create_event_type, update_event_type — Define bookable meeting types.
-- Schedules: list_schedules, get_schedule — Inspect the working hours behind event types.
-- Contacts: list_contacts, get_contact, create_contact, update_contact, set_contact_next_action, complete_contact_next_action, delete_contact, get_contact_activity — Manage CRM records and their activity.
-- Tags: list_contact_tags, get_contact_tag, create_contact_tag, update_contact_tag, delete_contact_tag, add_tag_to_contact, remove_tag_from_contact — Manage tags and contact assignments.
-- Forms: list_forms, get_form, create_form, update_form, list_form_responses — Build forms and inspect aggregate submissions.
-- Workflows: list_workflows, get_workflow — Inspect workflows; writes remain REST/dashboard-only.
-- Analytics: get_analytics_overview, get_booking_funnel_analytics, get_form_funnel_analytics, list_analytics_integrations, configure_analytics_integration — Read aggregate funnels and configure validated GA4, Meta Pixel, and PostHog public identifiers.
+The server exposes ${MCP_TOOL_COUNT} tools:
+${mcpInventory()}
 
 Analytics MCP details:
 - get_analytics_overview: common period, custom dates, UTM, source, and device inputs; returns aggregate totals/time series.
@@ -150,3 +162,5 @@ Triggers include form and booking lifecycle, contacts, tags, schedules, manual, 
 ## Errors
 
 Errors use JSON with error and an optional stable code. Common statuses: 400 validation or ambiguous credentials, 401 invalid key, 403 project/plan denial, 404 not found, 429 rate limited, and 500 server error.
+`;
+}
