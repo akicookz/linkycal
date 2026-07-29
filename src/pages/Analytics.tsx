@@ -3,11 +3,18 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  CalendarDays,
+  CalendarRange,
+  CircleAlert,
+  Clock3,
   Eye,
   MousePointerClick,
   Percent,
   Globe,
   Loader,
+  MonitorSmartphone,
+  Route,
+  Search,
   TrendingUp,
   Sparkles,
 } from "lucide-react";
@@ -21,6 +28,11 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
+import {
+  AnalyticsBreakdownCard,
+  type AnalyticsBreakdownItem,
+} from "@/components/analytics/AnalyticsBreakdownCard";
+import { DetailedFunnel } from "@/components/analytics/DetailedFunnel";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -34,7 +46,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
-import { cn } from "@/lib/utils";
+import type {
+  DetailedFunnelReport,
+  FunnelContextValue,
+  FunnelStageReport,
+} from "../../shared/funnel-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -45,13 +61,13 @@ interface OverviewData {
   topCountries: Array<{ country: string; views: number; conversions: number }>;
 }
 
-interface BookingsData {
+interface BookingsData extends DetailedFunnelReport {
   funnel: { pageViews: number; bookingsCreated: number; conversionRate: number };
   byEventType: Array<{ slug: string; views: number; bookings: number; rate: number }>;
   timeSeries: Array<{ date: string; views: number; bookings: number }>;
 }
 
-interface FormsData {
+interface FormsData extends DetailedFunnelReport {
   funnel: { views: number; started: number; completed: number; startRate: number; completionRate: number };
   byForm: Array<{ slug: string; views: number; started: number; completed: number; completionRate: number }>;
   timeSeries: Array<{ date: string; views: number; started: number; completed: number }>;
@@ -61,6 +77,10 @@ interface FilterOptions {
   utmSources: string[];
   utmMediums: string[];
   utmCampaigns: string[];
+  sources: string[];
+  deviceTypes: string[];
+  eventTypes: Array<{ id: string; slug: string; name: string }>;
+  forms: Array<{ id: string; slug: string; name: string }>;
 }
 
 interface ProjectEntitlements {
@@ -69,7 +89,8 @@ interface ProjectEntitlements {
   };
 }
 
-type Period = "7d" | "30d" | "90d";
+type Period = "7d" | "30d" | "90d" | "custom";
+type AnalyticsTab = "overview" | "bookings" | "forms";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -88,6 +109,30 @@ function buildQueryString(params: Record<string, string | undefined>): string {
   const entries = Object.entries(params).filter(([, v]) => v && v !== "all");
   if (entries.length === 0) return "";
   return "?" + entries.map(([k, v]) => `${k}=${encodeURIComponent(v!)}`).join("&");
+}
+
+function titleCaseAnalyticsValue(value: string): string {
+  if (value === "none") return "No availability";
+  const readable = value.replace(/_/g, " ");
+  return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
+function contextItems(
+  stages: FunnelStageReport[],
+  key: keyof NonNullable<FunnelStageReport["contextBreakdowns"]>,
+): AnalyticsBreakdownItem[] {
+  const values = new Map<string, number>();
+  for (const stage of stages) {
+    const breakdown = stage.contextBreakdowns?.[key] as
+      | FunnelContextValue[]
+      | undefined;
+    for (const item of breakdown ?? []) {
+      values.set(item.value, (values.get(item.value) ?? 0) + item.visitors);
+    }
+  }
+  return [...values.entries()].map(function toItem([label, value]) {
+    return { label: titleCaseAnalyticsValue(label), value };
+  });
 }
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
@@ -145,7 +190,7 @@ function FunnelStep({
       </div>
       <div className="h-3 rounded-full bg-muted overflow-hidden">
         <div
-          className="h-full rounded-full transition-all duration-500"
+          className="h-full rounded-full transition-[width] duration-500"
           style={{ width: `${Math.max(pct, 1)}%`, backgroundColor: color }}
         />
       </div>
@@ -296,6 +341,130 @@ function BreakdownTable({
   );
 }
 
+// ─── Detailed Funnel Report ─────────────────────────────────────────────────
+
+function DetailedReportSection({
+  data,
+  resourceSelected,
+  resourceLabel,
+}: {
+  data: DetailedFunnelReport;
+  resourceSelected: boolean;
+  resourceLabel: string;
+}) {
+  if (!resourceSelected) {
+    return (
+      <Card className="rounded-[20px]">
+        <CardContent className="flex flex-col items-center py-12 text-center">
+          <div className="mb-4 flex size-12 items-center justify-center rounded-[16px] bg-primary/10">
+            <Route className="size-5 text-primary" />
+          </div>
+          <h3 className="text-balance text-sm font-semibold">
+            Select a {resourceLabel} for exact step analytics
+          </h3>
+          <p className="mt-2 max-w-md text-pretty text-sm text-muted-foreground">
+            The all-resources view keeps the high-level totals. Choose one{" "}
+            {resourceLabel} to inspect question, availability, and submit
+            drop-offs.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (data.stages.length === 0) {
+    return (
+      <Card className="rounded-[20px]">
+        <CardContent className="flex flex-col items-center py-12 text-center">
+          <div className="mb-4 flex size-12 items-center justify-center rounded-[16px] bg-muted">
+            <Search className="size-5 text-muted-foreground" />
+          </div>
+          <h3 className="text-balance text-sm font-semibold">
+            No detailed journeys in this period
+          </h3>
+          <p className="mt-2 max-w-md text-pretty text-sm text-muted-foreground">
+            Try a wider date range or remove a traffic filter.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const selectedDates = contextItems(data.stages, "selectedDates");
+  const availabilityOutcomes = contextItems(
+    data.stages,
+    "availabilityOutcomes",
+  );
+  const offeredTimes = contextItems(data.stages, "offeredTimes");
+  const selectedTimes = contextItems(data.stages, "selectedTimes");
+  const validationFailures = contextItems(
+    data.stages,
+    "validationFailures",
+  );
+  const submitFailures = contextItems(data.stages, "submitFailures");
+
+  return (
+    <div className="space-y-6">
+      <DetailedFunnel
+        availableSince={data.availableSince}
+        stages={data.stages}
+      />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <AnalyticsBreakdownCard
+          title="Selected dates"
+          icon={CalendarDays}
+          items={selectedDates}
+        />
+        <AnalyticsBreakdownCard
+          title="Availability outcomes"
+          icon={CalendarRange}
+          items={availabilityOutcomes}
+        />
+        <AnalyticsBreakdownCard
+          title="Available times shown"
+          icon={Clock3}
+          items={offeredTimes}
+        />
+        <AnalyticsBreakdownCard
+          title="Selected times"
+          icon={MousePointerClick}
+          items={selectedTimes}
+        />
+        <AnalyticsBreakdownCard
+          title="Validation failures"
+          icon={CircleAlert}
+          items={validationFailures}
+        />
+        <AnalyticsBreakdownCard
+          title="Submit failures"
+          icon={CircleAlert}
+          items={submitFailures}
+        />
+        <AnalyticsBreakdownCard
+          title="Journey sources"
+          icon={Globe}
+          items={data.bySource.map(function sourceItem(item) {
+            return {
+              label: titleCaseAnalyticsValue(item.source),
+              value: item.visitors,
+            };
+          })}
+        />
+        <AnalyticsBreakdownCard
+          title="Visitor devices"
+          icon={MonitorSmartphone}
+          items={data.byDevice.map(function deviceItem(item) {
+            return {
+              label: titleCaseAnalyticsValue(item.deviceType),
+              value: item.visitors,
+            };
+          })}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ─── Overview Tab ────────────────────────────────────────────────────────────
 
 function OverviewTab({ projectId, period, filters }: { projectId: string; period: Period; filters: Record<string, string | undefined> }) {
@@ -369,7 +538,17 @@ function OverviewTab({ projectId, period, filters }: { projectId: string; period
 
 // ─── Bookings Tab ────────────────────────────────────────────────────────────
 
-function BookingsTab({ projectId, period, filters }: { projectId: string; period: Period; filters: Record<string, string | undefined> }) {
+function BookingsTab({
+  projectId,
+  period,
+  filters,
+  resourceSelected,
+}: {
+  projectId: string;
+  period: Period;
+  filters: Record<string, string | undefined>;
+  resourceSelected: boolean;
+}) {
   const qs = buildQueryString({ period, ...filters });
   const { data, isLoading } = useQuery<BookingsData>({
     queryKey: ["analytics-bookings", projectId, period, filters],
@@ -390,6 +569,12 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
         <StatCard label="Bookings Created" value={data.funnel.bookingsCreated} icon={MousePointerClick} />
         <StatCard label="Conversion Rate" value={data.funnel.conversionRate.toFixed(1)} icon={TrendingUp} suffix="%" />
       </div>
+
+      <DetailedReportSection
+        data={data}
+        resourceSelected={resourceSelected}
+        resourceLabel="event type"
+      />
 
       <Card className="rounded-[20px]">
         <CardContent>
@@ -434,7 +619,17 @@ function BookingsTab({ projectId, period, filters }: { projectId: string; period
 
 // ─── Forms Tab ───────────────────────────────────────────────────────────────
 
-function FormsTab({ projectId, period, filters }: { projectId: string; period: Period; filters: Record<string, string | undefined> }) {
+function FormsTab({
+  projectId,
+  period,
+  filters,
+  resourceSelected,
+}: {
+  projectId: string;
+  period: Period;
+  filters: Record<string, string | undefined>;
+  resourceSelected: boolean;
+}) {
   const qs = buildQueryString({ period, ...filters });
   const { data, isLoading } = useQuery<FormsData>({
     queryKey: ["analytics-forms", projectId, period, filters],
@@ -455,6 +650,12 @@ function FormsTab({ projectId, period, filters }: { projectId: string; period: P
         <StatCard label="Started" value={data.funnel.started} icon={MousePointerClick} />
         <StatCard label="Completed" value={data.funnel.completed} icon={TrendingUp} />
       </div>
+
+      <DetailedReportSection
+        data={data}
+        resourceSelected={resourceSelected}
+        resourceLabel="form"
+      />
 
       <Card className="rounded-[20px]">
         <CardContent>
@@ -557,7 +758,14 @@ function AnalyticsSkeleton() {
 
 export default function Analytics() {
   const { projectId } = useParams<{ projectId: string }>();
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>("overview");
   const [period, setPeriod] = useState<Period>("30d");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [eventTypeSlug, setEventTypeSlug] = useState<string | undefined>();
+  const [formSlug, setFormSlug] = useState<string | undefined>();
+  const [trafficSource, setTrafficSource] = useState<string | undefined>();
+  const [deviceType, setDeviceType] = useState<string | undefined>();
   const [utmSource, setUtmSource] = useState<string | undefined>();
   const [utmMedium, setUtmMedium] = useState<string | undefined>();
   const [utmCampaign, setUtmCampaign] = useState<string | undefined>();
@@ -605,49 +813,195 @@ export default function Analytics() {
     );
   }
 
-  const filters = { utmSource, utmMedium, utmCampaign };
+  const filters = {
+    utmSource,
+    utmMedium,
+    utmCampaign,
+    source: trafficSource,
+    deviceType,
+    start: period === "custom" ? startDate || undefined : undefined,
+    end: period === "custom" ? endDate || undefined : undefined,
+  };
+  const bookingFilters = {
+    ...filters,
+    resourceSlug: eventTypeSlug,
+  };
+  const formFilters = {
+    ...filters,
+    resourceSlug: formSlug,
+  };
 
   return (
     <>
       <PageHeader title="Analytics" description="Track performance across your bookings and forms" />
 
-
       {/* Tabs */}
-      <Tabs defaultValue="overview" >
-        <div className="flex items-center justify-between">
-
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as AnalyticsTab)}
+      >
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="bookings">Bookings</TabsTrigger>
             <TabsTrigger value="forms">Forms</TabsTrigger>
           </TabsList>
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Period selector */}
-            <div className="flex items-center rounded-[12px] bg-muted p-1 gap-0.5">
-              {(["7d", "30d", "90d"] as const).map((p) => (
-                <button
-                  key={p}
-                  onClick={() => setPeriod(p)}
-                  className={cn(
-                    "px-3 py-1.5 rounded-[10px] text-sm font-medium transition-colors",
-                    period === p
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {p === "7d" ? "7 days" : p === "30d" ? "30 days" : "90 days"}
-                </button>
-              ))}
-            </div>
 
-            {/* UTM Filters */}
-            {filterOptions && filterOptions.utmSources.length > 0 && (
-              <Select value={utmSource ?? "all"} onValueChange={(v) => setUtmSource(v === "all" ? undefined : v)}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <SelectValue placeholder="Source" />
+          <div className="flex flex-wrap items-center gap-2">
+            {activeTab === "bookings" && filterOptions && (
+              <Select
+                value={eventTypeSlug ?? "all"}
+                onValueChange={(value) =>
+                  setEventTypeSlug(value === "all" ? undefined : value)
+                }
+              >
+                <SelectTrigger
+                  aria-label="Event type"
+                  className="min-h-10 w-[180px]"
+                >
+                  <SelectValue placeholder="Event type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All sources</SelectItem>
+                  <SelectItem value="all">All event types</SelectItem>
+                  {filterOptions.eventTypes.map(function eventTypeOption(option) {
+                    return (
+                      <SelectItem key={option.id} value={option.slug}>
+                        {option.name}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
+
+            {activeTab === "forms" && filterOptions && (
+              <Select
+                value={formSlug ?? "all"}
+                onValueChange={(value) =>
+                  setFormSlug(value === "all" ? undefined : value)
+                }
+              >
+                <SelectTrigger
+                  aria-label="Form"
+                  className="min-h-10 w-[180px]"
+                >
+                  <SelectValue placeholder="Form" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All forms</SelectItem>
+                  {filterOptions.forms.map(function formOption(option) {
+                    return (
+                      <SelectItem key={option.id} value={option.slug}>
+                        {option.name}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
+
+            <Select
+              value={period}
+              onValueChange={(value) => setPeriod(value as Period)}
+            >
+              <SelectTrigger aria-label="Period" className="min-h-10 w-[155px]">
+                <span className="flex items-center gap-2">
+                  <CalendarRange className="size-4 text-muted-foreground" />
+                  <SelectValue />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="90d">Last 90 days</SelectItem>
+                <SelectItem value="custom">Custom dates</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {period === "custom" && (
+              <>
+                <label className="sr-only" htmlFor="analytics-start-date">
+                  Start date
+                </label>
+                <input
+                  id="analytics-start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  className="min-h-10 rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                />
+                <label className="sr-only" htmlFor="analytics-end-date">
+                  End date
+                </label>
+                <input
+                  id="analytics-end-date"
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  className="min-h-10 rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
+                />
+              </>
+            )}
+
+            {filterOptions && filterOptions.sources.length > 0 && (
+              <Select
+                value={trafficSource ?? "all"}
+                onValueChange={(value) =>
+                  setTrafficSource(value === "all" ? undefined : value)
+                }
+              >
+                <SelectTrigger
+                  aria-label="Traffic source"
+                  className="min-h-10 w-[160px]"
+                >
+                  <SelectValue placeholder="Traffic source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All traffic</SelectItem>
+                  {filterOptions.sources.map(function sourceOption(source) {
+                    return (
+                      <SelectItem key={source} value={source}>
+                        {titleCaseAnalyticsValue(source)}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
+
+            {filterOptions && filterOptions.deviceTypes.length > 0 && (
+              <Select
+                value={deviceType ?? "all"}
+                onValueChange={(value) =>
+                  setDeviceType(value === "all" ? undefined : value)
+                }
+              >
+                <SelectTrigger
+                  aria-label="Device type"
+                  className="min-h-10 w-[155px]"
+                >
+                  <SelectValue placeholder="Device type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All devices</SelectItem>
+                  {filterOptions.deviceTypes.map(function deviceOption(device) {
+                    return (
+                      <SelectItem key={device} value={device}>
+                        {titleCaseAnalyticsValue(device)}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
+
+            {filterOptions && filterOptions.utmSources.length > 0 && (
+              <Select value={utmSource ?? "all"} onValueChange={(v) => setUtmSource(v === "all" ? undefined : v)}>
+                <SelectTrigger aria-label="UTM source" className="min-h-10 w-[160px]">
+                  <SelectValue placeholder="UTM source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All UTM sources</SelectItem>
                   {filterOptions.utmSources.map((s) => (
                     <SelectItem key={s} value={s}>{s}</SelectItem>
                   ))}
@@ -657,8 +1011,8 @@ export default function Analytics() {
 
             {filterOptions && filterOptions.utmMediums.length > 0 && (
               <Select value={utmMedium ?? "all"} onValueChange={(v) => setUtmMedium(v === "all" ? undefined : v)}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <SelectValue placeholder="Medium" />
+                <SelectTrigger aria-label="UTM medium" className="min-h-10 w-[160px]">
+                  <SelectValue placeholder="UTM medium" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All mediums</SelectItem>
@@ -671,8 +1025,8 @@ export default function Analytics() {
 
             {filterOptions && filterOptions.utmCampaigns.length > 0 && (
               <Select value={utmCampaign ?? "all"} onValueChange={(v) => setUtmCampaign(v === "all" ? undefined : v)}>
-                <SelectTrigger className="w-[160px] h-9">
-                  <SelectValue placeholder="Campaign" />
+                <SelectTrigger aria-label="UTM campaign" className="min-h-10 w-[160px]">
+                  <SelectValue placeholder="UTM campaign" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All campaigns</SelectItem>
@@ -682,7 +1036,7 @@ export default function Analytics() {
                 </SelectContent>
               </Select>
             )}
-          </div >
+          </div>
         </div>
 
         <TabsContent value="overview" className="mt-6">
@@ -690,13 +1044,23 @@ export default function Analytics() {
         </TabsContent>
 
         <TabsContent value="bookings" className="mt-6">
-          <BookingsTab projectId={projectId!} period={period} filters={filters} />
+          <BookingsTab
+            projectId={projectId!}
+            period={period}
+            filters={bookingFilters}
+            resourceSelected={!!eventTypeSlug}
+          />
         </TabsContent>
 
         <TabsContent value="forms" className="mt-6">
-          <FormsTab projectId={projectId!} period={period} filters={filters} />
+          <FormsTab
+            projectId={projectId!}
+            period={period}
+            filters={formFilters}
+            resourceSelected={!!formSlug}
+          />
         </TabsContent>
-      </Tabs >
+      </Tabs>
     </>
   );
 }
