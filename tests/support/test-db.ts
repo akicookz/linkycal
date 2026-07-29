@@ -12,9 +12,15 @@ export interface TestDatabase {
   close(): void;
 }
 
-export function createTestDb(): TestDatabase {
-  const sqlite = new Database(":memory:");
-  sqlite.run("PRAGMA foreign_keys = ON");
+export interface MigrationRange {
+  through?: string;
+  after?: string;
+}
+
+export function applyProductionMigrations(
+  sqlite: Database,
+  range: MigrationRange = {},
+): void {
   const migrationsDirectory = join(
     import.meta.dir,
     "../../worker/db/drizzle",
@@ -22,6 +28,11 @@ export function createTestDb(): TestDatabase {
   const migrationFiles = readdirSync(migrationsDirectory)
     .filter(function isSql(file) {
       return file.endsWith(".sql");
+    })
+    .filter(function isInRange(file) {
+      if (range.through && file > range.through) return false;
+      if (range.after && file <= range.after) return false;
+      return true;
     })
     .sort();
 
@@ -32,6 +43,12 @@ export function createTestDb(): TestDatabase {
       if (trimmed) sqlite.run(trimmed);
     }
   }
+}
+
+export function createTestDb(range: MigrationRange = {}): TestDatabase {
+  const sqlite = new Database(":memory:");
+  sqlite.run("PRAGMA foreign_keys = ON");
+  applyProductionMigrations(sqlite, range);
 
   const db = drizzle(sqlite, {
     schema: dbSchema.schema,

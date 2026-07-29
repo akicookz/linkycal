@@ -584,6 +584,14 @@ export default function Contacts() {
     () => savedViews.find((v) => v.id === activeViewId) ?? null,
     [savedViews, activeViewId],
   );
+  const pipelineStepTagIds = useMemo(() => {
+    const ids = new Set(config.pivotTagIds ?? []);
+    for (const view of savedViews) {
+      if (view.type !== "kanban") continue;
+      for (const tagId of view.config?.pivotTagIds ?? []) ids.add(tagId);
+    }
+    return ids;
+  }, [config.pivotTagIds, savedViews]);
 
   const canImportCsv = useMemo(
     () =>
@@ -836,6 +844,9 @@ export default function Contacts() {
           return current.map((item) => (item.id === view.id ? view : item));
         },
       );
+      void queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "contacts"],
+      });
     },
     onError: () => {
       setPipelineSaveError("Couldn’t save the pipeline change. Try again.");
@@ -896,7 +907,6 @@ export default function Contacts() {
     mutationFn: async (vars: {
       contactId: string;
       tagId: string | null;
-      groupTagIds: string[];
       optimisticTag: { id: string; name: string; color: string | null } | null;
     }) => {
       const res = await fetch(
@@ -904,7 +914,7 @@ export default function Contacts() {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tagId: vars.tagId, groupTagIds: vars.groupTagIds }),
+          body: JSON.stringify({ tagId: vars.tagId }),
         },
       );
       if (!res.ok) throw new Error("Failed to move stage");
@@ -915,7 +925,6 @@ export default function Contacts() {
       const previous = queryClient.getQueriesData<ContactsCache>({
         queryKey: ["projects", projectId, "contacts"],
       });
-      const groupSet = new Set(vars.groupTagIds);
       queryClient.setQueriesData<ContactsCache>(
         { queryKey: ["projects", projectId, "contacts"] },
         (old) =>
@@ -923,7 +932,9 @@ export default function Contacts() {
             ...page,
             contacts: page.contacts.map((ct) => {
               if (ct.id !== vars.contactId) return ct;
-              const kept = ct.tags.filter((t) => !groupSet.has(t.id));
+              const kept = ct.tags.filter(
+                (tag) => !pipelineStepTagIds.has(tag.id),
+              );
               return {
                 ...ct,
                 tags: vars.optimisticTag ? [...kept, vars.optimisticTag] : kept,
@@ -1079,17 +1090,12 @@ export default function Contacts() {
   }
 
   function handleStageChange(contactId: string, toColumnId: string) {
-    const groupTagIds =
-      config.pivotTagIds && config.pivotTagIds.length > 0
-        ? config.pivotTagIds
-        : tags.map((t) => t.id);
     const isUntagged = toColumnId === UNTAGGED_COLUMN_ID;
     const tagId = isUntagged ? null : toColumnId;
     const tag = tagId ? tags.find((t) => t.id === tagId) : null;
     stageMutation.mutate({
       contactId,
       tagId,
-      groupTagIds,
       optimisticTag: tag ? { id: tag.id, name: tag.name, color: tag.color } : null,
     });
   }

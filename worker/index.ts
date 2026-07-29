@@ -5724,18 +5724,13 @@ app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
     if (!(await service.contactInProject(projectId, contactId))) {
       return c.json({ error: "Contact not found" }, 404);
     }
-    // Only ever touch tags that belong to this project.
-    const groupTagIds = await tagService.filterProjectTagIds(
-      projectId,
-      data.groupTagIds,
-    );
     if (
       data.tagId &&
       (await tagService.filterProjectTagIds(projectId, [data.tagId])).length === 0
     ) {
       return c.json({ error: "Invalid tag" }, 400);
     }
-    await service.setStage(contactId, data.tagId, groupTagIds);
+    await service.setStage(projectId, contactId, data.tagId);
     return c.json({ success: true });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {

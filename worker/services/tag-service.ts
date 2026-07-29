@@ -28,6 +28,8 @@ interface TagCursor {
   id: string;
 }
 
+const TAG_ID_CHUNK = 90;
+
 export type TagAssignmentResult =
   | { status: "contact_not_found" }
   | { status: "tag_not_found" }
@@ -102,6 +104,30 @@ function normalizeJson(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+function pipelineTagIdsFromConfig(value: unknown): string[] {
+  const normalized = normalizeJson(value);
+  if (
+    !normalized ||
+    typeof normalized !== "object" ||
+    Array.isArray(normalized)
+  ) {
+    return [];
+  }
+  const ids = (normalized as Record<string, unknown>).pivotTagIds;
+  if (!Array.isArray(ids)) return [];
+  return ids.filter(function isTagId(id): id is string {
+    return typeof id === "string" && id.length > 0;
+  });
+}
+
+function chunk<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
 }
 
 function containsTagReference(value: unknown, tagId: string): boolean {
@@ -249,17 +275,43 @@ export class TagService {
 
   async filterProjectTagIds(projectId: string, tagIds: string[]): Promise<string[]> {
     if (tagIds.length === 0) return [];
-    const rows = await this.db
-      .select({ id: dbSchema.tags.id })
-      .from(dbSchema.tags)
+    const valid = new Set<string>();
+    for (const ids of chunk(tagIds, TAG_ID_CHUNK)) {
+      const rows = await this.db
+        .select({ id: dbSchema.tags.id })
+        .from(dbSchema.tags)
+        .where(
+          and(
+            eq(dbSchema.tags.projectId, projectId),
+            inArray(dbSchema.tags.id, ids),
+          ),
+        );
+      for (const row of rows) valid.add(row.id);
+    }
+    return tagIds.filter((id) => valid.has(id));
+  }
+
+  async listPipelineStageTagIds(projectId: string): Promise<string[]> {
+    const views = await this.db
+      .select({ config: dbSchema.contactViews.config })
+      .from(dbSchema.contactViews)
       .where(
         and(
-          eq(dbSchema.tags.projectId, projectId),
-          inArray(dbSchema.tags.id, tagIds),
+          eq(dbSchema.contactViews.projectId, projectId),
+          eq(dbSchema.contactViews.type, "kanban"),
         ),
       );
-    const valid = new Set(rows.map((row) => row.id));
-    return tagIds.filter((id) => valid.has(id));
+    const requestedIds = new Set<string>();
+    for (const view of views) {
+      for (const tagId of pipelineTagIdsFromConfig(view.config)) {
+        requestedIds.add(tagId);
+      }
+    }
+    const validIds = await this.filterProjectTagIds(
+      projectId,
+      [...requestedIds],
+    );
+    return [...new Set(validIds)].sort();
   }
 
   async assignToContact(
@@ -272,11 +324,119 @@ export class TagService {
     }
     const tag = await this.get(projectId, tagId);
     if (!tag) return { status: "tag_not_found" };
+    const stageTagIds = await this.listPipelineStageTagIds(projectId);
+    if (stageTagIds.includes(tagId)) {
+      const assignedPeers = await this.assignedTagIds(
+        contactId,
+        stageTagIds.filter(function isPeerStage(stageTagId) {
+          return stageTagId !== tagId;
+        }),
+      );
+      for (const peerTagId of assignedPeers) {
+        await this.removeTag(contactId, peerTagId);
+      }
+    }
     return {
       status: "ok",
       tag,
       changed: await this.addTag(contactId, tagId, tag.name),
     };
+  }
+
+  async clearPipelineStage(
+    projectId: string,
+    contactId: string,
+  ): Promise<boolean> {
+    if (!(await this.contactInProject(projectId, contactId))) return false;
+    const stageTagIds = await this.listPipelineStageTagIds(projectId);
+    const assignedStages = await this.assignedTagIds(contactId, stageTagIds);
+    let changed = false;
+    for (const tagId of assignedStages) {
+      changed = (await this.removeTag(contactId, tagId)) || changed;
+    }
+    return changed;
+  }
+
+  async reconcilePipelineStageAssignments(projectId: string): Promise<void> {
+    const stageTagIds = await this.listPipelineStageTagIds(projectId);
+    if (stageTagIds.length < 2) return;
+
+    const assignments: Array<{ contactId: string; tagId: string }> = [];
+    for (const ids of chunk(stageTagIds, TAG_ID_CHUNK)) {
+      assignments.push(
+        ...(await this.db
+          .select({
+            contactId: dbSchema.contactTags.contactId,
+            tagId: dbSchema.contactTags.tagId,
+          })
+          .from(dbSchema.contactTags)
+          .innerJoin(
+            dbSchema.contacts,
+            eq(dbSchema.contactTags.contactId, dbSchema.contacts.id),
+          )
+          .where(
+            and(
+              eq(dbSchema.contacts.projectId, projectId),
+              inArray(dbSchema.contactTags.tagId, ids),
+            ),
+          )),
+      );
+    }
+
+    const byContact = new Map<string, Set<string>>();
+    for (const assignment of assignments) {
+      const tagIds = byContact.get(assignment.contactId) ?? new Set<string>();
+      tagIds.add(assignment.tagId);
+      byContact.set(assignment.contactId, tagIds);
+    }
+    const duplicateContactIds = [...byContact]
+      .filter(function hasDuplicateStages([, tagIds]) {
+        return tagIds.size > 1;
+      })
+      .map(function contactId([contactId]) {
+        return contactId;
+      });
+    if (duplicateContactIds.length === 0) return;
+
+    const latestByAssignment = new Map<string, number>();
+    for (const contactIds of chunk(duplicateContactIds, TAG_ID_CHUNK)) {
+      const activities = await this.db
+        .select({
+          contactId: dbSchema.contactActivity.contactId,
+          tagId: dbSchema.contactActivity.referenceId,
+          createdAt: dbSchema.contactActivity.createdAt,
+        })
+        .from(dbSchema.contactActivity)
+        .where(
+          and(
+            inArray(dbSchema.contactActivity.contactId, contactIds),
+            eq(dbSchema.contactActivity.type, "tag_added"),
+          ),
+        );
+      for (const activity of activities) {
+        if (!activity.tagId) continue;
+        const key = `${activity.contactId}\u0000${activity.tagId}`;
+        const timestamp = activity.createdAt.getTime();
+        const previous = latestByAssignment.get(key);
+        if (previous === undefined || timestamp > previous) {
+          latestByAssignment.set(key, timestamp);
+        }
+      }
+    }
+
+    for (const contactId of duplicateContactIds) {
+      const assignedStages = [...(byContact.get(contactId) ?? [])];
+      assignedStages.sort(function newestStageFirst(left, right) {
+        const leftTimestamp =
+          latestByAssignment.get(`${contactId}\u0000${left}`) ?? 0;
+        const rightTimestamp =
+          latestByAssignment.get(`${contactId}\u0000${right}`) ?? 0;
+        return rightTimestamp - leftTimestamp || left.localeCompare(right);
+      });
+      for (const tagId of assignedStages.slice(1)) {
+        await this.removeTag(contactId, tagId);
+      }
+    }
   }
 
   async removeFromContact(
@@ -372,6 +532,27 @@ export class TagService {
       )
       .limit(1);
     return !!assignment;
+  }
+
+  private async assignedTagIds(
+    contactId: string,
+    tagIds: string[],
+  ): Promise<string[]> {
+    if (tagIds.length === 0) return [];
+    const assigned = new Set<string>();
+    for (const ids of chunk(tagIds, TAG_ID_CHUNK)) {
+      const rows = await this.db
+        .select({ tagId: dbSchema.contactTags.tagId })
+        .from(dbSchema.contactTags)
+        .where(
+          and(
+            eq(dbSchema.contactTags.contactId, contactId),
+            inArray(dbSchema.contactTags.tagId, ids),
+          ),
+        );
+      for (const row of rows) assigned.add(row.tagId);
+    }
+    return [...assigned].sort();
   }
 
   private async getTagName(tagId: string): Promise<string | null> {

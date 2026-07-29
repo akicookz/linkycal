@@ -542,7 +542,6 @@ export const assignTagSchema = z.object({
 
 export const setStageSchema = z.object({
   tagId: z.string().min(1).nullable(),
-  groupTagIds: z.array(z.string()).max(50),
 });
 
 // ─── Contact Views ───────────────────────────────────────────────────────────

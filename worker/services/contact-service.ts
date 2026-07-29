@@ -606,31 +606,25 @@ export class ContactService {
     return this.tagService.removeTag(contactId, tagId);
   }
 
-  // Move a contact into a single pipeline stage: drop the board's other stage
-  // tags it currently has, then add the target. tagId === null = "Untagged".
+  // Move a contact into the project's canonical pipeline stage set.
+  // tagId === null = "Untagged".
   async setStage(
+    projectId: string,
     contactId: string,
     tagId: string | null,
-    groupTagIds: string[],
   ): Promise<void> {
-    const toRemove = groupTagIds.filter((id) => id !== tagId);
-    if (toRemove.length > 0) {
-      const existing = await this.db
-        .select({ tagId: dbSchema.contactTags.tagId })
-        .from(dbSchema.contactTags)
-        .where(
-          and(
-            eq(dbSchema.contactTags.contactId, contactId),
-            inArray(dbSchema.contactTags.tagId, toRemove),
-          ),
-        );
-      for (const row of existing) {
-        await this.removeTag(contactId, row.tagId);
-      }
-    }
     if (tagId) {
-      await this.addTag(contactId, tagId);
+      const result = await this.tagService.assignToContact(
+        projectId,
+        contactId,
+        tagId,
+      );
+      if (result.status !== "ok") {
+        throw new Error(`Failed to set contact stage: ${result.status}`);
+      }
+      return;
     }
+    await this.tagService.clearPipelineStage(projectId, contactId);
   }
 
   // Get all contacts with their tags in one go (for MCP + non-paginated callers).
@@ -783,6 +777,9 @@ export class ContactService {
       config: data.config ?? null,
       sortOrder: data.sortOrder ?? 0,
     });
+    if (data.type === "kanban") {
+      await this.tagService.reconcilePipelineStageAssignments(projectId);
+    }
     return this.getView(id);
   }
 
@@ -836,6 +833,9 @@ export class ContactService {
         ),
       );
 
+    if (data.config !== undefined || data.type !== undefined) {
+      await this.tagService.reconcilePipelineStageAssignments(projectId);
+    }
     return this.getView(id);
   }
 
