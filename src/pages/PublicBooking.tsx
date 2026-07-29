@@ -36,15 +36,25 @@ import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
 import {
   buildFormExperienceModel,
+  buildFormExperienceAnalyticsStages,
   getAllFormFields,
   getContactMappedFieldIds,
   shouldCollectDetailsWithForm,
   type ContactMappedFieldIds,
+  type FormExperienceAnalyticsEvent,
   type FormExperienceForm,
 } from "@/lib/form-experience";
+import {
+  createFunnelAnalyticsDispatcher,
+  type FunnelAnalyticsDispatcher,
+} from "@/lib/funnel-analytics";
+import { classifyBookingFailure } from "@/lib/booking-analytics";
 import { buildBookingPrefill, parseQueryString } from "@/lib/form-prefill";
-import { track } from "@/lib/track";
 import { cn } from "@/lib/utils";
+import type {
+  AnalyticsFailureCategory,
+  AnalyticsIntegrationConfig,
+} from "../../shared/funnel-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -188,6 +198,70 @@ function getGmtOffset(tz: string): string {
   }
 }
 
+function formatAnalyticsTime(iso: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(new Date(iso));
+  const hour = parts.find(function findHour(part) {
+    return part.type === "hour";
+  })?.value ?? "00";
+  const minute = parts.find(function findMinute(part) {
+    return part.type === "minute";
+  })?.value ?? "00";
+  return `${hour === "24" ? "00" : hour}:${minute}`;
+}
+
+function weekdayForAnalytics(date: string): NonNullable<
+  CanonicalBookingContext["weekday"]
+> {
+  const weekdays = [
+    "sunday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+  ] as const;
+  return weekdays[new Date(`${date}T12:00:00.000Z`).getUTCDay()];
+}
+
+function todayInTimezone(timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  function partValue(type: Intl.DateTimeFormatPartTypes): string {
+    return parts.find(function findPart(part) {
+      return part.type === type;
+    })?.value ?? "";
+  }
+  return [
+    partValue("year"),
+    partValue("month"),
+    partValue("day"),
+  ].join("-");
+}
+
+function daysAheadForAnalytics(date: string, timezone: string): number {
+  const selected = Date.parse(`${date}T00:00:00.000Z`);
+  const today = Date.parse(`${todayInTimezone(timezone)}T00:00:00.000Z`);
+  return Math.max(
+    0,
+    Math.min(730, Math.round((selected - today) / 86_400_000)),
+  );
+}
+
+type CanonicalBookingContext = NonNullable<
+  Parameters<FunnelAnalyticsDispatcher["emit"]>[0]["context"]
+>;
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function PublicBooking({
@@ -199,6 +273,7 @@ export default function PublicBooking({
   }>();
   const [searchParams] = useSearchParams();
   const posthog = usePostHog();
+  const analyticsSearch = searchParams.toString();
 
   // Preselect date from ?date= query param or default to today
   const initialDate = useMemo(() => {
@@ -268,6 +343,7 @@ export default function PublicBooking({
     bookingForm: FormExperienceForm | null;
     availableDays: number[];
     canHideBranding?: boolean;
+    analyticsIntegrations?: AnalyticsIntegrationConfig[];
   }>({
     queryKey: ["public-event-type", projectSlug, eventSlug, timezone],
     queryFn: async () => {
@@ -312,7 +388,21 @@ export default function PublicBooking({
   const hideBrandingRequested = searchParams.get("hide_branding") === "1";
   const showBranding = !(hideBrandingRequested && data?.canHideBranding);
   const bookingForm = data?.bookingForm;
-  const availableDays = data?.availableDays ?? [];
+  const availableDays = useMemo(
+    () => data?.availableDays ?? [],
+    [data?.availableDays],
+  );
+  const analyticsIntegrations = data?.analyticsIntegrations;
+  const analytics = useMemo<FunnelAnalyticsDispatcher | null>(() => {
+    if (!eventSlug || !project) return null;
+    return createFunnelAnalyticsDispatcher({
+      projectSlug: project.slug,
+      resourceSlug: eventSlug,
+      funnelType: "booking",
+      integrations: analyticsIntegrations,
+      search: `?${analyticsSearch}`,
+    });
+  }, [analyticsIntegrations, analyticsSearch, eventSlug, project]);
 
   const mappedFields = useMemo<ContactMappedFieldIds>(
     () => (bookingForm ? getContactMappedFieldIds(bookingForm) : {}),
@@ -375,6 +465,18 @@ export default function PublicBooking({
     [bookingForm, formValues, excludedFieldIds, requiredFieldIds],
   );
   const hasBookingFormContent = bookingFormModel?.hasDisplayContent ?? false;
+  const bookingFormAnalyticsStages = useMemo(
+    () =>
+      bookingForm && bookingFormModel
+        ? buildFormExperienceAnalyticsStages({
+            formType: bookingForm.type,
+            steps: bookingFormModel.steps,
+            screens: bookingFormModel.screens,
+          })
+        : [],
+    [bookingForm, bookingFormModel],
+  );
+  const bookingSubmitStageOrder = 6 + bookingFormAnalyticsStages.length;
   const confirmationStep = 4;
 
   useEffect(() => {
@@ -416,13 +518,84 @@ export default function PublicBooking({
     }
   }, [guestName, guestEmail, mappedFields]);
 
-  // ─── Track page view ────────────────────────────────────────────────────
+  // ─── Analytics ──────────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (projectSlug && eventSlug && eventType) {
-      track("page_view", { projectSlug, resourceSlug: eventSlug });
-    }
-  }, [projectSlug, eventSlug, eventType]);
+    if (!analytics || !eventType) return;
+    analytics.emit({
+      event: "page_view",
+      stageKey: "booking-view",
+      stageLabel: eventType.name.slice(0, 160),
+      stageKind: "page",
+      stageOrder: 1,
+      durationMinutes: eventType.duration,
+    });
+  }, [analytics, eventType]);
+
+  useEffect(() => {
+    if (!analytics || !selectedDate) return;
+    analytics.emit({
+      event: "booking_date_selected",
+      stageKey: "booking-date",
+      stageLabel: "Date selected",
+      stageKind: "date",
+      stageOrder: 2,
+      primaryValue: selectedDate,
+      daysAhead: daysAheadForAnalytics(selectedDate, timezone),
+      durationMinutes: eventType?.duration,
+      context: {
+        selectedDate,
+        weekday: weekdayForAnalytics(selectedDate),
+        viewerTimezone: timezone,
+      },
+    });
+  }, [analytics, eventType?.duration, selectedDate, timezone]);
+
+  useEffect(() => {
+    const detailsVisible = step === 2 || (step === 3 && mergeDetails);
+    if (!analytics || !detailsVisible) return;
+    analytics.emit({
+      event: "booking_details_viewed",
+      stageKey: "booking-details",
+      stageLabel: "Guest details",
+      stageKind: "details",
+      stageOrder: 5,
+      durationMinutes: eventType?.duration,
+    });
+  }, [analytics, eventType?.duration, mergeDetails, step]);
+
+  function handleBookingFormAnalyticsEvent(
+    event: FormExperienceAnalyticsEvent,
+  ): void {
+    if (!analytics) return;
+    const eventName = event.type === "viewed"
+      ? "form_stage_viewed"
+      : event.type === "completed"
+        ? "form_stage_completed"
+        : event.type === "skipped"
+          ? "form_stage_skipped"
+          : "form_stage_validation_failed";
+    analytics.emit({
+      event: eventName,
+      stageKey: event.screen.key,
+      stageLabel: event.screen.label,
+      stageKind: event.screen.kind,
+      stageOrder: 5 + event.screen.order,
+      durationMinutes: eventType?.duration,
+      context: {
+        ...(event.screen.fieldType
+          ? { fieldType: event.screen.fieldType }
+          : {}),
+        ...(event.screen.required !== undefined
+          ? { required: event.screen.required }
+          : {}),
+        stageOutcome: event.type,
+        ...(event.failureCategory
+          ? { failureCategory: event.failureCategory }
+          : {}),
+      },
+    });
+  }
 
   // ─── Apply theme ───────────────────────────────────────────────────────
 
@@ -479,7 +652,11 @@ export default function PublicBooking({
 
   // ─── Fetch slots ───────────────────────────────────────────────────────
 
-  const { data: slotsData, isLoading: loadingSlots } = useQuery<{ slots: TimeSlot[] }>({
+  const {
+    data: slotsData,
+    isLoading: loadingSlots,
+    isError: slotsError,
+  } = useQuery<{ slots: TimeSlot[] }>({
     queryKey: ["public-slots", projectSlug, eventSlug, selectedDate, timezone],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -494,7 +671,67 @@ export default function PublicBooking({
     enabled: !!selectedDate && !!projectSlug && !!eventSlug,
   });
 
-  const slots = slotsData?.slots ?? [];
+  const slots = useMemo(() => slotsData?.slots ?? [], [slotsData?.slots]);
+  const recordedAvailabilityRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    if (
+      !analytics ||
+      !selectedDate ||
+      loadingSlots ||
+      (!slotsData && !slotsError)
+    ) {
+      return;
+    }
+    const offeredSlotStarts = slots.map(function localSlotStart(slot) {
+      return formatAnalyticsTime(slot.start, timezone);
+    }).slice(0, 48);
+    const outcome = slotsError
+      ? "error"
+      : offeredSlotStarts.length > 0
+        ? "available"
+        : "none";
+    const resultKey = [
+      selectedDate,
+      outcome,
+      offeredSlotStarts.join(","),
+    ].join(":");
+    if (recordedAvailabilityRef.current.has(resultKey)) return;
+    recordedAvailabilityRef.current.add(resultKey);
+    analytics.emit({
+      event: "booking_availability_shown",
+      stageKey: "booking-availability",
+      stageLabel: "Available times",
+      stageKind: "availability",
+      stageOrder: 3,
+      primaryValue: selectedDate,
+      slotCount: offeredSlotStarts.length,
+      daysAhead: daysAheadForAnalytics(selectedDate, timezone),
+      durationMinutes: eventType?.duration,
+      context: {
+        selectedDate,
+        weekday: weekdayForAnalytics(selectedDate),
+        viewerTimezone: timezone,
+        offeredSlotStarts,
+        ...(offeredSlotStarts[0]
+          ? { earliestSlot: offeredSlotStarts[0] }
+          : {}),
+        ...(offeredSlotStarts.at(-1)
+          ? { latestSlot: offeredSlotStarts.at(-1) }
+          : {}),
+        availabilityOutcome: outcome,
+      },
+    });
+  }, [
+    analytics,
+    eventType?.duration,
+    loadingSlots,
+    selectedDate,
+    slots,
+    slotsData,
+    slotsError,
+    timezone,
+  ]);
 
   // Reset slot when date changes
   useEffect(() => { setSelectedSlot(null); }, [selectedDate]);
@@ -542,6 +779,27 @@ export default function PublicBooking({
     if (isMobile) goMobileSubStep("time");
   }
 
+  function handleTimeSelect(slot: TimeSlot): void {
+    setSelectedSlot(slot);
+    if (!analytics || !selectedDate) return;
+    const selectedTime = formatAnalyticsTime(slot.start, timezone);
+    analytics.emit({
+      event: "booking_time_selected",
+      stageKey: "booking-time",
+      stageLabel: "Time selected",
+      stageKind: "time",
+      stageOrder: 4,
+      primaryValue: selectedTime,
+      daysAhead: daysAheadForAnalytics(selectedDate, timezone),
+      durationMinutes: eventType?.duration,
+      context: {
+        selectedDate,
+        selectedTime,
+        viewerTimezone: timezone,
+      },
+    });
+  }
+
   function setBookingFormValue(fieldId: string, value: string) {
     setFormValues((previous) => ({ ...previous, [fieldId]: value }));
     const currentField = bookingFormModel?.allFields.find(
@@ -565,10 +823,27 @@ export default function PublicBooking({
     }
     if (!guestName || !guestEmail) {
       setBookingError("Please provide your name and email");
+      analytics?.emit({
+        event: "booking_submit_failed",
+        stageKey: "booking-submit",
+        stageLabel: "Submit booking",
+        stageKind: "submit",
+        stageOrder: bookingSubmitStageOrder,
+        context: { failureCategory: "validation" },
+      });
       return false;
     }
+    analytics?.emit({
+      event: "booking_submit_attempted",
+      stageKey: "booking-submit",
+      stageLabel: "Submit booking",
+      stageKind: "submit",
+      stageOrder: bookingSubmitStageOrder,
+      durationMinutes: eventType?.duration,
+    });
     setSubmitting(true);
     setBookingError(null);
+    let failureCategory: AnalyticsFailureCategory = "unknown";
 
     try {
       const payload: Record<string, unknown> = {
@@ -581,6 +856,20 @@ export default function PublicBooking({
         timezone,
         website: spamField,
         _token: formToken,
+        ...(analytics
+          ? {
+              analytics: {
+                journeyId: analytics.journeyId,
+                funnelType: "booking",
+                source: analytics.source,
+                deviceType: analytics.deviceType,
+                stageKey: "booking-submit",
+                stageLabel: "Submit booking",
+                stageKind: "submit",
+                stageOrder: bookingSubmitStageOrder,
+              },
+            }
+          : {}),
       };
 
       if (bookingForm) {
@@ -598,6 +887,7 @@ export default function PublicBooking({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
+        failureCategory = classifyBookingFailure(res.status);
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || "Failed to book");
       }
@@ -611,9 +901,31 @@ export default function PublicBooking({
         duration: eventType?.duration,
         start_time: selectedSlot.start,
       });
+      if (!spamField) {
+        analytics?.emitProviderOnly({
+          event: "booking_created",
+          stageKey: "booking-complete",
+          stageLabel: "Booking created",
+          stageKind: "completion",
+          stageOrder: bookingSubmitStageOrder + 1,
+          durationMinutes: eventType?.duration,
+        });
+      }
       setStep(confirmationStep);
       return true;
     } catch (caught) {
+      if (failureCategory === "unknown") {
+        failureCategory = classifyBookingFailure(undefined, caught);
+      }
+      analytics?.emit({
+        event: "booking_submit_failed",
+        stageKey: "booking-submit",
+        stageLabel: "Submit booking",
+        stageKind: "submit",
+        stageOrder: bookingSubmitStageOrder,
+        durationMinutes: eventType?.duration,
+        context: { failureCategory },
+      });
       setBookingError(caught instanceof Error ? caught.message : "Something went wrong");
       return false;
     } finally {
@@ -1004,7 +1316,7 @@ export default function PublicBooking({
                             return (
                               <button
                                 key={slot.start}
-                                onClick={() => setSelectedSlot(slot)}
+                                onClick={() => handleTimeSelect(slot)}
                                 className={cn(
                                   "lc-themed-button lc-themed-hover py-2.5 px-3 border border-transparent text-[13px] font-medium text-center transition-all",
                                   isSelected && !primaryColorStyle && "bg-primary text-primary-foreground shadow-sm border-primary",
@@ -1157,6 +1469,7 @@ export default function PublicBooking({
               onValueChange={setBookingFormValue}
               onClearFields={clearBookingFormFields}
               onCheckpoint={checkpointBookingForm}
+              onAnalyticsEvent={handleBookingFormAnalyticsEvent}
               onExitBack={() => {
                 if (mergeDetails) {
                   setStep(1);

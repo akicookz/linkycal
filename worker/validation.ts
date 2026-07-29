@@ -195,6 +195,35 @@ export const updateAvailabilityRulesSchema = z.object({
 
 // ─── Bookings ────────────────────────────────────────────────────────────────
 
+export const publicAnalyticsCorrelationSchema = z
+  .object({
+    journeyId: z.uuid(),
+    funnelType: z.enum(FUNNEL_TYPES),
+    source: z.enum(ANALYTICS_SOURCES),
+    deviceType: z.enum(ANALYTICS_DEVICE_TYPES),
+    stageKey: z
+      .string()
+      .min(1)
+      .max(160)
+      .regex(/^[a-zA-Z0-9._:-]+$/)
+      .optional(),
+    stageLabel: z.string().min(1).max(160).optional(),
+    stageKind: z.enum(FUNNEL_STAGE_KINDS).optional(),
+    stageOrder: z.number().int().min(1).max(200).optional(),
+  })
+  .strict();
+
+export const bookingAnalyticsCorrelationSchema =
+  publicAnalyticsCorrelationSchema.refine(
+    function isBookingCorrelation(value) {
+      return value.funnelType === "booking";
+    },
+    {
+      path: ["funnelType"],
+      message: "Booking analytics require the booking funnel type",
+    },
+  );
+
 export const createBookingSchema = z.object({
   eventTypeSlug: z.string().min(1),
   projectSlug: z.string().min(1),
@@ -205,6 +234,7 @@ export const createBookingSchema = z.object({
   timezone: z.string(),
   metadata: z.record(z.string(), z.unknown()).optional(),
   formFields: z.record(z.string(), z.string()).optional(),
+  analytics: bookingAnalyticsCorrelationSchema.optional(),
 });
 
 function timeToMinutes(time: string): number {
@@ -399,24 +429,6 @@ export const updateFormFieldSchema = z.object({
   contactMapping: z.enum(["name", "email"]).nullable().optional(),
   visibility: formConditionSchema.nullable().optional(),
 });
-
-export const publicAnalyticsCorrelationSchema = z
-  .object({
-    journeyId: z.uuid(),
-    funnelType: z.enum(FUNNEL_TYPES),
-    source: z.enum(ANALYTICS_SOURCES),
-    deviceType: z.enum(ANALYTICS_DEVICE_TYPES),
-    stageKey: z
-      .string()
-      .min(1)
-      .max(160)
-      .regex(/^[a-zA-Z0-9._:-]+$/)
-      .optional(),
-    stageLabel: z.string().min(1).max(160).optional(),
-    stageKind: z.enum(FUNNEL_STAGE_KINDS).optional(),
-    stageOrder: z.number().int().min(1).max(200).optional(),
-  })
-  .strict();
 
 export const submitFormStepSchema = z.object({
   fields: z.array(

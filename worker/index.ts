@@ -97,6 +97,7 @@ import {
   writeFormStartedAnalytics,
   writePersistedFormCheckpointAnalytics,
 } from "./lib/form-analytics";
+import { writeBookingCreatedAnalytics } from "./lib/booking-analytics";
 import {
   mergeProjectSettingsPreservingAnalyticsIntegrations,
 } from "./services/analytics-integration-service";
@@ -1234,19 +1235,10 @@ app.post("/api/v1/t", async (c) => {
     const city = (cf?.city as string) ?? "";
 
     writeAnalyticsEvent(c.env.ANALYTICS, {
+      ...data,
       projectId: project.id,
-      event: data.event,
-      resourceSlug: data.resourceSlug,
-      utmSource: data.utmSource,
-      utmMedium: data.utmMedium,
-      utmCampaign: data.utmCampaign,
-      utmTerm: data.utmTerm,
-      utmContent: data.utmContent,
-      referrer: data.referrer,
       country,
       city,
-      source: data.source,
-      params: data.params,
     });
 
     return c.body(null, 204);
@@ -1284,13 +1276,17 @@ app.post("/api/v1/bookings", async (c) => {
 
     const db = drizzle(c.env.DB, { schema });
 
+    const { analytics, ...bookingInput } = data;
     const result = await createBookingAction(
       {
         db,
         env: c.env,
         waitUntil: (p) => c.executionCtx.waitUntil(p),
       },
-      { ...data, geo: { ip: geoIp, country: geoCountry, city: geoCity } },
+      {
+        ...bookingInput,
+        geo: { ip: geoIp, country: geoCountry, city: geoCity },
+      },
     );
 
     if (!result.ok) {
@@ -1299,10 +1295,10 @@ app.post("/api/v1/bookings", async (c) => {
 
     // Track booking_created event
     try {
-      writeAnalyticsEvent(c.env.ANALYTICS, {
+      writeBookingCreatedAnalytics(c.env.ANALYTICS, {
         projectId: result.projectId,
-        event: "booking_created",
         resourceSlug: data.eventTypeSlug,
+        correlation: analytics,
         country: geoCountry ?? "",
         city: geoCity ?? "",
       });

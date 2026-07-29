@@ -21,6 +21,9 @@ import {
 import { renderRoute } from "../support/render";
 import { createTestDb } from "../support/test-db";
 
+const ANALYTICS_JOURNEY_ID =
+  "123e4567-e89b-42d3-a456-426614174000";
+
 const COMPONENT_VIEWERS = CROSS_TIMEZONE_VIEWERS.filter(function isRequiredViewer(
   viewer,
 ) {
@@ -106,7 +109,8 @@ describe("public booking renders and submits the same instant across timezones",
         renderRoute(
           <PublicBooking viewerTimezone={scenario.timezone} />,
           {
-            route: "/acme/discovery-call",
+            route:
+              `/acme/discovery-call?lc_journey=${ANALYTICS_JOURNEY_ID}`,
             routePattern: "/:projectSlug/:slug",
           },
         );
@@ -176,6 +180,16 @@ describe("public booking renders and submits the same instant across timezones",
           _token: btoa(String(new Date(
             "2026-03-20T12:00:00.000Z",
           ).getTime())),
+          analytics: {
+            journeyId: ANALYTICS_JOURNEY_ID,
+            funnelType: "booking",
+            source: "direct",
+            deviceType: "tablet",
+            stageKey: "booking-submit",
+            stageLabel: "Submit booking",
+            stageKind: "submit",
+            stageOrder: 6,
+          },
         });
       } finally {
         http.restore();
