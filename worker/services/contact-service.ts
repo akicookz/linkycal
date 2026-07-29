@@ -39,6 +39,7 @@ export interface ContactListOptions {
   activitySinceDays?: number;
   noActivitySinceDays?: number;
   bookingStatus?: "confirmed" | "cancelled" | "rescheduled" | "pending" | "declined";
+  sort?: "nextActionDeadline";
 }
 
 export interface ContactOperationalFacts {
@@ -79,6 +80,22 @@ function chunk<T>(arr: T[], size: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
   return out;
+}
+
+function compareNextActionDeadlines(
+  left: dbSchema.ContactRow,
+  right: dbSchema.ContactRow,
+): number {
+  const leftDeadline = left.nextActionDeadline?.getTime();
+  const rightDeadline = right.nextActionDeadline?.getTime();
+  const leftValid =
+    leftDeadline !== undefined && Number.isFinite(leftDeadline);
+  const rightValid =
+    rightDeadline !== undefined && Number.isFinite(rightDeadline);
+  if (!leftValid && !rightValid) return left.id.localeCompare(right.id);
+  if (!leftValid) return 1;
+  if (!rightValid) return -1;
+  return leftDeadline - rightDeadline || left.id.localeCompare(right.id);
 }
 
 // Email is case-insensitive; store and compare a trimmed, lowercased form so
@@ -235,6 +252,10 @@ export class ContactService {
         for (const r of bookingRows) if (r.contactId) matched.add(r.contactId);
       }
       rows = rows.filter((c) => matched.has(c.id));
+    }
+
+    if (opts?.sort === "nextActionDeadline") {
+      rows.sort(compareNextActionDeadlines);
     }
 
     return rows;

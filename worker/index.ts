@@ -5077,6 +5077,7 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
   const activitySinceDays = url.searchParams.get("activitySinceDays");
   const noActivitySinceDays = url.searchParams.get("noActivitySinceDays");
   const bookingStatus = url.searchParams.get("bookingStatus") ?? undefined;
+  const sort = url.searchParams.get("sort");
 
   const validActivity = [
     "form_submitted",
@@ -5141,6 +5142,10 @@ app.get("/api/projects/:projectId/contacts", async (c) => {
         bookingStatus &&
         (validBooking as readonly string[]).includes(bookingStatus)
           ? (bookingStatus as (typeof validBooking)[number])
+          : undefined,
+      sort:
+        sort === "nextActionDeadline"
+          ? "nextActionDeadline"
           : undefined,
     },
     { limit, offset },

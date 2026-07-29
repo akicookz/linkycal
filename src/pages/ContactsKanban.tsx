@@ -128,6 +128,7 @@ function buildStageQueryParams(
   } else {
     params.set("stageTagId", columnId);
   }
+  params.set("sort", "nextActionDeadline");
   params.set("limit", String(STAGE_PAGE_SIZE));
   params.set("offset", String(offset));
   return params;
