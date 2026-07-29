@@ -11,6 +11,7 @@ import { registerEventTypeTools } from "./tools/event-types";
 import { registerScheduleTools } from "./tools/schedules";
 import { registerFormTools } from "./tools/forms";
 import { registerWorkflowTools } from "./tools/workflows";
+import { registerAnalyticsTools } from "./tools/analytics";
 
 const { schema } = dbSchema;
 
@@ -61,5 +62,6 @@ export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpP
     registerScheduleTools(this.server, ctx);
     registerFormTools(this.server, ctx);
     registerWorkflowTools(this.server, ctx);
+    registerAnalyticsTools(this.server, ctx);
   }
 }
