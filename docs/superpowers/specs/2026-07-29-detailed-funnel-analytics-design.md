@@ -1,7 +1,7 @@
 # Detailed Booking and Form Funnel Analytics
 
 Date: 2026-07-29
-Status: Approved
+Status: Review requested
 
 ## Goal
 
@@ -328,6 +328,191 @@ different stage definitions. Detailed attached-form booking stages require a
 selected event type. The All resources view remains a stable high-level
 summary.
 
+## Public REST API
+
+Detailed analytics is part of the authenticated project REST API, not a
+dashboard-only feature. The existing project analytics routes already accept a
+dashboard session or a project-scoped API key and remain the canonical public
+contract:
+
+```text
+GET /api/projects/:projectId/analytics/filters
+GET /api/projects/:projectId/analytics/overview
+GET /api/projects/:projectId/analytics/bookings
+GET /api/projects/:projectId/analytics/forms
+```
+
+The booking and form routes return the detailed funnel and context breakdowns
+defined above in addition to their backward-compatible aggregate fields.
+Supported query parameters are:
+
+```text
+period=7d|30d|90d|custom
+start=<ISO date>
+end=<ISO date>
+resourceSlug=<event type or form slug>
+utmSource=<value>
+utmMedium=<value>
+utmCampaign=<value>
+source=direct|widget
+deviceType=mobile|tablet|desktop
+```
+
+`start` and `end` are accepted only with `period=custom`. The API validates
+that `resourceSlug` belongs to the project and returns an empty detailed funnel
+rather than another project's existence when it does not.
+
+The filters response adds:
+
+- event types with ID, slug, and display name;
+- forms with ID, slug, and display name;
+- observed direct/widget sources; and
+- observed device types.
+
+Provider configuration receives dedicated project routes:
+
+```text
+GET /api/projects/:projectId/analytics/integrations
+PUT /api/projects/:projectId/analytics/integrations/:provider
+```
+
+The provider parameter is exactly `ga4`, `meta_pixel`, or `posthog`. `PUT`
+accepts the provider's structured public identifier, optional allowlisted
+region, and enabled state. Disabling uses the same route with `enabled: false`;
+there is no raw-script field and no arbitrary URL field.
+
+These integration routes are added to the project API-key route policy. API-key
+requests therefore require both project-scoped API access and the project's
+analytics entitlement. Session and API-key requests use the same validation
+and service implementation.
+
+The anonymous visitor endpoint remains:
+
+```text
+POST /api/v1/t
+```
+
+Its public schema is expanded to the canonical detailed-event contract and
+documented as a browser telemetry endpoint, not an owner-reporting endpoint.
+It receives an explicit per-IP rate limit, bounded batch/event sizes, strict
+journey/stage validation, and silent best-effort failure semantics. It never
+returns or exposes analytics data.
+
+No REST analytics response exposes journey IDs, IP addresses, contact data, or
+individual paths.
+
+## MCP exposure
+
+Analytics is exposed through a new `worker/mcp/tools/analytics.ts` domain
+registered by the project-scoped MCP agent. MCP handlers call the same
+framework-independent analytics and integration services as REST routes; they
+do not duplicate Analytics Engine SQL or entitlement logic.
+
+The MCP server adds five tools:
+
+```text
+get_analytics_overview
+get_booking_funnel_analytics
+get_form_funnel_analytics
+list_analytics_integrations
+configure_analytics_integration
+```
+
+### Read tools
+
+`get_analytics_overview` accepts the common period, custom range, UTM, source,
+and device filters and returns aggregate traffic and conversions.
+
+`get_booking_funnel_analytics` accepts an optional project-owned event type ID
+plus the common filters. With an event type it returns exact static and
+attached-form stages, date/availability/time distributions, and safe failures.
+Without one it returns the All event types summary.
+
+`get_form_funnel_analytics` accepts an optional project-owned form ID plus the
+common filters. With a form it returns its exact rendered-stage funnel,
+conditional skips, and safe failures. Without one it returns the All forms
+summary.
+
+`list_analytics_integrations` returns the three supported provider
+configurations and enabled state. Provider identifiers are public client
+configuration; no secret value is returned because no provider secret is
+stored.
+
+### Write tool
+
+`configure_analytics_integration` accepts:
+
+```ts
+type ConfigureAnalyticsIntegrationInput =
+  | {
+      provider: "ga4";
+      enabled: boolean;
+      measurementId?: string;
+    }
+  | {
+      provider: "meta_pixel";
+      enabled: boolean;
+      pixelId?: string;
+    }
+  | {
+      provider: "posthog";
+      enabled: boolean;
+      projectKey?: string;
+      host?: "us" | "eu";
+    };
+```
+
+The tool enforces the same validation and Pro/Business analytics entitlement as
+the dashboard and REST API.
+
+Every tool is hard-scoped through `ToolContext.projectId()`. Callers never pass
+a project ID. Event type and form IDs are resolved inside that boundary and
+cross-project resources return the same not-found result as missing resources.
+
+MCP results contain aggregate stages and safe context only. They never return
+journey IDs, visitor identities, form values, question answers, IP addresses,
+or raw provider errors.
+
+## Documentation contract
+
+Documentation ships in the same change as the routes, schemas, and MCP tools.
+The implementation updates:
+
+- `scripts/api-docs-catalog.ts` with analytics query parameters, detailed
+  response schemas, integration management routes, entitlement notes, and the
+  expanded anonymous tracking schema;
+- `src/lib/api-reference.ts` with public REST examples and response
+  descriptions;
+- `src/pages/Docs.tsx` with the five analytics MCP tools, updated tool count,
+  Pro-gating behavior, and REST examples;
+- `README.md` with the expanded API/MCP capability and corrected generated-docs
+  ownership;
+- `public/openapi.json` through `bun run docs:generate`;
+- `docs/api-endpoint-audit.md` through `bun run docs:generate`; and
+- `public/llms.txt` with the new REST and MCP capabilities.
+
+The repository currently describes `public/llms.txt` as generated, but
+`docs:generate` does not own it. This feature resolves that inconsistency:
+`public/llms.txt` gains an explicit source/template owned by the docs generator,
+and `bun run docs:generate` plus `bun run docs:check` generate and verify all
+three public artifacts:
+
+```text
+public/openapi.json
+docs/api-endpoint-audit.md
+public/llms.txt
+```
+
+Generated artifacts are never edited without updating their owning catalog or
+template. Documentation tests fail when:
+
+- a registered REST route is absent from the OpenAPI contract;
+- the endpoint audit disagrees with API-key/session policy;
+- an MCP analytics tool is missing from the in-app or LLM-facing inventory;
+- the documented MCP tool count is stale; or
+- a response or filter field differs between the runtime schema and public
+  examples.
+
 ## Dashboard experience
 
 ### Booking analytics
@@ -459,20 +644,111 @@ The strongest tests protect these observable contracts:
    unsupported analytics metadata are rejected.
 10. Legacy aggregate booking and form analytics remain queryable alongside the
     detailed-data boundary.
+11. REST analytics responses expose the detailed aggregate contract through a
+    project-scoped API key and never expose journey IDs or visitor data.
+12. Integration REST routes require both project scope and the analytics
+    entitlement and produce the same stored result as dashboard updates.
+13. Each MCP analytics tool enforces project scope, filters correctly, and
+    returns the same aggregate contract as its REST counterpart.
+14. The MCP integration write tool cannot bypass provider validation or the
+    Pro/Business entitlement.
+15. Generated OpenAPI, endpoint audit, in-app docs, MCP inventory, tool count,
+    and `llms.txt` fail their checks when the analytics contract becomes stale.
 
-## Rollout
+## Deployment, production verification, and rollback
 
 No historical backfill is attempted. Deployment order is:
 
-1. ship validation, storage layout, server correlation, and query support;
-2. ship public booking/form and widget instrumentation;
-3. ship resource selectors, detailed funnel reporting, and contextual
-   breakdowns;
-4. ship Pro-gated provider configuration and dispatch; and
-5. verify production Analytics Engine queries and public entitlement behavior.
+### Local release gate
 
-Production deployment and any unrelated pending D1 migration remain separate,
-explicit operations.
+1. Run the focused analytics, booking, and form critical tests and demonstrate
+   every new regression test red before its production change and green after.
+2. Run `bun run test`.
+3. Run `bun run lint`.
+4. Run `bun run docs:generate`.
+5. Run `bun run docs:check`.
+6. Run `bun run widget:build`.
+7. Run `bun run build`.
+8. Review `git diff --check`, the generated OpenAPI diff, endpoint audit diff,
+   `llms.txt` diff, MCP inventory, and built widget output.
+
+This feature stores provider configuration in structured project settings and
+extends Analytics Engine's implicit data-point layout. It does not require a
+new D1 migration.
+
+### Production database preflight
+
+Before deploying the current `main` Worker, run:
+
+```bash
+wrangler d1 migrations list DB --remote
+```
+
+Review every pending migration by filename and SQL. Do not use
+`bun run deploy:full` as a shortcut when it would apply an unreviewed migration.
+
+At the time this design was revised,
+`0033_persist_booking_calendar_identity.sql` was still pending in production
+and the current booking code reads its columns. If it remains pending, apply it
+explicitly before the Worker deployment:
+
+```bash
+bun run db:migrate:prod
+```
+
+Then verify the migration list is empty and the booking columns exist. This is
+an existing booking-schema prerequisite, not an analytics schema change, and
+must not be hidden inside the analytics rollout.
+
+### Deployment order
+
+1. Record the current Worker deployment/version and retain copies of the
+   currently published booking and form widget bundles for rollback.
+2. Deploy the Worker and SPA with `bun run deploy`. The server must accept the
+   new telemetry and API/MCP contracts before new widgets emit them.
+3. Deploy both widgets with `bun run widget:deploy`.
+4. Confirm `/openapi.json`, `/llms.txt`, and the in-app Docs page show the new
+   REST endpoints, response fields, and MCP tools.
+
+### Production smoke checks
+
+Use designated Free and Pro test projects rather than customer resources:
+
+1. Open a direct booking page and a booking widget, choose dates and times, and
+   confirm one journey per surface with correct source attribution.
+2. Complete a focused form with at least two persisted checkpoints and confirm
+   both responses remain saved before final completion.
+3. Confirm booking/form detailed funnels, availability context, and safe
+   failures through the dashboard.
+4. Query the booking and form analytics REST endpoints with a project API key
+   and confirm project scope and response parity.
+5. Call all five MCP analytics tools and confirm read/write entitlement and
+   project boundaries.
+6. Verify a Free project receives the upgrade/forbidden result and does not
+   expose provider configuration on public pages.
+7. Enable each provider on a Pro test project and confirm only sanitized
+   canonical events leave the browser.
+8. Confirm booking creation, focused-form checkpoint persistence, uploads,
+   notifications, workflows, and calendars remain functional.
+9. Recheck the detailed funnel after Analytics Engine ingestion and confirm the
+   deployment boundary timestamp.
+
+### Rollback
+
+- Disable all customer-provider publication first if an external dispatch
+  problem is detected.
+- Restore the previous booking and form widget bundles.
+- Roll the Worker back to the recorded previous version through Cloudflare
+  Workers Versions.
+- Do not delete Analytics Engine rows; the additional blobs and doubles are
+  additive and ignored by old queries.
+- Retain structured provider settings. An older Worker ignores them, and they
+  remain available for a corrected redeployment.
+- Do not roll back the nullable booking identity columns from migration `0033`;
+  their migration is forward-compatible and repairs an existing production
+  schema mismatch.
+- Re-run the public REST, MCP, booking, and focused-form smoke checks after
+  rollback.
 
 ## Out of scope
 
