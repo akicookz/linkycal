@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 
 import * as dbSchema from "../../worker/db/schema";
 import { ContactService } from "../../worker/services/contact-service";
@@ -220,6 +221,77 @@ describe("contact pipeline stage persistence", function () {
       expect(await contactTagIds(contacts, "contact-current")).toEqual([
         FOLLOW_UP_TAG_ID,
         VIP_TAG_ID,
+      ]);
+
+      expect(
+        await contacts.setStage(PROJECT_ID, "contact-current", null),
+      ).toBe("ok");
+      expect(await contactTagIds(contacts, "contact-current")).toEqual([
+        VIP_TAG_ID,
+      ]);
+    } finally {
+      testDatabase.close();
+    }
+  });
+
+  test("concurrent pipeline moves on legacy configs still leave exactly one step tag", async function () {
+    const testDatabase = await seedPipelineStageScenario(true);
+
+    try {
+      await testDatabase.db
+        .update(dbSchema.contactViews)
+        .set({
+          config: JSON.stringify({
+            pivotTagIds: [LEAD_TAG_ID, FOLLOW_UP_TAG_ID],
+            showUntagged: true,
+          }),
+        })
+        .where(eq(dbSchema.contactViews.id, PIPELINE_VIEW_ID));
+      const tags = new TagService(testDatabase.db);
+      const contacts = new ContactService(testDatabase.db);
+
+      await tags.assignToContact(PROJECT_ID, "contact-current", VIP_TAG_ID);
+      await Promise.all([
+        tags.assignToContact(PROJECT_ID, "contact-current", LEAD_TAG_ID),
+        tags.assignToContact(
+          PROJECT_ID,
+          "contact-current",
+          FOLLOW_UP_TAG_ID,
+        ),
+      ]);
+
+      const assignedTagIds = await contactTagIds(
+        contacts,
+        "contact-current",
+      );
+      expect(assignedTagIds).toContain(VIP_TAG_ID);
+      expect(
+        assignedTagIds.filter(function isPipelineStep(tagId) {
+          return tagId === LEAD_TAG_ID || tagId === FOLLOW_UP_TAG_ID;
+        }),
+      ).toHaveLength(1);
+    } finally {
+      testDatabase.close();
+    }
+  });
+
+  test("the stage mutation rejects an ordinary project tag", async function () {
+    const testDatabase = await seedPipelineStageScenario(true);
+
+    try {
+      const tags = new TagService(testDatabase.db);
+      const contacts = new ContactService(testDatabase.db);
+      await tags.assignToContact(PROJECT_ID, "contact-current", LEAD_TAG_ID);
+
+      expect(
+        await contacts.setStage(
+          PROJECT_ID,
+          "contact-current",
+          VIP_TAG_ID,
+        ),
+      ).toBe("invalid_stage");
+      expect(await contactTagIds(contacts, "contact-current")).toEqual([
+        LEAD_TAG_ID,
       ]);
     } finally {
       testDatabase.close();

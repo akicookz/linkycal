@@ -120,6 +120,7 @@ function renderSettings(): void {
 describe("analytics provider settings", function () {
   test("Pro renders local provider icons, normalized fields, toggle cards, and PostHog region", async function () {
     installSettingsApi({ analytics: true });
+    const user = userEvent.setup();
     renderSettings();
 
     expect(
@@ -149,12 +150,14 @@ describe("analytics provider settings", function () {
         .getByRole("switch", { name: "Enable Meta Pixel" })
         .getAttribute("aria-checked"),
     ).toBe("false");
-    expect(screen.getByLabelText("PostHog region").textContent).toContain(
-      "🇪🇺 EU",
-    );
     expect(
       screen.getByRole("button", { name: "Save Google Analytics" }),
     ).toBeTruthy();
+    const region = screen.getByLabelText("PostHog region");
+    expect(region.textContent).toContain("🇪🇺 EU");
+    await user.click(region);
+    expect(screen.getByRole("option", { name: "🇺🇸 US" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "🇪🇺 EU" })).toBeTruthy();
   });
 
   test("saving one provider uses only its dedicated structured route", async function () {

@@ -28,12 +28,46 @@ interface TagCursor {
   id: string;
 }
 
+interface AtomicSqlStatement {
+  query: string;
+  params: Array<string | number | null>;
+  returnsRows?: boolean;
+}
+
+interface AtomicSqlResult {
+  changes: number;
+  rows: Array<Record<string, unknown>>;
+}
+
+interface D1BatchClient {
+  prepare(query: string): D1PreparedStatement;
+  batch(statements: D1PreparedStatement[]): Promise<D1Result[]>;
+}
+
+interface SyncSqlResult {
+  changes: number;
+}
+
+interface SyncPreparedStatement {
+  all(...params: Array<string | number | null>): Array<Record<string, unknown>>;
+  run(...params: Array<string | number | null>): SyncSqlResult;
+}
+
+interface SyncSqlClient {
+  prepare(query: string): SyncPreparedStatement;
+  transaction<T>(callback: () => T): () => T;
+}
+
 const TAG_ID_CHUNK = 90;
 
 export type TagAssignmentResult =
   | { status: "contact_not_found" }
   | { status: "tag_not_found" }
   | { status: "ok"; tag: dbSchema.TagRow; changed: boolean };
+
+export type PipelineStageAssignmentResult =
+  | TagAssignmentResult
+  | { status: "invalid_stage" };
 
 export interface TagWorkflowReference {
   id: string;
@@ -128,6 +162,127 @@ function chunk<T>(values: T[], size: number): T[][] {
     chunks.push(values.slice(index, index + size));
   }
   return chunks;
+}
+
+function hasFunctions(
+  value: unknown,
+  functionNames: string[],
+): value is Record<string, (...args: never[]) => unknown> {
+  if (!value || typeof value !== "object") return false;
+  return functionNames.every(function hasFunction(name) {
+    return typeof (value as Record<string, unknown>)[name] === "function";
+  });
+}
+
+async function runAtomicSql(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  statements: AtomicSqlStatement[],
+): Promise<AtomicSqlResult[]> {
+  const client = (
+    db as DrizzleD1Database<Record<string, unknown>> & { $client?: unknown }
+  ).$client;
+
+  if (hasFunctions(client, ["prepare", "batch"])) {
+    const d1 = client as unknown as D1BatchClient;
+    const results = await d1.batch(
+      statements.map(function prepareStatement(statement) {
+        return d1.prepare(statement.query).bind(...statement.params);
+      }),
+    );
+    return results.map(function normalizeResult(result) {
+      return {
+        changes: result.meta.changes ?? 0,
+        rows: Array.isArray(result.results)
+          ? result.results as Array<Record<string, unknown>>
+          : [],
+      };
+    });
+  }
+
+  if (hasFunctions(client, ["prepare", "transaction"])) {
+    const sqlite = client as unknown as SyncSqlClient;
+    const transaction = sqlite.transaction(function runStatements() {
+      return statements.map(function runStatement(statement) {
+        const prepared = sqlite.prepare(statement.query);
+        if (statement.returnsRows) {
+          return {
+            changes: 0,
+            rows: prepared.all(...statement.params),
+          };
+        }
+        return {
+          changes: prepared.run(...statement.params).changes,
+          rows: [],
+        };
+      });
+    });
+    return transaction();
+  }
+
+  throw new Error("Database client does not support atomic batches");
+}
+
+function pipelineStageCte(): string {
+  return `
+    WITH normalized_views AS (
+      SELECT
+        project_id,
+        CASE
+          WHEN json_valid(config) = 0 THEN NULL
+          WHEN
+            json_type(config) = 'text'
+            AND json_valid(json_extract(config, '$')) = 1
+            THEN json_extract(config, '$')
+          ELSE config
+        END AS config
+      FROM contact_views
+      WHERE project_id = ? AND type = 'kanban' AND config IS NOT NULL
+    ),
+    stage_tags AS (
+      SELECT DISTINCT
+        normalized_views.project_id AS project_id,
+        tags.id AS tag_id
+      FROM normalized_views
+      JOIN json_each(normalized_views.config, '$.pivotTagIds') AS pivot
+      JOIN tags
+        ON tags.id = pivot.value
+        AND tags.project_id = normalized_views.project_id
+      WHERE
+        normalized_views.config IS NOT NULL
+        AND json_type(normalized_views.config, '$.pivotTagIds') = 'array'
+    )
+  `;
+}
+
+function rankedPipelineAssignmentsCte(): string {
+  return `
+    ${pipelineStageCte()},
+    ranked_assignments AS (
+      SELECT
+        contact_tags.contact_id AS contact_id,
+        contact_tags.tag_id AS tag_id,
+        row_number() OVER (
+          PARTITION BY contact_tags.contact_id
+          ORDER BY
+            coalesce((
+              SELECT max(contact_activity.created_at)
+              FROM contact_activity
+              WHERE
+                contact_activity.contact_id = contact_tags.contact_id
+                AND contact_activity.type = 'tag_added'
+                AND contact_activity.reference_id = contact_tags.tag_id
+            ), 0) DESC,
+            contact_tags.tag_id ASC
+        ) AS stage_rank
+      FROM contact_tags
+      INNER JOIN contacts
+        ON contacts.id = contact_tags.contact_id
+      INNER JOIN stage_tags
+        ON stage_tags.project_id = contacts.project_id
+        AND stage_tags.tag_id = contact_tags.tag_id
+      WHERE contacts.project_id = ?
+    )
+  `;
 }
 
 function containsTagReference(value: unknown, tagId: string): boolean {
@@ -324,23 +479,37 @@ export class TagService {
     }
     const tag = await this.get(projectId, tagId);
     if (!tag) return { status: "tag_not_found" };
-    const stageTagIds = await this.listPipelineStageTagIds(projectId);
-    if (stageTagIds.includes(tagId)) {
-      const assignedPeers = await this.assignedTagIds(
-        contactId,
-        stageTagIds.filter(function isPeerStage(stageTagId) {
-          return stageTagId !== tagId;
-        }),
-      );
-      for (const peerTagId of assignedPeers) {
-        await this.removeTag(contactId, peerTagId);
-      }
-    }
+    const mutation = await this.assignTagAtomically(
+      projectId,
+      contactId,
+      tag,
+      false,
+    );
     return {
       status: "ok",
       tag,
-      changed: await this.addTag(contactId, tagId, tag.name),
+      changed: mutation.changed,
     };
+  }
+
+  async assignPipelineStageToContact(
+    projectId: string,
+    contactId: string,
+    tagId: string,
+  ): Promise<PipelineStageAssignmentResult> {
+    if (!(await this.contactInProject(projectId, contactId))) {
+      return { status: "contact_not_found" };
+    }
+    const tag = await this.get(projectId, tagId);
+    if (!tag) return { status: "tag_not_found" };
+    const mutation = await this.assignTagAtomically(
+      projectId,
+      contactId,
+      tag,
+      true,
+    );
+    if (!mutation.isPipelineStage) return { status: "invalid_stage" };
+    return { status: "ok", tag, changed: mutation.changed };
   }
 
   async clearPipelineStage(
@@ -348,95 +517,221 @@ export class TagService {
     contactId: string,
   ): Promise<boolean> {
     if (!(await this.contactInProject(projectId, contactId))) return false;
-    const stageTagIds = await this.listPipelineStageTagIds(projectId);
-    const assignedStages = await this.assignedTagIds(contactId, stageTagIds);
-    let changed = false;
-    for (const tagId of assignedStages) {
-      changed = (await this.removeTag(contactId, tagId)) || changed;
-    }
-    return changed;
+    return this.removePipelineStages(projectId, contactId);
   }
 
   async reconcilePipelineStageAssignments(projectId: string): Promise<void> {
-    const stageTagIds = await this.listPipelineStageTagIds(projectId);
-    if (stageTagIds.length < 2) return;
-
-    const assignments: Array<{ contactId: string; tagId: string }> = [];
-    for (const ids of chunk(stageTagIds, TAG_ID_CHUNK)) {
-      assignments.push(
-        ...(await this.db
-          .select({
-            contactId: dbSchema.contactTags.contactId,
-            tagId: dbSchema.contactTags.tagId,
-          })
-          .from(dbSchema.contactTags)
-          .innerJoin(
-            dbSchema.contacts,
-            eq(dbSchema.contactTags.contactId, dbSchema.contacts.id),
+    const params = [projectId, projectId];
+    await runAtomicSql(this.db, [
+      {
+        query: `
+          ${rankedPipelineAssignmentsCte()}
+          INSERT INTO contact_activity (
+            id,
+            contact_id,
+            type,
+            reference_id,
+            metadata,
+            created_at
           )
-          .where(
-            and(
-              eq(dbSchema.contacts.projectId, projectId),
-              inArray(dbSchema.contactTags.tagId, ids),
-            ),
-          )),
-      );
-    }
+          SELECT
+            lower(hex(randomblob(16))),
+            ranked_assignments.contact_id,
+            'tag_removed',
+            ranked_assignments.tag_id,
+            json_object('tagName', tags.name),
+            unixepoch()
+          FROM ranked_assignments
+          INNER JOIN tags ON tags.id = ranked_assignments.tag_id
+          WHERE ranked_assignments.stage_rank > 1
+        `,
+        params,
+      },
+      {
+        query: `
+          ${rankedPipelineAssignmentsCte()}
+          DELETE FROM contact_tags
+          WHERE EXISTS (
+            SELECT 1
+            FROM ranked_assignments
+            WHERE
+              ranked_assignments.stage_rank > 1
+              AND ranked_assignments.contact_id = contact_tags.contact_id
+              AND ranked_assignments.tag_id = contact_tags.tag_id
+          )
+        `,
+        params,
+      },
+    ]);
+  }
 
-    const byContact = new Map<string, Set<string>>();
-    for (const assignment of assignments) {
-      const tagIds = byContact.get(assignment.contactId) ?? new Set<string>();
-      tagIds.add(assignment.tagId);
-      byContact.set(assignment.contactId, tagIds);
-    }
-    const duplicateContactIds = [...byContact]
-      .filter(function hasDuplicateStages([, tagIds]) {
-        return tagIds.size > 1;
-      })
-      .map(function contactId([contactId]) {
-        return contactId;
-      });
-    if (duplicateContactIds.length === 0) return;
+  private async assignTagAtomically(
+    projectId: string,
+    contactId: string,
+    targetTag: dbSchema.TagRow,
+    requirePipelineStage: boolean,
+  ): Promise<{ changed: boolean; isPipelineStage: boolean }> {
+    const statements: AtomicSqlStatement[] = [
+      {
+        query: `
+          ${pipelineStageCte()}
+          SELECT EXISTS (
+            SELECT 1 FROM stage_tags WHERE tag_id = ?
+          ) AS is_pipeline_stage
+        `,
+        params: [projectId, targetTag.id],
+        returnsRows: true,
+      },
+      ...this.pipelineRemovalStatements(
+        projectId,
+        contactId,
+        targetTag.id,
+      ),
+    ];
+    const stageRequirement = requirePipelineStage
+      ? `
+          AND EXISTS (
+            SELECT 1 FROM stage_tags WHERE tag_id = ?
+          )
+        `
+      : "";
+    const stageRequirementParams = requirePipelineStage
+      ? [targetTag.id]
+      : [];
+    statements.push(
+      {
+        query: `
+          ${requirePipelineStage ? pipelineStageCte() : ""}
+          INSERT INTO contact_activity (
+            id,
+            contact_id,
+            type,
+            reference_id,
+            metadata,
+            created_at
+          )
+          SELECT
+            lower(hex(randomblob(16))),
+            ?,
+            'tag_added',
+            ?,
+            ?,
+            unixepoch()
+          WHERE
+            NOT EXISTS (
+            SELECT 1
+            FROM contact_tags
+            WHERE contact_id = ? AND tag_id = ?
+          )
+          ${stageRequirement}
+        `,
+        params: [
+          ...(requirePipelineStage ? [projectId] : []),
+          contactId,
+          targetTag.id,
+          JSON.stringify({ tagName: targetTag.name }),
+          contactId,
+          targetTag.id,
+          ...stageRequirementParams,
+        ],
+      },
+      {
+        query: `
+          ${requirePipelineStage ? pipelineStageCte() : ""}
+          INSERT INTO contact_tags (contact_id, tag_id)
+          SELECT ?, ?
+          ${requirePipelineStage ? `WHERE EXISTS (SELECT 1 FROM stage_tags WHERE tag_id = ?)` : ""}
+          ON CONFLICT (contact_id, tag_id) DO NOTHING
+        `,
+        params: [
+          ...(requirePipelineStage ? [projectId] : []),
+          contactId,
+          targetTag.id,
+          ...stageRequirementParams,
+        ],
+      },
+    );
+    const results = await runAtomicSql(this.db, statements);
+    const marker = results[0]?.rows[0]?.is_pipeline_stage;
+    return {
+      changed: (results.at(-1)?.changes ?? 0) > 0,
+      isPipelineStage: marker === 1 || marker === true,
+    };
+  }
 
-    const latestByAssignment = new Map<string, number>();
-    for (const contactIds of chunk(duplicateContactIds, TAG_ID_CHUNK)) {
-      const activities = await this.db
-        .select({
-          contactId: dbSchema.contactActivity.contactId,
-          tagId: dbSchema.contactActivity.referenceId,
-          createdAt: dbSchema.contactActivity.createdAt,
-        })
-        .from(dbSchema.contactActivity)
-        .where(
-          and(
-            inArray(dbSchema.contactActivity.contactId, contactIds),
-            eq(dbSchema.contactActivity.type, "tag_added"),
-          ),
-        );
-      for (const activity of activities) {
-        if (!activity.tagId) continue;
-        const key = `${activity.contactId}\u0000${activity.tagId}`;
-        const timestamp = activity.createdAt.getTime();
-        const previous = latestByAssignment.get(key);
-        if (previous === undefined || timestamp > previous) {
-          latestByAssignment.set(key, timestamp);
-        }
-      }
-    }
+  private async removePipelineStages(
+    projectId: string,
+    contactId: string,
+  ): Promise<boolean> {
+    const results = await runAtomicSql(
+      this.db,
+      this.pipelineRemovalStatements(projectId, contactId),
+    );
+    return results.some(function removedRows(result, index) {
+      return index % 2 === 1 && result.changes > 0;
+    });
+  }
 
-    for (const contactId of duplicateContactIds) {
-      const assignedStages = [...(byContact.get(contactId) ?? [])];
-      assignedStages.sort(function newestStageFirst(left, right) {
-        const leftTimestamp =
-          latestByAssignment.get(`${contactId}\u0000${left}`) ?? 0;
-        const rightTimestamp =
-          latestByAssignment.get(`${contactId}\u0000${right}`) ?? 0;
-        return rightTimestamp - leftTimestamp || left.localeCompare(right);
-      });
-      for (const tagId of assignedStages.slice(1)) {
-        await this.removeTag(contactId, tagId);
-      }
-    }
+  private pipelineRemovalStatements(
+    projectId: string,
+    contactId: string,
+    retainedTagId?: string,
+  ): AtomicSqlStatement[] {
+    const retainedFilter = retainedTagId
+      ? `
+          AND contact_tags.tag_id <> ?
+          AND EXISTS (
+            SELECT 1 FROM stage_tags WHERE tag_id = ?
+          )
+        `
+      : "";
+    const params = retainedTagId
+      ? [projectId, contactId, retainedTagId, retainedTagId]
+      : [projectId, contactId];
+    return [
+      {
+        query: `
+          ${pipelineStageCte()}
+          INSERT INTO contact_activity (
+            id,
+            contact_id,
+            type,
+            reference_id,
+            metadata,
+            created_at
+          )
+          SELECT
+            lower(hex(randomblob(16))),
+            contact_tags.contact_id,
+            'tag_removed',
+            contact_tags.tag_id,
+            json_object('tagName', tags.name),
+            unixepoch()
+          FROM contact_tags
+          INNER JOIN tags ON tags.id = contact_tags.tag_id
+          WHERE
+            contact_tags.contact_id = ?
+            AND contact_tags.tag_id IN (
+              SELECT tag_id FROM stage_tags
+            )
+            ${retainedFilter}
+        `,
+        params,
+      },
+      {
+        query: `
+          ${pipelineStageCte()}
+          DELETE FROM contact_tags
+          WHERE
+            contact_id = ?
+            AND tag_id IN (
+              SELECT tag_id FROM stage_tags
+            )
+            ${retainedFilter.replaceAll("contact_tags.", "")}
+        `,
+        params,
+      },
+    ];
   }
 
   async removeFromContact(
@@ -532,27 +827,6 @@ export class TagService {
       )
       .limit(1);
     return !!assignment;
-  }
-
-  private async assignedTagIds(
-    contactId: string,
-    tagIds: string[],
-  ): Promise<string[]> {
-    if (tagIds.length === 0) return [];
-    const assigned = new Set<string>();
-    for (const ids of chunk(tagIds, TAG_ID_CHUNK)) {
-      const rows = await this.db
-        .select({ tagId: dbSchema.contactTags.tagId })
-        .from(dbSchema.contactTags)
-        .where(
-          and(
-            eq(dbSchema.contactTags.contactId, contactId),
-            inArray(dbSchema.contactTags.tagId, ids),
-          ),
-        );
-      for (const row of rows) assigned.add(row.tagId);
-    }
-    return [...assigned].sort();
   }
 
   private async getTagName(tagId: string): Promise<string | null> {

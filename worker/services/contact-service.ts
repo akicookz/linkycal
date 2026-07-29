@@ -612,19 +612,21 @@ export class ContactService {
     projectId: string,
     contactId: string,
     tagId: string | null,
-  ): Promise<void> {
+  ): Promise<"ok" | "invalid_stage"> {
     if (tagId) {
-      const result = await this.tagService.assignToContact(
+      const result = await this.tagService.assignPipelineStageToContact(
         projectId,
         contactId,
         tagId,
       );
+      if (result.status === "invalid_stage") return "invalid_stage";
       if (result.status !== "ok") {
         throw new Error(`Failed to set contact stage: ${result.status}`);
       }
-      return;
+      return "ok";
     }
     await this.tagService.clearPipelineStage(projectId, contactId);
+    return "ok";
   }
 
   // Get all contacts with their tags in one go (for MCP + non-paginated callers).
@@ -848,6 +850,7 @@ export class ContactService {
           eq(dbSchema.contactViews.projectId, projectId),
         ),
       );
+    await this.tagService.reconcilePipelineStageAssignments(projectId);
   }
 
 }

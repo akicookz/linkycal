@@ -5719,18 +5719,14 @@ app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
     const data = validate(setStageSchema, body);
     const db = c.get("db");
     const service = new ContactService(db);
-    const tagService = new TagService(db);
 
     if (!(await service.contactInProject(projectId, contactId))) {
       return c.json({ error: "Contact not found" }, 404);
     }
-    if (
-      data.tagId &&
-      (await tagService.filterProjectTagIds(projectId, [data.tagId])).length === 0
-    ) {
-      return c.json({ error: "Invalid tag" }, 400);
+    const result = await service.setStage(projectId, contactId, data.tagId);
+    if (result === "invalid_stage") {
+      return c.json({ error: "Invalid pipeline stage" }, 400);
     }
-    await service.setStage(projectId, contactId, data.tagId);
     return c.json({ success: true });
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
