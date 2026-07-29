@@ -102,8 +102,8 @@ Creating or updating a Kanban view can turn an ordinary tag into a
 pipeline-step tag. After a pipeline configuration change, the service will
 reconcile project contacts against the new project-wide step set. When a
 contact has multiple step tags, it retains the tag with the newest persisted
-`tag_added` activity. A deterministic tag-ID tie-breaker handles missing or
-equal activity timestamps.
+`tag_added` activity. The lexicographically smallest tag ID is retained when
+activity timestamps are missing or equal.
 
 ### Existing data
 
