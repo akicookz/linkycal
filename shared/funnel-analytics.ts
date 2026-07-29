@@ -60,6 +60,11 @@ export const FUNNEL_STAGE_OUTCOMES = [
   "skipped",
   "validation_failed",
 ] as const;
+export const ANALYTICS_PROVIDERS = [
+  "ga4",
+  "meta_pixel",
+  "posthog",
+] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
 export type AnalyticsSource = (typeof ANALYTICS_SOURCES)[number];
@@ -69,6 +74,7 @@ export type FunnelStageKind = (typeof FUNNEL_STAGE_KINDS)[number];
 export type AnalyticsFailureCategory =
   (typeof ANALYTICS_FAILURE_CATEGORIES)[number];
 export type FunnelStageOutcome = (typeof FUNNEL_STAGE_OUTCOMES)[number];
+export type AnalyticsProvider = (typeof ANALYTICS_PROVIDERS)[number];
 
 export interface FunnelEventContext {
   selectedDate?: string;
@@ -138,3 +144,36 @@ export interface FunnelStageReport {
   skipped?: number;
   contextBreakdowns?: FunnelContextBreakdowns;
 }
+
+export interface Ga4AnalyticsIntegration {
+  provider: "ga4";
+  enabled: boolean;
+  measurementId?: string;
+}
+
+export interface MetaPixelAnalyticsIntegration {
+  provider: "meta_pixel";
+  enabled: boolean;
+  pixelId?: string;
+}
+
+export interface PostHogAnalyticsIntegration {
+  provider: "posthog";
+  enabled: boolean;
+  projectKey?: string;
+  host?: "us" | "eu";
+}
+
+export type AnalyticsIntegrationConfig =
+  | Ga4AnalyticsIntegration
+  | MetaPixelAnalyticsIntegration
+  | PostHogAnalyticsIntegration;
+
+export interface AnalyticsIntegrations {
+  ga4: Omit<Ga4AnalyticsIntegration, "provider">;
+  meta_pixel: Omit<MetaPixelAnalyticsIntegration, "provider">;
+  posthog: Omit<PostHogAnalyticsIntegration, "provider">;
+}
+
+export type ConfigureAnalyticsIntegrationInput =
+  AnalyticsIntegrationConfig;

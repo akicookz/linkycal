@@ -765,6 +765,40 @@ export const trackEventRequestSchema = z.union([
   z.object({ events: z.array(trackEventSchema).min(1).max(20) }).strict(),
 ]);
 
+export const configureAnalyticsIntegrationSchema = z.discriminatedUnion(
+  "provider",
+  [
+    z
+      .object({
+        provider: z.literal("ga4"),
+        enabled: z.boolean(),
+        measurementId: z
+          .string()
+          .regex(/^G-[A-Z0-9]{4,20}$/)
+          .optional(),
+      })
+      .strict(),
+    z
+      .object({
+        provider: z.literal("meta_pixel"),
+        enabled: z.boolean(),
+        pixelId: z.string().regex(/^\d{5,30}$/).optional(),
+      })
+      .strict(),
+    z
+      .object({
+        provider: z.literal("posthog"),
+        enabled: z.boolean(),
+        projectKey: z
+          .string()
+          .regex(/^phc_[A-Za-z0-9_-]{10,200}$/)
+          .optional(),
+        host: z.enum(["us", "eu"]).optional(),
+      })
+      .strict(),
+  ],
+);
+
 export const analyticsQuerySchema = z
   .object({
     period: z.enum(["7d", "30d", "90d", "custom"]).default("30d"),

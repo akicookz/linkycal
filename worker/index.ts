@@ -92,6 +92,9 @@ import {
   submitPublicFormStepAction,
 } from "./lib/public-form-actions";
 import { loadPublicEventTypeAction } from "./lib/public-event-type-actions";
+import {
+  mergeProjectSettingsPreservingAnalyticsIntegrations,
+} from "./services/analytics-integration-service";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
 import { LinkyCalMcp } from "./mcp/agent";
 import type { McpProps } from "./mcp/agent";
@@ -3867,8 +3870,19 @@ app.put("/api/projects/:projectId", async (c) => {
       values.slug = slug;
     }
     if (body.timezone !== undefined) values.timezone = body.timezone;
-    if (body.settings !== undefined)
-      values.settings = JSON.stringify(body.settings);
+    if (body.settings !== undefined) {
+      const [current] = await db
+        .select({ settings: dbSchema.projects.settings })
+        .from(dbSchema.projects)
+        .where(eq(dbSchema.projects.id, projectId))
+        .limit(1);
+      values.settings = JSON.stringify(
+        mergeProjectSettingsPreservingAnalyticsIntegrations(
+          current?.settings,
+          body.settings,
+        ),
+      );
+    }
 
     if (Object.keys(values).length === 0) {
       return c.json({ error: "No fields to update" }, 400);

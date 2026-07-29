@@ -3,23 +3,14 @@ import { eq } from "drizzle-orm";
 
 import * as dbSchema from "../db/schema";
 import { FormService } from "../services/form-service";
+import {
+  AnalyticsIntegrationService,
+  stripAnalyticsIntegrationsFromSettings,
+} from "../services/analytics-integration-service";
 import { submitFormStepSchema } from "../validation";
 import { resolveProjectEntitlements } from "./entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
-
-function parseProjectSettings(value: unknown): Record<string, unknown> {
-  if (!value) return {};
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, unknown>;
-  }
-  if (typeof value !== "string") return {};
-
-  const parsed = JSON.parse(value) as unknown;
-  return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-    ? parsed as Record<string, unknown>
-    : {};
-}
 
 export async function loadPublicFormAction(
   db: AppDatabase,
@@ -61,6 +52,9 @@ export async function loadPublicFormAction(
   const canHideBranding =
     entitlements?.subscription.plan === "pro" ||
     entitlements?.subscription.plan === "business";
+  const analyticsIntegrations = await new AnalyticsIntegrationService(
+    db,
+  ).getPublished(project.id);
 
   return {
     ok: true as const,
@@ -71,9 +65,10 @@ export async function loadPublicFormAction(
         id: project.id,
         name: project.name,
         slug: project.slug,
-        settings: parseProjectSettings(project.settings),
+        settings: stripAnalyticsIntegrationsFromSettings(project.settings),
       },
       canHideBranding,
+      analyticsIntegrations,
     },
   };
 }
