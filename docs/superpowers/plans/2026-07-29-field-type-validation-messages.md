@@ -30,7 +30,7 @@
 - Consumes: `FormExperienceField` and its `type`, `required`, and current string value.
 - Produces: `validateFormExperienceField(field: FormExperienceField, value: string): string | null`.
 
-- [ ] **Step 1: Write the failing unit test**
+- [x] **Step 1: Write the failing unit test**
 
 Create `tests/form-experience-validation.test.ts` with a table of required
 field types and literal messages:
@@ -100,7 +100,7 @@ describe("form experience validation messages", () => {
 });
 ```
 
-- [ ] **Step 2: Update the focused-form regression expectation**
+- [x] **Step 2: Update the focused-form regression expectation**
 
 In `tests/critical/form-experience.test.tsx`, change the empty required radio
 expectation in “public form experience > focused form validates…” from:
@@ -118,7 +118,7 @@ expect(screen.getByText("Please select an option")).toBeTruthy();
 Keep the grouped text/email test for now; it must fail until both fields receive
 their distinct messages.
 
-- [ ] **Step 3: Run tests to verify RED**
+- [x] **Step 3: Run tests to verify RED**
 
 Run:
 
@@ -130,7 +130,7 @@ Expected: required empty-field cases receive `undefined` from the old
 caller-supplied message argument, and the focused radio integration assertion
 receives “Please fill this in.”
 
-- [ ] **Step 4: Implement the minimal mapping**
+- [x] **Step 4: Implement the minimal mapping**
 
 In `src/lib/form-experience.ts`, replace the caller-supplied required message
 with a private field-type mapping:
@@ -195,7 +195,7 @@ const message = validateFormExperienceField(
 );
 ```
 
-- [ ] **Step 5: Update grouped-field integration assertions**
+- [x] **Step 5: Update grouped-field integration assertions**
 
 In the grouped focused-section test, replace the two identical generic-message
 assertion with:
@@ -207,7 +207,7 @@ expect(screen.getByText("Please enter your email")).toBeTruthy();
 
 This protects distinct text and email messages in one rendered group.
 
-- [ ] **Step 6: Run focused tests to verify GREEN**
+- [x] **Step 6: Run focused tests to verify GREEN**
 
 Run:
 
@@ -217,7 +217,7 @@ bun test tests/form-experience-validation.test.ts tests/critical/form-experience
 
 Expected: all tests pass.
 
-- [ ] **Step 7: Verify type safety and lint**
+- [x] **Step 7: Verify type safety and lint**
 
 Run:
 
@@ -228,7 +228,7 @@ Run:
 
 Expected: both commands exit successfully with no diagnostics in changed files.
 
-- [ ] **Step 8: Run the complete test suite**
+- [x] **Step 8: Run the complete test suite**
 
 Run:
 
@@ -238,7 +238,7 @@ bun test
 
 Expected: all repository tests pass.
 
-- [ ] **Step 9: Verify the observed browser regression**
+- [x] **Step 9: Verify the observed browser regression**
 
 Reload:
 
@@ -250,7 +250,7 @@ Advance to “Who will you be using the service for?”, select nothing, and pre
 OK. Verify the visible error is “Please select an option,” no console error is
 emitted, and no form response is submitted.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add src/lib/form-experience.ts src/components/FormExperience.tsx tests/form-experience-validation.test.ts tests/critical/form-experience.test.tsx docs/superpowers/plans/2026-07-29-field-type-validation-messages.md

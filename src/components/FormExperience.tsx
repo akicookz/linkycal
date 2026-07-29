@@ -185,8 +185,6 @@ export function FormExperience(props: FormExperienceProps) {
     form.type === "multi_step"
       ? analyticsStages[screenIndex] ?? null
       : analyticsStages[currentStepIndex] ?? null;
-  const requiredMessage =
-    surface === "standalone" ? "Please fill this in" : "This field is required";
   const analyticsObserverRef = useRef(onAnalyticsEvent);
   analyticsObserverRef.current = onAnalyticsEvent;
   const previousAnalyticsStagesRef = useRef<FormExperienceAnalyticsStage[]>(
@@ -241,7 +239,6 @@ export function FormExperience(props: FormExperienceProps) {
       const message = validateFormExperienceField(
         field,
         values[field.id] ?? "",
-        requiredMessage,
       );
       if (message) errors[field.id] = message;
     }

@@ -260,12 +260,16 @@ describe("public form experience", () => {
       });
       expect(screen.queryByText("Team size")).toBeNull();
       await user.click(screen.getByRole("button", { name: "OK" }));
-      expect(screen.getByText("Please fill this in")).toBeTruthy();
+      expect(screen.getByText("Please enter a response")).toBeTruthy();
       expect(api.starts).toEqual([]);
       expect(api.patches).toEqual([]);
 
       await user.type(company, "Northstar Oy{Enter}");
       await screen.findByRole("heading", { name: /Team size/ });
+      await user.click(screen.getByRole("button", { name: "Submit" }));
+      expect(screen.getByText("Please select an option")).toBeTruthy();
+      expect(api.starts).toEqual([]);
+      expect(api.patches).toEqual([]);
       await user.click(screen.getByRole("button", { name: /1-10/ }));
 
       await screen.findByRole("heading", {
@@ -356,7 +360,8 @@ describe("public form experience", () => {
       expect(headings.slice(0, 2)).toEqual(["Full name*", "Work email*"]);
 
       await user.click(screen.getByRole("button", { name: "Submit" }));
-      expect(screen.getAllByText("Please fill this in")).toHaveLength(2);
+      expect(screen.getByText("Please enter a response")).toBeTruthy();
+      expect(screen.getByText("Please enter your email")).toBeTruthy();
       expect(api.patches).toEqual([]);
 
       await user.type(name, "Hanna Guest");

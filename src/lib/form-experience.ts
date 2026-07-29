@@ -432,12 +432,45 @@ export function buildFormExperienceModel(
   };
 }
 
+function getRequiredFieldMessage(type: string): string {
+  switch (type) {
+    case "radio":
+    case "select":
+      return "Please select an option";
+    case "multi_select":
+      return "Please select at least one option";
+    case "checkbox":
+      return "Please check this box";
+    case "rating":
+      return "Please choose a rating";
+    case "file":
+      return "Please choose a file";
+    case "date":
+      return "Please select a date";
+    case "time":
+      return "Please select a time";
+    case "email":
+      return "Please enter your email";
+    case "phone":
+      return "Please enter a phone number";
+    case "url":
+      return "Please enter a URL";
+    case "number":
+      return "Please enter a number";
+    case "textarea":
+    case "text":
+    default:
+      return "Please enter a response";
+  }
+}
+
 export function validateFormExperienceField(
   field: FormExperienceField,
   value: string,
-  requiredMessage: string,
 ): string | null {
-  if (field.required && !value.trim()) return requiredMessage;
+  if (field.required && !value.trim()) {
+    return getRequiredFieldMessage(field.type);
+  }
   if (
     field.type === "email" &&
     value.trim() &&
