@@ -4,7 +4,7 @@
 //
 // Data point blob layout:
 //   blob1:  projectId
-//   blob2:  event name (page_view, booking_created, form_view, form_started, form_completed)
+//   blob2:  canonical event name
 //   blob3:  resource slug (eventTypeSlug or formSlug)
 //   blob4:  utm_source
 //   blob5:  utm_medium
@@ -15,21 +15,35 @@
 //   blob10: country
 //   blob11: city
 //   blob12: source (direct | widget)
-//   blob13: custom params (JSON stringified)
+//   blob13: bounded custom params and safe event context (JSON stringified)
+//   blob14: anonymous journey ID
+//   blob15: funnel type
+//   blob16: stable stage key
+//   blob17: stage label snapshot
+//   blob18: stage kind
+//   blob19: primary context value
+//   blob20: device type
 //
-// double1: 1 (unused — queries use _sample_interval for sampling-correct counts)
+// double1: event weight
+// double2: stage order
+// double3: available slot count
+// double4: days in advance
+// double5: event duration in minutes
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type AnalyticsEvent =
-  | "page_view"
-  | "booking_created"
-  | "form_view"
-  | "form_started"
-  | "form_completed";
+import type {
+  AnalyticsDeviceType,
+  AnalyticsEventName,
+  AnalyticsSource,
+  FunnelEventContext,
+  FunnelStageKind,
+  FunnelType,
+} from "../../shared/funnel-analytics";
 
 export interface TrackEventData {
   projectId: string;
-  event: AnalyticsEvent;
+  event: AnalyticsEventName;
+  projectSlug?: string;
   resourceSlug?: string;
   utmSource?: string;
   utmMedium?: string;
@@ -39,8 +53,20 @@ export interface TrackEventData {
   referrer?: string;
   country?: string;
   city?: string;
-  source?: "direct" | "widget";
+  source?: AnalyticsSource;
   params?: Record<string, string>;
+  journeyId?: string;
+  funnelType?: FunnelType;
+  stageKey?: string;
+  stageLabel?: string;
+  stageKind?: FunnelStageKind;
+  primaryValue?: string;
+  deviceType?: AnalyticsDeviceType;
+  stageOrder?: number;
+  slotCount?: number;
+  daysAhead?: number;
+  durationMinutes?: number;
+  context?: FunnelEventContext;
 }
 
 export interface AnalyticsQueryParams {
@@ -52,7 +78,16 @@ export interface AnalyticsQueryParams {
   utmMedium?: string;
   utmCampaign?: string;
   resourceSlug?: string;
-  groupBy?: "source" | "country" | "resource" | "utm_source" | "utm_medium" | "utm_campaign";
+  source?: AnalyticsSource;
+  deviceType?: AnalyticsDeviceType;
+  groupBy?:
+    | "source"
+    | "device"
+    | "country"
+    | "resource"
+    | "utm_source"
+    | "utm_medium"
+    | "utm_campaign";
 }
 
 // ─── Write ───────────────────────────────────────────────────────────────────
@@ -61,6 +96,15 @@ export function writeAnalyticsEvent(
   analytics: AnalyticsEngineDataset,
   data: TrackEventData,
 ): void {
+  const blobContext =
+    data.context && data.params
+      ? JSON.stringify({ context: data.context, params: data.params })
+      : data.context
+        ? JSON.stringify({ context: data.context })
+        : data.params
+          ? JSON.stringify(data.params)
+          : "";
+
   analytics.writeDataPoint({
     indexes: [data.projectId],
     blobs: [
@@ -76,9 +120,22 @@ export function writeAnalyticsEvent(
       data.country ?? "",
       data.city ?? "",
       data.source ?? "direct",
-      data.params ? JSON.stringify(data.params) : "",
+      blobContext,
+      data.journeyId ?? "",
+      data.funnelType ?? "",
+      data.stageKey ?? "",
+      data.stageLabel ?? "",
+      data.stageKind ?? "",
+      data.primaryValue ?? "",
+      data.deviceType ?? "",
     ],
-    doubles: [1],
+    doubles: [
+      1,
+      data.stageOrder ?? 0,
+      data.slotCount ?? 0,
+      data.daysAhead ?? 0,
+      data.durationMinutes ?? 0,
+    ],
   });
 }
 
@@ -101,6 +158,10 @@ function buildFilters(params: AnalyticsQueryParams): string {
   if (params.utmMedium) sql += ` AND blob5 = '${escSql(params.utmMedium)}'`;
   if (params.utmCampaign) sql += ` AND blob6 = '${escSql(params.utmCampaign)}'`;
   if (params.resourceSlug) sql += ` AND blob3 = '${escSql(params.resourceSlug)}'`;
+  if (params.source) sql += ` AND blob12 = '${escSql(params.source)}'`;
+  if (params.deviceType) {
+    sql += ` AND blob20 = '${escSql(params.deviceType)}'`;
+  }
 
   return sql;
 }

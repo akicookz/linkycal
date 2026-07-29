@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Implement the approved design in `docs/superpowers/specs/2026-07-29-detailed-funnel-analytics-design.md`; do not add individual visitor histories, raw form answers, session replay, raw JavaScript, GTM, arbitrary provider hosts, or historical backfill.
-- Preserve blobs 1–13 and all legacy event names and aggregate response fields. Detailed data begins only after deployment.
+- Preserve blobs 1–13 and all existing canonical event names and aggregate response fields. Detailed data begins only after deployment.
 - Count detailed stages by distinct non-empty journey IDs. Never return journey IDs, IP addresses, contact fields, answers, uploaded filenames, notes, raw error text, or individual paths from reporting APIs.
 - Keep `FormExperience.onCheckpoint` as the only persistence/navigation authority. Analytics callbacks are synchronous observers that internally isolate their own errors; they never gate, await, replace, or alter checkpoints.
 - Keep booking creation, form start/checkpoint/completion, uploads, notifications, workflows, and calendar delivery functional when LinkyCal telemetry or any external provider fails.
@@ -111,13 +111,13 @@ export interface FunnelContextBreakdowns {
 }
 ```
 
-- [ ] Add a table-driven test that accepts every approved legacy/detailed event and rejects unknown event names, malformed journey/stage IDs, unsupported context keys, invalid dates/times, more than 48 offered slots, oversized labels/params, arbitrary metadata, and all PII-shaped top-level keys.
+- [ ] Add a table-driven test that accepts every approved existing/detailed event and rejects unknown event names, malformed journey/stage IDs, unsupported context keys, invalid dates/times, more than 48 offered slots, oversized labels/params, arbitrary metadata, and all PII-shaped top-level keys.
 - [ ] Run `bun test tests/analytics-event-contract.test.ts` and verify RED because the shared contract and detailed schema do not exist.
 - [ ] Add immutable event-name/stage-order constants and the interfaces above to `shared/funnel-analytics.ts`. Keep this file runtime-light so Worker, SPA, and widget bundles can import it.
 - [ ] Replace the narrow `trackEventSchema` with a strict canonical event schema. Accept either one event or `{ events: CanonicalFunnelEvent[] }`, cap a batch at 20 events, cap string/array/context sizes, and preserve the existing single-event body.
 - [ ] Add `source` and `deviceType` to `analyticsQuerySchema`; require `start` and `end` only for `period=custom`, validate `start <= end`, and reject custom dates with non-custom periods.
 - [ ] Extend `AnalyticsEvent` and `writeAnalyticsEvent` without changing blobs 1–13: write journey/funnel/stage/label/kind/primary/device to blobs 14–20 and order/slot count/days ahead/duration to doubles 2–5; keep `double1 = 1`.
-- [ ] Serialize a backward-compatible blob-13 envelope that preserves bounded legacy `params` separately from the allowlisted bounded `context`; do not merge arbitrary params into detailed context.
+- [ ] Serialize a backward-compatible blob-13 envelope that preserves bounded existing `params` separately from the allowlisted bounded `context`; do not merge arbitrary params into detailed context.
 - [ ] Rerun `bun test tests/analytics-event-contract.test.ts` and verify GREEN.
 - [ ] Run `bun run build` to prove the shared contract compiles in app and Worker projects.
 - [ ] Commit with `git commit -m "feat: define detailed analytics event contract"`.
@@ -302,17 +302,17 @@ export interface DetailedFunnelReport {
 }
 ```
 
-- [ ] Write a reporting test whose mocked Analytics Engine boundary receives literal rows for repeated events, two distinct journeys, a conditional skip, legacy rows with empty blob 14, and safe booking context.
-- [ ] Assert literal visitors/continued/drop-off/rates, skip handling, date/availability/offered-time/selected-time distributions, safe failures, and the earliest detailed timestamp. Assert legacy high-level totals/time series are unchanged.
+- [ ] Write a reporting test whose mocked Analytics Engine boundary receives literal rows for repeated events, two distinct journeys, a conditional skip, pre-revamp rows with empty blob 14, and safe booking context.
+- [ ] Assert literal visitors/continued/drop-off/rates, skip handling, date/availability/offered-time/selected-time distributions, safe failures, and the earliest detailed timestamp. Assert existing high-level totals/time series are unchanged.
 - [ ] Add a project-resource boundary test: a selected event type/form not owned by the project returns the same empty detailed report as a missing resource and does not query another project.
 - [ ] Add query-filter tests for source/device/custom range and response serialization tests that prove no blob 14/journey field appears.
 - [ ] Run `bun test tests/analytics-reporting.test.ts` and verify RED.
-- [ ] Centralize period/filter SQL fragments with bound, escaped literals; retain current sampled legacy totals and add detailed queries over non-empty blob 14.
+- [ ] Centralize period/filter SQL fragments with bound, escaped literals; retain current sampled high-level totals and add detailed queries over non-empty blob 14.
 - [ ] Calculate stage visitors as distinct journey IDs. Calculate `continued` against the next actual ordered stage; treat explicit conditional skips as continuations rather than drop-offs.
-- [ ] Add framework-independent reporting actions that receive `{ db, env, projectId, planLimits }`, resolve stable resource ID/slug ownership with D1, and then call Analytics Engine query functions. All-resource requests keep legacy summaries and omit resource-specific stage rows.
+- [ ] Add framework-independent reporting actions that receive `{ db, env, projectId, planLimits }`, resolve stable resource ID/slug ownership with D1, and then call Analytics Engine query functions. All-resource requests keep existing summaries and omit resource-specific stage rows.
 - [ ] Make the filters action combine observed UTM/source/device values from Analytics Engine with project-owned event-type and form `{ id, slug, name }` catalogs from D1.
 - [ ] Parse bounded blob-13 context defensively and aggregate only the approved keys. Ignore malformed historical context instead of failing the response.
-- [ ] Add `availableSince`, detailed funnel, source/device, booking distributions, and failure arrays to existing return values without renaming/removing legacy fields.
+- [ ] Add `availableSince`, detailed funnel, source/device, booking distributions, and failure arrays to existing return values without renaming/removing current fields.
 - [ ] Rerun `bun test tests/analytics-reporting.test.ts` and verify GREEN.
 - [ ] Run `bun run build`.
 - [ ] Commit with `git commit -m "feat: report unique-journey funnel drop-offs"`.
@@ -481,7 +481,7 @@ export interface DetailedFunnelReport {
 - [ ] Direct booking/form pages and widget iframes produce one correctly attributed journey each.
 - [ ] Booking funnels include dates, availability counts/times, selected time, details, attached-form screens, attempt, safe failure, and authoritative success without guest data.
 - [ ] Focused forms still persist every existing checkpoint, complete only at the final checkpoint, and continue when analytics fails.
-- [ ] Reports use unique journey counts, handle conditional skips, preserve legacy totals, and show the detailed-data boundary.
+- [ ] Reports use unique journey counts, handle conditional skips, preserve existing totals, and show the detailed-data boundary.
 - [ ] Free/Pro/Business entitlement behavior is enforced by the Worker for reports, integration mutation, MCP, and public provider publication.
 - [ ] GA4, Meta Pixel, and PostHog receive only sanitized canonical properties from bundled, fixed-host adapters.
 - [ ] REST and MCP use the same service/action implementation and enforce project scope.

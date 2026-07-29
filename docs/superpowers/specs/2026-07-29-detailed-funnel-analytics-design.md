@@ -313,7 +313,7 @@ abandonment.
 
 The API returns:
 
-- high-level legacy totals and time series;
+- existing high-level totals and time series;
 - a detailed-funnel availability timestamp;
 - detailed stages for a selected event type or form;
 - direct versus widget and device breakdowns;
@@ -642,7 +642,7 @@ The strongest tests protect these observable contracts:
    names, emails, answers, notes, labels, and raw error messages.
 9. Invalid provider identifiers, arbitrary PostHog hosts, raw script input, and
    unsupported analytics metadata are rejected.
-10. Legacy aggregate booking and form analytics remain queryable alongside the
+10. Existing aggregate booking and form analytics remain queryable alongside the
     detailed-data boundary.
 11. REST analytics responses expose the detailed aggregate contract through a
     project-scoped API key and never expose journey IDs or visitor data.

@@ -1,5 +1,16 @@
 import { z } from "zod";
 
+import {
+  ANALYTICS_DEVICE_TYPES,
+  ANALYTICS_EVENT_NAMES,
+  ANALYTICS_FAILURE_CATEGORIES,
+  ANALYTICS_SOURCES,
+  DETAILED_ANALYTICS_EVENT_NAMES,
+  FUNNEL_STAGE_KINDS,
+  FUNNEL_STAGE_OUTCOMES,
+  FUNNEL_TYPES,
+} from "../shared/funnel-analytics";
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 export function validate<T>(schema: z.ZodSchema<T>, data: unknown): T {
@@ -641,30 +652,168 @@ export const checkAvailabilitySchema = z.object({
 
 // ─── Analytics ───────────────────────────────────────────────────────────────
 
-export const trackEventSchema = z.object({
-  event: z.enum(["page_view", "form_view", "booking_created", "form_started", "form_completed"]),
-  projectSlug: z.string().min(1),
-  resourceSlug: z.string().optional(),
-  utmSource: z.string().max(200).optional(),
-  utmMedium: z.string().max(200).optional(),
-  utmCampaign: z.string().max(200).optional(),
-  utmTerm: z.string().max(200).optional(),
-  utmContent: z.string().max(200).optional(),
-  referrer: z.string().max(2000).optional(),
-  source: z.enum(["direct", "widget"]).optional(),
-  params: z.record(z.string(), z.string()).optional(),
-});
+const analyticsSlugSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z0-9-]+$/);
+const analyticsDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(function isCalendarDate(value) {
+    const parsed = new Date(`${value}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value;
+  }, "Must be a valid calendar date");
+const analyticsTimeSchema = z
+  .string()
+  .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
+const analyticsParamsSchema = z
+  .record(
+    z.string().min(1).max(64).regex(/^[a-zA-Z0-9_.-]+$/),
+    z.string().max(200),
+  )
+  .refine(function hasBoundedParamCount(value) {
+    return Object.keys(value).length <= 20;
+  }, "At most 20 custom parameters are allowed");
 
-export const analyticsQuerySchema = z.object({
-  period: z.enum(["7d", "30d", "90d", "custom"]).default("30d"),
-  start: z.string().optional(),
-  end: z.string().optional(),
-  utmSource: z.string().optional(),
-  utmMedium: z.string().optional(),
-  utmCampaign: z.string().optional(),
-  resourceSlug: z.string().optional(),
-  groupBy: z.enum(["source", "country", "resource", "utm_source", "utm_medium", "utm_campaign"]).optional(),
-});
+const funnelEventContextSchema = z
+  .object({
+    selectedDate: analyticsDateSchema.optional(),
+    weekday: z
+      .enum([
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+      ])
+      .optional(),
+    viewerTimezone: z.string().min(1).max(100).optional(),
+    offeredSlotStarts: z.array(analyticsTimeSchema).max(48).optional(),
+    earliestSlot: analyticsTimeSchema.optional(),
+    latestSlot: analyticsTimeSchema.optional(),
+    availabilityOutcome: z.enum(["available", "none", "error"]).optional(),
+    selectedTime: analyticsTimeSchema.optional(),
+    fieldType: z.string().min(1).max(50).optional(),
+    required: z.boolean().optional(),
+    stageOutcome: z.enum(FUNNEL_STAGE_OUTCOMES).optional(),
+    failureCategory: z.enum(ANALYTICS_FAILURE_CATEGORIES).optional(),
+  })
+  .strict();
+
+export const trackEventSchema = z
+  .object({
+    event: z.enum(ANALYTICS_EVENT_NAMES),
+    projectSlug: analyticsSlugSchema,
+    resourceSlug: analyticsSlugSchema.optional(),
+    journeyId: z.uuid().optional(),
+    funnelType: z.enum(FUNNEL_TYPES).optional(),
+    stageKey: z
+      .string()
+      .min(1)
+      .max(160)
+      .regex(/^[a-zA-Z0-9._:-]+$/)
+      .optional(),
+    stageLabel: z.string().min(1).max(160).optional(),
+    stageKind: z.enum(FUNNEL_STAGE_KINDS).optional(),
+    stageOrder: z.number().int().min(1).max(200).optional(),
+    primaryValue: z.string().max(160).optional(),
+    deviceType: z.enum(ANALYTICS_DEVICE_TYPES).optional(),
+    source: z.enum(ANALYTICS_SOURCES).optional(),
+    slotCount: z.number().int().min(0).max(48).optional(),
+    daysAhead: z.number().int().min(0).max(730).optional(),
+    durationMinutes: z.number().int().min(5).max(480).optional(),
+    context: funnelEventContextSchema.optional(),
+    utmSource: z.string().max(200).optional(),
+    utmMedium: z.string().max(200).optional(),
+    utmCampaign: z.string().max(200).optional(),
+    utmTerm: z.string().max(200).optional(),
+    utmContent: z.string().max(200).optional(),
+    referrer: z.string().max(2000).optional(),
+    params: analyticsParamsSchema.optional(),
+  })
+  .strict()
+  .superRefine(function validateDetailedEventIdentity(value, ctx) {
+    const detailedEvents = new Set<string>(DETAILED_ANALYTICS_EVENT_NAMES);
+    if (!detailedEvents.has(value.event)) return;
+
+    const requiredFields = [
+      "journeyId",
+      "funnelType",
+      "stageKey",
+      "stageLabel",
+      "stageKind",
+      "stageOrder",
+      "deviceType",
+      "source",
+    ] as const;
+    for (const field of requiredFields) {
+      if (value[field] !== undefined) continue;
+      ctx.addIssue({
+        code: "custom",
+        path: [field],
+        message: `${field} is required for detailed analytics events`,
+      });
+    }
+  });
+
+export const trackEventRequestSchema = z.union([
+  trackEventSchema,
+  z.object({ events: z.array(trackEventSchema).min(1).max(20) }).strict(),
+]);
+
+export const analyticsQuerySchema = z
+  .object({
+    period: z.enum(["7d", "30d", "90d", "custom"]).default("30d"),
+    start: analyticsDateSchema.optional(),
+    end: analyticsDateSchema.optional(),
+    utmSource: z.string().max(200).optional(),
+    utmMedium: z.string().max(200).optional(),
+    utmCampaign: z.string().max(200).optional(),
+    resourceSlug: analyticsSlugSchema.optional(),
+    source: z.enum(ANALYTICS_SOURCES).optional(),
+    deviceType: z.enum(ANALYTICS_DEVICE_TYPES).optional(),
+    groupBy: z
+      .enum([
+        "source",
+        "device",
+        "country",
+        "resource",
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+      ])
+      .optional(),
+  })
+  .strict()
+  .superRefine(function validateAnalyticsRange(value, ctx) {
+    if (value.period === "custom") {
+      if (!value.start || !value.end) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Custom periods require start and end dates",
+        });
+        return;
+      }
+      if (value.start > value.end) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Start date must not be after end date",
+        });
+      }
+      return;
+    }
+
+    if (value.start || value.end) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Start and end dates are accepted only for custom periods",
+      });
+    }
+  });
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
