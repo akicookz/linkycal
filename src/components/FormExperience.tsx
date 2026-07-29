@@ -413,7 +413,7 @@ export function FormExperience(props: FormExperienceProps) {
       type: "viewed",
       screen: currentAnalyticsStage,
     });
-  }, [currentAnalyticsStage?.key]);
+  }, [currentAnalyticsStage]);
 
   useEffect(() => {
     const currentKeys = new Set(
