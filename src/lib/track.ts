@@ -1,67 +1,40 @@
-// ─── Client-side Analytics Tracking ──────────────────────────────────────────
-//
-// Sends lightweight tracking events to POST /api/v1/t via navigator.sendBeacon.
-// Automatically extracts UTM params from the current URL.
+import type {
+  AnalyticsEventName,
+  FunnelType,
+} from "../../shared/funnel-analytics";
+import {
+  createFunnelAnalyticsDispatcher,
+  type FunnelAnalyticsDispatcher,
+} from "./funnel-analytics";
 
-function getUtmsFromUrl(): Record<string, string> {
-  const params = new URLSearchParams(window.location.search);
-  const utms: Record<string, string> = {};
-  const keys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
-  for (const key of keys) {
-    const val = params.get(key);
-    if (val) {
-      // Convert utm_source -> utmSource
-      const camel = key.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
-      utms[camel] = val;
-    }
-  }
-  return utms;
-}
+const dispatchers = new Map<string, FunnelAnalyticsDispatcher>();
 
-function getCustomParams(): Record<string, string> | undefined {
-  const params = new URLSearchParams(window.location.search);
-  const custom: Record<string, string> = {};
-  const utmKeys = new Set(["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "date"]);
-
-  for (const [key, val] of params.entries()) {
-    if (!utmKeys.has(key) && val) {
-      custom[key] = val;
-    }
-  }
-
-  return Object.keys(custom).length > 0 ? custom : undefined;
+function getFunnelType(event: AnalyticsEventName): FunnelType {
+  return event.startsWith("form_") ? "form" : "booking";
 }
 
 export function track(
-  event: string,
-  data: Record<string, string | undefined>,
+  event: AnalyticsEventName,
+  data: {
+    projectSlug: string;
+    resourceSlug?: string;
+  },
 ): void {
   try {
-    const utms = getUtmsFromUrl();
-    const customParams = getCustomParams();
-    const payload = JSON.stringify({
-      event,
-      source: "direct" as const,
-      referrer: document.referrer || undefined,
-      ...utms,
-      ...data,
-      ...(customParams ? { params: customParams } : {}),
-    });
-
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(
-        "/api/v1/t",
-        new Blob([payload], { type: "application/json" }),
-      );
-    } else {
-      fetch("/api/v1/t", {
-        method: "POST",
-        body: payload,
-        keepalive: true,
-        headers: { "Content-Type": "application/json" },
-      }).catch(() => {});
+    const resourceSlug = data.resourceSlug ?? data.projectSlug;
+    const funnelType = getFunnelType(event);
+    const key = `${data.projectSlug}:${funnelType}:${resourceSlug}`;
+    let dispatcher = dispatchers.get(key);
+    if (!dispatcher) {
+      dispatcher = createFunnelAnalyticsDispatcher({
+        projectSlug: data.projectSlug,
+        resourceSlug,
+        funnelType,
+      });
+      dispatchers.set(key, dispatcher);
     }
+    dispatcher.emit({ event });
   } catch {
-    // Tracking must never throw
+    // Tracking must never throw.
   }
 }

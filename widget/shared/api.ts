@@ -1,5 +1,11 @@
 declare const __LINKYCAL_API_BASE__: string;
 
+import type { FunnelType } from "../../shared/funnel-analytics";
+import {
+  analyticsJourneyStorageKey,
+  isAnalyticsJourneyId,
+} from "../../shared/funnel-analytics";
+
 export function getApiBase(): string {
   return __LINKYCAL_API_BASE__;
 }
@@ -17,56 +23,43 @@ export interface WidgetTheme {
   bannerImage?: string;
 }
 
-// ─── Tracking ────────────────────────────────────────────────────────────────
+// ─── Analytics handoff ───────────────────────────────────────────────────────
 
-function getUtmsFromUrl(): Record<string, string> {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const utms: Record<string, string> = {};
-    const keys = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"];
-    for (const key of keys) {
-      const val = params.get(key);
-      if (val) {
-        const camel = key.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
-        utms[camel] = val;
-      }
-    }
-    return utms;
-  } catch {
-    return {};
-  }
+export interface WidgetAnalyticsParams {
+  projectSlug: string;
+  resourceSlug: string;
+  funnelType: FunnelType;
+  storage?: Storage;
+  randomUUID?: () => string;
 }
 
-export function track(
-  event: string,
-  data: Record<string, string | undefined>,
-  explicitUtms?: Record<string, string>,
-): void {
+export function addWidgetAnalyticsParams(
+  url: URL,
+  input: WidgetAnalyticsParams,
+): string {
+  const key = analyticsJourneyStorageKey(input);
+  let journeyId: string | null = null;
+  const storage = input.storage ?? window.sessionStorage;
   try {
-    const utms = explicitUtms ?? getUtmsFromUrl();
-    const payload = JSON.stringify({
-      event,
-      source: "widget" as const,
-      referrer: document.referrer || undefined,
-      ...utms,
-      ...data,
-    });
-    const base = getApiBase();
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(
-        `${base}/api/v1/t`,
-        new Blob([payload], { type: "application/json" }),
-      );
-    } else {
-      fetch(`${base}/api/v1/t`, {
-        method: "POST",
-        body: payload,
-        keepalive: true,
-        headers: { "Content-Type": "application/json" },
-      }).catch(() => {});
-    }
+    const stored = storage.getItem(key);
+    if (isAnalyticsJourneyId(stored)) journeyId = stored;
   } catch {
-    // Tracking must never throw
+    // Storage is optional.
   }
-}
+  if (!journeyId) {
+    const generated = input.randomUUID?.() ?? crypto.randomUUID();
+    if (!isAnalyticsJourneyId(generated)) {
+      throw new Error("Widget analytics journey must be a UUID");
+    }
+    journeyId = generated;
+    try {
+      storage.setItem(key, journeyId);
+    } catch {
+      // Storage is optional.
+    }
+  }
 
+  url.searchParams.set("lc_source", "widget");
+  url.searchParams.set("lc_journey", journeyId);
+  return journeyId;
+}

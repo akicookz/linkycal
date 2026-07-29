@@ -1,4 +1,8 @@
-import { getApiBase, track, type WidgetTheme } from "@widget/api";
+import {
+  addWidgetAnalyticsParams,
+  getApiBase,
+  type WidgetTheme,
+} from "@widget/api";
 
 interface BookingWidgetOptions {
   projectSlug: string;
@@ -44,6 +48,11 @@ function initBookingWidget(options: BookingWidgetOptions): void {
   for (const [k, v] of Object.entries(allUtms)) {
     url.searchParams.set(k, v);
   }
+  addWidgetAnalyticsParams(url, {
+    projectSlug,
+    resourceSlug: eventTypeSlug,
+    funnelType: "booking",
+  });
 
   const iframe = document.createElement("iframe");
   iframe.src = url.toString();
@@ -63,8 +72,6 @@ function initBookingWidget(options: BookingWidgetOptions): void {
     }
   }
   window.addEventListener("message", onMessage);
-
-  track("widget_view", { projectSlug, resourceSlug: eventTypeSlug }, utms);
 }
 
 interface BookingWidgetWindow extends Window {

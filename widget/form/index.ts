@@ -1,4 +1,8 @@
-import { getApiBase, track, type WidgetTheme } from "@widget/api";
+import {
+  addWidgetAnalyticsParams,
+  getApiBase,
+  type WidgetTheme,
+} from "@widget/api";
 
 interface FormWidgetOptions {
   projectSlug: string;
@@ -22,7 +26,12 @@ function getUtmsFromUrl(): Record<string, string> {
 
 // Forward all host-page query params (except iframe-internal ones) so that
 // ?field_id=value on the embedding page flows through to the form prefill.
-const WIDGET_RESERVED_PARAMS = new Set(["embed", "theme"]);
+const WIDGET_RESERVED_PARAMS = new Set([
+  "embed",
+  "theme",
+  "lc_source",
+  "lc_journey",
+]);
 function getHostPageParams(): Array<[string, string]> {
   const pairs: Array<[string, string]> = [];
   try {
@@ -64,6 +73,11 @@ function initFormWidget(options: FormWidgetOptions): void {
   for (const [k, v] of Object.entries(allUtms)) {
     url.searchParams.set(k, v);
   }
+  addWidgetAnalyticsParams(url, {
+    projectSlug,
+    resourceSlug: formSlug,
+    funnelType: "form",
+  });
 
   const iframe = document.createElement("iframe");
   iframe.src = url.toString();
@@ -83,8 +97,6 @@ function initFormWidget(options: FormWidgetOptions): void {
     }
   }
   window.addEventListener("message", onMessage);
-
-  track("widget_view", { projectSlug, resourceSlug: formSlug }, utms);
 }
 
 interface FormWidgetWindow extends Window {

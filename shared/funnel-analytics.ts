@@ -177,3 +177,26 @@ export interface AnalyticsIntegrations {
 
 export type ConfigureAnalyticsIntegrationInput =
   AnalyticsIntegrationConfig;
+
+const ANALYTICS_JOURNEY_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function isAnalyticsJourneyId(value: unknown): value is string {
+  return typeof value === "string" &&
+    ANALYTICS_JOURNEY_ID_PATTERN.test(value);
+}
+
+export function analyticsJourneyStorageKey(input: {
+  projectSlug: string;
+  resourceSlug: string;
+  funnelType: FunnelType;
+}): string {
+  return [
+    "linkycal",
+    "analytics",
+    "journey",
+    input.projectSlug,
+    input.funnelType,
+    input.resourceSlug,
+  ].join(":");
+}
