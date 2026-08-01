@@ -154,7 +154,7 @@ function json(value: unknown): Response {
   });
 }
 
-function installAnalyticsApi(): HttpCapture {
+function installAnalyticsApi(emptyBookingBreakdowns = false): HttpCapture {
   http = installHttpCapture([
     {
       method: "GET",
@@ -201,6 +201,26 @@ function installAnalyticsApi(): HttpCapture {
         stages: request.url.searchParams.get("resourceSlug") ? bookingStages : [],
         bySource: [{ source: "direct", visitors: 92 }],
         byDevice: [{ deviceType: "mobile", visitors: 71 }],
+        clickedWeekdays: emptyBookingBreakdowns
+          ? []
+          : [
+              { weekday: "Tuesday", clicks: 12 },
+              { weekday: "Wednesday", clicks: 6 },
+            ],
+        selectedDateAvailability: emptyBookingBreakdowns
+          ? []
+          : [{
+              date: "2026-08-04",
+              checks: 3,
+              minimumSlots: 6,
+              maximumSlots: 9,
+            }],
+        bookedWeekdays: emptyBookingBreakdowns
+          ? []
+          : [{ weekday: "Monday", bookings: 14 }],
+        bookedTimes: emptyBookingBreakdowns
+          ? []
+          : [{ time: "13:00", bookings: 8 }],
       }),
     },
     {
@@ -262,6 +282,14 @@ describe("analytics dashboard", function () {
     expect(within(bookingPageStage).getByText("86")).toBeTruthy();
     expect(within(bookingPageStage).getByText("34")).toBeTruthy();
     expect(screen.getByText("Jul 29, 2026")).toBeTruthy();
+    expect(screen.getByText("Clicked weekdays")).toBeTruthy();
+    expect(screen.getByText("12 clicks")).toBeTruthy();
+    expect(screen.getByText("Availability by selected date")).toBeTruthy();
+    expect(screen.getByText("3 checks · 6–9 slots")).toBeTruthy();
+    expect(screen.getByText("Most booked weekdays")).toBeTruthy();
+    expect(screen.getByText("14 bookings")).toBeTruthy();
+    expect(screen.getByText("Most booked times")).toBeTruthy();
+    expect(screen.getByText("8 bookings")).toBeTruthy();
     expect(screen.getByText("Journey sources")).toBeTruthy();
     expect(screen.getByText("Visitor devices")).toBeTruthy();
     for (const removedHeading of [
@@ -281,6 +309,20 @@ describe("analytics dashboard", function () {
         .find((request) => request.url.searchParams.get("resourceSlug") === "discovery-call");
       expect(selected).toBeTruthy();
     });
+  });
+
+  test("selected event type shows explicit empty states for concrete booking datasets", async function () {
+    installAnalyticsApi(true);
+    const user = userEvent.setup();
+    renderAnalytics();
+
+    await user.click(await screen.findByRole("tab", { name: "Bookings" }));
+    await user.click(await screen.findByLabelText("Event type"));
+    await user.click(await screen.findByRole("option", { name: "Discovery call" }));
+
+    expect(await screen.findByText("No date clicks in this period")).toBeTruthy();
+    expect(screen.getByText("No availability checks in this period")).toBeTruthy();
+    expect(screen.getAllByText("No booking requests in this period")).toHaveLength(2);
   });
 
   test("selected form keeps question-level skips, sources, and devices without validation detail", async function () {
@@ -316,6 +358,8 @@ describe("analytics dashboard", function () {
 
     await user.type(screen.getByLabelText("Start date"), "2026-07-01");
     await user.type(screen.getByLabelText("End date"), "2026-07-29");
+    const expectedTimezone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone;
 
     await waitFor(function exactFiltersWereQueried() {
       const selected = capture
@@ -326,7 +370,8 @@ describe("analytics dashboard", function () {
             request.url.searchParams.get("end") === "2026-07-29" &&
             request.url.searchParams.get("resourceSlug") === "discovery-call" &&
             request.url.searchParams.get("source") === "widget" &&
-            request.url.searchParams.get("deviceType") === "mobile";
+            request.url.searchParams.get("deviceType") === "mobile" &&
+            request.url.searchParams.get("timezone") === expectedTimezone;
         });
       expect(selected).toBeTruthy();
     });

@@ -3,7 +3,9 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
+  CalendarDays,
   CalendarRange,
+  Clock3,
   Eye,
   MousePointerClick,
   Percent,
@@ -42,7 +44,10 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
-import type { DetailedFunnelReport } from "../../shared/funnel-analytics";
+import type {
+  BookingAnalyticsBreakdowns,
+  DetailedFunnelReport,
+} from "../../shared/funnel-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,7 +58,8 @@ interface OverviewData {
   topCountries: Array<{ country: string; views: number; conversions: number }>;
 }
 
-interface BookingsData extends DetailedFunnelReport {
+interface BookingsData
+  extends DetailedFunnelReport, BookingAnalyticsBreakdowns {
   funnel: { pageViews: number; bookingsCreated: number; conversionRate: number };
   byEventType: Array<{ slug: string; views: number; bookings: number; rate: number }>;
   timeSeries: Array<{ date: string; views: number; bookings: number }>;
@@ -107,6 +113,20 @@ function titleCaseAnalyticsValue(value: string): string {
   if (value === "none") return "No availability";
   const readable = value.replace(/_/g, " ");
   return readable.charAt(0).toUpperCase() + readable.slice(1);
+}
+
+function formatAnalyticsDateLabel(value: string): string {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return value;
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function countLabel(count: number, singular: string): string {
+  return `${count.toLocaleString()} ${singular}${count === 1 ? "" : "s"}`;
 }
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
@@ -396,6 +416,84 @@ function DetailedReportSection({
   );
 }
 
+function BookingAnalyticsBreakdownsSection({
+  data,
+  resourceSelected,
+}: {
+  data: BookingAnalyticsBreakdowns;
+  resourceSelected: boolean;
+}) {
+  const bookingRequestDescription = resourceSelected
+    ? "Booking requests in the selected period and event type; traffic and device filters do not apply."
+    : "Booking requests in the selected period; traffic and device filters do not apply.";
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {resourceSelected && (
+        <>
+          <AnalyticsBreakdownCard
+            title="Clicked weekdays"
+            icon={MousePointerClick}
+            emptyMessage="No date clicks in this period"
+            items={data.clickedWeekdays.map(function clickedWeekday(item) {
+              return {
+                label: item.weekday,
+                value: item.clicks,
+                displayValue: countLabel(item.clicks, "click"),
+              };
+            })}
+          />
+          <AnalyticsBreakdownCard
+            title="Availability by selected date"
+            icon={CalendarRange}
+            emptyMessage="No availability checks in this period"
+            items={data.selectedDateAvailability.map(
+              function selectedDateAvailability(item) {
+                const slots = item.minimumSlots === item.maximumSlots
+                  ? countLabel(item.minimumSlots, "slot")
+                  : `${item.minimumSlots.toLocaleString()}–${
+                    item.maximumSlots.toLocaleString()
+                  } slots`;
+                return {
+                  label: formatAnalyticsDateLabel(item.date),
+                  value: item.checks,
+                  displayValue: `${countLabel(item.checks, "check")} · ${slots}`,
+                };
+              },
+            )}
+          />
+        </>
+      )}
+      <AnalyticsBreakdownCard
+        title="Most booked weekdays"
+        description={bookingRequestDescription}
+        icon={CalendarDays}
+        emptyMessage="No booking requests in this period"
+        items={data.bookedWeekdays.map(function bookedWeekday(item) {
+          return {
+            label: item.weekday,
+            value: item.bookings,
+            displayValue: countLabel(item.bookings, "booking"),
+          };
+        })}
+      />
+      <AnalyticsBreakdownCard
+        title="Most booked times"
+        description={bookingRequestDescription}
+        icon={Clock3}
+        emptyMessage="No booking requests in this period"
+        items={data.bookedTimes.map(function bookedTime(item) {
+          return {
+            label: item.time,
+            value: item.bookings,
+            displayValue: countLabel(item.bookings, "booking"),
+          };
+        })}
+      />
+    </div>
+  );
+}
+
 // ─── Overview Tab ────────────────────────────────────────────────────────────
 
 function OverviewTab({ projectId, period, filters }: { projectId: string; period: Period; filters: Record<string, string | undefined> }) {
@@ -505,6 +603,11 @@ function BookingsTab({
         data={data}
         resourceSelected={resourceSelected}
         resourceLabel="event type"
+      />
+
+      <BookingAnalyticsBreakdownsSection
+        data={data}
+        resourceSelected={resourceSelected}
       />
 
       <Card className="rounded-[20px]">
@@ -700,6 +803,8 @@ export default function Analytics() {
   const [utmSource, setUtmSource] = useState<string | undefined>();
   const [utmMedium, setUtmMedium] = useState<string | undefined>();
   const [utmCampaign, setUtmCampaign] = useState<string | undefined>();
+  const dashboardTimezone =
+    Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
   const { data: entitlements, isLoading: entitlementsLoading } = useQuery<ProjectEntitlements>({
     queryKey: ["projects", projectId, "entitlements"],
@@ -756,6 +861,7 @@ export default function Analytics() {
   const bookingFilters = {
     ...filters,
     resourceSlug: eventTypeSlug,
+    timezone: dashboardTimezone,
   };
   const formFilters = {
     ...filters,
