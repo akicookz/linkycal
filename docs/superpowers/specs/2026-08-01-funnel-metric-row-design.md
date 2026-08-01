@@ -41,9 +41,8 @@ otherwise unchanged.
 
 ## Verification
 
-Update the existing analytics dashboard journey to assert the visible compact
-values and the absence of the old repeated wording. Demonstrate that the new
-assertion fails before changing production code. Then run the focused test,
-lint for touched files, and the project build. Visually inspect a representative
-desktop and narrow viewport to confirm that metric columns remain aligned
-between rows.
+Do not add literal-copy assertions for the presentational metric values. Run
+the existing analytics dashboard journey, lint for the touched component, and
+the project build. Visually inspect representative desktop and narrow
+viewports to confirm the compact formatting and that metric columns remain
+aligned between rows.

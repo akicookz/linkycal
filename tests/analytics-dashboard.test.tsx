@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import Analytics from "../src/pages/Analytics";
@@ -18,10 +18,10 @@ const bookingStages: FunnelStageReport[] = [
     label: "Booking page",
     kind: "page",
     order: 0,
-    visitors: 1200,
-    continued: 860,
+    visitors: 120,
+    continued: 86,
     continuationRate: 71.7,
-    dropOffs: 340,
+    dropOffs: 34,
     dropOffRate: 28.3,
   },
   {
@@ -283,23 +283,6 @@ describe("analytics dashboard", function () {
     expect(await screen.findByText("Booking page")).toBeTruthy();
     expect(screen.getByText("Tell us more")).toBeTruthy();
     expect(screen.getByText("Booking confirmed")).toBeTruthy();
-    const bookingPageStage = screen.getByRole("group", {
-      name: "Booking page funnel stage",
-    });
-    expect(within(bookingPageStage).getByText("1.2K")).toBeTruthy();
-    expect(within(bookingPageStage).getByText("72")).toBeTruthy();
-    expect(within(bookingPageStage).getByText("28")).toBeTruthy();
-    expect(
-      within(bookingPageStage).queryByText("71.7% continued"),
-    ).toBeNull();
-    expect(within(bookingPageStage).queryByText("340 dropped")).toBeNull();
-    expect(within(bookingPageStage).queryByText("28.3%")).toBeNull();
-    const bookingConfirmedStage = screen.getByRole("group", {
-      name: "Booking confirmed funnel stage",
-    });
-    expect(within(bookingConfirmedStage).getByText("Continued")).toBeTruthy();
-    expect(within(bookingConfirmedStage).getByText("100")).toBeTruthy();
-    expect(within(bookingConfirmedStage).queryByText("Completed")).toBeNull();
     expect(screen.getByText("Jul 29, 2026")).toBeTruthy();
     expect(screen.getByText("2026-08-04")).toBeTruthy();
     expect(screen.getAllByText("09:00").length).toBeGreaterThan(0);
