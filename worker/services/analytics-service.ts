@@ -44,6 +44,7 @@ import type {
   FunnelStageReport,
   FunnelType,
 } from "../../shared/funnel-analytics";
+import { getUtcRangeForLocalDate } from "../lib/timezone";
 
 export interface TrackEventData {
   projectId: string;
@@ -79,6 +80,7 @@ export interface AnalyticsQueryParams {
   period: "7d" | "30d" | "90d" | "custom";
   start?: string; // ISO date
   end?: string; // ISO date
+  timezone?: string;
   utmSource?: string;
   utmMedium?: string;
   utmCampaign?: string;
@@ -148,6 +150,16 @@ export function writeAnalyticsEvent(
 
 function buildDateFilter(params: AnalyticsQueryParams): string {
   if (params.period === "custom" && params.start && params.end) {
+    if (params.timezone) {
+      const start = getUtcRangeForLocalDate(
+        params.start,
+        params.timezone,
+      ).start;
+      const end = getUtcRangeForLocalDate(params.end, params.timezone).end;
+      return `AND timestamp >= '${start.toISOString()}' AND timestamp < '${
+        end.toISOString()
+      }'`;
+    }
     const endExclusive = new Date(`${params.end}T00:00:00.000Z`);
     endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
     return `AND timestamp >= '${params.start}' AND timestamp < '${

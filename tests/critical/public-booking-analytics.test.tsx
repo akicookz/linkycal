@@ -236,84 +236,130 @@ describe("public booking funnel analytics", () => {
     }
   });
 
-  test("failed availability preserves the date click without inventing a slot observation", async () => {
-    setFixedTime("2026-03-20T12:00:00.000Z");
-    const testDatabase = createTestDb();
-    await seedBookingDeliveryScenario(testDatabase.db);
-    const events: CanonicalFunnelEvent[] = [];
-    const beaconReads: Promise<void>[] = [];
-    const originalSendBeacon = navigator.sendBeacon;
-    Object.defineProperty(navigator, "sendBeacon", {
-      configurable: true,
-      value: function captureBeacon(_url: string | URL, body?: BodyInit | null) {
-        if (body instanceof Blob) {
-          beaconReads.push(
-            body.text().then(function parseEvent(value) {
-              events.push(JSON.parse(value) as CanonicalFunnelEvent);
-            }),
-          );
-        }
-        return true;
-      },
-    });
-    const http = installHttpCapture([
-      {
-        method: "GET",
-        matches: function matchesEventType(url) {
-          return url.pathname ===
-            "/api/v1/event-types/acme/discovery-call";
-        },
-        respond: async function respondEventType(request) {
-          const result = await loadPublicEventTypeAction(
-            testDatabase.db,
-            "acme",
-            "discovery-call",
-            request.url.searchParams.get("timezone") ?? undefined,
-          );
-          return jsonResponse(result.body, result.status);
-        },
-      },
-      {
-        method: "GET",
-        matches: function matchesAvailability(url) {
-          return url.pathname === "/api/v1/availability/acme";
-        },
-        respond: function respondAvailability() {
-          return jsonResponse({ error: "Unavailable" }, 500);
-        },
-      },
-    ]);
-
-    try {
-      const user = userEvent.setup();
-      renderRoute(
-        <PublicBooking viewerTimezone="Europe/Helsinki" />,
-        {
-          route: `/acme/discovery-call?lc_journey=${JOURNEY_ID}`,
-          routePattern: "/:projectSlug/:slug",
-        },
-      );
-
-      await user.click(await screen.findByRole("button", { name: "23" }));
-      await screen.findByText("No available times on this date");
-      await waitFor(async function beaconsWereRead() {
-        await Promise.all(beaconReads);
-        expect(events.some(function isDateClick(event) {
-          return event.event === "booking_date_selected" &&
-            event.primaryValue === "2026-03-22T22:00:00.000Z";
-        })).toBe(true);
-      });
-
-      expect(events.some(function isAvailability(event) {
-        return event.event === "booking_availability_shown";
-      })).toBe(false);
-    } finally {
+  for (const scenario of [
+    {
+      name: "failed availability preserves repeated date clicks without inventing a slot observation",
+      responseBody: { error: "Unavailable" },
+      responseStatus: 500,
+      clicks: 2,
+      expectedAvailabilityCount: 0,
+    },
+    {
+      name: "successful empty availability records a zero-slot observation",
+      responseBody: { slots: [] },
+      responseStatus: 200,
+      clicks: 1,
+      expectedAvailabilityCount: 1,
+    },
+  ]) {
+    test(scenario.name, async () => {
+      setFixedTime("2026-03-20T12:00:00.000Z");
+      const testDatabase = createTestDb();
+      await seedBookingDeliveryScenario(testDatabase.db);
+      const events: CanonicalFunnelEvent[] = [];
+      const beaconReads: Promise<void>[] = [];
+      const originalSendBeacon = navigator.sendBeacon;
       Object.defineProperty(navigator, "sendBeacon", {
         configurable: true,
-        value: originalSendBeacon,
+        value: function captureBeacon(
+          _url: string | URL,
+          body?: BodyInit | null,
+        ) {
+          if (body instanceof Blob) {
+            beaconReads.push(
+              body.text().then(function parseEvent(value) {
+                events.push(JSON.parse(value) as CanonicalFunnelEvent);
+              }),
+            );
+          }
+          return true;
+        },
       });
-      http.restore();
-      testDatabase.close();
-    }
-  });
+      const http = installHttpCapture([
+        {
+          method: "GET",
+          matches: function matchesEventType(url) {
+            return url.pathname ===
+              "/api/v1/event-types/acme/discovery-call";
+          },
+          respond: async function respondEventType(request) {
+            const result = await loadPublicEventTypeAction(
+              testDatabase.db,
+              "acme",
+              "discovery-call",
+              request.url.searchParams.get("timezone") ?? undefined,
+            );
+            return jsonResponse(result.body, result.status);
+          },
+        },
+        {
+          method: "GET",
+          matches: function matchesAvailability(url) {
+            return url.pathname === "/api/v1/availability/acme";
+          },
+          respond: function respondAvailability(request) {
+            if (
+              scenario.responseStatus === 200 &&
+              request.url.searchParams.get("date") !== "2026-03-23"
+            ) {
+              return jsonResponse({ error: "Unavailable" }, 500);
+            }
+            return jsonResponse(
+              scenario.responseBody,
+              scenario.responseStatus,
+            );
+          },
+        },
+      ]);
+
+      try {
+        const user = userEvent.setup();
+        renderRoute(
+          <PublicBooking viewerTimezone="Europe/Helsinki" />,
+          {
+            route: `/acme/discovery-call?lc_journey=${JOURNEY_ID}`,
+            routePattern: "/:projectSlug/:slug",
+          },
+        );
+
+        const dateButton = await screen.findByRole("button", { name: "23" });
+        for (let click = 0; click < scenario.clicks; click += 1) {
+          await user.click(dateButton);
+        }
+        await screen.findByText("No available times on this date");
+        await waitFor(async function beaconsWereRead() {
+          await Promise.all(beaconReads);
+          expect(events.filter(function isDateClick(event) {
+            return event.event === "booking_date_selected" &&
+              event.primaryValue === "2026-03-22T22:00:00.000Z";
+          })).toHaveLength(scenario.clicks);
+        });
+
+        const availabilityEvents = events.filter(function isAvailability(
+          event,
+        ) {
+          return event.event === "booking_availability_shown";
+        });
+        expect(availabilityEvents).toHaveLength(
+          scenario.expectedAvailabilityCount,
+        );
+        if (scenario.expectedAvailabilityCount === 1) {
+          expect(availabilityEvents[0]).toMatchObject({
+            primaryValue: "2026-03-22T22:00:00.000Z",
+            slotCount: 0,
+            context: {
+              selectedDateUtc: "2026-03-22T22:00:00.000Z",
+            },
+          });
+        }
+      } finally {
+        Object.defineProperty(navigator, "sendBeacon", {
+          configurable: true,
+          value: originalSendBeacon,
+        });
+        http.restore();
+        testDatabase.close();
+      }
+    });
+  }
 });

@@ -7,6 +7,7 @@ import {
 
 import {
   aggregateDetailedFunnel,
+  queryBookingDemand,
   queryBookings,
   type DetailedAnalyticsRow,
 } from "../worker/services/analytics-service";
@@ -16,6 +17,9 @@ import {
   getBookingAnalyticsAction,
   getFormAnalyticsAction,
 } from "../worker/lib/analytics-actions";
+import {
+  queryBookingRequestAnalytics,
+} from "../worker/lib/booking-request-analytics";
 import { PLAN_LIMITS } from "../worker/lib/plan-limits";
 import {
   installHttpCapture,
@@ -95,6 +99,43 @@ afterEach(function restoreFetch() {
 });
 
 describe("unique-journey detailed funnel reporting", () => {
+  test("custom booking dates use viewer-local midnight across DST", async () => {
+    const sqlBodies: string[] = [];
+    const http = installHttpCapture([
+      {
+        method: "POST",
+        matches: function matchesAnalyticsSql(url) {
+          return url.pathname.endsWith("/analytics_engine/sql");
+        },
+        respond: function respondAnalyticsSql(request) {
+          sqlBodies.push(request.text);
+          return new Response(JSON.stringify({ data: [], meta: {}, rows: 0 }));
+        },
+      },
+    ]);
+
+    try {
+      await queryBookingDemand("account-1", "token-1", {
+        projectId: "project-acme",
+        period: "custom",
+        start: "2026-03-08",
+        end: "2026-03-08",
+        resourceSlug: "discovery-call",
+        timezone: "America/New_York",
+      });
+
+      expect(sqlBodies).toHaveLength(1);
+      expect(sqlBodies[0]).toContain(
+        "timestamp >= '2026-03-08T05:00:00.000Z'",
+      );
+      expect(sqlBodies[0]).toContain(
+        "timestamp < '2026-03-09T04:00:00.000Z'",
+      );
+    } finally {
+      http.restore();
+    }
+  });
+
   test("repeated events, conditional skips, and old rows produce safe exact drop-offs", () => {
     const report = aggregateDetailedFunnel(bookingRows());
 
@@ -270,6 +311,13 @@ describe("unique-journey detailed funnel reporting", () => {
         slug: "foreign-demand-call",
         duration: 30,
       },
+      {
+        id: "event-demand-other",
+        projectId: "project-demand",
+        name: "Other demand call",
+        slug: "other-demand-call",
+        duration: 30,
+      },
     ]);
     const requestedStart = new Date("2026-08-03T15:00:00.000Z");
     const requestedEnd = new Date("2026-08-03T15:30:00.000Z");
@@ -317,6 +365,17 @@ describe("unique-journey detailed funnel reporting", () => {
         status: "confirmed",
         createdAt: inPeriodCreatedAt,
       },
+      {
+        id: "booking-demand-other-event",
+        eventTypeId: "event-demand-other",
+        name: "Other event",
+        email: "other-event@example.com",
+        startTime: requestedStart,
+        endTime: requestedEnd,
+        timezone: "UTC",
+        status: "confirmed",
+        createdAt: inPeriodCreatedAt,
+      },
     ]);
     const demandRows = [
       {
@@ -338,6 +397,7 @@ describe("unique-journey detailed funnel reporting", () => {
         occurrences: 2,
       },
     ];
+    const sqlBodies: string[] = [];
     const http = installHttpCapture([
       {
         method: "POST",
@@ -345,6 +405,7 @@ describe("unique-journey detailed funnel reporting", () => {
           return url.pathname.endsWith("/analytics_engine/sql");
         },
         respond: function respondAnalyticsSql(request) {
+          sqlBodies.push(request.text);
           const data = request.text.includes("blob19 AS selectedDateUtc")
             ? demandRows
             : [];
@@ -388,6 +449,16 @@ describe("unique-journey detailed funnel reporting", () => {
         bookedWeekdays: [{ weekday: "Tuesday", bookings: 6 }],
         bookedTimes: [{ time: "00:00", bookings: 6 }],
       });
+      expect(sqlBodies).toHaveLength(5);
+      for (const sql of sqlBodies) {
+        expect(sql).toContain(
+          "timestamp >= '2026-06-30T15:00:00.000Z'",
+        );
+        expect(sql).toContain(
+          "timestamp < '2026-07-31T15:00:00.000Z'",
+        );
+      }
+      sqlBodies.length = 0;
 
       const losAngeles = await getBookingAnalyticsAction({
         ...commonInput,
@@ -409,6 +480,27 @@ describe("unique-journey detailed funnel reporting", () => {
         }],
         bookedWeekdays: [{ weekday: "Monday", bookings: 6 }],
         bookedTimes: [{ time: "08:00", bookings: 6 }],
+      });
+      expect(sqlBodies).toHaveLength(5);
+      for (const sql of sqlBodies) {
+        expect(sql).toContain(
+          "timestamp >= '2026-07-01T07:00:00.000Z'",
+        );
+        expect(sql).toContain(
+          "timestamp < '2026-08-01T07:00:00.000Z'",
+        );
+      }
+
+      expect(await queryBookingRequestAnalytics({
+        db: testDatabase.db,
+        projectId: "project-demand",
+        period: "30d",
+        resourceSlug: "demand-call",
+        timezone: "Asia/Seoul",
+        now: new Date("2026-08-02T00:00:00.000Z"),
+      })).toMatchObject({
+        bookedWeekdays: [{ weekday: "Tuesday", bookings: 6 }],
+        bookedTimes: [{ time: "00:00", bookings: 6 }],
       });
     } finally {
       http.restore();

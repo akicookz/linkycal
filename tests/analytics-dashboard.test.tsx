@@ -290,6 +290,9 @@ describe("analytics dashboard", function () {
     expect(screen.getByText("14 bookings")).toBeTruthy();
     expect(screen.getByText("Most booked times")).toBeTruthy();
     expect(screen.getByText("8 bookings")).toBeTruthy();
+    expect(screen.getAllByText(
+      "Booking requests in the selected period and event type; traffic and device filters do not apply.",
+    )).toHaveLength(2);
     expect(screen.getByText("Journey sources")).toBeTruthy();
     expect(screen.getByText("Visitor devices")).toBeTruthy();
     for (const removedHeading of [

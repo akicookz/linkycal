@@ -291,7 +291,6 @@ export function FormExperience(props: FormExperienceProps) {
           emitAnalyticsEvent({
             type: "validation_failed",
             screen: analyticsStage,
-            failureCategory: "validation",
           });
         }
         return false;
@@ -344,7 +343,6 @@ export function FormExperience(props: FormExperienceProps) {
           emitAnalyticsEvent({
             type: "validation_failed",
             screen: analyticsStage,
-            failureCategory: "validation",
           });
         }
         return false;

@@ -93,7 +93,6 @@ export interface FormExperienceAnalyticsStage {
 export interface FormExperienceAnalyticsEvent {
   type: "viewed" | "completed" | "skipped" | "validation_failed";
   screen: FormExperienceAnalyticsStage;
-  failureCategory?: "validation";
 }
 
 export interface CreateFormExperienceCheckpointInput {
