@@ -34,9 +34,6 @@ const bookingStages: FunnelStageReport[] = [
     continuationRate: 83.7,
     dropOffs: 14,
     dropOffRate: 16.3,
-    contextBreakdowns: {
-      selectedDates: [{ value: "2026-08-04", visitors: 31 }],
-    },
   },
   {
     key: "availability",
@@ -48,16 +45,6 @@ const bookingStages: FunnelStageReport[] = [
     continuationRate: 72.2,
     dropOffs: 20,
     dropOffRate: 27.8,
-    contextBreakdowns: {
-      availabilityOutcomes: [
-        { value: "available", visitors: 61 },
-        { value: "none", visitors: 11 },
-      ],
-      offeredTimes: [
-        { value: "09:00", visitors: 42 },
-        { value: "10:30", visitors: 36 },
-      ],
-    },
   },
   {
     key: "time",
@@ -69,9 +56,6 @@ const bookingStages: FunnelStageReport[] = [
     continuationRate: 78.8,
     dropOffs: 11,
     dropOffRate: 21.2,
-    contextBreakdowns: {
-      selectedTimes: [{ value: "09:00", visitors: 19 }],
-    },
   },
   {
     key: "details",
@@ -105,12 +89,6 @@ const bookingStages: FunnelStageReport[] = [
     continuationRate: 90,
     dropOffs: 3,
     dropOffRate: 10,
-    contextBreakdowns: {
-      submitFailures: [
-        { value: "slot_unavailable", visitors: 2 },
-        { value: "validation", visitors: 1 },
-      ],
-    },
   },
   {
     key: "completion",
@@ -149,9 +127,6 @@ const formStages: FunnelStageReport[] = [
     dropOffs: 17,
     dropOffRate: 24.3,
     skipped: 8,
-    contextBreakdowns: {
-      validationFailures: [{ value: "required", visitors: 7 }],
-    },
   },
   {
     key: "completion",
@@ -226,7 +201,6 @@ function installAnalyticsApi(): HttpCapture {
         stages: request.url.searchParams.get("resourceSlug") ? bookingStages : [],
         bySource: [{ source: "direct", visitors: 92 }],
         byDevice: [{ deviceType: "mobile", visitors: 71 }],
-        failures: [{ category: "slot_unavailable", count: 2 }],
       }),
     },
     {
@@ -256,7 +230,6 @@ function installAnalyticsApi(): HttpCapture {
         stages: request.url.searchParams.get("resourceSlug") ? formStages : [],
         bySource: [{ source: "widget", visitors: 58 }],
         byDevice: [{ deviceType: "desktop", visitors: 48 }],
-        failures: [{ category: "validation", count: 7 }],
       }),
     },
   ]);
@@ -271,7 +244,7 @@ function renderAnalytics(): void {
 }
 
 describe("analytics dashboard", function () {
-  test("selected event type shows every booking stage, journey counts instead of rates, and booking context", async function () {
+  test("selected event type keeps the funnel, journey sources, and visitor devices without inferred context cards", async function () {
     const capture = installAnalyticsApi();
     const user = userEvent.setup();
     renderAnalytics();
@@ -289,10 +262,18 @@ describe("analytics dashboard", function () {
     expect(within(bookingPageStage).getByText("86")).toBeTruthy();
     expect(within(bookingPageStage).getByText("34")).toBeTruthy();
     expect(screen.getByText("Jul 29, 2026")).toBeTruthy();
-    expect(screen.getByText("2026-08-04")).toBeTruthy();
-    expect(screen.getAllByText("09:00").length).toBeGreaterThan(0);
-    expect(screen.getByText("No availability")).toBeTruthy();
-    expect(screen.getByText("Slot unavailable")).toBeTruthy();
+    expect(screen.getByText("Journey sources")).toBeTruthy();
+    expect(screen.getByText("Visitor devices")).toBeTruthy();
+    for (const removedHeading of [
+      "Selected dates",
+      "Availability outcomes",
+      "Available times shown",
+      "Selected times",
+      "Validation failures",
+      "Submit failures",
+    ]) {
+      expect(screen.queryByText(removedHeading)).toBeNull();
+    }
 
     await waitFor(function selectedResourceWasQueried() {
       const selected = capture
@@ -302,7 +283,7 @@ describe("analytics dashboard", function () {
     });
   });
 
-  test("selected form shows question-level skips and safe validation failures", async function () {
+  test("selected form keeps question-level skips, sources, and devices without validation detail", async function () {
     installAnalyticsApi();
     const user = userEvent.setup();
     renderAnalytics();
@@ -313,8 +294,9 @@ describe("analytics dashboard", function () {
 
     expect(await screen.findByText("How large is your company?")).toBeTruthy();
     expect(screen.getByText("8 skipped")).toBeTruthy();
-    expect(screen.getByText("Required")).toBeTruthy();
-    expect(screen.queryByText(/answer/i)).toBeNull();
+    expect(screen.getByText("Journey sources")).toBeTruthy();
+    expect(screen.getByText("Visitor devices")).toBeTruthy();
+    expect(screen.queryByText("Validation failures")).toBeNull();
   });
 
   test("resource, source, device, and custom dates are sent as exact report filters", async function () {

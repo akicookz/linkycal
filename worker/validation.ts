@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   ANALYTICS_DEVICE_TYPES,
   ANALYTICS_EVENT_NAMES,
-  ANALYTICS_FAILURE_CATEGORIES,
   ANALYTICS_SOURCES,
   DETAILED_ANALYTICS_EVENT_NAMES,
   FUNNEL_STAGE_KINDS,
@@ -695,9 +694,6 @@ const analyticsDateSchema = z
     return !Number.isNaN(parsed.getTime()) &&
       parsed.toISOString().slice(0, 10) === value;
   }, "Must be a valid calendar date");
-const analyticsTimeSchema = z
-  .string()
-  .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/);
 const analyticsParamsSchema = z
   .record(
     z.string().min(1).max(64).regex(/^[a-zA-Z0-9_.-]+$/),
@@ -709,28 +705,10 @@ const analyticsParamsSchema = z
 
 const funnelEventContextSchema = z
   .object({
-    selectedDate: analyticsDateSchema.optional(),
-    weekday: z
-      .enum([
-        "monday",
-        "tuesday",
-        "wednesday",
-        "thursday",
-        "friday",
-        "saturday",
-        "sunday",
-      ])
-      .optional(),
-    viewerTimezone: z.string().min(1).max(100).optional(),
-    offeredSlotStarts: z.array(analyticsTimeSchema).max(48).optional(),
-    earliestSlot: analyticsTimeSchema.optional(),
-    latestSlot: analyticsTimeSchema.optional(),
-    availabilityOutcome: z.enum(["available", "none", "error"]).optional(),
-    selectedTime: analyticsTimeSchema.optional(),
+    selectedDateUtc: z.iso.datetime({ offset: true }).optional(),
     fieldType: z.string().min(1).max(50).optional(),
     required: z.boolean().optional(),
     stageOutcome: z.enum(FUNNEL_STAGE_OUTCOMES).optional(),
-    failureCategory: z.enum(ANALYTICS_FAILURE_CATEGORIES).optional(),
   })
   .strict();
 

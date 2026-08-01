@@ -9,6 +9,7 @@ import {
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
+import { fromZonedTime } from "date-fns-tz";
 import {
   ChevronLeft,
   ChevronRight,
@@ -48,13 +49,9 @@ import {
   createFunnelAnalyticsDispatcher,
   type FunnelAnalyticsDispatcher,
 } from "@/lib/funnel-analytics";
-import { classifyBookingFailure } from "@/lib/booking-analytics";
 import { buildBookingPrefill, parseQueryString } from "@/lib/form-prefill";
 import { cn } from "@/lib/utils";
-import type {
-  AnalyticsFailureCategory,
-  AnalyticsIntegrationConfig,
-} from "../../shared/funnel-analytics";
+import type { AnalyticsIntegrationConfig } from "../../shared/funnel-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -198,36 +195,8 @@ function getGmtOffset(tz: string): string {
   }
 }
 
-function formatAnalyticsTime(iso: string, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    hourCycle: "h23",
-  }).formatToParts(new Date(iso));
-  const hour = parts.find(function findHour(part) {
-    return part.type === "hour";
-  })?.value ?? "00";
-  const minute = parts.find(function findMinute(part) {
-    return part.type === "minute";
-  })?.value ?? "00";
-  return `${hour === "24" ? "00" : hour}:${minute}`;
-}
-
-function weekdayForAnalytics(date: string): NonNullable<
-  CanonicalBookingContext["weekday"]
-> {
-  const weekdays = [
-    "sunday",
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-  ] as const;
-  return weekdays[new Date(`${date}T12:00:00.000Z`).getUTCDay()];
+function selectedDateStartUtc(date: string, timezone: string): string {
+  return fromZonedTime(`${date}T00:00:00`, timezone).toISOString();
 }
 
 function todayInTimezone(timezone: string): string {
@@ -257,10 +226,6 @@ function daysAheadForAnalytics(date: string, timezone: string): number {
     Math.min(730, Math.round((selected - today) / 86_400_000)),
   );
 }
-
-type CanonicalBookingContext = NonNullable<
-  Parameters<FunnelAnalyticsDispatcher["emit"]>[0]["context"]
->;
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
@@ -533,25 +498,6 @@ export default function PublicBooking({
   }, [analytics, eventType]);
 
   useEffect(() => {
-    if (!analytics || !selectedDate) return;
-    analytics.emit({
-      event: "booking_date_selected",
-      stageKey: "booking-date",
-      stageLabel: "Date selected",
-      stageKind: "date",
-      stageOrder: 2,
-      primaryValue: selectedDate,
-      daysAhead: daysAheadForAnalytics(selectedDate, timezone),
-      durationMinutes: eventType?.duration,
-      context: {
-        selectedDate,
-        weekday: weekdayForAnalytics(selectedDate),
-        viewerTimezone: timezone,
-      },
-    });
-  }, [analytics, eventType?.duration, selectedDate, timezone]);
-
-  useEffect(() => {
     const detailsVisible = step === 2 || (step === 3 && mergeDetails);
     if (!analytics || !detailsVisible) return;
     analytics.emit({
@@ -590,9 +536,6 @@ export default function PublicBooking({
           ? { required: event.screen.required }
           : {}),
         stageOutcome: event.type,
-        ...(event.failureCategory
-          ? { failureCategory: event.failureCategory }
-          : {}),
       },
     });
   }
@@ -654,8 +597,8 @@ export default function PublicBooking({
 
   const {
     data: slotsData,
+    dataUpdatedAt: slotsDataUpdatedAt,
     isLoading: loadingSlots,
-    isError: slotsError,
   } = useQuery<{ slots: TimeSlot[] }>({
     queryKey: ["public-slots", projectSlug, eventSlug, selectedDate, timezone],
     queryFn: async () => {
@@ -679,23 +622,12 @@ export default function PublicBooking({
       !analytics ||
       !selectedDate ||
       loadingSlots ||
-      (!slotsData && !slotsError)
+      !slotsData
     ) {
       return;
     }
-    const offeredSlotStarts = slots.map(function localSlotStart(slot) {
-      return formatAnalyticsTime(slot.start, timezone);
-    }).slice(0, 48);
-    const outcome = slotsError
-      ? "error"
-      : offeredSlotStarts.length > 0
-        ? "available"
-        : "none";
-    const resultKey = [
-      selectedDate,
-      outcome,
-      offeredSlotStarts.join(","),
-    ].join(":");
+    const selectedDateUtc = selectedDateStartUtc(selectedDate, timezone);
+    const resultKey = `${selectedDate}:${slotsDataUpdatedAt}`;
     if (recordedAvailabilityRef.current.has(resultKey)) return;
     recordedAvailabilityRef.current.add(resultKey);
     analytics.emit({
@@ -704,22 +636,12 @@ export default function PublicBooking({
       stageLabel: "Available times",
       stageKind: "availability",
       stageOrder: 3,
-      primaryValue: selectedDate,
-      slotCount: offeredSlotStarts.length,
+      primaryValue: selectedDateUtc,
+      slotCount: slots.length,
       daysAhead: daysAheadForAnalytics(selectedDate, timezone),
       durationMinutes: eventType?.duration,
       context: {
-        selectedDate,
-        weekday: weekdayForAnalytics(selectedDate),
-        viewerTimezone: timezone,
-        offeredSlotStarts,
-        ...(offeredSlotStarts[0]
-          ? { earliestSlot: offeredSlotStarts[0] }
-          : {}),
-        ...(offeredSlotStarts.at(-1)
-          ? { latestSlot: offeredSlotStarts.at(-1) }
-          : {}),
-        availabilityOutcome: outcome,
+        selectedDateUtc,
       },
     });
   }, [
@@ -729,7 +651,7 @@ export default function PublicBooking({
     selectedDate,
     slots,
     slotsData,
-    slotsError,
+    slotsDataUpdatedAt,
     timezone,
   ]);
 
@@ -776,27 +698,34 @@ export default function PublicBooking({
   function handleDateSelect(dateStr: string) {
     setSelectedDate(dateStr);
     setSelectedSlot(null);
+    if (analytics) {
+      const selectedDateUtc = selectedDateStartUtc(dateStr, timezone);
+      analytics.emit({
+        event: "booking_date_selected",
+        stageKey: "booking-date",
+        stageLabel: "Date selected",
+        stageKind: "date",
+        stageOrder: 2,
+        primaryValue: selectedDateUtc,
+        daysAhead: daysAheadForAnalytics(dateStr, timezone),
+        durationMinutes: eventType?.duration,
+        context: { selectedDateUtc },
+      });
+    }
     if (isMobile) goMobileSubStep("time");
   }
 
   function handleTimeSelect(slot: TimeSlot): void {
     setSelectedSlot(slot);
     if (!analytics || !selectedDate) return;
-    const selectedTime = formatAnalyticsTime(slot.start, timezone);
     analytics.emit({
       event: "booking_time_selected",
       stageKey: "booking-time",
       stageLabel: "Time selected",
       stageKind: "time",
       stageOrder: 4,
-      primaryValue: selectedTime,
       daysAhead: daysAheadForAnalytics(selectedDate, timezone),
       durationMinutes: eventType?.duration,
-      context: {
-        selectedDate,
-        selectedTime,
-        viewerTimezone: timezone,
-      },
     });
   }
 
@@ -829,7 +758,6 @@ export default function PublicBooking({
         stageLabel: "Submit booking",
         stageKind: "submit",
         stageOrder: bookingSubmitStageOrder,
-        context: { failureCategory: "validation" },
       });
       return false;
     }
@@ -843,7 +771,6 @@ export default function PublicBooking({
     });
     setSubmitting(true);
     setBookingError(null);
-    let failureCategory: AnalyticsFailureCategory = "unknown";
 
     try {
       const payload: Record<string, unknown> = {
@@ -887,7 +814,6 @@ export default function PublicBooking({
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        failureCategory = classifyBookingFailure(res.status);
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || "Failed to book");
       }
@@ -914,9 +840,6 @@ export default function PublicBooking({
       setStep(confirmationStep);
       return true;
     } catch (caught) {
-      if (failureCategory === "unknown") {
-        failureCategory = classifyBookingFailure(undefined, caught);
-      }
       analytics?.emit({
         event: "booking_submit_failed",
         stageKey: "booking-submit",
@@ -924,7 +847,6 @@ export default function PublicBooking({
         stageKind: "submit",
         stageOrder: bookingSubmitStageOrder,
         durationMinutes: eventType?.duration,
-        context: { failureCategory },
       });
       setBookingError(caught instanceof Error ? caught.message : "Something went wrong");
       return false;

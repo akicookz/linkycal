@@ -20,10 +20,7 @@ import {
   type FormExperienceAnalyticsStage,
   type FormExperienceForm,
 } from "@/lib/form-experience";
-import type {
-  AnalyticsFailureCategory,
-  AnalyticsIntegrationConfig,
-} from "../../shared/funnel-analytics";
+import type { AnalyticsIntegrationConfig } from "../../shared/funnel-analytics";
 import {
   createFunnelAnalyticsDispatcher,
   type FunnelAnalyticsDispatcher,
@@ -168,9 +165,6 @@ export default function PublicForm() {
           ? { required: event.screen.required }
           : {}),
         stageOutcome: event.type,
-        ...(event.failureCategory
-          ? { failureCategory: event.failureCategory }
-          : {}),
       },
     });
   }
@@ -471,15 +465,12 @@ export default function PublicForm() {
       return true;
     } catch (caught) {
       if (checkpoint.isFinal) {
-        const failureCategory: AnalyticsFailureCategory =
-          caught instanceof TypeError ? "network" : "server";
         analytics?.emit({
           event: "form_submit_failed",
           stageKey: "form-submit",
           stageLabel: "Submit form",
           stageKind: "submit",
           stageOrder: submitStageOrder,
-          context: { failureCategory },
         });
       }
       setError(

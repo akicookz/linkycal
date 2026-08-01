@@ -44,12 +44,7 @@ function bookingCreatedEvent(): CanonicalFunnelEvent {
     daysAhead: 5,
     durationMinutes: 30,
     context: {
-      selectedDate: "2026-08-03",
-      weekday: "monday",
-      viewerTimezone: "Asia/Seoul",
-      offeredSlotStarts: ["09:00", "09:30", "10:00"],
-      selectedTime: "09:30",
-      availabilityOutcome: "available",
+      selectedDateUtc: "2026-08-03T15:00:00.000Z",
     },
     utmSource: "newsletter",
   };
@@ -88,12 +83,7 @@ describe("external analytics provider mapping", () => {
       slot_count: 3,
       days_ahead: 5,
       duration_minutes: 30,
-      selected_date: "2026-08-03",
-      weekday: "monday",
-      viewer_timezone: "Asia/Seoul",
-      offered_slot_starts: ["09:00", "09:30", "10:00"],
-      selected_time: "09:30",
-      availability_outcome: "available",
+      selected_date_utc: "2026-08-03T15:00:00.000Z",
       utm_source: "newsletter",
     });
     const serialized = JSON.stringify(dispatches);
@@ -106,6 +96,13 @@ describe("external analytics provider mapping", () => {
       "database stack trace",
       "journeyId",
       "123e4567-e89b-42d3-a456-426614174000",
+      "selected_date\"",
+      "weekday",
+      "viewer_timezone",
+      "offered_slot_starts",
+      "selected_time",
+      "availability_outcome",
+      "failure_category",
     ]) {
       expect(serialized).not.toContain(forbidden);
     }

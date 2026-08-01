@@ -28,20 +28,14 @@ function detailedBookingEvent(
     stageLabel: "Available times",
     stageKind: "availability",
     stageOrder: 3,
-    primaryValue: "2026-08-03",
+    primaryValue: "2026-08-03T15:00:00.000Z",
     deviceType: "mobile",
     source: "widget",
     slotCount: 2,
     daysAhead: 5,
     durationMinutes: 30,
     context: {
-      selectedDate: "2026-08-03",
-      weekday: "monday",
-      viewerTimezone: "Asia/Seoul",
-      offeredSlotStarts: ["09:00", "09:30"],
-      earliestSlot: "09:00",
-      latestSlot: "09:30",
-      availabilityOutcome: "available",
+      selectedDateUtc: "2026-08-03T15:00:00.000Z",
       stageOutcome: "viewed",
     },
     utmSource: "newsletter",
@@ -71,7 +65,7 @@ describe("canonical analytics event validation", () => {
     }
   });
 
-  test("safe detailed scheduling context and a bounded batch are accepted", () => {
+  test("UTC scheduling context and a bounded batch are accepted", () => {
     expect(trackEventSchema.safeParse(detailedBookingEvent()).success).toBe(
       true,
     );
@@ -108,34 +102,9 @@ describe("canonical analytics event validation", () => {
         value: detailedBookingEvent({ stageKey: "question key with spaces" }),
       },
       {
-        label: "invalid calendar date",
+        label: "malformed UTC selected date",
         value: detailedBookingEvent({
-          context: {
-            ...detailedBookingEvent().context,
-            selectedDate: "2026-02-31",
-          },
-        }),
-      },
-      {
-        label: "invalid local time",
-        value: detailedBookingEvent({
-          context: {
-            ...detailedBookingEvent().context,
-            selectedTime: "25:90",
-          },
-        }),
-      },
-      {
-        label: "too many offered slots",
-        value: detailedBookingEvent({
-          context: {
-            offeredSlotStarts: Array.from(
-              { length: 49 },
-              function createTime() {
-                return "09:00";
-              },
-            ),
-          },
+          context: { selectedDateUtc: "2026-02-31" },
         }),
       },
       {
@@ -174,6 +143,25 @@ describe("canonical analytics event validation", () => {
         },
       },
     ];
+
+    for (const removedKey of [
+      "selectedDate",
+      "weekday",
+      "viewerTimezone",
+      "offeredSlotStarts",
+      "earliestSlot",
+      "latestSlot",
+      "availabilityOutcome",
+      "selectedTime",
+      "failureCategory",
+    ]) {
+      invalidCases.push({
+        label: `removed context key: ${removedKey}`,
+        value: detailedBookingEvent({
+          context: { [removedKey]: "removed" } as never,
+        }),
+      });
+    }
 
     for (const invalidCase of invalidCases) {
       expect(
@@ -283,7 +271,7 @@ test("Analytics Engine keeps existing columns and writes detailed fields additiv
     "booking-availability",
     "Available times",
     "availability",
-    "2026-08-03",
+    "2026-08-03T15:00:00.000Z",
     "mobile",
   ]);
   expect(captured?.doubles).toEqual([1, 3, 2, 5, 30]);

@@ -45,23 +45,11 @@ function buildSafeProperties(
   addProperty(properties, "duration_minutes", event.durationMinutes);
 
   const context = event.context;
-  addProperty(properties, "selected_date", context?.selectedDate);
-  addProperty(properties, "weekday", context?.weekday);
-  addProperty(properties, "viewer_timezone", context?.viewerTimezone);
   addProperty(
     properties,
-    "offered_slot_starts",
-    context?.offeredSlotStarts,
+    "selected_date_utc",
+    context?.selectedDateUtc,
   );
-  addProperty(properties, "earliest_slot", context?.earliestSlot);
-  addProperty(properties, "latest_slot", context?.latestSlot);
-  addProperty(
-    properties,
-    "availability_outcome",
-    context?.availabilityOutcome,
-  );
-  addProperty(properties, "selected_time", context?.selectedTime);
-  addProperty(properties, "failure_category", context?.failureCategory);
 
   addProperty(properties, "utm_source", event.utmSource);
   addProperty(properties, "utm_medium", event.utmMedium);

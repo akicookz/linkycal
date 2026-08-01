@@ -3,10 +3,7 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   BarChart3,
-  CalendarDays,
   CalendarRange,
-  CircleAlert,
-  Clock3,
   Eye,
   MousePointerClick,
   Percent,
@@ -30,7 +27,6 @@ import {
 
 import {
   AnalyticsBreakdownCard,
-  type AnalyticsBreakdownItem,
 } from "@/components/analytics/AnalyticsBreakdownCard";
 import { DetailedFunnel } from "@/components/analytics/DetailedFunnel";
 import PageHeader from "@/components/PageHeader";
@@ -46,11 +42,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
-import type {
-  DetailedFunnelReport,
-  FunnelContextValue,
-  FunnelStageReport,
-} from "../../shared/funnel-analytics";
+import type { DetailedFunnelReport } from "../../shared/funnel-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -115,24 +107,6 @@ function titleCaseAnalyticsValue(value: string): string {
   if (value === "none") return "No availability";
   const readable = value.replace(/_/g, " ");
   return readable.charAt(0).toUpperCase() + readable.slice(1);
-}
-
-function contextItems(
-  stages: FunnelStageReport[],
-  key: keyof NonNullable<FunnelStageReport["contextBreakdowns"]>,
-): AnalyticsBreakdownItem[] {
-  const values = new Map<string, number>();
-  for (const stage of stages) {
-    const breakdown = stage.contextBreakdowns?.[key] as
-      | FunnelContextValue[]
-      | undefined;
-    for (const item of breakdown ?? []) {
-      values.set(item.value, (values.get(item.value) ?? 0) + item.visitors);
-    }
-  }
-  return [...values.entries()].map(function toItem([label, value]) {
-    return { label: titleCaseAnalyticsValue(label), value };
-  });
 }
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
@@ -390,19 +364,6 @@ function DetailedReportSection({
     );
   }
 
-  const selectedDates = contextItems(data.stages, "selectedDates");
-  const availabilityOutcomes = contextItems(
-    data.stages,
-    "availabilityOutcomes",
-  );
-  const offeredTimes = contextItems(data.stages, "offeredTimes");
-  const selectedTimes = contextItems(data.stages, "selectedTimes");
-  const validationFailures = contextItems(
-    data.stages,
-    "validationFailures",
-  );
-  const submitFailures = contextItems(data.stages, "submitFailures");
-
   return (
     <div className="space-y-6">
       <DetailedFunnel
@@ -410,36 +371,6 @@ function DetailedReportSection({
         stages={data.stages}
       />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <AnalyticsBreakdownCard
-          title="Selected dates"
-          icon={CalendarDays}
-          items={selectedDates}
-        />
-        <AnalyticsBreakdownCard
-          title="Availability outcomes"
-          icon={CalendarRange}
-          items={availabilityOutcomes}
-        />
-        <AnalyticsBreakdownCard
-          title="Available times shown"
-          icon={Clock3}
-          items={offeredTimes}
-        />
-        <AnalyticsBreakdownCard
-          title="Selected times"
-          icon={MousePointerClick}
-          items={selectedTimes}
-        />
-        <AnalyticsBreakdownCard
-          title="Validation failures"
-          icon={CircleAlert}
-          items={validationFailures}
-        />
-        <AnalyticsBreakdownCard
-          title="Submit failures"
-          icon={CircleAlert}
-          items={submitFailures}
-        />
         <AnalyticsBreakdownCard
           title="Journey sources"
           icon={Globe}

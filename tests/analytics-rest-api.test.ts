@@ -214,10 +214,9 @@ describe("analytics REST contract", () => {
             slotCount: 2,
             daysAhead: 5,
             durationMinutes: 30,
+            primaryValue: "2026-08-03T15:00:00.000Z",
             context: {
-              selectedDate: "2026-08-03",
-              offeredSlotStarts: ["09:00", "09:30"],
-              availabilityOutcome: "available",
+              selectedDateUtc: "2026-08-03T15:00:00.000Z",
             },
           },
           {
@@ -248,9 +247,7 @@ describe("analytics REST contract", () => {
           "widget",
           JSON.stringify({
             context: {
-              selectedDate: "2026-08-03",
-              offeredSlotStarts: ["09:00", "09:30"],
-              availabilityOutcome: "available",
+              selectedDateUtc: "2026-08-03T15:00:00.000Z",
             },
           }),
           "123e4567-e89b-42d3-a456-426614174000",
@@ -258,7 +255,7 @@ describe("analytics REST contract", () => {
           "booking-availability",
           "Available times",
           "availability",
-          "",
+          "2026-08-03T15:00:00.000Z",
           "mobile",
         ],
         doubles: [1, 3, 2, 5, 30],

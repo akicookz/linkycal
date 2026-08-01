@@ -46,14 +46,6 @@ export const FUNNEL_STAGE_KINDS = [
   "submit",
   "completion",
 ] as const;
-export const ANALYTICS_FAILURE_CATEGORIES = [
-  "validation",
-  "slot_unavailable",
-  "rate_limited",
-  "network",
-  "server",
-  "unknown",
-] as const;
 export const FUNNEL_STAGE_OUTCOMES = [
   "viewed",
   "completed",
@@ -71,24 +63,14 @@ export type AnalyticsSource = (typeof ANALYTICS_SOURCES)[number];
 export type AnalyticsDeviceType = (typeof ANALYTICS_DEVICE_TYPES)[number];
 export type FunnelType = (typeof FUNNEL_TYPES)[number];
 export type FunnelStageKind = (typeof FUNNEL_STAGE_KINDS)[number];
-export type AnalyticsFailureCategory =
-  (typeof ANALYTICS_FAILURE_CATEGORIES)[number];
 export type FunnelStageOutcome = (typeof FUNNEL_STAGE_OUTCOMES)[number];
 export type AnalyticsProvider = (typeof ANALYTICS_PROVIDERS)[number];
 
 export interface FunnelEventContext {
-  selectedDate?: string;
-  weekday?: string;
-  viewerTimezone?: string;
-  offeredSlotStarts?: string[];
-  earliestSlot?: string;
-  latestSlot?: string;
-  availabilityOutcome?: "available" | "none" | "error";
-  selectedTime?: string;
+  selectedDateUtc?: string;
   fieldType?: string;
   required?: boolean;
   stageOutcome?: FunnelStageOutcome;
-  failureCategory?: AnalyticsFailureCategory;
 }
 
 export interface CanonicalFunnelEvent {
@@ -117,20 +99,6 @@ export interface CanonicalFunnelEvent {
   params?: Record<string, string>;
 }
 
-export interface FunnelContextValue {
-  value: string;
-  visitors: number;
-}
-
-export interface FunnelContextBreakdowns {
-  selectedDates?: FunnelContextValue[];
-  availabilityOutcomes?: FunnelContextValue[];
-  offeredTimes?: FunnelContextValue[];
-  selectedTimes?: FunnelContextValue[];
-  validationFailures?: FunnelContextValue[];
-  submitFailures?: FunnelContextValue[];
-}
-
 export interface FunnelStageReport {
   key: string;
   label: string;
@@ -142,7 +110,6 @@ export interface FunnelStageReport {
   dropOffs: number;
   dropOffRate: number;
   skipped?: number;
-  contextBreakdowns?: FunnelContextBreakdowns;
 }
 
 export interface DetailedFunnelReport {
@@ -155,10 +122,6 @@ export interface DetailedFunnelReport {
   byDevice: Array<{
     deviceType: AnalyticsDeviceType;
     visitors: number;
-  }>;
-  failures: Array<{
-    category: AnalyticsFailureCategory;
-    count: number;
   }>;
 }
 

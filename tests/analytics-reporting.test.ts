@@ -37,7 +37,6 @@ function row(
   return {
     timestamp: `2026-07-29T08:${String(stageOrder).padStart(2, "0")}:00.000Z`,
     event,
-    context: "",
     journeyId,
     funnelType: "booking",
     stageKey,
@@ -59,103 +58,34 @@ function bookingRows(): DetailedAnalyticsRow[] {
     row(FIRST_JOURNEY, "page_view", "booking-view", "Discovery call", "page", 1),
     row(FIRST_JOURNEY, "page_view", "booking-view", "Discovery call", "page", 1),
     row(SECOND_JOURNEY, "page_view", "booking-view", "Discovery call", "page", 1),
-    row(FIRST_JOURNEY, "booking_date_selected", "booking-date", "Date selected", "date", 2, {
-      context: JSON.stringify({
-        context: {
-          selectedDate: "2026-08-03",
-          weekday: "monday",
-        },
-      }),
-    }),
-    row(SECOND_JOURNEY, "booking_date_selected", "booking-date", "Date selected", "date", 2, {
-      context: JSON.stringify({
-        context: { selectedDate: "2026-08-03" },
-      }),
-    }),
+    row(FIRST_JOURNEY, "booking_date_selected", "booking-date", "Date selected", "date", 2),
+    row(SECOND_JOURNEY, "booking_date_selected", "booking-date", "Date selected", "date", 2),
     row(FIRST_JOURNEY, "booking_availability_shown", "booking-availability", "Available times", "availability", 3, {
-      context: JSON.stringify({
-        context: {
-          selectedDate: "2026-08-03",
-          offeredSlotStarts: ["15:00", "15:30"],
-          availabilityOutcome: "available",
-        },
-      }),
       slotCount: 2,
     }),
+    row(SECOND_JOURNEY, "booking_availability_shown", "booking-availability", "Available times", "availability", 3),
     row(SECOND_JOURNEY, "booking_availability_shown", "booking-availability", "Available times", "availability", 3, {
-      context: JSON.stringify({
-        context: {
-          selectedDate: "2026-08-03",
-          offeredSlotStarts: [],
-          availabilityOutcome: "none",
-        },
-      }),
-    }),
-    row(SECOND_JOURNEY, "booking_availability_shown", "booking-availability", "Available times", "availability", 3, {
-      context: JSON.stringify({
-        context: {
-          selectedDate: "2026-08-03",
-          offeredSlotStarts: ["15:00"],
-          availabilityOutcome: "available",
-        },
-      }),
       slotCount: 1,
     }),
-    row(FIRST_JOURNEY, "booking_time_selected", "booking-time", "Time selected", "time", 4, {
-      context: JSON.stringify({
-        context: { selectedTime: "15:00" },
-      }),
-    }),
-    row(SECOND_JOURNEY, "booking_time_selected", "booking-time", "Time selected", "time", 4, {
-      context: JSON.stringify({
-        context: { selectedTime: "15:30" },
-      }),
-    }),
+    row(FIRST_JOURNEY, "booking_time_selected", "booking-time", "Time selected", "time", 4),
+    row(SECOND_JOURNEY, "booking_time_selected", "booking-time", "Time selected", "time", 4),
     row(FIRST_JOURNEY, "booking_details_viewed", "booking-details", "Guest details", "details", 5),
     row(SECOND_JOURNEY, "booking_details_viewed", "booking-details", "Guest details", "details", 5),
     row(FIRST_JOURNEY, "form_stage_viewed", "field-company", "Company", "question", 6),
     row(FIRST_JOURNEY, "form_stage_completed", "field-company", "Company", "question", 6),
-    row(FIRST_JOURNEY, "form_stage_validation_failed", "field-company", "Company", "question", 6, {
-      context: JSON.stringify({
-        context: {
-          stageOutcome: "validation_failed",
-          failureCategory: "validation",
-        },
-      }),
-    }),
-    row(FIRST_JOURNEY, "form_stage_validation_failed", "field-company", "Company", "question", 6, {
-      context: JSON.stringify({
-        context: {
-          stageOutcome: "validation_failed",
-          failureCategory: "validation",
-        },
-      }),
-    }),
-    row(SECOND_JOURNEY, "form_stage_skipped", "field-company", "Company", "question", 6, {
-      context: JSON.stringify({
-        context: { stageOutcome: "skipped" },
-      }),
-    }),
+    row(FIRST_JOURNEY, "form_stage_validation_failed", "field-company", "Company", "question", 6),
+    row(FIRST_JOURNEY, "form_stage_validation_failed", "field-company", "Company", "question", 6),
+    row(SECOND_JOURNEY, "form_stage_skipped", "field-company", "Company", "question", 6),
     row(FIRST_JOURNEY, "booking_submit_attempted", "booking-submit", "Submit booking", "submit", 7),
     row(SECOND_JOURNEY, "booking_submit_attempted", "booking-submit", "Submit booking", "submit", 7),
-    row(SECOND_JOURNEY, "booking_submit_failed", "booking-submit", "Submit booking", "submit", 7, {
-      context: JSON.stringify({
-        context: { failureCategory: "server" },
-      }),
-    }),
-    row(SECOND_JOURNEY, "booking_submit_failed", "booking-submit", "Submit booking", "submit", 7, {
-      context: JSON.stringify({
-        context: { failureCategory: "server" },
-      }),
-    }),
+    row(SECOND_JOURNEY, "booking_submit_failed", "booking-submit", "Submit booking", "submit", 7),
+    row(SECOND_JOURNEY, "booking_submit_failed", "booking-submit", "Submit booking", "submit", 7),
     row(FIRST_JOURNEY, "booking_created", "booking-complete", "Booking created", "completion", 8),
     {
       ...row("", "page_view", "booking-view", "Old page view", "page", 1),
       timestamp: "2026-07-01T00:00:00.000Z",
     },
-    row(FIRST_JOURNEY, "page_view", "booking-view", "Discovery call", "page", 1, {
-      context: "{not-json",
-    }),
+    row(FIRST_JOURNEY, "page_view", "booking-view", "Discovery call", "page", 1),
   ];
   return rows;
 }
@@ -165,7 +95,7 @@ afterEach(function restoreFetch() {
 });
 
 describe("unique-journey detailed funnel reporting", () => {
-  test("repeated events, conditional skips, old rows, and malformed context produce safe exact drop-offs", () => {
+  test("repeated events, conditional skips, and old rows produce safe exact drop-offs", () => {
     const report = aggregateDetailedFunnel(bookingRows());
 
     expect(report.availableSince).toBe("2026-07-29T08:01:00.000Z");
@@ -177,10 +107,7 @@ describe("unique-journey detailed funnel reporting", () => {
       { deviceType: "desktop", visitors: 1 },
       { deviceType: "mobile", visitors: 1 },
     ]);
-    expect(report.failures).toEqual([
-      { category: "validation", count: 1 },
-      { category: "server", count: 1 },
-    ]);
+    expect("failures" in report).toBe(false);
     expect(report.stages.map(function summarize(stage) {
       return {
         key: stage.key,
@@ -200,30 +127,9 @@ describe("unique-journey detailed funnel reporting", () => {
       { key: "booking-complete", visitors: 1, continued: 1, dropOffs: 0, skipped: 0 },
     ]);
 
-    const availability = report.stages[2]!;
-    expect(availability.contextBreakdowns).toEqual({
-      selectedDates: [{ value: "2026-08-03", visitors: 2 }],
-      availabilityOutcomes: [
-        { value: "available", visitors: 2 },
-        { value: "none", visitors: 1 },
-      ],
-      offeredTimes: [
-        { value: "15:00", visitors: 2 },
-        { value: "15:30", visitors: 1 },
-      ],
-    });
-    expect(report.stages[3]!.contextBreakdowns).toEqual({
-      selectedTimes: [
-        { value: "15:00", visitors: 1 },
-        { value: "15:30", visitors: 1 },
-      ],
-    });
-    expect(report.stages[5]!.contextBreakdowns).toEqual({
-      validationFailures: [{ value: "Company", visitors: 1 }],
-    });
-    expect(report.stages[6]!.contextBreakdowns).toEqual({
-      submitFailures: [{ value: "server", visitors: 1 }],
-    });
+    expect(report.stages.every(function excludesContextBreakdowns(stage) {
+      return !("contextBreakdowns" in stage);
+    })).toBe(true);
     expect(JSON.stringify(report)).not.toContain(FIRST_JOURNEY);
     expect(JSON.stringify(report)).not.toContain(SECOND_JOURNEY);
   });
@@ -426,7 +332,6 @@ describe("unique-journey detailed funnel reporting", () => {
           stages: [],
           bySource: [],
           byDevice: [],
-          failures: [],
         },
       });
       expect(crossProjectForm).toEqual({
@@ -446,7 +351,6 @@ describe("unique-journey detailed funnel reporting", () => {
           stages: [],
           bySource: [],
           byDevice: [],
-          failures: [],
         },
       });
       expect(analyticsQueries).toBe(0);

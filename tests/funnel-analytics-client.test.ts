@@ -78,8 +78,6 @@ describe("funnel analytics dispatcher", () => {
       stageLabel: "Time selected",
       stageKind: "time",
       stageOrder: 4,
-      primaryValue: "09:30",
-      context: { selectedTime: "09:30" },
     });
 
     expect(dispatcher.journeyId).toBe(
@@ -101,8 +99,6 @@ describe("funnel analytics dispatcher", () => {
         stageLabel: "Time selected",
         stageKind: "time",
         stageOrder: 4,
-        primaryValue: "09:30",
-        context: { selectedTime: "09:30" },
       },
     ]);
     expect(JSON.stringify(events)).not.toContain("guest@example.com");
@@ -135,7 +131,6 @@ describe("funnel analytics dispatcher", () => {
       event: "form_stage_validation_failed" as const,
       context: {
         stageOutcome: "validation_failed" as const,
-        failureCategory: "validation" as const,
       },
     };
 
@@ -183,7 +178,6 @@ describe("funnel analytics dispatcher", () => {
         stageLabel: "Submit booking",
         stageKind: "submit",
         stageOrder: 7,
-        context: { failureCategory: "network" },
       });
     }).not.toThrow();
     expect(providerCalls).toBe(1);
@@ -276,4 +270,3 @@ test("widget URLs hand one journey and widget source to the iframe", () => {
     lc_journey: "123e4567-e89b-42d3-a456-426614174000",
   });
 });
-

@@ -31,18 +31,12 @@
 // double5: event duration in minutes
 // ─────────────────────────────────────────────────────────────────────────────
 
-import {
-  ANALYTICS_FAILURE_CATEGORIES,
-} from "../../shared/funnel-analytics";
 import type {
-  AnalyticsFailureCategory,
   AnalyticsDeviceType,
   AnalyticsEventName,
   AnalyticsSource,
   DetailedFunnelReport,
   FunnelEventContext,
-  FunnelContextBreakdowns,
-  FunnelContextValue,
   FunnelStageKind,
   FunnelStageReport,
   FunnelType,
@@ -191,7 +185,6 @@ interface SqlApiResponse {
 export interface DetailedAnalyticsRow {
   timestamp: string;
   event: AnalyticsEventName;
-  context: string;
   journeyId: string;
   funnelType: string;
   stageKey: string;
@@ -214,12 +207,6 @@ interface StageAccumulator {
   visitors: Set<string>;
   presence: Set<string>;
   skipped: Set<string>;
-  selectedDates: Map<string, Set<string>>;
-  availabilityOutcomes: Map<string, Set<string>>;
-  offeredTimes: Map<string, Set<string>>;
-  selectedTimes: Map<string, Set<string>>;
-  validationFailures: Map<string, Set<string>>;
-  submitFailures: Map<string, Set<string>>;
 }
 
 const ANALYTICS_SOURCE_SET = new Set<string>(["direct", "widget"]);
@@ -228,19 +215,12 @@ const ANALYTICS_DEVICE_SET = new Set<string>([
   "tablet",
   "desktop",
 ]);
-const ANALYTICS_FAILURE_SET = new Set<string>(
-  ANALYTICS_FAILURE_CATEGORIES,
-);
-const ANALYTICS_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const ANALYTICS_TIME_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
-
 export function emptyDetailedFunnel(): DetailedFunnelReport {
   return {
     availableSince: null,
     stages: [],
     bySource: [],
     byDevice: [],
-    failures: [],
   };
 }
 
@@ -253,113 +233,7 @@ function createStageAccumulator(row: DetailedAnalyticsRow): StageAccumulator {
     visitors: new Set(),
     presence: new Set(),
     skipped: new Set(),
-    selectedDates: new Map(),
-    availabilityOutcomes: new Map(),
-    offeredTimes: new Map(),
-    selectedTimes: new Map(),
-    validationFailures: new Map(),
-    submitFailures: new Map(),
   };
-}
-
-function addJourneyValue(
-  values: Map<string, Set<string>>,
-  value: string,
-  journeyId: string,
-): void {
-  const journeys = values.get(value) ?? new Set<string>();
-  journeys.add(journeyId);
-  values.set(value, journeys);
-}
-
-function breakdown(
-  values: Map<string, Set<string>>,
-): FunnelContextValue[] | undefined {
-  if (values.size === 0) return undefined;
-  return [...values.entries()]
-    .map(function toBreakdown([value, journeys]) {
-      return { value, visitors: journeys.size };
-    })
-    .sort(function sortBreakdown(left, right) {
-      return right.visitors - left.visitors ||
-        left.value.localeCompare(right.value);
-    });
-}
-
-function safeContext(raw: string): FunnelEventContext {
-  if (!raw) return {};
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (
-      !parsed ||
-      typeof parsed !== "object" ||
-      !("context" in parsed) ||
-      !parsed.context ||
-      typeof parsed.context !== "object"
-    ) {
-      return {};
-    }
-    const input = parsed.context as Record<string, unknown>;
-    const result: FunnelEventContext = {};
-    if (
-      typeof input.selectedDate === "string" &&
-      ANALYTICS_DATE_PATTERN.test(input.selectedDate)
-    ) {
-      result.selectedDate = input.selectedDate;
-    }
-    if (
-      Array.isArray(input.offeredSlotStarts) &&
-      input.offeredSlotStarts.length <= 48 &&
-      input.offeredSlotStarts.every(function validTime(value) {
-        return typeof value === "string" &&
-          ANALYTICS_TIME_PATTERN.test(value);
-      })
-    ) {
-      result.offeredSlotStarts = input.offeredSlotStarts as string[];
-    }
-    if (
-      input.availabilityOutcome === "available" ||
-      input.availabilityOutcome === "none" ||
-      input.availabilityOutcome === "error"
-    ) {
-      result.availabilityOutcome = input.availabilityOutcome;
-    }
-    if (
-      typeof input.selectedTime === "string" &&
-      ANALYTICS_TIME_PATTERN.test(input.selectedTime)
-    ) {
-      result.selectedTime = input.selectedTime;
-    }
-    if (
-      typeof input.failureCategory === "string" &&
-      ANALYTICS_FAILURE_SET.has(input.failureCategory)
-    ) {
-      result.failureCategory =
-        input.failureCategory as AnalyticsFailureCategory;
-    }
-    return result;
-  } catch {
-    return {};
-  }
-}
-
-function stageBreakdowns(
-  stage: StageAccumulator,
-): FunnelContextBreakdowns | undefined {
-  const result: FunnelContextBreakdowns = {
-    selectedDates: breakdown(stage.selectedDates),
-    availabilityOutcomes: breakdown(stage.availabilityOutcomes),
-    offeredTimes: breakdown(stage.offeredTimes),
-    selectedTimes: breakdown(stage.selectedTimes),
-    validationFailures: breakdown(stage.validationFailures),
-    submitFailures: breakdown(stage.submitFailures),
-  };
-  if (Object.values(result).every(function isEmpty(value) {
-    return value === undefined;
-  })) {
-    return undefined;
-  }
-  return result;
 }
 
 export function aggregateDetailedFunnel(
@@ -368,10 +242,6 @@ export function aggregateDetailedFunnel(
   const stages = new Map<string, StageAccumulator>();
   const sourceJourneys = new Map<AnalyticsSource, Set<string>>();
   const deviceJourneys = new Map<AnalyticsDeviceType, Set<string>>();
-  const failureJourneys = new Map<
-    AnalyticsFailureCategory,
-    Set<string>
-  >();
   let availableSince: string | null = null;
 
   for (const row of rows) {
@@ -393,14 +263,6 @@ export function aggregateDetailedFunnel(
       const journeys = deviceJourneys.get(deviceType) ?? new Set<string>();
       journeys.add(journeyId);
       deviceJourneys.set(deviceType, journeys);
-    }
-
-    const context = safeContext(String(row.context ?? ""));
-    if (context.failureCategory) {
-      const journeys =
-        failureJourneys.get(context.failureCategory) ?? new Set<string>();
-      journeys.add(journeyId);
-      failureJourneys.set(context.failureCategory, journeys);
     }
 
     const stageKey = String(row.stageKey ?? "");
@@ -425,47 +287,6 @@ export function aggregateDetailedFunnel(
       stage.visitors.add(journeyId);
     }
 
-    if (context.selectedDate) {
-      addJourneyValue(
-        stage.selectedDates,
-        context.selectedDate,
-        journeyId,
-      );
-    }
-    if (context.availabilityOutcome) {
-      addJourneyValue(
-        stage.availabilityOutcomes,
-        context.availabilityOutcome,
-        journeyId,
-      );
-    }
-    for (const time of context.offeredSlotStarts ?? []) {
-      addJourneyValue(stage.offeredTimes, time, journeyId);
-    }
-    if (context.selectedTime) {
-      addJourneyValue(stage.selectedTimes, context.selectedTime, journeyId);
-    }
-    if (
-      row.event === "form_stage_validation_failed" &&
-      context.failureCategory
-    ) {
-      addJourneyValue(
-        stage.validationFailures,
-        stage.label || stage.key,
-        journeyId,
-      );
-    }
-    if (
-      (row.event === "booking_submit_failed" ||
-        row.event === "form_submit_failed") &&
-      context.failureCategory
-    ) {
-      addJourneyValue(
-        stage.submitFailures,
-        context.failureCategory,
-        journeyId,
-      );
-    }
     stages.set(stageKey, stage);
   }
 
@@ -482,7 +303,6 @@ export function aggregateDetailedFunnel(
         : stage.visitors.size;
       const visitors = stage.visitors.size;
       const dropOffs = Math.max(0, visitors - continued);
-      const contextBreakdowns = stageBreakdowns(stage);
       return {
         key: stage.key,
         label: stage.label || stage.key,
@@ -496,7 +316,6 @@ export function aggregateDetailedFunnel(
         dropOffs,
         dropOffRate: visitors > 0 ? (dropOffs / visitors) * 100 : 0,
         skipped: stage.skipped.size,
-        ...(contextBreakdowns ? { contextBreakdowns } : {}),
       };
     },
   );
@@ -519,16 +338,6 @@ export function aggregateDetailedFunnel(
       .sort(function sortDevices(left, right) {
         return right.visitors - left.visitors ||
           left.deviceType.localeCompare(right.deviceType);
-      }),
-    failures: ANALYTICS_FAILURE_CATEGORIES
-      .filter(function hasFailures(category) {
-        return failureJourneys.has(category);
-      })
-      .map(function failureCount(category) {
-        return {
-          category,
-          count: failureJourneys.get(category)?.size ?? 0,
-        };
       }),
   };
 }
@@ -569,7 +378,6 @@ async function queryDetailedFunnel(
     SELECT
       timestamp,
       blob2 AS event,
-      blob13 AS context,
       blob14 AS journeyId,
       blob15 AS funnelType,
       blob16 AS stageKey,
