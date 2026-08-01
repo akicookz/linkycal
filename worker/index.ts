@@ -57,6 +57,7 @@ import {
   checkoutSchema,
   trackEventRequestSchema,
   analyticsQuerySchema,
+  bookingAnalyticsQuerySchema,
   updateTeamSchema,
   createTeamInviteSchema,
   updateTeamMemberSchema,
@@ -7395,7 +7396,7 @@ app.get("/api/projects/:projectId/analytics/bookings", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const query = validate(
-      analyticsQuerySchema,
+      bookingAnalyticsQuerySchema,
       Object.fromEntries(new URL(c.req.url).searchParams),
     );
     const result = await getBookingAnalyticsAction({

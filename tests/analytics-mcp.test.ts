@@ -18,6 +18,7 @@ import {
   registerAnalyticsTools,
 } from "../worker/mcp/tools/analytics";
 import type { AppEnv } from "../worker/types";
+import { withToolErrors } from "../worker/mcp/helpers";
 import { installHttpCapture } from "./support/http-capture";
 import { createTestDb } from "./support/test-db";
 
@@ -146,6 +147,7 @@ describe("project-scoped analytics MCP tools", () => {
       const booking = await getBookingFunnelAnalytics(pro, {
         period: "30d",
         eventTypeId: "event-mcp-owned",
+        timezone: "Asia/Seoul",
       });
       expect(parsedResult(booking)).toEqual({
         funnel: {
@@ -159,7 +161,10 @@ describe("project-scoped analytics MCP tools", () => {
         stages: [],
         bySource: [],
         byDevice: [],
-        failures: [],
+        clickedWeekdays: [],
+        selectedDateAvailability: [],
+        bookedWeekdays: [],
+        bookedTimes: [],
       });
 
       const form = await getFormFunnelAnalytics(pro, {
@@ -180,12 +185,12 @@ describe("project-scoped analytics MCP tools", () => {
         stages: [],
         bySource: [],
         byDevice: [],
-        failures: [],
       });
 
       expect(await getBookingFunnelAnalytics(pro, {
         period: "30d",
         eventTypeId: "event-mcp-foreign",
+        timezone: "Asia/Seoul",
       })).toEqual({
         content: [{ type: "text", text: "Not found" }],
         isError: true,
@@ -204,6 +209,19 @@ describe("project-scoped analytics MCP tools", () => {
         }],
         isError: true,
       });
+
+      const malformedTimezone = await withToolErrors(
+        "get_booking_funnel_analytics",
+        function bookingTool(input) {
+          return getBookingFunnelAnalytics(pro, input);
+        },
+      )({
+        period: "30d",
+        eventTypeId: "event-mcp-owned",
+        timezone: "Not/A_Zone",
+      });
+      expect(malformedTimezone.isError).toBe(true);
+      expect(malformedTimezone.content[0]?.text).toContain("Invalid input");
 
       const configured = await configureAnalyticsIntegration(pro, {
         provider: "posthog",
@@ -249,7 +267,7 @@ describe("project-scoped analytics MCP tools", () => {
         parsedResult(booking),
         parsedResult(form),
       ])).not.toContain("journeyId");
-      expect(sql.requests).toHaveLength(12);
+      expect(sql.requests).toHaveLength(13);
     } finally {
       sql.restore();
       testDatabase.close();
@@ -285,5 +303,10 @@ describe("project-scoped analytics MCP tools", () => {
     for (const registration of registrations) {
       expect(registration.inputSchema).not.toHaveProperty("projectId");
     }
+    expect(
+      registrations.find(function isBookingTool(registration) {
+        return registration.name === "get_booking_funnel_analytics";
+      })?.inputSchema,
+    ).toHaveProperty("timezone");
   });
 });

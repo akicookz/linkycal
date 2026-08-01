@@ -8,6 +8,7 @@ import {
 } from "../shared/funnel-analytics";
 import {
   analyticsQuerySchema,
+  bookingAnalyticsQuerySchema,
   trackEventRequestSchema,
   trackEventSchema,
 } from "../worker/validation";
@@ -218,6 +219,38 @@ describe("analytics query validation", () => {
     for (const scenario of cases) {
       expect(
         analyticsQuerySchema.safeParse(scenario.value).success,
+        scenario.label,
+      ).toBe(scenario.accepted);
+    }
+  });
+
+  test("booking reports require a valid dashboard IANA timezone", () => {
+    const scenarios = [
+      {
+        label: "valid timezone",
+        value: { period: "30d", timezone: "Asia/Seoul" },
+        accepted: true,
+      },
+      {
+        label: "unknown timezone",
+        value: { period: "30d", timezone: "Not/A_Zone" },
+        accepted: false,
+      },
+      {
+        label: "empty timezone",
+        value: { period: "30d", timezone: "" },
+        accepted: false,
+      },
+      {
+        label: "missing timezone",
+        value: { period: "30d" },
+        accepted: false,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      expect(
+        bookingAnalyticsQuerySchema.safeParse(scenario.value).success,
         scenario.label,
       ).toBe(scenario.accepted);
     }

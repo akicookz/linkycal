@@ -234,6 +234,188 @@ describe("unique-journey detailed funnel reporting", () => {
     }
   });
 
+  test("dashboard timezone controls date demand and every persisted booking request counts once", async () => {
+    const testDatabase = createTestDb();
+    await testDatabase.db.insert(dbSchema.schema.users).values({
+      id: "owner-demand",
+      name: "Demand owner",
+      email: "demand@example.com",
+    });
+    await testDatabase.db.insert(dbSchema.projects).values([
+      {
+        id: "project-demand",
+        userId: "owner-demand",
+        name: "Demand",
+        slug: "demand",
+      },
+      {
+        id: "project-demand-foreign",
+        userId: "owner-demand",
+        name: "Foreign demand",
+        slug: "foreign-demand",
+      },
+    ]);
+    await testDatabase.db.insert(dbSchema.eventTypes).values([
+      {
+        id: "event-demand",
+        projectId: "project-demand",
+        name: "Demand call",
+        slug: "demand-call",
+        duration: 30,
+      },
+      {
+        id: "event-demand-foreign",
+        projectId: "project-demand-foreign",
+        name: "Foreign demand call",
+        slug: "foreign-demand-call",
+        duration: 30,
+      },
+    ]);
+    const requestedStart = new Date("2026-08-03T15:00:00.000Z");
+    const requestedEnd = new Date("2026-08-03T15:30:00.000Z");
+    const inPeriodCreatedAt = new Date("2026-07-15T12:00:00.000Z");
+    await testDatabase.db.insert(dbSchema.bookings).values([
+      ...([
+        "confirmed",
+        "pending",
+        "cancelled",
+        "declined",
+        "rescheduled",
+        "confirmed",
+      ] as const).map(function bookingForEveryStatus(status, index) {
+        return {
+          id: `booking-demand-${index}`,
+          eventTypeId: "event-demand",
+          name: `Guest ${index}`,
+          email: `guest-${index}@example.com`,
+          startTime: requestedStart,
+          endTime: requestedEnd,
+          timezone: "UTC",
+          status,
+          createdAt: inPeriodCreatedAt,
+        };
+      }),
+      {
+        id: "booking-demand-outside-period",
+        eventTypeId: "event-demand",
+        name: "Outside period",
+        email: "outside@example.com",
+        startTime: requestedStart,
+        endTime: requestedEnd,
+        timezone: "UTC",
+        status: "confirmed",
+        createdAt: new Date("2026-06-30T14:00:00.000Z"),
+      },
+      {
+        id: "booking-demand-foreign",
+        eventTypeId: "event-demand-foreign",
+        name: "Foreign project",
+        email: "foreign@example.com",
+        startTime: requestedStart,
+        endTime: requestedEnd,
+        timezone: "UTC",
+        status: "confirmed",
+        createdAt: inPeriodCreatedAt,
+      },
+    ]);
+    const demandRows = [
+      {
+        event: "booking_date_selected",
+        selectedDateUtc: "2026-08-03T15:00:00.000Z",
+        slotCount: 0,
+        occurrences: 3,
+      },
+      {
+        event: "booking_availability_shown",
+        selectedDateUtc: "2026-08-03T15:00:00.000Z",
+        slotCount: 4,
+        occurrences: 1,
+      },
+      {
+        event: "booking_availability_shown",
+        selectedDateUtc: "2026-08-03T15:00:00.000Z",
+        slotCount: 7,
+        occurrences: 2,
+      },
+    ];
+    const http = installHttpCapture([
+      {
+        method: "POST",
+        matches: function matchesAnalyticsSql(url) {
+          return url.pathname.endsWith("/analytics_engine/sql");
+        },
+        respond: function respondAnalyticsSql(request) {
+          const data = request.text.includes("blob19 AS selectedDateUtc")
+            ? demandRows
+            : [];
+          return new Response(JSON.stringify({
+            data,
+            meta: {},
+            rows: data.length,
+          }));
+        },
+      },
+    ]);
+    const commonInput = {
+      db: testDatabase.db,
+      env: {
+        CF_ACCOUNT_ID: "account-1",
+        WAE_API_TOKEN: "token-1",
+      },
+      projectId: "project-demand",
+      planLimits: PLAN_LIMITS.pro,
+    };
+
+    try {
+      const seoul = await getBookingAnalyticsAction({
+        ...commonInput,
+        query: {
+          period: "custom",
+          start: "2026-07-01",
+          end: "2026-07-31",
+          resourceSlug: "demand-call",
+          timezone: "Asia/Seoul",
+        },
+      });
+      expect(seoul.body).toMatchObject({
+        clickedWeekdays: [{ weekday: "Tuesday", clicks: 3 }],
+        selectedDateAvailability: [{
+          date: "2026-08-04",
+          checks: 3,
+          minimumSlots: 4,
+          maximumSlots: 7,
+        }],
+        bookedWeekdays: [{ weekday: "Tuesday", bookings: 6 }],
+        bookedTimes: [{ time: "00:00", bookings: 6 }],
+      });
+
+      const losAngeles = await getBookingAnalyticsAction({
+        ...commonInput,
+        query: {
+          period: "custom",
+          start: "2026-07-01",
+          end: "2026-07-31",
+          resourceSlug: "demand-call",
+          timezone: "America/Los_Angeles",
+        },
+      });
+      expect(losAngeles.body).toMatchObject({
+        clickedWeekdays: [{ weekday: "Monday", clicks: 3 }],
+        selectedDateAvailability: [{
+          date: "2026-08-03",
+          checks: 3,
+          minimumSlots: 4,
+          maximumSlots: 7,
+        }],
+        bookedWeekdays: [{ weekday: "Monday", bookings: 6 }],
+        bookedTimes: [{ time: "08:00", bookings: 6 }],
+      });
+    } finally {
+      http.restore();
+      testDatabase.close();
+    }
+  });
+
   test("resource ownership fails closed before Analytics Engine and filters expose only project catalogs", async () => {
     const testDatabase = createTestDb();
     await testDatabase.db.insert(dbSchema.schema.users).values({
@@ -304,12 +486,17 @@ describe("unique-journey detailed funnel reporting", () => {
         query: {
           period: "30d" as const,
           resourceSlug: "private-call",
+          timezone: "Asia/Seoul",
         },
       };
       const crossProjectBooking = await getBookingAnalyticsAction(input);
       const missingBooking = await getBookingAnalyticsAction({
         ...input,
-        query: { period: "30d", resourceSlug: "missing-call" },
+        query: {
+          period: "30d",
+          resourceSlug: "missing-call",
+          timezone: "Asia/Seoul",
+        },
       });
       const crossProjectForm = await getFormAnalyticsAction({
         ...input,
@@ -332,6 +519,10 @@ describe("unique-journey detailed funnel reporting", () => {
           stages: [],
           bySource: [],
           byDevice: [],
+          clickedWeekdays: [],
+          selectedDateAvailability: [],
+          bookedWeekdays: [],
+          bookedTimes: [],
         },
       });
       expect(crossProjectForm).toEqual({

@@ -857,6 +857,23 @@ export const analyticsQuerySchema = z
     }
   });
 
+export const analyticsTimezoneSchema = z
+  .string()
+  .min(1)
+  .max(100)
+  .refine(function isIanaTimezone(value) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Must be a valid IANA timezone");
+
+export const bookingAnalyticsQuerySchema = analyticsQuerySchema.safeExtend({
+  timezone: analyticsTimezoneSchema,
+});
+
 // ─── Billing ─────────────────────────────────────────────────────────────────
 
 export const checkoutSchema = z.object({

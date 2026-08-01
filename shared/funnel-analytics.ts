@@ -125,6 +125,35 @@ export interface DetailedFunnelReport {
   }>;
 }
 
+export interface ClickedWeekday {
+  weekday: string;
+  clicks: number;
+}
+
+export interface SelectedDateAvailability {
+  date: string;
+  checks: number;
+  minimumSlots: number;
+  maximumSlots: number;
+}
+
+export interface BookedWeekday {
+  weekday: string;
+  bookings: number;
+}
+
+export interface BookedTime {
+  time: string;
+  bookings: number;
+}
+
+export interface BookingAnalyticsBreakdowns {
+  clickedWeekdays: ClickedWeekday[];
+  selectedDateAvailability: SelectedDateAvailability[];
+  bookedWeekdays: BookedWeekday[];
+  bookedTimes: BookedTime[];
+}
+
 export interface Ga4AnalyticsIntegration {
   provider: "ga4";
   enabled: boolean;

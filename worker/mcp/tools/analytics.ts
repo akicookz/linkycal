@@ -10,7 +10,10 @@ import {
   getFormAnalyticsAction,
   listAnalyticsIntegrationsAction,
 } from "../../lib/analytics-actions";
-import { analyticsQuerySchema } from "../../validation";
+import {
+  analyticsQuerySchema,
+  bookingAnalyticsQuerySchema,
+} from "../../validation";
 import type { ToolContext } from "../agent";
 import {
   err,
@@ -33,6 +36,7 @@ interface CommonAnalyticsInput {
 
 interface BookingAnalyticsInput extends CommonAnalyticsInput {
   eventTypeId?: string;
+  timezone: string;
 }
 
 interface FormAnalyticsInput extends CommonAnalyticsInput {
@@ -112,10 +116,11 @@ export async function getBookingFunnelAnalytics(
   }
   return actionResult(await getBookingAnalyticsAction({
     ...common,
-    query: {
+    query: bookingAnalyticsQuerySchema.parse({
       ...parseCommonQuery(input),
+      timezone: input.timezone,
       ...(resourceSlug ? { resourceSlug } : {}),
-    },
+    }),
   }));
 }
 
@@ -211,10 +216,13 @@ export function registerAnalyticsTools(
     "get_booking_funnel_analytics",
     {
       description:
-        "Get booking analytics. Pass a project-owned eventTypeId for exact unique-journey stages, date/time distributions, and safe failures.",
+        "Get UTC-backed clicked weekday and availability demand plus persisted booking-request weekday/time distributions in the required dashboard timezone. Pass a project-owned eventTypeId for exact unique-journey stages.",
       inputSchema: {
         ...commonInputShape,
         eventTypeId: z.string().optional(),
+        timezone: z
+          .string()
+          .describe("IANA timezone used to group dates, weekdays, and times"),
       },
     },
     withToolErrors(
@@ -227,7 +235,7 @@ export function registerAnalyticsTools(
     "get_form_funnel_analytics",
     {
       description:
-        "Get form analytics. Pass a project-owned formId for rendered stages, conditional skips, and safe failures.",
+        "Get form analytics. Pass a project-owned formId for rendered stages, conditional skips, journey sources, and visitor devices.",
       inputSchema: {
         ...commonInputShape,
         formId: z.string().optional(),

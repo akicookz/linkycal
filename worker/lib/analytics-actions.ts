@@ -8,6 +8,7 @@ import type {
 import type { AnalyticsQueryParams } from "../services/analytics-service";
 import {
   emptyDetailedFunnel,
+  queryBookingDemand,
   queryBookings,
   queryFilterOptions,
   queryForms,
@@ -18,6 +19,7 @@ import * as dbSchema from "../db/schema";
 import type { PlanLimits } from "../types";
 import { AnalyticsIntegrationService } from "../services/analytics-integration-service";
 import { configureAnalyticsIntegrationSchema } from "../validation";
+import { queryBookingRequestAnalytics } from "./booking-request-analytics";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 type CommonAnalyticsQuery = Omit<AnalyticsQueryParams, "projectId">;
@@ -44,6 +46,10 @@ interface AnalyticsQueryActionInput extends AnalyticsActionInput {
   query: CommonAnalyticsQuery;
 }
 
+interface BookingAnalyticsActionInput extends AnalyticsActionInput {
+  query: CommonAnalyticsQuery & { timezone: string };
+}
+
 function analyticsForbidden() {
   return {
     ok: false as const,
@@ -64,6 +70,10 @@ function emptyBookingReport() {
     byEventType: [],
     timeSeries: [],
     ...emptyDetailedFunnel(),
+    clickedWeekdays: [],
+    selectedDateAvailability: [],
+    bookedWeekdays: [],
+    bookedTimes: [],
   };
 }
 
@@ -134,7 +144,7 @@ export async function getAnalyticsOverviewAction(
 }
 
 export async function getBookingAnalyticsAction(
-  input: AnalyticsQueryActionInput,
+  input: BookingAnalyticsActionInput,
 ) {
   if (!input.planLimits.analytics) return analyticsForbidden();
   if (
@@ -152,15 +162,36 @@ export async function getBookingAnalyticsAction(
     };
   }
 
-  const body = await queryBookings(
-    input.env.CF_ACCOUNT_ID,
-    input.env.WAE_API_TOKEN,
-    {
+  const analyticsQuery = {
+    projectId: input.projectId,
+    ...input.query,
+  };
+  const [report, demand, bookingRequests] = await Promise.all([
+    queryBookings(
+      input.env.CF_ACCOUNT_ID,
+      input.env.WAE_API_TOKEN,
+      analyticsQuery,
+    ),
+    queryBookingDemand(
+      input.env.CF_ACCOUNT_ID,
+      input.env.WAE_API_TOKEN,
+      analyticsQuery,
+    ),
+    queryBookingRequestAnalytics({
+      db: input.db,
       projectId: input.projectId,
-      ...input.query,
-    },
-  );
-  return { ok: true as const, status: 200 as const, body };
+      period: input.query.period,
+      start: input.query.start,
+      end: input.query.end,
+      resourceSlug: input.query.resourceSlug,
+      timezone: input.query.timezone,
+    }),
+  ]);
+  return {
+    ok: true as const,
+    status: 200 as const,
+    body: { ...report, ...demand, ...bookingRequests },
+  };
 }
 
 export async function getFormAnalyticsAction(

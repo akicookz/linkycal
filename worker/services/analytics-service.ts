@@ -31,10 +31,13 @@
 // double5: event duration in minutes
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { formatInTimeZone } from "date-fns-tz";
+
 import type {
   AnalyticsDeviceType,
   AnalyticsEventName,
   AnalyticsSource,
+  BookingAnalyticsBreakdowns,
   DetailedFunnelReport,
   FunnelEventContext,
   FunnelStageKind,
@@ -399,6 +402,126 @@ async function queryDetailedFunnel(
   `);
   return aggregateDetailedFunnel(
     result.data as unknown as DetailedAnalyticsRow[],
+  );
+}
+
+export interface BookingDemandRow {
+  event: "booking_date_selected" | "booking_availability_shown";
+  selectedDateUtc: string;
+  slotCount: number;
+  occurrences: number;
+}
+
+const WEEKDAY_ORDER = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+] as const;
+
+function weekdayOrder(weekday: string): number {
+  const index = WEEKDAY_ORDER.indexOf(
+    weekday as (typeof WEEKDAY_ORDER)[number],
+  );
+  return index === -1 ? WEEKDAY_ORDER.length : index;
+}
+
+export function aggregateBookingDemand(
+  rows: BookingDemandRow[],
+  timezone: string,
+): Pick<
+  BookingAnalyticsBreakdowns,
+  "clickedWeekdays" | "selectedDateAvailability"
+> {
+  const weekdayClicks = new Map<string, number>();
+  const availabilityByDate = new Map<string, {
+    checks: number;
+    minimumSlots: number;
+    maximumSlots: number;
+  }>();
+
+  for (const row of rows) {
+    const selectedDateUtc = String(row.selectedDateUtc ?? "");
+    if (!selectedDateUtc.includes("T")) continue;
+    const selectedDate = new Date(selectedDateUtc);
+    if (Number.isNaN(selectedDate.getTime())) continue;
+    const occurrences = Number(row.occurrences);
+    if (!Number.isFinite(occurrences) || occurrences <= 0) continue;
+
+    if (row.event === "booking_date_selected") {
+      const weekday = formatInTimeZone(selectedDate, timezone, "EEEE");
+      weekdayClicks.set(
+        weekday,
+        (weekdayClicks.get(weekday) ?? 0) + occurrences,
+      );
+      continue;
+    }
+
+    if (row.event !== "booking_availability_shown") continue;
+    const slotCount = Number(row.slotCount);
+    if (!Number.isFinite(slotCount) || slotCount < 0) continue;
+    const date = formatInTimeZone(selectedDate, timezone, "yyyy-MM-dd");
+    const current = availabilityByDate.get(date);
+    availabilityByDate.set(date, {
+      checks: (current?.checks ?? 0) + occurrences,
+      minimumSlots: current
+        ? Math.min(current.minimumSlots, slotCount)
+        : slotCount,
+      maximumSlots: current
+        ? Math.max(current.maximumSlots, slotCount)
+        : slotCount,
+    });
+  }
+
+  return {
+    clickedWeekdays: [...weekdayClicks.entries()]
+      .map(function clickedWeekday([weekday, clicks]) {
+        return { weekday, clicks };
+      })
+      .sort(function sortClickedWeekdays(left, right) {
+        return right.clicks - left.clicks ||
+          weekdayOrder(left.weekday) - weekdayOrder(right.weekday);
+      }),
+    selectedDateAvailability: [...availabilityByDate.entries()]
+      .map(function selectedDateAvailability([date, availability]) {
+        return { date, ...availability };
+      })
+      .sort(function sortSelectedDates(left, right) {
+        return right.checks - left.checks || left.date.localeCompare(right.date);
+      }),
+  };
+}
+
+export async function queryBookingDemand(
+  accountId: string,
+  apiToken: string,
+  params: AnalyticsQueryParams & { timezone: string },
+): Promise<Pick<
+  BookingAnalyticsBreakdowns,
+  "clickedWeekdays" | "selectedDateAvailability"
+>> {
+  if (!params.resourceSlug) {
+    return { clickedWeekdays: [], selectedDateAvailability: [] };
+  }
+  const filters = buildFilters(params);
+  const result = await querySql(accountId, apiToken, `
+    SELECT
+      blob2 AS event,
+      blob19 AS selectedDateUtc,
+      double3 AS slotCount,
+      SUM(_sample_interval) AS occurrences
+    FROM linkycal_analytics
+    ${filters}
+    AND blob2 IN ('booking_date_selected', 'booking_availability_shown')
+    AND blob19 != ''
+    GROUP BY event, selectedDateUtc, slotCount
+  `);
+  return aggregateBookingDemand(
+    result.data as unknown as BookingDemandRow[],
+    params.timezone,
   );
 }
 
