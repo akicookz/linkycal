@@ -17,8 +17,9 @@ Non-completion stages show exactly three metrics:
 | Drop-off | `80` | Drop-off rate rounded to a whole number |
 
 Values do not include `%`, `continued`, `dropped`, a numerator/denominator, or
-a secondary line. Completion stages retain their existing `Completed` status
-because it describes a terminal state rather than a continuation rate.
+a secondary line. Completion stages use the same three metrics as every other
+row, so a completed journey renders `Continued` / `100` instead of a one-off
+`Status` / `Completed` value.
 
 Count values use compact notation with at most one useful decimal place:
 `999`, `1K`, `1.2K`, `10K`, `100K`, and `1M`. Trailing `.0` is omitted. Rate

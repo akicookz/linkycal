@@ -37,6 +37,15 @@ const stageIcons: Record<string, LucideIcon> = {
   completion: CheckCircle2,
 };
 
+const compactNumberFormatter = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
+function formatCompactNumber(value: number): string {
+  return compactNumberFormatter.format(value);
+}
+
 function formatTrackingDate(value: string): string {
   return new Date(value).toLocaleDateString("en-US", {
     month: "short",
@@ -76,15 +85,18 @@ export function DetailedFunnel({
         <div className="space-y-3">
           {stages.map(function renderStage(stage) {
             const Icon = stageIcons[stage.kind] ?? MessageSquareText;
-            const isCompletion = stage.kind === "completion";
 
             return (
               <div
                 key={stage.key}
                 className="rounded-[18px] bg-muted/45 p-2 shadow-[0_0_0_1px_rgba(0,0,0,0.04),0_1px_2px_-1px_rgba(0,0,0,0.06)]"
               >
-                <div className="flex flex-col gap-3 rounded-[12px] bg-background px-3 py-3 sm:flex-row sm:items-center">
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                <div
+                  role="group"
+                  aria-label={`${stage.label} funnel stage`}
+                  className="grid gap-3 rounded-[12px] bg-background px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] sm:items-center"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
                     <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-primary/10">
                       <Icon className="size-4 text-primary" />
                     </div>
@@ -98,33 +110,24 @@ export function DetailedFunnel({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-x-5 gap-y-1 pl-[52px] sm:grid-cols-3 sm:pl-0">
-                    <div>
+                  <div className="grid grid-cols-3 gap-x-4 pl-[52px] sm:pl-0">
+                    <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Visitors</p>
-                      <p className="text-sm font-semibold tabular-nums">
-                        {stage.visitors.toLocaleString()}
+                      <p className="whitespace-nowrap text-sm font-semibold tabular-nums">
+                        {formatCompactNumber(stage.visitors)}
                       </p>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        {isCompletion ? "Status" : "Continued"}
-                      </p>
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Continued</p>
                       <p className="whitespace-nowrap text-sm font-semibold tabular-nums text-primary">
-                        {isCompletion
-                          ? "Completed"
-                          : `${stage.continuationRate.toFixed(1)}% continued`}
+                        {Math.round(stage.continuationRate)}
                       </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Drop-off</p>
                       <p className="whitespace-nowrap text-sm font-semibold tabular-nums">
-                        {stage.dropOffs.toLocaleString()} dropped
+                        {Math.round(stage.dropOffRate)}
                       </p>
-                      {!isCompletion && (
-                        <p className="text-xs tabular-nums text-muted-foreground">
-                          {stage.dropOffRate.toFixed(1)}%
-                        </p>
-                      )}
                     </div>
                   </div>
                 </div>
