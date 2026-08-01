@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import Analytics from "../src/pages/Analytics";
@@ -271,7 +271,7 @@ function renderAnalytics(): void {
 }
 
 describe("analytics dashboard", function () {
-  test("selected event type shows every booking stage, exact drop-offs, and booking context", async function () {
+  test("selected event type shows every booking stage, journey counts instead of rates, and booking context", async function () {
     const capture = installAnalyticsApi();
     const user = userEvent.setup();
     renderAnalytics();
@@ -283,6 +283,11 @@ describe("analytics dashboard", function () {
     expect(await screen.findByText("Booking page")).toBeTruthy();
     expect(screen.getByText("Tell us more")).toBeTruthy();
     expect(screen.getByText("Booking confirmed")).toBeTruthy();
+    const bookingPageStage = screen.getByRole("group", {
+      name: "Booking page funnel stage",
+    });
+    expect(within(bookingPageStage).getByText("86")).toBeTruthy();
+    expect(within(bookingPageStage).getByText("34")).toBeTruthy();
     expect(screen.getByText("Jul 29, 2026")).toBeTruthy();
     expect(screen.getByText("2026-08-04")).toBeTruthy();
     expect(screen.getAllByText("09:00").length).toBeGreaterThan(0);

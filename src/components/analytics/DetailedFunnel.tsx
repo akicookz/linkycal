@@ -120,13 +120,13 @@ export function DetailedFunnel({
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Continued</p>
                       <p className="whitespace-nowrap text-sm font-semibold tabular-nums text-primary">
-                        {Math.round(stage.continuationRate)}
+                        {formatCompactNumber(stage.continued)}
                       </p>
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs text-muted-foreground">Drop-off</p>
                       <p className="whitespace-nowrap text-sm font-semibold tabular-nums">
-                        {Math.round(stage.dropOffRate)}
+                        {formatCompactNumber(stage.dropOffs)}
                       </p>
                     </div>
                   </div>
