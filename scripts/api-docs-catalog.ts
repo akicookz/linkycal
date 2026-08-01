@@ -2,6 +2,7 @@ export type PublicApiAuth = "anonymous" | "apiKey";
 
 export interface PublicApiQueryParameter {
   name: string;
+  required?: boolean;
   description: string;
   schema: Record<string, unknown>;
 }
@@ -175,6 +176,17 @@ const ANALYTICS_REPORT_QUERY_PARAMETERS: PublicApiQueryParameter[] = [
   },
 ];
 
+const BOOKING_ANALYTICS_QUERY_PARAMETERS: PublicApiQueryParameter[] = [
+  ...ANALYTICS_REPORT_QUERY_PARAMETERS,
+  {
+    name: "timezone",
+    required: true,
+    description:
+      "IANA timezone used to group and label dates, weekdays, and times.",
+    schema: { type: "string", example: "Asia/Seoul" },
+  },
+];
+
 export const PUBLIC_API_OPERATIONS: PublicApiOperationDefinition[] = [
   {
     method: "GET",
@@ -210,8 +222,8 @@ export const PUBLIC_API_OPERATIONS: PublicApiOperationDefinition[] = [
     tag: "Analytics",
     auth: "apiKey",
     notes:
-      "Pro or Business required. Select an event type for unique-journey stage continuation, drop-offs, dates, availability, offered times, selected times, and safe failures.",
-    queryParameters: ANALYTICS_REPORT_QUERY_PARAMETERS,
+      "Pro or Business required. Returns UTC-backed clicked weekday and selected-date availability facts plus persisted booking-request weekday/time distributions in the required dashboard timezone. Every booking request counts regardless of status. Select an event type for exact unique-journey stages.",
+    queryParameters: BOOKING_ANALYTICS_QUERY_PARAMETERS,
     responseSchema: "BookingAnalyticsResponse",
     successStatus: "200",
     successDescription: "Booking funnel analytics",
@@ -223,7 +235,7 @@ export const PUBLIC_API_OPERATIONS: PublicApiOperationDefinition[] = [
     tag: "Analytics",
     auth: "apiKey",
     notes:
-      "Pro or Business required. Select a form for unique-journey question/step continuation, skips, drop-offs, and safe validation failures.",
+      "Pro or Business required. Select a form for unique-journey question/step continuation, skips, drop-offs, journey sources, and visitor devices.",
     queryParameters: ANALYTICS_REPORT_QUERY_PARAMETERS,
     responseSchema: "FormAnalyticsResponse",
     successStatus: "200",

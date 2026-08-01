@@ -7488,7 +7488,7 @@
       "get": {
         "operationId": "getProjectsProjectIdAnalyticsBookings",
         "summary": "Get booking funnel analytics",
-        "description": "Pro or Business required. Select an event type for unique-journey stage continuation, drop-offs, dates, availability, offered times, selected times, and safe failures.",
+        "description": "Pro or Business required. Returns UTC-backed clicked weekday and selected-date availability facts plus persisted booking-request weekday/time distributions in the required dashboard timezone. Every booking request counts regardless of status. Select an event type for exact unique-journey stages.",
         "tags": [
           "Analytics"
         ],
@@ -7604,6 +7604,16 @@
                 "desktop"
               ]
             }
+          },
+          {
+            "name": "timezone",
+            "in": "query",
+            "required": true,
+            "description": "IANA timezone used to group and label dates, weekdays, and times.",
+            "schema": {
+              "type": "string",
+              "example": "Asia/Seoul"
+            }
           }
         ],
         "responses": {
@@ -7664,7 +7674,7 @@
       "get": {
         "operationId": "getProjectsProjectIdAnalyticsForms",
         "summary": "Get form funnel analytics",
-        "description": "Pro or Business required. Select a form for unique-journey question/step continuation, skips, drop-offs, and safe validation failures.",
+        "description": "Pro or Business required. Select a form for unique-journey question/step continuation, skips, drop-offs, journey sources, and visitor devices.",
         "tags": [
           "Analytics"
         ],
@@ -9066,65 +9076,6 @@
       }
     },
     "schemas": {
-      "FunnelContextValue": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "value",
-          "visitors"
-        ],
-        "properties": {
-          "value": {
-            "type": "string"
-          },
-          "visitors": {
-            "type": "integer",
-            "minimum": 0
-          }
-        }
-      },
-      "FunnelContextBreakdowns": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "selectedDates": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FunnelContextValue"
-            }
-          },
-          "availabilityOutcomes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FunnelContextValue"
-            }
-          },
-          "offeredTimes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FunnelContextValue"
-            }
-          },
-          "selectedTimes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FunnelContextValue"
-            }
-          },
-          "validationFailures": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FunnelContextValue"
-            }
-          },
-          "submitFailures": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/FunnelContextValue"
-            }
-          }
-        }
-      },
       "FunnelStageReport": {
         "type": "object",
         "additionalProperties": false,
@@ -9192,9 +9143,6 @@
           "skipped": {
             "type": "integer",
             "minimum": 0
-          },
-          "contextBreakdowns": {
-            "$ref": "#/components/schemas/FunnelContextBreakdowns"
           }
         }
       },
@@ -9205,8 +9153,7 @@
           "availableSince",
           "stages",
           "bySource",
-          "byDevice",
-          "failures"
+          "byDevice"
         ],
         "properties": {
           "availableSince": {
@@ -9270,34 +9217,6 @@
                   ]
                 },
                 "visitors": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              }
-            }
-          },
-          "failures": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "category",
-                "count"
-              ],
-              "properties": {
-                "category": {
-                  "type": "string",
-                  "enum": [
-                    "validation",
-                    "slot_unavailable",
-                    "rate_limited",
-                    "network",
-                    "server",
-                    "unknown"
-                  ]
-                },
-                "count": {
                   "type": "integer",
                   "minimum": 0
                 }
@@ -9373,7 +9292,11 @@
             "required": [
               "funnel",
               "byEventType",
-              "timeSeries"
+              "timeSeries",
+              "clickedWeekdays",
+              "selectedDateAvailability",
+              "bookedWeekdays",
+              "bookedTimes"
             ],
             "properties": {
               "funnel": {
@@ -9409,6 +9332,98 @@
                 "type": "array",
                 "items": {
                   "type": "object"
+                }
+              },
+              "clickedWeekdays": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "weekday",
+                    "clicks"
+                  ],
+                  "properties": {
+                    "weekday": {
+                      "type": "string"
+                    },
+                    "clicks": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "selectedDateAvailability": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "date",
+                    "checks",
+                    "minimumSlots",
+                    "maximumSlots"
+                  ],
+                  "properties": {
+                    "date": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "checks": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "minimumSlots": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "maximumSlots": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "bookedWeekdays": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "weekday",
+                    "bookings"
+                  ],
+                  "properties": {
+                    "weekday": {
+                      "type": "string"
+                    },
+                    "bookings": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              },
+              "bookedTimes": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "time",
+                    "bookings"
+                  ],
+                  "properties": {
+                    "time": {
+                      "type": "string",
+                      "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+                    },
+                    "bookings": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
                 }
               }
             }
@@ -9738,40 +9753,9 @@
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "selectedDate": {
+          "selectedDateUtc": {
             "type": "string",
-            "format": "date"
-          },
-          "weekday": {
-            "type": "string"
-          },
-          "viewerTimezone": {
-            "type": "string"
-          },
-          "offeredSlotStarts": {
-            "type": "array",
-            "maxItems": 48,
-            "items": {
-              "type": "string",
-              "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
-            }
-          },
-          "earliestSlot": {
-            "type": "string"
-          },
-          "latestSlot": {
-            "type": "string"
-          },
-          "availabilityOutcome": {
-            "type": "string",
-            "enum": [
-              "available",
-              "none",
-              "error"
-            ]
-          },
-          "selectedTime": {
-            "type": "string"
+            "format": "date-time"
           },
           "fieldType": {
             "type": "string"
@@ -9786,17 +9770,6 @@
               "completed",
               "skipped",
               "validation_failed"
-            ]
-          },
-          "failureCategory": {
-            "type": "string",
-            "enum": [
-              "validation",
-              "slot_unavailable",
-              "rate_limited",
-              "network",
-              "server",
-              "unknown"
             ]
           }
         }

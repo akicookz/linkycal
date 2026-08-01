@@ -45,7 +45,13 @@ describe("generated detailed analytics documentation", function () {
       "utmCampaign",
       "source",
       "deviceType",
+      "timezone",
     ]);
+    expect(
+      bookings?.parameters?.find(function timezoneParameter(parameter) {
+        return parameter.name === "timezone";
+      })?.required,
+    ).toBe(true);
     expect(
       (
         bookings?.responses["200"] as {
@@ -90,7 +96,7 @@ describe("generated detailed analytics documentation", function () {
       Record<string, unknown>
     >;
     expect(schemas.FunnelStageReport).toBeTruthy();
-    expect(schemas.FunnelContextBreakdowns).toBeTruthy();
+    expect(schemas.FunnelContextBreakdowns).toBeUndefined();
     expect(schemas.AnalyticsFiltersResponse).toBeTruthy();
     expect(schemas.ConfigureAnalyticsIntegrationRequest).toBeTruthy();
     expect(schemas.AnonymousAnalyticsEventsRequest).toMatchObject({
@@ -104,6 +110,44 @@ describe("generated detailed analytics documentation", function () {
         },
       ],
     });
+
+    const bookingResponse = schemas.BookingAnalyticsResponse as {
+      allOf: Array<{
+        properties?: Record<string, unknown>;
+      }>;
+    };
+    expect(Object.keys(bookingResponse.allOf[1]?.properties ?? {})).toEqual([
+      "funnel",
+      "byEventType",
+      "timeSeries",
+      "clickedWeekdays",
+      "selectedDateAvailability",
+      "bookedWeekdays",
+      "bookedTimes",
+    ]);
+
+    const analyticsContext = schemas.AnonymousAnalyticsEventContext as {
+      properties: Record<string, unknown>;
+    };
+    expect(Object.keys(analyticsContext.properties)).toEqual([
+      "selectedDateUtc",
+      "fieldType",
+      "required",
+      "stageOutcome",
+    ]);
+    for (const removedProperty of [
+      "selectedDate",
+      "weekday",
+      "viewerTimezone",
+      "offeredSlotStarts",
+      "earliestSlot",
+      "latestSlot",
+      "availabilityOutcome",
+      "selectedTime",
+      "failureCategory",
+    ]) {
+      expect(analyticsContext.properties).not.toHaveProperty(removedProperty);
+    }
   });
 
   test("the public catalogs compute forty MCP tools including all five analytics tools", async function () {

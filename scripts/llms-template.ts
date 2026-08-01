@@ -69,10 +69,11 @@ Report filters:
 - utmSource, utmMedium, utmCampaign.
 - source: direct or widget.
 - deviceType: mobile, tablet, or desktop.
+- timezone: required IANA timezone for booking reports; dates, weekdays, and times are grouped for that dashboard viewer.
 
-Booking reports preserve high-level totals and add unique-journey stages, continuation and drop-off rates, selected dates, availability outcomes, literal local offered times, selected times, attached-form stages, and safe submit failure categories.
+Booking reports preserve high-level totals and unique-journey stages, continuation/drop-off rates, Journey sources, and Visitor devices. UTC-backed visitor events add clicked weekdays and selected-date availability checks with minimum/maximum slot counts. Persisted booking rows add most-booked weekdays and times; every request counts once regardless of confirmed, pending, cancelled, declined, rescheduled, or replacement status. Booking-request distributions follow period and event type filters because D1 booking rows do not persist UTM, source, or device attribution.
 
-Form reports preserve high-level totals and add the rendered statement/question/group/step sequence, unique-journey continuation and drop-offs, conditional skips, safe validation categories, and submit failures. Focused forms continue to persist every step response independently of analytics delivery.
+Form reports preserve high-level totals and add the rendered statement/question/group/step sequence, unique-journey continuation and drop-offs, conditional skips, Journey sources, and Visitor devices. Focused forms continue to persist every step response independently of analytics delivery.
 
 Aggregate analytics never contain names, emails, raw answers, journey IDs, IP addresses, or raw errors. Provider payloads also exclude labels and visitor histories. Detailed results expose the first-ingestion boundary so older traffic is not presented as zero detailed activity.
 
@@ -98,7 +99,7 @@ ${mcpInventory()}
 
 Analytics MCP details:
 - get_analytics_overview: common period, custom dates, UTM, source, and device inputs; returns aggregate totals/time series.
-- get_booking_funnel_analytics: optional project-owned eventTypeId for exact booking stages and context.
+- get_booking_funnel_analytics: required IANA timezone plus an optional project-owned eventTypeId for UTC-backed date demand, persisted booking-request weekday/time distributions, and exact booking stages.
 - get_form_funnel_analytics: optional project-owned formId for rendered form stages and skips.
 - list_analytics_integrations: returns normalized GA4, Meta Pixel, and PostHog public configuration.
 - configure_analytics_integration: provider, enabled, provider-specific public identifier, and allowlisted PostHog host.

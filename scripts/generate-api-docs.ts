@@ -809,7 +809,7 @@ function createOperation(
       return {
         name: parameter.name,
         in: "query",
-        required: false,
+        required: parameter.required ?? false,
         description: parameter.description,
         schema: parameter.schema,
       };
@@ -933,45 +933,6 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
         },
       },
       schemas: {
-        FunnelContextValue: {
-          type: "object",
-          additionalProperties: false,
-          required: ["value", "visitors"],
-          properties: {
-            value: { type: "string" },
-            visitors: { type: "integer", minimum: 0 },
-          },
-        },
-        FunnelContextBreakdowns: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            selectedDates: {
-              type: "array",
-              items: { $ref: "#/components/schemas/FunnelContextValue" },
-            },
-            availabilityOutcomes: {
-              type: "array",
-              items: { $ref: "#/components/schemas/FunnelContextValue" },
-            },
-            offeredTimes: {
-              type: "array",
-              items: { $ref: "#/components/schemas/FunnelContextValue" },
-            },
-            selectedTimes: {
-              type: "array",
-              items: { $ref: "#/components/schemas/FunnelContextValue" },
-            },
-            validationFailures: {
-              type: "array",
-              items: { $ref: "#/components/schemas/FunnelContextValue" },
-            },
-            submitFailures: {
-              type: "array",
-              items: { $ref: "#/components/schemas/FunnelContextValue" },
-            },
-          },
-        },
         FunnelStageReport: {
           type: "object",
           additionalProperties: false,
@@ -1016,9 +977,6 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
             dropOffs: { type: "integer", minimum: 0 },
             dropOffRate: { type: "number", minimum: 0, maximum: 100 },
             skipped: { type: "integer", minimum: 0 },
-            contextBreakdowns: {
-              $ref: "#/components/schemas/FunnelContextBreakdowns",
-            },
           },
         },
         DetailedFunnelReport: {
@@ -1029,7 +987,6 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
             "stages",
             "bySource",
             "byDevice",
-            "failures",
           ],
           properties: {
             availableSince: {
@@ -1074,28 +1031,6 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
                 },
               },
             },
-            failures: {
-              type: "array",
-              items: {
-                type: "object",
-                additionalProperties: false,
-                required: ["category", "count"],
-                properties: {
-                  category: {
-                    type: "string",
-                    enum: [
-                      "validation",
-                      "slot_unavailable",
-                      "rate_limited",
-                      "network",
-                      "server",
-                      "unknown",
-                    ],
-                  },
-                  count: { type: "integer", minimum: 0 },
-                },
-              },
-            },
           },
         },
         AnalyticsOverviewResponse: {
@@ -1131,7 +1066,15 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
             { $ref: "#/components/schemas/DetailedFunnelReport" },
             {
               type: "object",
-              required: ["funnel", "byEventType", "timeSeries"],
+              required: [
+                "funnel",
+                "byEventType",
+                "timeSeries",
+                "clickedWeekdays",
+                "selectedDateAvailability",
+                "bookedWeekdays",
+                "bookedTimes",
+              ],
               properties: {
                 funnel: {
                   type: "object",
@@ -1152,6 +1095,64 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
                 },
                 byEventType: { type: "array", items: { type: "object" } },
                 timeSeries: { type: "array", items: { type: "object" } },
+                clickedWeekdays: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["weekday", "clicks"],
+                    properties: {
+                      weekday: { type: "string" },
+                      clicks: { type: "integer", minimum: 0 },
+                    },
+                  },
+                },
+                selectedDateAvailability: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: [
+                      "date",
+                      "checks",
+                      "minimumSlots",
+                      "maximumSlots",
+                    ],
+                    properties: {
+                      date: { type: "string", format: "date" },
+                      checks: { type: "integer", minimum: 0 },
+                      minimumSlots: { type: "integer", minimum: 0 },
+                      maximumSlots: { type: "integer", minimum: 0 },
+                    },
+                  },
+                },
+                bookedWeekdays: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["weekday", "bookings"],
+                    properties: {
+                      weekday: { type: "string" },
+                      bookings: { type: "integer", minimum: 0 },
+                    },
+                  },
+                },
+                bookedTimes: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["time", "bookings"],
+                    properties: {
+                      time: {
+                        type: "string",
+                        pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
+                      },
+                      bookings: { type: "integer", minimum: 0 },
+                    },
+                  },
+                },
               },
             },
           ],
@@ -1348,24 +1349,7 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
           type: "object",
           additionalProperties: false,
           properties: {
-            selectedDate: { type: "string", format: "date" },
-            weekday: { type: "string" },
-            viewerTimezone: { type: "string" },
-            offeredSlotStarts: {
-              type: "array",
-              maxItems: 48,
-              items: {
-                type: "string",
-                pattern: "^(?:[01]\\d|2[0-3]):[0-5]\\d$",
-              },
-            },
-            earliestSlot: { type: "string" },
-            latestSlot: { type: "string" },
-            availabilityOutcome: {
-              type: "string",
-              enum: ["available", "none", "error"],
-            },
-            selectedTime: { type: "string" },
+            selectedDateUtc: { type: "string", format: "date-time" },
             fieldType: { type: "string" },
             required: { type: "boolean" },
             stageOutcome: {
@@ -1375,17 +1359,6 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
                 "completed",
                 "skipped",
                 "validation_failed",
-              ],
-            },
-            failureCategory: {
-              type: "string",
-              enum: [
-                "validation",
-                "slot_unavailable",
-                "rate_limited",
-                "network",
-                "server",
-                "unknown",
               ],
             },
           },

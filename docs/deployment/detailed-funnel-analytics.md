@@ -11,8 +11,9 @@ review checkpoints below.
 
 ## What changes
 
-- The existing Cloudflare Analytics Engine dataset receives additive columns
-  and bounded context. No analytics D1 table or analytics migration is added.
+- The existing Cloudflare Analytics Engine dataset receives UTC selected-date
+  instants and numeric slot observations. No analytics D1 table or analytics
+  migration is added.
 - Existing high-level event names and Analytics Engine blobs 1–13 remain
   compatible.
 - The Worker/SPA, booking widget, and form widget must all be released for
@@ -141,6 +142,10 @@ git status --short --branch
 - Analytics Engine blobs 1–13 unchanged;
 - five analytics MCP tools and six analytics management REST routes;
 - anonymous `POST /api/v1/t` single/batch maximum of 20;
+- UTC selected-date clicks and successful numeric slot counts, with no
+  visitor-local scheduling or failure-detail telemetry;
+- all persisted booking requests count once in booked weekday/time reports,
+  regardless of status;
 - focused forms still persist every rendered step response when analytics
   delivery fails; and
 - both widget IIFE bundles exist.
@@ -195,7 +200,10 @@ curl -fsS https://linkycal.com/llms.txt -o /tmp/linkycal-llms.txt
 Confirm the live documents contain:
 
 - all six `/analytics` management routes;
-- the detailed stage/context schemas and custom date/source/device filters;
+- the detailed stage/source/device schemas, required booking timezone, and
+  custom date/source/device filters;
+- clicked weekday, selected-date availability, booked weekday, and booked time
+  response arrays;
 - `POST /api/v1/t` one-or-20 event request;
 - the five analytics MCP tools and computed count of 40;
 - Pro/Business entitlement and project-scope behavior; and
@@ -233,20 +241,27 @@ Use dedicated Pro event type/form resources:
    response persists before final completion.
 4. Widget form: repeat through the deployed form widget and confirm one
    `source=widget` journey.
-5. Deliberately trigger a safe validation failure and, on a dedicated slot,
-   a slot-unavailable failure; confirm only safe categories appear.
+5. Select a booking date and confirm the accepted telemetry contains its UTC
+   local-midnight instant plus a numeric slot count only after successful
+   availability. A failed availability request must retain the date click and
+   produce no slot observation.
 6. In the dashboard select the exact event type/form. Confirm rendered stages,
-   attached-form stages, skips, continuation/drop-offs, dates, availability
-   outcomes, offered/selected local times, source/device filters, and custom
-   inclusive dates.
-7. Confirm the all-resources view still shows the old high-level totals.
+   attached-form stages, skips, continuation/drop-offs, Clicked weekdays,
+   Availability by selected date, Journey sources, Visitor devices, and custom
+   inclusive dates all use the dashboard browser timezone.
+7. Seed or create requests across confirmed, pending, cancelled, declined, and
+   rescheduled states, including a replacement request. Confirm every row
+   appears once in Most booked weekdays and Most booked times.
+8. Confirm Selected dates, Availability outcomes, Available times shown,
+   Selected times, Validation failures, and Submit failures never render.
+9. Confirm the all-resources view still shows the old high-level totals.
 
 For REST, use a project-scoped API key:
 
 ```bash
 curl -fsS \
   -H "Authorization: Bearer $LINKYCAL_PRO_SMOKE_API_KEY" \
-  "https://linkycal.com/api/projects/$PRO_SMOKE_PROJECT_ID/analytics/bookings?period=7d&resourceSlug=$PRO_EVENT_TYPE_SLUG"
+  "https://linkycal.com/api/projects/$PRO_SMOKE_PROJECT_ID/analytics/bookings?period=7d&resourceSlug=$PRO_EVENT_TYPE_SLUG&timezone=Asia%2FSeoul"
 
 curl -fsS \
   -H "Authorization: Bearer $LINKYCAL_PRO_SMOKE_API_KEY" \
@@ -260,7 +275,7 @@ For MCP, initialize a project-scoped connection and call:
 
 ```text
 get_analytics_overview
-get_booking_funnel_analytics { eventTypeId, period: "7d" }
+get_booking_funnel_analytics { eventTypeId, period: "7d", timezone: "Asia/Seoul" }
 get_form_funnel_analytics { formId, period: "7d", source: "widget" }
 list_analytics_integrations
 ```
@@ -278,9 +293,10 @@ repeat through the public direct and widget flows:
 - PostHog uses a named customer instance and only the allowlisted US or EU host.
 - A failure in one provider does not block LinkyCal telemetry, another
   provider, form checkpoint persistence, or booking creation.
-- Browser requests contain stable keys/kinds/orders and safe numeric/context
-  fields, but no stage label, name, email, answer, note, filename, journey ID,
-  IP address, or raw error.
+- Browser requests contain stable keys/kinds/orders, UTC selected-date instants,
+  and safe numeric fields, but no visitor-local timezone/time lists, failure
+  category, stage label, name, email, answer, note, filename, journey ID, IP
+  address, or raw error.
 - Disabling a provider stops publication while retaining its validated public
   identifier for later re-enabling.
 
