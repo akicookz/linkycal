@@ -213,6 +213,11 @@ export const PROJECT_SESSION_ONLY_ROUTES: ApiRoutePolicyEntry[] = [
   { method: "GET", path: "/api/projects/:projectId/api-keys" },
   { method: "POST", path: "/api/projects/:projectId/api-keys" },
   { method: "DELETE", path: "/api/projects/:projectId/api-keys/:id" },
+  { method: "GET", path: "/api/projects/:projectId/mcp-connections" },
+  {
+    method: "DELETE",
+    path: "/api/projects/:projectId/mcp-connections/:connectionId",
+  },
   { method: "POST", path: "/api/projects/:projectId/calendar/connect" },
   { method: "GET", path: "/api/projects/:projectId/calendar/connections" },
   {

@@ -1,4 +1,5 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
+import type { OAuthHelpers } from "@cloudflare/workers-oauth-provider";
 
 import type { RequestAuth } from "./lib/request-auth";
 
@@ -93,6 +94,8 @@ export interface AppEnv {
   // Bindings (from wrangler)
   UPLOADS: R2Bucket;
   CACHE: KVNamespace;
+  OAUTH_KV: KVNamespace;
+  OAUTH_PROVIDER: OAuthHelpers;
   WORKFLOW_QUEUE: Queue;
   ANALYTICS: AnalyticsEngineDataset;
   MCP_OBJECT: DurableObjectNamespace;

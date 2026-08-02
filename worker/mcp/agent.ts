@@ -6,6 +6,7 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type { McpOAuthScope } from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 import type { AppEnv } from "../types";
+import type { McpOAuthProps } from "./oauth-authorization";
 import { registerBookingTools } from "./tools/bookings";
 import { registerContactTools } from "./tools/contacts";
 import { registerEventTypeTools } from "./tools/event-types";
@@ -17,13 +18,10 @@ import { registerAnalyticsTools } from "./tools/analytics";
 const { schema } = dbSchema;
 
 // ─── Props ───────────────────────────────────────────────────────────────────
-// Set by the /api/mcp route in worker/index.ts after validating the API key.
+// Set by the OAuth provider after validating the bearer token.
 // projectId hard-scopes every tool in the session — it is never a tool param.
 
-export interface McpProps extends Record<string, unknown> {
-  projectId: string;
-  scopes: McpOAuthScope[];
-}
+export type McpProps = McpOAuthProps;
 
 // ─── Tool Context ────────────────────────────────────────────────────────────
 // Accessors instead of values so each tool call gets a fresh drizzle instance
