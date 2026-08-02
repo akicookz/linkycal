@@ -16,7 +16,11 @@ import { createEventType as createMcpEventType } from "../worker/mcp/tools/event
 import { createForm as createMcpForm } from "../worker/mcp/tools/forms";
 import { FormService } from "../worker/services/form-service";
 import type { AppEnv, WorkspaceRef } from "../worker/types";
-import { createTestDb, type TestDatabase } from "./support/test-db";
+import {
+  createD1TestDb,
+  createTestDb,
+  type TestDatabase,
+} from "./support/test-db";
 
 const WORKSPACE: WorkspaceRef = {
   type: "team",
@@ -99,6 +103,38 @@ describe("static entitlement enforcement", () => {
       body: { entitlement: "projects", used: 1, limit: 1 },
     });
   });
+
+  test("D1 serializes concurrent attempts for the final resource slot", async () => {
+    const d1Database = await createD1TestDb();
+    try {
+      await seedStaticWorkspace(d1Database, { forms: 2 });
+      async function createForm(suffix: string) {
+        return createWithResourceCapacity({
+          db: d1Database.db,
+          projectId: "project-static",
+          key: "forms",
+          create: async (db) =>
+            new FormService(db).create("project-static", {
+              name: `Concurrent ${suffix}`,
+              slug: `concurrent-${suffix}`,
+              type: "single",
+            }),
+        });
+      }
+
+      const results = await Promise.all([createForm("a"), createForm("b")]);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.filter((result) => !result.ok)).toHaveLength(1);
+      expect(
+        await d1Database.db
+          .select({ count: sql<number>`count(*)` })
+          .from(dbSchema.forms)
+          .where(eq(dbSchema.forms.projectId, "project-static")),
+      ).toEqual([{ count: 3 }]);
+    } finally {
+      await d1Database.close();
+    }
+  }, 30_000);
 
   test("contact imports reject as one unit, then deduplicate existing and repeated emails before capacity", async () => {
     testDatabase = createTestDb();
@@ -230,7 +266,7 @@ interface SeedOptions {
 }
 
 async function seedStaticWorkspace(
-  testDatabase: TestDatabase,
+  testDatabase: Pick<TestDatabase, "db">,
   options: SeedOptions,
 ): Promise<void> {
   await testDatabase.db.insert(dbSchema.schema.users).values({

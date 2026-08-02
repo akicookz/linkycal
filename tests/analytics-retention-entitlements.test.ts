@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import { getAnalyticsOverviewAction } from "../worker/lib/analytics-actions";
 import { toLegacyPlanLimits } from "../worker/lib/plan-limits";
+import * as dbSchema from "../worker/db/schema";
 import type { AppEnv } from "../worker/types";
 import { installHttpCapture } from "./support/http-capture";
+import { createTestDb } from "./support/test-db";
 
 const NOW = new Date("2026-08-02T12:00:00.000Z");
 
@@ -79,6 +81,68 @@ describe("analytics plan access windows", () => {
       expect(sqlBodies.join("\n")).not.toContain("2020-01-01");
     } finally {
       http.restore();
+    }
+  });
+
+  test("Free analytics observe mode uses the Pro history window", async () => {
+    const testDatabase = createTestDb();
+    await testDatabase.db.insert(dbSchema.schema.users).values({
+      id: "analytics-observe-owner",
+      name: "Analytics Owner",
+      email: "analytics-observe@example.com",
+    });
+    await testDatabase.db.insert(dbSchema.teams).values({
+      id: "analytics-observe-team",
+      ownerUserId: "analytics-observe-owner",
+      name: "Analytics Observe",
+      slug: "analytics-observe",
+    });
+    await testDatabase.db.insert(dbSchema.projects).values({
+      id: "project-free-observe",
+      userId: "analytics-observe-owner",
+      teamId: "analytics-observe-team",
+      name: "Observed Analytics",
+      slug: "observed-analytics",
+    });
+    await testDatabase.db.insert(dbSchema.subscriptions).values({
+      id: "analytics-observe-subscription",
+      userId: "analytics-observe-owner",
+      teamId: "analytics-observe-team",
+      plan: "free",
+      status: "active",
+    });
+    const sqlBodies: string[] = [];
+    const http = installHttpCapture([{
+      method: "POST",
+      matches: (url) => url.pathname.endsWith("/analytics_engine/sql"),
+      respond: (request) => {
+        sqlBodies.push(request.text);
+        return Response.json({ data: [], meta: {}, rows: 0 });
+      },
+    }]);
+
+    try {
+      const result = await getAnalyticsOverviewAction({
+        db: testDatabase.db,
+        env: {
+          ...analyticsEnv(),
+          ENTITLEMENT_ENFORCEMENT_MODE: "observe",
+        },
+        projectId: "project-free-observe",
+        planLimits: toLegacyPlanLimits("free"),
+        query: {
+          period: "custom",
+          start: "2020-01-01",
+          end: "2026-08-02",
+        },
+        now: NOW,
+      });
+      expect(result.ok).toBe(true);
+      expect(sqlBodies.every((sql) => sql.includes("timestamp >= '2025-08-02'")))
+        .toBe(true);
+    } finally {
+      http.restore();
+      testDatabase.close();
     }
   });
 });

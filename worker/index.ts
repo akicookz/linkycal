@@ -179,7 +179,11 @@ import {
 import { reserveProjectUsage } from "./lib/metered-entitlements";
 import { entitlementError } from "./lib/entitlement-errors";
 import { StorageUsageService } from "./services/storage-usage-service";
-import { reconcileProjectStorage } from "./lib/storage-reconciliation";
+import {
+  deleteProjectStorage,
+  reconcileProjectStorage,
+} from "./lib/storage-reconciliation";
+import { reconcileConversionUsage } from "./lib/conversion-usage";
 import {
   CustomCssEntitlementError,
   CustomCssService,
@@ -4043,6 +4047,7 @@ const projectRoutes = teamRoutes.delete(
       const projectId = c.req.param("projectId");
       const db = c.get("db");
 
+      await deleteProjectStorage(db, c.env.UPLOADS, projectId);
       await db
         .delete(dbSchema.projects)
         .where(eq(dbSchema.projects.id, projectId));
@@ -7765,6 +7770,18 @@ export default {
     _event: ScheduledEvent,
     env: import("./types").AppEnv,
   ) {
+    try {
+      const db = drizzle(env.DB, { schema });
+      const repaired = await reconcileConversionUsage(db, env);
+      if (repaired.bookings > 0 || repaired.formResponses > 0) {
+        console.log(
+          `Cron: repaired ${repaired.bookings} booking and ${repaired.formResponses} form-response usage record(s)`,
+        );
+      }
+    } catch (err) {
+      console.error("Cron: conversion usage reconciliation failed:", err);
+    }
+
     try {
       const db = drizzle(env.DB, { schema });
       const bookingService = new BookingService(db);

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import {
   sectionImageStyle,
   type SectionImage,
@@ -35,9 +36,15 @@ interface SectionImageFieldProps {
   value: SectionImage | null;
   uploadUrl: string;
   onChange: (next: SectionImage | null) => void;
+  onUploadError?: (error: unknown) => boolean;
 }
 
-export function SectionImageField({ value, uploadUrl, onChange }: SectionImageFieldProps) {
+export function SectionImageField({
+  value,
+  uploadUrl,
+  onChange,
+  onUploadError,
+}: SectionImageFieldProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Local copy for smooth pan/zoom; committed to the parent on release.
@@ -66,7 +73,11 @@ export function SectionImageField({ value, uploadUrl, onChange }: SectionImageFi
       const formData = new FormData();
       formData.append("file", file);
       const res = await fetch(uploadUrl, { method: "POST", body: formData });
-      if (!res.ok) throw new Error("Upload failed");
+      if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
+        throw new Error("Upload failed");
+      }
       const data = (await res.json()) as { url: string };
       const next: SectionImage = {
         url: data.url,
@@ -77,8 +88,10 @@ export function SectionImageField({ value, uploadUrl, onChange }: SectionImageFi
       };
       setDraft(next);
       onChange(next);
-    } catch {
-      setError("Upload failed. Please try again.");
+    } catch (uploadError) {
+      if (!onUploadError?.(uploadError)) {
+        setError("Upload failed. Please try again.");
+      }
     } finally {
       setUploading(false);
     }

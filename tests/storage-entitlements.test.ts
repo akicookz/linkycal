@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 
 import * as dbSchema from "../worker/db/schema";
+import { deleteProjectStorage } from "../worker/lib/storage-reconciliation";
+import { entitlementError } from "../worker/lib/entitlement-errors";
 import { StorageUsageService } from "../worker/services/storage-usage-service";
 import type { WorkspaceRef } from "../worker/types";
 import { createTestDb, type TestDatabase } from "./support/test-db";
@@ -44,6 +46,10 @@ describe("storage entitlements", () => {
       sizeBytes: 1,
     });
     expect(blocked).toMatchObject({ allowed: false, used: 550_000_000 });
+    expect(entitlementError(blocked, "upload this file").body.error)
+      .toBe(
+        "Cannot upload this file because this workspace has reached its storage limit.",
+      );
   });
 
   test("failed puts release positive reservations while overwrites and deletion apply exact deltas", async () => {
@@ -118,6 +124,61 @@ describe("storage entitlements", () => {
       "form-responses/project-storage/f/r/f/b.pdf",
       "projects/project-storage/a.png",
     ]);
+  });
+
+  test("project cleanup deletes both R2 prefixes before releasing charged bytes", async () => {
+    testDatabase = createTestDb();
+    await seedStorageProject(testDatabase, 150);
+    await testDatabase.db.insert(dbSchema.storedObjects).values([
+      {
+        id: "project-object",
+        workspaceType: "team",
+        workspaceId: "team-storage",
+        projectId: "project-storage",
+        objectKey: "projects/project-storage/logo.png",
+        category: "project_asset",
+        sizeBytes: 100,
+      },
+      {
+        id: "response-object",
+        workspaceType: "team",
+        workspaceId: "team-storage",
+        projectId: "project-storage",
+        objectKey: "form-responses/project-storage/form/response/file.pdf",
+        category: "response_upload",
+        sizeBytes: 50,
+      },
+    ]);
+    const keys = new Set([
+      "projects/project-storage/logo.png",
+      "form-responses/project-storage/form/response/file.pdf",
+      "projects/project-storage/untracked.png",
+    ]);
+    const bucket = {
+      list: async ({ prefix }: { prefix: string }) => ({
+        objects: Array.from(keys)
+          .filter((key) => key.startsWith(prefix))
+          .map((key) => ({ key, size: 1 })),
+        truncated: false,
+      }),
+      delete: async (deleteKeys: string | string[]) => {
+        for (const key of Array.isArray(deleteKeys) ? deleteKeys : [deleteKeys]) {
+          keys.delete(key);
+        }
+      },
+    } as unknown as R2Bucket;
+
+    expect(
+      await deleteProjectStorage(
+        testDatabase.db,
+        bucket,
+        "project-storage",
+      ),
+    ).toEqual({ objectCount: 3, releasedBytes: 150 });
+    expect(Array.from(keys)).toEqual([]);
+    expect(await totalBytes(testDatabase)).toBe(0);
+    expect(await testDatabase.db.select().from(dbSchema.storedObjects))
+      .toEqual([]);
   });
 });
 

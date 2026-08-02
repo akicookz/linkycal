@@ -4,6 +4,7 @@ import { eq, sql } from "drizzle-orm";
 import * as dbSchema from "../../worker/db/schema";
 import { recordPersistedBookingUsage } from "../../worker/lib/booking-actions";
 import { ensureContact } from "../../worker/lib/contact-actions";
+import { reconcileConversionUsage } from "../../worker/lib/conversion-usage";
 import {
   startPublicFormResponseAction,
   submitPublicFormStepAction,
@@ -138,6 +139,45 @@ describe("entitlement conversion safety", () => {
       .from(dbSchema.workspaceUsagePeriods)
       .where(eq(dbSchema.workspaceUsagePeriods.id, "period-conversion"));
     expect(period?.bookings).toBe(1);
+  });
+
+  test("persisted conversions remain durable repair markers after accounting faults", async () => {
+    testDatabase = createTestDb();
+    await seedConversionProject(testDatabase);
+    await testDatabase.db.insert(dbSchema.eventTypes).values({
+      id: "event-conversion",
+      projectId: "project-conversion",
+      name: "Conversion Event",
+      slug: "conversion-event",
+    });
+    await testDatabase.db.insert(dbSchema.bookings).values({
+      id: "booking-pending-accounting",
+      eventTypeId: "event-conversion",
+      name: "Guest",
+      email: "guest@example.com",
+      startTime: new Date("2026-08-20T10:00:00.000Z"),
+      endTime: new Date("2026-08-20T10:30:00.000Z"),
+      timezone: "UTC",
+    });
+    await testDatabase.db.insert(dbSchema.formResponses).values({
+      id: "response-pending-accounting",
+      formId: "form-conversion",
+      status: "completed",
+    });
+
+    expect(await reconcileConversionUsage(testDatabase.db)).toEqual({
+      bookings: 1,
+      formResponses: 1,
+    });
+    expect(await reconcileConversionUsage(testDatabase.db)).toEqual({
+      bookings: 0,
+      formResponses: 0,
+    });
+    const [period] = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(eq(dbSchema.workspaceUsagePeriods.id, "period-conversion"));
+    expect(period).toMatchObject({ bookings: 1, formResponses: 1 });
   });
 });
 

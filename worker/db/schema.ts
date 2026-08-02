@@ -389,6 +389,7 @@ export const bookings = sqliteTable(
     country: text("country"),
     city: text("city"),
     metadata: text("metadata", { mode: "json" }),
+    usageRecordedAt: integer("usage_recorded_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -565,6 +566,7 @@ export const formResponses = sqliteTable(
     country: text("country"),
     city: text("city"),
     metadata: text("metadata", { mode: "json" }),
+    usageRecordedAt: integer("usage_recorded_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
@@ -1054,6 +1056,28 @@ export const workspaceUsageEvents = sqliteTable(
 
 export type WorkspaceUsageEventRow = typeof workspaceUsageEvents.$inferSelect;
 export type NewWorkspaceUsageEventRow = typeof workspaceUsageEvents.$inferInsert;
+
+export const entitlementResourceLocks = sqliteTable(
+  "entitlement_resource_locks",
+  {
+    lockKey: text("lock_key").primaryKey(),
+    token: text("token").notNull(),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [index("entitlement_resource_locks_expiry_idx").on(t.expiresAt)],
+);
+
+export type EntitlementResourceLockRow =
+  typeof entitlementResourceLocks.$inferSelect;
+export type NewEntitlementResourceLockRow =
+  typeof entitlementResourceLocks.$inferInsert;
 
 export const workspaceStorageTotals = sqliteTable(
   "workspace_storage_totals",

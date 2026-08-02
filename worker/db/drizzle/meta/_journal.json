@@ -253,6 +253,20 @@
       "when": 1785679839400,
       "tag": "0035_entitlement_usage_and_css",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1785686187831,
+      "tag": "0036_short_magdalene",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1785686350078,
+      "tag": "0037_ordinary_thena",
+      "breakpoints": true
     }
   ]
 }

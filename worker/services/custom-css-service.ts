@@ -21,6 +21,13 @@ const ALLOWED_AT_RULES = new Set([
   "layer",
   "keyframes",
 ]);
+const NETWORK_SOURCE_FUNCTIONS = new Set([
+  "cross-fade",
+  "image",
+  "image-set",
+  "src",
+  "-webkit-image-set",
+]);
 
 export class CustomCssEntitlementError extends Error {
   constructor(readonly decision: EntitlementDecision) {
@@ -60,6 +67,22 @@ export class CustomCssService {
       visit: "Url",
       enter() {
         throw new Error("URLs are not allowed in Custom CSS");
+      },
+    });
+    csstree.walk(ast, {
+      visit: "Function",
+      enter(node) {
+        if (NETWORK_SOURCE_FUNCTIONS.has(node.name.toLowerCase())) {
+          throw new Error("URLs are not allowed in Custom CSS");
+        }
+      },
+    });
+    csstree.walk(ast, {
+      visit: "String",
+      enter(node) {
+        if (/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(node.value.trim())) {
+          throw new Error("URLs are not allowed in Custom CSS");
+        }
       },
     });
     csstree.walk(ast, {

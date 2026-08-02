@@ -1,7 +1,5 @@
-import { and, eq, gte, isNull, ne, sql } from "drizzle-orm";
-import type { SQL } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import type { SQLiteTable } from "drizzle-orm/sqlite-core";
 
 import { evaluateEntitlement } from "../../shared/entitlement-decision";
 import type {
@@ -22,6 +20,7 @@ import {
   applyEntitlementEnforcement,
   type EntitlementModeEnv,
 } from "./entitlement-mode";
+import { workspaceResourceUsage } from "./workspace-resource-usage";
 
 export type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -85,21 +84,24 @@ export async function createWithResourceCapacity<T>(input: {
   operationId?: string;
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
-  return input.db.transaction(async (rawTransaction) => {
-    const transaction = rawTransaction as unknown as AppDatabase;
-    const capacity = await requireResourceCapacity({
-      db: transaction,
-      projectId: input.projectId,
-      key: input.key,
-      amount: input.amount,
-      actionLabel: input.actionLabel,
-      env: input.env,
-      channel: input.channel,
-      operationId: input.operationId,
-    });
-    if (!capacity.ok) return capacity;
-    return { ok: true as const, value: await input.create(transaction) };
-  });
+  return withResourceCreationLease(
+    input.db,
+    `project:${input.projectId}:${input.key}`,
+    async function createWithProjectLease() {
+      const capacity = await requireResourceCapacity({
+        db: input.db,
+        projectId: input.projectId,
+        key: input.key,
+        amount: input.amount,
+        actionLabel: input.actionLabel,
+        env: input.env,
+        channel: input.channel,
+        operationId: input.operationId,
+      });
+      if (!capacity.ok) return capacity;
+      return { ok: true as const, value: await input.create(input.db) };
+    },
+  );
 }
 
 export async function requireWorkspaceResourceCapacity(input: {
@@ -150,23 +152,74 @@ export async function createWithWorkspaceResourceCapacity<T>(input: {
   operationId?: string;
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
-  return input.db.transaction(async (rawTransaction) => {
-    const transaction = rawTransaction as unknown as AppDatabase;
-    const capacity = await requireWorkspaceResourceCapacity({
-      db: transaction,
-      workspace: input.workspace,
-      plan: input.plan,
-      key: input.key,
-      amount: input.amount,
-      actionLabel: input.actionLabel,
-      now: input.now,
-      env: input.env,
-      channel: input.channel,
-      operationId: input.operationId,
-    });
-    if (!capacity.ok) return capacity;
-    return { ok: true as const, value: await input.create(transaction) };
-  });
+  return withResourceCreationLease(
+    input.db,
+    `workspace:${input.workspace.type}:${input.workspace.id}:${input.key}`,
+    async function createWithWorkspaceLease() {
+      const capacity = await requireWorkspaceResourceCapacity({
+        db: input.db,
+        workspace: input.workspace,
+        plan: input.plan,
+        key: input.key,
+        amount: input.amount,
+        actionLabel: input.actionLabel,
+        now: input.now,
+        env: input.env,
+        channel: input.channel,
+        operationId: input.operationId,
+      });
+      if (!capacity.ok) return capacity;
+      return { ok: true as const, value: await input.create(input.db) };
+    },
+  );
+}
+
+async function withResourceCreationLease<T>(
+  db: AppDatabase,
+  lockKey: string,
+  action: () => Promise<T>,
+): Promise<T> {
+  const token = crypto.randomUUID();
+  await acquireResourceCreationLease(db, lockKey, token);
+  try {
+    return await action();
+  } finally {
+    await db
+      .delete(dbSchema.entitlementResourceLocks)
+      .where(
+        and(
+          eq(dbSchema.entitlementResourceLocks.lockKey, lockKey),
+          eq(dbSchema.entitlementResourceLocks.token, token),
+        ),
+      );
+  }
+}
+
+async function acquireResourceCreationLease(
+  db: AppDatabase,
+  lockKey: string,
+  token: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 15_000);
+    const claimed = await db
+      .insert(dbSchema.entitlementResourceLocks)
+      .values({ lockKey, token, expiresAt })
+      .onConflictDoUpdate({
+        target: dbSchema.entitlementResourceLocks.lockKey,
+        set: { token, expiresAt, updatedAt: now },
+        setWhere: lte(dbSchema.entitlementResourceLocks.expiresAt, now),
+      })
+      .returning({ token: dbSchema.entitlementResourceLocks.token });
+    if (claimed[0]?.token === token) return;
+    await waitForLease(25);
+  }
+  throw new Error("Resource capacity check is busy; retry the request");
+}
+
+async function waitForLease(milliseconds: number): Promise<void> {
+  await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function capacityResult(
@@ -181,77 +234,6 @@ function capacityResult(
     body: failure.body,
     decision,
   };
-}
-
-async function workspaceResourceUsage(input: {
-  db: AppDatabase;
-  workspace: WorkspaceRef;
-  key: "projects" | "teamMembers" | "calendarConnections";
-  now?: Date;
-}): Promise<number> {
-  if (input.key === "projects") {
-    const condition = input.workspace.teamId
-      ? eq(dbSchema.projects.teamId, input.workspace.teamId)
-      : and(
-          eq(dbSchema.projects.userId, input.workspace.ownerUserId),
-          isNull(dbSchema.projects.teamId),
-        );
-    return count(input.db, dbSchema.projects, condition);
-  }
-
-  if (input.key === "calendarConnections") {
-    return input.workspace.teamId
-      ? count(
-          input.db,
-          dbSchema.teamCalendarConnections,
-          eq(
-            dbSchema.teamCalendarConnections.teamId,
-            input.workspace.teamId,
-          ),
-        )
-      : count(
-          input.db,
-          dbSchema.calendarConnections,
-          eq(
-            dbSchema.calendarConnections.userId,
-            input.workspace.ownerUserId,
-          ),
-        );
-  }
-
-  if (!input.workspace.teamId) return 0;
-  const [members, pendingInvites] = await Promise.all([
-    count(
-      input.db,
-      dbSchema.teamMembers,
-      and(
-        eq(dbSchema.teamMembers.teamId, input.workspace.teamId),
-        ne(dbSchema.teamMembers.role, "owner"),
-      ),
-    ),
-    count(
-      input.db,
-      dbSchema.teamInvites,
-      and(
-        eq(dbSchema.teamInvites.teamId, input.workspace.teamId),
-        eq(dbSchema.teamInvites.status, "pending"),
-        gte(dbSchema.teamInvites.expiresAt, input.now ?? new Date()),
-      ),
-    ),
-  ]);
-  return members + pendingInvites;
-}
-
-async function count(
-  db: AppDatabase,
-  table: SQLiteTable,
-  condition: SQL | undefined,
-): Promise<number> {
-  const [row] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(table)
-    .where(condition);
-  return Number(row?.count ?? 0);
 }
 
 function actionLabelFor(

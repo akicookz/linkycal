@@ -8,7 +8,11 @@ import {
 } from "../worker/lib/entitlement-errors";
 import { UsageService } from "../worker/services/usage-service";
 import type { WorkspaceRef } from "../worker/types";
-import { createTestDb, type TestDatabase } from "./support/test-db";
+import {
+  createD1TestDb,
+  createTestDb,
+  type TestDatabase,
+} from "./support/test-db";
 
 const FREE_WORKSPACE: WorkspaceRef = {
   type: "personal",
@@ -63,6 +67,49 @@ describe("workspace usage entitlements", () => {
     expect(paidPeriod.periodEnd).toEqual(
       new Date("2026-08-20T10:00:00.000Z"),
     );
+  });
+
+  test("upgrading mid-period carries active usage into Stripe billing boundaries", async () => {
+    testDatabase = createTestDb();
+    const service = new UsageService(testDatabase.db);
+    const freePeriod = await service.getOrCreatePeriod({
+      workspace: FREE_WORKSPACE,
+      subscription: null,
+      now: NOW,
+    });
+    await testDatabase.db
+      .update(dbSchema.workspaceUsagePeriods)
+      .set({
+        formResponses: 321,
+        workflowExecutions: 42,
+        integrationRequests: 8_765,
+      })
+      .where(eq(dbSchema.workspaceUsagePeriods.id, freePeriod.id));
+
+    const paidPeriod = await service.getOrCreatePeriod({
+      workspace: FREE_WORKSPACE,
+      subscription: {
+        id: "subscription-upgrade",
+        userId: FREE_WORKSPACE.ownerUserId,
+        teamId: null,
+        plan: "pro",
+        interval: "monthly",
+        status: "active",
+        stripeCustomerId: null,
+        stripeSubscriptionId: null,
+        currentPeriodStart: NOW,
+        currentPeriodEnd: new Date("2026-09-15T12:00:00.000Z"),
+        cancelAtPeriodEnd: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+      now: NOW,
+    });
+
+    expect(paidPeriod.periodStart).toEqual(NOW);
+    expect(paidPeriod.formResponses).toBe(321);
+    expect(paidPeriod.workflowExecutions).toBe(42);
+    expect(paidPeriod.integrationRequests).toBe(8_765);
   });
 
   test("warning, grace, hard-limit, and unlimited decisions use persisted workspace counters", async () => {
@@ -201,6 +248,87 @@ describe("workspace usage entitlements", () => {
       );
     expect(event?.state).toBe("reserved");
   });
+
+  test("re-reserving a released operation moves its ledger to the current period", async () => {
+    testDatabase = createTestDb();
+    const service = new UsageService(testDatabase.db);
+    const firstInput = {
+      workspace: FREE_WORKSPACE,
+      subscription: null,
+      plan: "free" as const,
+      key: "transactionalEmails" as const,
+      amount: 1,
+      operationId: "email-cross-period-retry",
+      now: NOW,
+    };
+    await service.reserve(firstInput);
+    await service.release(firstInput);
+
+    const secondInput = {
+      ...firstInput,
+      now: new Date("2026-09-15T12:00:00.000Z"),
+    };
+    await service.reserve(secondInput);
+    const periods = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(eq(dbSchema.workspaceUsagePeriods.workspaceId, FREE_WORKSPACE.id));
+    const [event] = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsageEvents)
+      .where(
+        eq(
+          dbSchema.workspaceUsageEvents.operationId,
+          secondInput.operationId,
+        ),
+      );
+    const secondPeriod = periods.find((period) =>
+      period.periodStart.getUTCMonth() === 8
+    );
+    expect(secondPeriod?.transactionalEmails).toBe(1);
+    expect(event?.usagePeriodId).toBe(secondPeriod?.id);
+
+    await service.release(secondInput);
+    const [releasedPeriod] = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(eq(dbSchema.workspaceUsagePeriods.id, secondPeriod!.id));
+    expect(releasedPeriod?.transactionalEmails).toBe(0);
+  });
+
+  test("D1 counts concurrent re-reservations of a released operation once", async () => {
+    const d1Database = await createD1TestDb();
+    try {
+      const service = new UsageService(d1Database.db);
+      const input = {
+        workspace: FREE_WORKSPACE,
+        subscription: null,
+        plan: "free" as const,
+        key: "transactionalEmails" as const,
+        amount: 1,
+        operationId: "d1-email-retry",
+        now: NOW,
+      };
+      await service.reserve(input);
+      await service.release(input);
+      await Promise.all([service.reserve(input), service.reserve(input)]);
+
+      const [period] = await d1Database.db
+        .select()
+        .from(dbSchema.workspaceUsagePeriods)
+        .where(eq(dbSchema.workspaceUsagePeriods.workspaceId, FREE_WORKSPACE.id));
+      const [event] = await d1Database.db
+        .select()
+        .from(dbSchema.workspaceUsageEvents)
+        .where(
+          eq(dbSchema.workspaceUsageEvents.operationId, input.operationId),
+        );
+      expect(period?.transactionalEmails).toBe(1);
+      expect(event?.state).toBe("reserved");
+    } finally {
+      await d1Database.close();
+    }
+  }, 30_000);
 
   test("an in-progress form may finish in bounded overage and exhausted quotas serialize consistently", async () => {
     testDatabase = createTestDb();

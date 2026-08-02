@@ -57,6 +57,7 @@ export class BookingService {
         country: dbSchema.bookings.country,
         city: dbSchema.bookings.city,
         metadata: dbSchema.bookings.metadata,
+        usageRecordedAt: dbSchema.bookings.usageRecordedAt,
         createdAt: dbSchema.bookings.createdAt,
         updatedAt: dbSchema.bookings.updatedAt,
         eventTypeName: dbSchema.eventTypes.name,

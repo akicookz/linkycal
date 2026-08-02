@@ -182,6 +182,14 @@ export default function Settings() {
     useState<EntitlementDecision | null>(null);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
+  function handleUploadError(error: unknown): void {
+    if (!isEntitlementRequestError(error)) return;
+    setUpgradeEntitlement(error.decision.key);
+    setUpgradeActionLabel("upload this image");
+    setUpgradeDecision(error.decision);
+    setShowUpgradeDialog(true);
+  }
+
   // Theme state
   const [themePrimaryBg, setThemePrimaryBg] = useState("#1B4332");
   const [themePrimaryText, setThemePrimaryText] = useState("#ffffff");
@@ -730,12 +738,14 @@ export default function Settings() {
                   value={themeBackgroundImage}
                   onChange={setThemeBackgroundImage}
                   uploadUrl={`/api/projects/${projectId}/uploads`}
+                  onUploadError={handleUploadError}
                 />
                 <ImageUpload
                   label="Banner Image"
                   value={themeBannerImage}
                   onChange={setThemeBannerImage}
                   uploadUrl={`/api/projects/${projectId}/uploads`}
+                  onUploadError={handleUploadError}
                 />
               </div>
             </div>

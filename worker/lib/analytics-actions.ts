@@ -17,7 +17,10 @@ import {
 } from "../services/analytics-service";
 import * as dbSchema from "../db/schema";
 import type { PlanLimits } from "../types";
-import type { EntitlementDecision } from "../../shared/plan-catalog";
+import {
+  PLAN_CATALOG,
+  type EntitlementDecision,
+} from "../../shared/plan-catalog";
 import { AnalyticsIntegrationService } from "../services/analytics-integration-service";
 import { configureAnalyticsIntegrationSchema } from "../validation";
 import { queryBookingRequestAnalytics } from "./booking-request-analytics";
@@ -116,6 +119,15 @@ export function applyAnalyticsRetention(
   };
 }
 
+function effectiveAnalyticsRetentionMonths(
+  input: AnalyticsActionInput,
+): number {
+  if (input.planLimits.analyticsRetentionMonths > 0) {
+    return input.planLimits.analyticsRetentionMonths;
+  }
+  return PLAN_CATALOG.pro.entitlements.analyticsRetentionMonths.limit ?? 12;
+}
+
 function emptyBookingReport() {
   return {
     funnel: {
@@ -193,7 +205,7 @@ export async function getAnalyticsOverviewAction(
   }
   const query = applyAnalyticsRetention(
     input.query,
-    input.planLimits.analyticsRetentionMonths,
+    effectiveAnalyticsRetentionMonths(input),
     input.now,
   );
   const body = await queryOverview(
@@ -216,7 +228,7 @@ export async function getBookingAnalyticsAction(
   }
   const query = applyAnalyticsRetention(
     input.query,
-    input.planLimits.analyticsRetentionMonths,
+    effectiveAnalyticsRetentionMonths(input),
     input.now,
   ) as CommonAnalyticsQuery & { timezone: string };
   if (
@@ -275,7 +287,7 @@ export async function getFormAnalyticsAction(
   }
   const query = applyAnalyticsRetention(
     input.query,
-    input.planLimits.analyticsRetentionMonths,
+    effectiveAnalyticsRetentionMonths(input),
     input.now,
   );
   if (

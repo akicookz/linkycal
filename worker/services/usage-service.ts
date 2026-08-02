@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gt, lte, ne, sql } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
 import { evaluateEntitlement } from "../../shared/entitlement-decision";
@@ -27,6 +27,7 @@ export interface MeteredReservationInput {
   amount: number;
   operationId?: string;
   allowExistingOverage?: boolean;
+  observe?: boolean;
   now: Date;
 }
 
@@ -76,6 +77,39 @@ export class UsageService {
     input: PeriodInput,
   ): Promise<dbSchema.WorkspaceUsagePeriodRow> {
     const bounds = usagePeriodBounds(input.subscription, input.now);
+    const [existingPeriod] = await this.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(
+        and(
+          eq(
+            dbSchema.workspaceUsagePeriods.workspaceType,
+            input.workspace.type,
+          ),
+          eq(dbSchema.workspaceUsagePeriods.workspaceId, input.workspace.id),
+          eq(dbSchema.workspaceUsagePeriods.periodStart, bounds.start),
+        ),
+      )
+      .limit(1);
+    if (existingPeriod) return existingPeriod;
+
+    const [activePeriod] = await this.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(
+        and(
+          eq(
+            dbSchema.workspaceUsagePeriods.workspaceType,
+            input.workspace.type,
+          ),
+          eq(dbSchema.workspaceUsagePeriods.workspaceId, input.workspace.id),
+          ne(dbSchema.workspaceUsagePeriods.periodStart, bounds.start),
+          lte(dbSchema.workspaceUsagePeriods.periodStart, input.now),
+          gt(dbSchema.workspaceUsagePeriods.periodEnd, input.now),
+        ),
+      )
+      .orderBy(desc(dbSchema.workspaceUsagePeriods.periodStart))
+      .limit(1);
     await this.db
       .insert(dbSchema.workspaceUsagePeriods)
       .values({
@@ -84,6 +118,7 @@ export class UsageService {
         workspaceId: input.workspace.id,
         periodStart: bounds.start,
         periodEnd: bounds.end,
+        ...(activePeriod ? usageCounters(activePeriod) : {}),
       })
       .onConflictDoNothing({
         target: [
@@ -150,19 +185,25 @@ export class UsageService {
       input.allowExistingOverage === true &&
       Boolean(input.operationId);
 
-    if (!initialDecision.allowed && !allowExistingFormCompletion) {
+    if (
+      !initialDecision.allowed &&
+      !allowExistingFormCompletion &&
+      input.observe !== true
+    ) {
       return initialDecision;
     }
+    const allowOverage = allowExistingFormCompletion || input.observe === true;
 
     if (input.operationId && input.key !== "integrationRequests") {
       const state = await this.reserveOperation(
         input,
         period,
         initialDecision.hardLimit,
-        allowExistingFormCompletion,
+        allowOverage,
       );
       const updated = await this.getPeriodById(period.id);
       if (state === "reserved" || state === "consumed") {
+        if (input.observe) return initialDecision;
         return successfulReservationDecision(
           input,
           updated,
@@ -177,7 +218,7 @@ export class UsageService {
       input.key,
       input.amount,
       initialDecision.hardLimit,
-      allowExistingFormCompletion,
+      allowOverage,
     );
     if (!changed) {
       return decisionFromPeriod(input, await this.getPeriodById(period.id));
@@ -214,7 +255,7 @@ export class UsageService {
 
     const client = (this.db as AppDatabase & DatabaseWithClient).$client;
     if (isD1Client(client)) {
-      await releaseWithD1Batch(client, event, input.key, input.amount, input.now);
+      await releaseWithD1Batch(client, event, input.key, event.amount, input.now);
       return;
     }
     if (isSyncSqliteClient(client)) {
@@ -222,7 +263,7 @@ export class UsageService {
         client,
         event,
         input.key,
-        input.amount,
+        event.amount,
         input.now,
       );
       return;
@@ -296,7 +337,12 @@ export class UsageService {
     if (!changed) return;
     await this.db
       .update(dbSchema.workspaceUsageEvents)
-      .set({ state: "reserved", updatedAt: input.now })
+      .set({
+        usagePeriodId: period.id,
+        amount: input.amount,
+        state: "reserved",
+        updatedAt: input.now,
+      })
       .where(
         and(
           eq(dbSchema.workspaceUsageEvents.workspaceType, input.workspace.type),
@@ -314,7 +360,7 @@ export class UsageService {
   ): Promise<void> {
     await this.db
       .update(dbSchema.workspaceUsagePeriods)
-      .set(counterSet(input.key, -input.amount))
+      .set(counterSet(input.key, -event.amount))
       .where(eq(dbSchema.workspaceUsagePeriods.id, event.usagePeriodId));
     await this.db
       .update(dbSchema.workspaceUsageEvents)
@@ -377,6 +423,22 @@ export class UsageService {
     if (!period) throw new Error(`Usage period ${periodId} no longer exists`);
     return period;
   }
+}
+
+function usageCounters(
+  period: dbSchema.WorkspaceUsagePeriodRow,
+): Pick<
+  dbSchema.NewWorkspaceUsagePeriodRow,
+  MeteredEntitlementKey
+> {
+  return {
+    formResponses: period.formResponses,
+    bookings: period.bookings,
+    workflowExecutions: period.workflowExecutions,
+    transactionalEmails: period.transactionalEmails,
+    integrationRequests: period.integrationRequests,
+    enrichments: period.enrichments,
+  };
 }
 
 export function usagePeriodBounds(
@@ -534,25 +596,31 @@ async function reserveWithD1Batch(
     );
   }
 
-  const insertGate = existing ? "" : " AND changes() = 1";
+  const eventReleasedGate = existing
+    ? " AND EXISTS (SELECT 1 FROM workspace_usage_events WHERE id = ? AND state = 'released')"
+    : " AND changes() = 1";
+  const eventReleasedValues = existing ? [existing.id] : [];
   statements.push(
     client
       .prepare(
-        `UPDATE workspace_usage_periods SET ${column} = ${column} + ?, updated_at = ? WHERE id = ?${insertGate}${capClause}`,
+        `UPDATE workspace_usage_periods SET ${column} = ${column} + ?, updated_at = ? WHERE id = ?${eventReleasedGate}${capClause}`,
       )
       .bind(
         input.amount,
         toEpochSeconds(input.now),
         period.id,
+        ...eventReleasedValues,
         ...capValues,
       ),
   );
   statements.push(
     client
       .prepare(
-        "UPDATE workspace_usage_events SET state = 'reserved', updated_at = ? WHERE workspace_type = ? AND workspace_id = ? AND entitlement_key = ? AND operation_id = ? AND state = 'released' AND changes() = 1",
+        "UPDATE workspace_usage_events SET usage_period_id = ?, amount = ?, state = 'reserved', updated_at = ? WHERE workspace_type = ? AND workspace_id = ? AND entitlement_key = ? AND operation_id = ? AND state = 'released' AND changes() = 1",
       )
       .bind(
+        period.id,
+        input.amount,
         toEpochSeconds(input.now),
         input.workspace.type,
         input.workspace.id,
@@ -623,9 +691,14 @@ function reserveWithSqliteTransaction(
 
     client
       .query(
-        "UPDATE workspace_usage_events SET state = 'reserved', updated_at = ? WHERE id = ? AND state = 'released'",
+        "UPDATE workspace_usage_events SET usage_period_id = ?, amount = ?, state = 'reserved', updated_at = ? WHERE id = ? AND state = 'released'",
       )
-      .run(toEpochSeconds(input.now), eventId);
+      .run(
+        period.id,
+        input.amount,
+        toEpochSeconds(input.now),
+        eventId,
+      );
   });
   run();
 }

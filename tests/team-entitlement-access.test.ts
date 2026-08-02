@@ -110,6 +110,52 @@ describe("team entitlement access", () => {
     ).toBeNull();
   });
 
+  test("Custom CSS mutations require project settings permission", async () => {
+    testDatabase = createTestDb();
+    await seedPaidTeam(testDatabase);
+    await testDatabase.db
+      .update(dbSchema.projectMembers)
+      .set({ role: "editor" })
+      .where(eq(dbSchema.projectMembers.id, "project-member-viewer"));
+
+    expect(
+      requiredProjectPermission(
+        "GET",
+        `/api/projects/${PROJECT_ID}/custom-css`,
+      ),
+    ).toBe("project:read");
+    for (const method of ["PUT", "DELETE"]) {
+      expect(
+        requiredProjectPermission(
+          method,
+          `/api/projects/${PROJECT_ID}/custom-css`,
+        ),
+      ).toBe("project:settings");
+    }
+
+    const editor = await resolveProjectAccess(
+      testDatabase.db,
+      PROJECT_ID,
+      MEMBER_ID,
+    );
+    const admin = await resolveProjectAccess(
+      testDatabase.db,
+      PROJECT_ID,
+      ADMIN_ID,
+    );
+    const owner = await resolveProjectAccess(
+      testDatabase.db,
+      PROJECT_ID,
+      OWNER_ID,
+    );
+    expect(editor && hasProjectPermission(editor, "project:settings"))
+      .toBe(false);
+    expect(admin && hasProjectPermission(admin, "project:settings"))
+      .toBe(true);
+    expect(owner && hasProjectPermission(owner, "project:settings"))
+      .toBe(true);
+  });
+
   test("a downgrade blocks new collaboration without revoking an existing project grant", async () => {
     testDatabase = createTestDb();
     await seedPaidTeam(testDatabase);

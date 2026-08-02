@@ -506,6 +506,8 @@ export default function EventTypeForm() {
         body: JSON.stringify(data),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || err.error || "Failed to create event type");
       }
@@ -535,6 +537,12 @@ export default function EventTypeForm() {
         queryKey: ["projects", projectId, "event-types"],
       });
       navigate(`/app/projects/${projectId}/event-types`);
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(
+        error,
+        "create another event type",
+      );
     },
   });
 
@@ -1497,7 +1505,7 @@ export default function EventTypeForm() {
         open={planLimitDialog.open}
         onClose={planLimitDialog.closePlanLimitDialog}
         projectId={projectId!}
-        entitlement="calendarConnections"
+        entitlement={planLimitDialog.state?.decision.key ?? "calendarConnections"}
         actionLabel={planLimitDialog.state?.actionLabel ?? "connect another calendar"}
         decision={planLimitDialog.state?.decision}
       />

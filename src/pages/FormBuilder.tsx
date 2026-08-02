@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import CopyPromptButton from "@/components/CopyPromptButton";
 import PageHeader from "@/components/PageHeader";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { RichTextEditor } from "@/components/RichTextEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -66,6 +67,8 @@ import {
 } from "@/components/ui/dialog";
 import { FocusedFieldInput } from "@/components/FocusedFieldInput";
 import { useSession } from "@/lib/auth-client";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import { queryClient } from "@/lib/query-client";
 import {
   generateFormApiPrompt,
@@ -456,6 +459,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const isTemplateMode = mode === "template";
   const navigate = useNavigate();
   const { data: session } = useSession();
+  const planLimitDialog = usePlanLimitDialog();
 
   // What's selected in the content panel (drives preview + settings panel)
   const [selection, setSelection] = useState<BuilderSelection>(null);
@@ -534,6 +538,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         body: JSON.stringify(data),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to create form");
       }
@@ -548,6 +554,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           replace: true,
         });
       }
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(error, "create another form");
     },
   });
 
@@ -2980,6 +2989,12 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   data: { settings: { ...current, image: next } },
                 });
               }}
+              onUploadError={(error) =>
+                planLimitDialog.handleEntitlementError(
+                  error,
+                  "upload this section image",
+                )
+              }
             />
 
             {(sourcesByStepId[selectedStep.id] ?? []).length > 0 && (
@@ -3287,6 +3302,19 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           </div>
         </DialogContent>
       </Dialog>
+      )}
+
+      {projectId && (
+        <UpgradeDialog
+          open={planLimitDialog.open}
+          onClose={planLimitDialog.closePlanLimitDialog}
+          projectId={projectId}
+          entitlement="storageBytes"
+          actionLabel={
+            planLimitDialog.state?.actionLabel ?? "upload this section image"
+          }
+          decision={planLimitDialog.state?.decision}
+        />
       )}
 
     </div>

@@ -310,6 +310,13 @@ export function requiredProjectPermission(
   }
   if (path.includes("/calendar/")) return "project:write";
   if (path.includes("/calendars")) return "project:write";
+  if (
+    path.includes("/custom-css") &&
+    normalizedMethod !== "GET" &&
+    normalizedMethod !== "HEAD"
+  ) {
+    return "project:settings";
+  }
   if (normalizedMethod === "PUT" && /^\/api\/projects\/[^/]+$/.test(path)) {
     return "project:settings";
   }

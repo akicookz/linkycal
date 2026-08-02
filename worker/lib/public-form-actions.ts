@@ -12,9 +12,9 @@ import { submitFormStepSchema } from "../validation";
 import { resolveProjectEntitlements } from "./entitlements";
 import {
   getProjectUsageDecision,
-  reserveProjectUsage,
 } from "./metered-entitlements";
 import type { EntitlementModeEnv } from "./entitlement-mode";
+import { recordPersistedFormResponseUsage } from "./conversion-usage";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -133,7 +133,6 @@ export async function submitPublicFormStepAction(
   }
 
   const service = new FormService(db);
-  const previous = await service.getResponseById(responseId);
   const response = await service.submitStep(
     responseId,
     stepIndex,
@@ -152,9 +151,9 @@ export async function submitPublicFormStepAction(
   }
 
   if (
-    previous?.status !== "completed" &&
     response.status === "completed" &&
-    response.formId
+    response.formId &&
+    !response.usageRecordedAt
   ) {
     const [form] = await db
       .select({ projectId: dbSchema.forms.projectId })
@@ -162,16 +161,16 @@ export async function submitPublicFormStepAction(
       .where(eq(dbSchema.forms.id, response.formId))
       .limit(1);
     if (form) {
-      const reservation = await reserveProjectUsage({
-        db,
-        projectId: form.projectId,
-        key: "formResponses",
-        operationId: response.id,
-        allowExistingOverage: true,
-        channel: "public_form_completion",
-        env,
-      });
-      await reservation.consume();
+      try {
+        await recordPersistedFormResponseUsage(
+          db,
+          form.projectId,
+          response.id,
+          env,
+        );
+      } catch (error) {
+        console.error("Form response usage observation failed:", error);
+      }
     }
   }
 

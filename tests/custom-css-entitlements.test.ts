@@ -34,6 +34,18 @@ describe("Custom CSS entitlements", () => {
     expect(compiled.compiledCss).not.toContain("@keyframes fade{");
     expect(() => service.compile("project-css", ".a{background:url(https://x)}"))
       .toThrow("URLs are not allowed");
+    expect(() =>
+      service.compile(
+        "project-css",
+        '.a{background-image:image-set("https://tracker.example/pixel" 1x)}',
+      )
+    ).toThrow("URLs are not allowed");
+    expect(() =>
+      service.compile(
+        "project-css",
+        '.a{cursor:image-set("//tracker.example/cursor" 1x),auto}',
+      )
+    ).toThrow("URLs are not allowed");
     expect(() => service.compile("project-css", "@import 'x.css';"))
       .toThrow("@import is not allowed");
     expect(() => service.compile("project-css", ".a{"))

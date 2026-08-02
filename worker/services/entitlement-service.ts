@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import type { SQLiteTable } from "drizzle-orm/sqlite-core";
@@ -18,6 +18,7 @@ import {
   type ProjectEntitlements,
 } from "../lib/entitlements";
 import { resolveProjectAccess } from "../lib/team-access";
+import { workspaceResourceUsage } from "../lib/workspace-resource-usage";
 import { UsageService } from "./usage-service";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -220,19 +221,11 @@ export class EntitlementService {
         eq(dbSchema.workflows.projectId, projectId),
       ),
       countRows(this.db, calendarTable, calendarCondition),
-      resolved.workspace.teamId
-        ? countRows(
-            this.db,
-            dbSchema.teamMembers,
-            and(
-              eq(
-                dbSchema.teamMembers.teamId,
-                resolved.workspace.teamId,
-              ),
-              ne(dbSchema.teamMembers.role, "owner"),
-            ),
-          )
-        : Promise.resolve(0),
+      workspaceResourceUsage({
+        db: this.db,
+        workspace: resolved.workspace,
+        key: "teamMembers",
+      }),
     ]);
 
     return {

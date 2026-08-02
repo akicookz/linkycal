@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { X, Loader, ImageIcon, ImagePlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 
 interface ImageUploadProps {
   value: string;
@@ -10,6 +11,7 @@ interface ImageUploadProps {
   label?: string;
   className?: string;
   aspectHint?: "landscape" | "square";
+  onUploadError?: (error: unknown) => void;
 }
 
 export function ImageUpload({
@@ -19,6 +21,7 @@ export function ImageUpload({
   label,
   className,
   aspectHint = "landscape",
+  onUploadError,
 }: ImageUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -39,16 +42,21 @@ export function ImageUpload({
           body: formData,
         });
 
-        if (!res.ok) throw new Error("Upload failed");
+        if (!res.ok) {
+          const planLimitError = await readEntitlementError(res.clone());
+          if (planLimitError) throw planLimitError;
+          throw new Error("Upload failed");
+        }
         const data = await res.json();
         onChange(data.url);
       } catch (err) {
+        onUploadError?.(err);
         console.error("Upload error:", err);
       } finally {
         setUploading(false);
       }
     },
-    [uploadUrl, onChange],
+    [uploadUrl, onChange, onUploadError],
   );
 
   function handleDrop(e: React.DragEvent) {

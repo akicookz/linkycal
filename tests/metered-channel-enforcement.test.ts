@@ -66,6 +66,30 @@ describe("metered channel enforcement", () => {
     });
   });
 
+  test("observe mode records usage beyond the hard ceiling while allowing the request", async () => {
+    testDatabase = createTestDb();
+    await seedMeteredProject(testDatabase);
+    await testDatabase.db
+      .update(dbSchema.workspaceUsagePeriods)
+      .set({ integrationRequests: 11_000 })
+      .where(eq(dbSchema.workspaceUsagePeriods.id, "period-metered"));
+
+    const reservation = await reserveProjectUsage({
+      db: testDatabase.db,
+      projectId: "project-metered",
+      key: "integrationRequests",
+      now: NOW,
+      channel: "api",
+      env: { ENTITLEMENT_ENFORCEMENT_MODE: "observe" },
+    });
+    expect(reservation.decision.allowed).toBe(true);
+    const [period] = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(eq(dbSchema.workspaceUsagePeriods.id, "period-metered"));
+    expect(period?.integrationRequests).toBe(11_001);
+  });
+
   test("email reservations release on provider rejection and consume once on acceptance", async () => {
     testDatabase = createTestDb();
     await seedMeteredProject(testDatabase, { transactionalEmails: 0 });

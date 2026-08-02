@@ -27,6 +27,7 @@ import {
   ArrowRight,
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { TagSearchCreate } from "@/components/tag-search-create";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -57,6 +58,8 @@ import {
 
 import { queryClient } from "@/lib/query-client";
 import { cn } from "@/lib/utils";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import ContactsKanban from "./ContactsKanban";
 import ContactsTable from "./ContactsTable";
 import {
@@ -446,6 +449,7 @@ function getImportMappingPayload(mapping: CsvContactMapping) {
 export default function Contacts() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const planLimitDialog = usePlanLimitDialog();
 
   // ─── View / filter state ───
   const [viewType, setViewType] = useState<ViewType>("list");
@@ -629,13 +633,21 @@ export default function Contacts() {
           notes: data.notes || undefined,
         }),
       });
-      if (!res.ok) throw new Error("Failed to create contact");
+      if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to create contact");
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
       setCreateDialogOpen(false);
       setCreateForm(EMPTY_FORM);
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(error, "create another contact");
     },
   });
 
@@ -650,6 +662,8 @@ export default function Contacts() {
         }),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to import contacts");
       }
@@ -658,6 +672,9 @@ export default function Contacts() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
       setImportResult(data);
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(error, "import these contacts");
     },
   });
 
@@ -2226,6 +2243,17 @@ export default function Contacts() {
           {pipelineSaveError}
         </div>
       )}
+
+      <UpgradeDialog
+        open={planLimitDialog.open}
+        onClose={planLimitDialog.closePlanLimitDialog}
+        projectId={projectId!}
+        entitlement="contacts"
+        actionLabel={
+          planLimitDialog.state?.actionLabel ?? "create another contact"
+        }
+        decision={planLimitDialog.state?.decision}
+      />
     </div>
   );
 }

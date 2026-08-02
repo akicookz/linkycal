@@ -42,7 +42,9 @@ export function entitlementError(
     : decision.kind === "feature"
       ? "plan_feature_unavailable"
       : "plan_resource_limit_reached";
-  const error = isUsageLimit
+  const error = decision.key === "storageBytes"
+    ? `Cannot ${actionLabel} because this workspace has reached its storage limit.`
+    : isUsageLimit
     ? `Cannot ${actionLabel} because this workspace has reached its monthly limit.`
     : decision.kind === "feature"
       ? `Cannot ${actionLabel} because this feature is not available on the workspace plan.`

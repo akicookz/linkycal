@@ -31,6 +31,9 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import PageHeader from "@/components/PageHeader";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 
 interface Project {
   id: string;
@@ -70,6 +73,8 @@ export default function Team() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<ProjectRole>("editor");
+  const [showTeamUpgrade, setShowTeamUpgrade] = useState(false);
+  const planLimitDialog = usePlanLimitDialog();
 
   const { data: project } = useQuery<Project>({
     queryKey: ["projects", projectId],
@@ -119,6 +124,10 @@ export default function Team() {
           projectRole: inviteRole,
         }),
       });
+      if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
+      }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Failed to send invite");
       return data;
@@ -130,6 +139,11 @@ export default function Team() {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "members"] });
       if (project?.teamId) {
         queryClient.invalidateQueries({ queryKey: ["teams", project.teamId, "members"] });
+      }
+    },
+    onError: (error) => {
+      if (planLimitDialog.handleEntitlementError(error, "invite a team member")) {
+        setInviteOpen(false);
       }
     },
   });
@@ -148,12 +162,17 @@ export default function Team() {
         body: JSON.stringify({ teamMemberId, role }),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Failed to update access");
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "members"] });
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(error, "grant project access");
     },
   });
 
@@ -193,7 +212,7 @@ export default function Team() {
         title="Team"
         description="Manage who can access this project."
       >
-        {canInviteTeamMembers && (
+        {canInviteTeamMembers ? (
           <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -259,6 +278,11 @@ export default function Team() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
+        ) : (
+          <Button onClick={() => setShowTeamUpgrade(true)}>
+            <UserPlus className="h-4 w-4" />
+            Invite
+          </Button>
         )}
       </PageHeader>
 
@@ -351,6 +375,19 @@ export default function Team() {
           )}
         </CardContent>
       </Card>
+      <UpgradeDialog
+        open={planLimitDialog.open || showTeamUpgrade}
+        onClose={() => {
+          planLimitDialog.closePlanLimitDialog();
+          setShowTeamUpgrade(false);
+        }}
+        projectId={projectId!}
+        entitlement="teamMembers"
+        actionLabel={
+          planLimitDialog.state?.actionLabel ?? "invite a team member"
+        }
+        decision={planLimitDialog.state?.decision}
+      />
     </div>
   );
 }

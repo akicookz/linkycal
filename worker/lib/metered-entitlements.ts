@@ -17,6 +17,7 @@ import {
 } from "./entitlement-errors";
 import {
   applyEntitlementEnforcement,
+  resolveEnforcementMode,
   type EntitlementModeEnv,
 } from "./entitlement-mode";
 
@@ -92,6 +93,9 @@ export async function reserveProjectUsage(input: {
     amount: input.amount ?? 1,
     operationId: input.operationId,
     allowExistingOverage: input.allowExistingOverage,
+    observe: input.env
+      ? resolveEnforcementMode(input.env, input.key) === "observe"
+      : false,
     now: input.now ?? new Date(),
   };
   const usage = new UsageService(input.db);

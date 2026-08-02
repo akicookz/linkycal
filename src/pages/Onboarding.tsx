@@ -23,10 +23,13 @@ import {
 } from "@/components/ui/select";
 import { WeeklyAvailabilityEditor } from "@/components/WeeklyAvailabilityEditor";
 import { Logo } from "@/components/Logo";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 import FormBuilder from "@/pages/FormBuilder";
 import CopyPromptButton from "@/components/CopyPromptButton";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { signOut } from "@/lib/auth-client";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import { getTimezones, getDetectedTimezone, FONT_OPTIONS, plans } from "@/lib/constants";
 import {
   generateFormApiPrompt,
@@ -112,6 +115,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const posthog = usePostHog();
+  const planLimitDialog = usePlanLimitDialog();
 
   // ─── Step state ───────────────────────────────────────────────────────────
   const [step, setStep] = useState<StepId>("project");
@@ -310,6 +314,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
         body: JSON.stringify({ name, slug, timezone }),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to create project");
       }
@@ -338,7 +344,9 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       }
     },
     onError: (err: Error) => {
-      setError(err.message);
+      if (!planLimitDialog.handleEntitlementError(err, "create another project")) {
+        setError(err.message);
+      }
     },
   });
 
@@ -354,6 +362,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
         }),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to create event type");
       }
@@ -364,7 +374,9 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       setStep("availability");
     },
     onError: (err: Error) => {
-      setError(err.message);
+      if (!planLimitDialog.handleEntitlementError(err, "create another event type")) {
+        setError(err.message);
+      }
     },
   });
 
@@ -473,6 +485,8 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
         body: JSON.stringify({ projectId: pid }),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to create default form");
       }
@@ -485,7 +499,9 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
       });
     },
     onError: (err: Error) => {
-      setError(err.message);
+      if (!planLimitDialog.handleEntitlementError(err, "create another form")) {
+        setError(err.message);
+      }
     },
   });
 
@@ -1334,6 +1350,18 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
             Step {stepIndex + 1} of {visibleFlow.length}: {STEP_LABELS[step]}
           </p>
         </>
+      )}
+      {(projectId ?? accessibleProjects[0]?.id) && (
+        <UpgradeDialog
+          open={planLimitDialog.open}
+          onClose={planLimitDialog.closePlanLimitDialog}
+          projectId={(projectId ?? accessibleProjects[0]!.id)!}
+          entitlement={planLimitDialog.state?.decision.key}
+          actionLabel={
+            planLimitDialog.state?.actionLabel ?? "continue setting up"
+          }
+          decision={planLimitDialog.state?.decision}
+        />
       )}
     </div>
   );

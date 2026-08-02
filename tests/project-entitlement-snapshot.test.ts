@@ -55,7 +55,7 @@ describe("project entitlement snapshots", () => {
       limit: null,
     });
     expect(snapshot?.entitlements.teamMembers).toMatchObject({
-      used: 1,
+      used: 2,
       limit: null,
     });
 
@@ -150,6 +150,15 @@ async function seedProWorkspace(testDatabase: TestDatabase): Promise<void> {
     projectId: "project-primary",
     teamMemberId: "team-member-pro",
     role: "viewer",
+  });
+  await testDatabase.db.insert(dbSchema.teamInvites).values({
+    id: "pending-invite-pro",
+    teamId: "team-pro-snapshot",
+    email: "pending@example.com",
+    tokenHash: "pending-token-hash",
+    invitedByUserId: "owner-pro",
+    status: "pending",
+    expiresAt: new Date("2099-01-01T00:00:00.000Z"),
   });
   await testDatabase.db.insert(dbSchema.subscriptions).values({
     id: "subscription-pro-snapshot",

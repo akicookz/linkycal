@@ -27,25 +27,12 @@ import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 import { ensureContact } from "./contact-actions";
 import {
   createMeteredEmailDependency,
-  reserveProjectUsage,
 } from "./metered-entitlements";
+import { recordPersistedBookingUsage } from "./conversion-usage";
+
+export { recordPersistedBookingUsage } from "./conversion-usage";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
-
-export async function recordPersistedBookingUsage(
-  db: AppDatabase,
-  projectId: string,
-  bookingId: string,
-): Promise<void> {
-  const reservation = await reserveProjectUsage({
-    db,
-    projectId,
-    key: "bookings",
-    operationId: bookingId,
-    channel: "booking_created",
-  });
-  await reservation.consume();
-}
 
 // ─── Shared Deps ─────────────────────────────────────────────────────────────
 // Booking lifecycle flows (create/cancel/confirm/decline) are shared between
