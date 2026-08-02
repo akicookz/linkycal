@@ -63,6 +63,7 @@ export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpP
           projectId: ctx.projectId(),
           key: "integrationRequests",
           channel: `mcp:${toolName}`,
+          env: this.env,
         });
         return reservation.decision.allowed
           ? null

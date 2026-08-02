@@ -45,6 +45,8 @@ export async function createForm(
     db,
     projectId,
     key: "forms",
+    env: ctx.env(),
+    channel: "mcp",
     create: async (transaction) =>
       new FormService(transaction).create(projectId, input),
   });

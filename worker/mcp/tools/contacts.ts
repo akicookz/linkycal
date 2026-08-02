@@ -66,6 +66,8 @@ export async function createContact(
     db,
     projectId,
     key: "contacts",
+    env: ctx.env(),
+    channel: "mcp",
     create: async (transaction) =>
       new ContactService(transaction).create(projectId, input),
   });

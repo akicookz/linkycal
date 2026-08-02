@@ -205,9 +205,22 @@ describe("project-scoped analytics MCP tools", () => {
       expect(await getAnalyticsOverview(free, { period: "30d" })).toEqual({
         content: [{
           type: "text",
-          text: "Analytics requires a Pro or Business plan",
+          text: "Cannot view analytics because this feature is not available on the workspace plan.",
         }],
         isError: true,
+        structuredContent: {
+          entitlementError: {
+            error: "Cannot view analytics because this feature is not available on the workspace plan.",
+            code: "plan_feature_unavailable",
+            entitlement: "analytics",
+            scope: "workspace",
+            used: null,
+            limit: null,
+            hardLimit: null,
+            resetAt: null,
+            recommendedPlan: "pro",
+          },
+        },
       });
 
       const malformedTimezone = await withToolErrors(

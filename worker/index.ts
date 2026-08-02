@@ -495,6 +495,9 @@ async function storePrivateFormUpload(
     plan: entitlements.subscription.plan,
     objectKey: key,
     sizeBytes: file.size,
+    env,
+    projectId: context.projectId,
+    channel: "public_form_upload",
   });
   if (!decision.allowed) {
     throw new StorageCapacityError(entitlementError(decision, "upload this file"));
@@ -2737,6 +2740,7 @@ const projectAccessMiddleware = async (
       projectId,
       key: "integrationRequests",
       channel: "api",
+      env: c.env,
     });
     if (!reservation.decision.allowed) {
       const failure = reservation.httpError("use the REST API");
@@ -3014,6 +3018,8 @@ const teamRoutes = app
           workspace,
           plan,
           key: "teamMembers",
+          env: c.env,
+          channel: "rest",
         });
         if (!capacity.ok) return c.json(capacity.body, capacity.status);
         await db
@@ -3034,6 +3040,8 @@ const teamRoutes = app
           workspace,
           plan,
           key: "teamMembers",
+          env: c.env,
+          channel: "rest",
           create: async (transaction) => {
             await transaction.insert(dbSchema.teamInvites).values({
               id: inviteId,
@@ -3115,6 +3123,8 @@ const teamRoutes = app
         key: "teamMembers",
         amount: 0,
         actionLabel: "resend this team invitation",
+        env: c.env,
+        channel: "rest",
       });
       if (!capacity.ok) return c.json(capacity.body, capacity.status);
 
@@ -3359,6 +3369,8 @@ const teamRoutes = app
           key: "teamMembers",
           amount: 0,
           actionLabel: "accept this team invitation",
+          env: c.env,
+          channel: "rest",
         });
         if (!capacity.ok) return c.json(capacity.body, capacity.status);
 
@@ -3508,6 +3520,8 @@ const teamRoutes = app
           db,
           projectId,
           key: "teamMembers",
+          env: c.env,
+          channel: "rest",
           create: async (transaction) => {
             await transaction.insert(dbSchema.projectMembers).values({
               id: crypto.randomUUID(),
@@ -3592,6 +3606,14 @@ app.get("/api/teams/:teamId/billing/subscription", async (c) => {
     teamId,
   );
   const summary = resolveSubscriptionPlan(subscription);
+  const [billingProject] = await db
+    .select({ id: dbSchema.projects.id })
+    .from(dbSchema.projects)
+    .where(eq(dbSchema.projects.teamId, teamId))
+    .limit(1);
+  const entitlementSnapshot = billingProject
+    ? await new EntitlementService(db).snapshot(billingProject.id, userId)
+    : null;
   return c.json({
     subscription: summary,
     planLimits: PLAN_LIMITS[summary.plan],
@@ -3601,6 +3623,7 @@ app.get("/api/teams/:teamId/billing/subscription", async (c) => {
       role: context.member.role,
     },
     canManageBilling: context.canManageBilling,
+    entitlements: entitlementSnapshot?.entitlements ?? null,
   });
 });
 
@@ -3782,6 +3805,8 @@ app.post("/api/projects", async (c) => {
       },
       plan,
       key: "projects",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) => {
         const id = crypto.randomUUID();
         await transaction.insert(dbSchema.projects).values({
@@ -4123,6 +4148,9 @@ app.post("/api/projects/:projectId/uploads", async (c) => {
       plan: entitlements.subscription.plan,
       objectKey: key,
       sizeBytes: file.size,
+      env: c.env,
+      projectId,
+      channel: "project_upload",
     });
     if (!decision.allowed) {
       const failure = entitlementError(decision, "upload this file");
@@ -4240,6 +4268,8 @@ app.post("/api/projects/:projectId/event-types", async (c) => {
       db,
       projectId,
       key: "eventTypes",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) =>
         new EventTypeService(transaction).create(projectId, {
           name: data.name,
@@ -4795,6 +4825,8 @@ app.post("/api/projects/:projectId/forms", async (c) => {
       db,
       projectId,
       key: "forms",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) =>
         new FormService(transaction).create(projectId, data),
     });
@@ -5355,6 +5387,8 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
       db,
       projectId,
       key: "contacts",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) =>
         new ContactService(transaction).create(projectId, data),
     });
@@ -5443,6 +5477,7 @@ app.post("/api/projects/:projectId/contacts/import", async (c) => {
       db,
       projectId,
       contactsToImport,
+      c.env,
     );
     if (!result.ok) return c.json(result.body, result.status);
     skipped += result.skipped;
@@ -5857,6 +5892,7 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
       key: "enrichments",
       operationId: crypto.randomUUID(),
       channel: "contact_enrichment",
+      env: c.env,
     });
     if (!reservation.decision.allowed) {
       const failure = reservation.httpError("enrich this contact");
@@ -5935,6 +5971,8 @@ app.post("/api/projects/:projectId/workflows", async (c) => {
       db,
       projectId,
       key: "workflows",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) =>
         new WorkflowService(transaction).create(projectId, data),
     });
@@ -6423,6 +6461,8 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
       db,
       projectId,
       key: "calendarConnections",
+      env: c.env,
+      channel: "rest",
     });
     if (!capacity.ok) return c.json(capacity.body, capacity.status);
 
@@ -6501,6 +6541,8 @@ app.get("/api/integrations/gcal/callback", async (c) => {
       db,
       projectId,
       key: "calendarConnections",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) => {
         await transaction.insert(dbSchema.calendarConnections).values({
           id,
@@ -7239,7 +7281,24 @@ app.post("/api/billing/portal", async (c) => {
 app.get("/api/billing/subscription", async (c) => {
   const subscription = c.get("subscription");
   const planLimits = c.get("planLimits");
-  return c.json({ subscription, planLimits, canManageBilling: true });
+  const db = c.get("db");
+  const [billingProject] = await db
+    .select({ id: dbSchema.projects.id })
+    .from(dbSchema.projects)
+    .where(eq(dbSchema.projects.teamId, c.get("accountTeamId")))
+    .limit(1);
+  const entitlementSnapshot = billingProject
+    ? await new EntitlementService(db).snapshot(
+        billingProject.id,
+        c.get("effectiveUserId"),
+      )
+    : null;
+  return c.json({
+    subscription,
+    planLimits,
+    canManageBilling: true,
+    entitlements: entitlementSnapshot?.entitlements ?? null,
+  });
 });
 
 // ─── Onboarding ──────────────────────────────────────────────────────────────
@@ -7276,6 +7335,8 @@ app.post("/api/onboarding", async (c) => {
       },
       plan,
       key: "projects",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) => {
         await transaction.insert(dbSchema.projects).values({
           id: projectId,
@@ -7375,6 +7436,8 @@ app.post("/api/onboarding/default-form", async (c) => {
       db,
       projectId,
       key: "forms",
+      env: c.env,
+      channel: "rest",
       create: async (transaction) =>
         new FormService(transaction).create(projectId, {
           name: "Contact form",

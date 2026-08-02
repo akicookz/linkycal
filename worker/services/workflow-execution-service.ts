@@ -325,6 +325,7 @@ export class WorkflowExecutionService {
       key: "workflowExecutions",
       operationId: runId,
       channel: "workflow_dispatch",
+      env,
     });
     if (!reservation.decision.allowed) {
       await recordEntitlementOutcome({
@@ -1160,6 +1161,7 @@ export class WorkflowExecutionService {
       amount: recipients.length,
       operationId: `${progress.workflowRunId}:${progress.stepIndex}:email`,
       channel: "workflow_email",
+      env,
     });
     if (!reservation.decision.allowed) {
       await recordEntitlementOutcome({

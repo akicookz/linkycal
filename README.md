@@ -94,6 +94,37 @@ five analytics tools that call the same reporting and integration actions.
 Public booking pages, forms, and widgets receive only enabled public provider
 identifiers; raw scripts, arbitrary URLs, and provider secrets are not stored.
 
+## Plans and entitlements
+
+The shared catalog in `shared/plan-catalog.ts` is authoritative for enforcement,
+billing UI, onboarding, and the public pricing page. API and MCP access,
+standard form/booking widgets, theme overrides, and unlimited bookings are
+included on every plan. Custom CSS and branding removal start on Pro.
+
+| Limit | Free | Pro | Business |
+| --- | ---: | ---: | ---: |
+| Price/month | $0 | $29 | $99 |
+| Annual monthly equivalent | $0 | $24 | $82 |
+| Projects | 1 | 5 | 20 |
+| Forms per project | 3 | 20 | Unlimited |
+| Event types per project | 3 | 20 | Unlimited |
+| Contacts per project | 500 | 5,000 | 10,000 |
+| Workflows per project | 1 | 10 | Unlimited |
+| Form responses per workspace/month | 500 | 10,000 | 50,000 |
+| Workflow executions per workspace/month | 250 | 5,000 | 25,000 |
+| Transactional emails per workspace/month | 500 | 10,000 | 50,000 |
+| API + MCP requests per workspace/month | 10,000 | 100,000 | 1,000,000 |
+| Enrichments per workspace/month | 5 | 50 | 100 |
+| Storage per workspace | 500 MB | 10 GB | 50 GB |
+| Calendar connections | 1 | Unlimited | Unlimited |
+| Team members | Not included | Unlimited | Unlimited |
+| Analytics history | Not included | 12 months | 36 months |
+
+Feature/resource denials use structured HTTP 403 responses; metered/storage
+denials use structured HTTP 429 responses and include `code`, `entitlement`,
+`scope`, `used`, `limit`, `hardLimit`, `resetAt`, and `recommendedPlan`. MCP
+tools return the same object in `structuredContent.entitlementError`.
+
 ## Repository map
 
 | Path | Responsibility |

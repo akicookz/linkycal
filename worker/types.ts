@@ -93,6 +93,10 @@ export interface AppEnv {
 
   // Prerender
   LOVABLEHTML_API_KEY: string;
+
+  // Entitlement rollout
+  ENTITLEMENT_ENFORCEMENT_MODE?: "observe" | "enforce";
+  ENTITLEMENT_OBSERVE_KEYS?: string;
 }
 
 // ─── Hono App Context ───────────────────────────────────────────────────────

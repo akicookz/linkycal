@@ -82,6 +82,8 @@
     "CF_ACCOUNT_ID": "35bc7a4522237728214ba9d54c36002e",
     "SENDER_EMAIL": "noreply@updates.linkycal.com",
     "COMPANY_ADDRESS": "131 Continental Dr, Suite 305, Newark, DE 19713",
+    "ENTITLEMENT_ENFORCEMENT_MODE": "enforce",
+    "ENTITLEMENT_OBSERVE_KEYS": "storageBytes",
     "STRIPE_FREE_MONTHLY_PRICE_ID": "",
     "STRIPE_PRO_MONTHLY_PRICE_ID": "price_1TCpFRGbIFEwE5gGAFMND0d6",
     "STRIPE_PRO_ANNUAL_PRICE_ID": "price_1TCpFdGbIFEwE5gGCjkQPUVl",

@@ -8,6 +8,10 @@ import type {
   WorkspaceRef,
 } from "../../shared/plan-catalog";
 import * as dbSchema from "../db/schema";
+import {
+  applyEntitlementEnforcement,
+  type EntitlementModeEnv,
+} from "../lib/entitlement-mode";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 export type StoredObjectCategory = dbSchema.StoredObjectRow["category"];
@@ -33,6 +37,9 @@ export class StorageUsageService {
     plan: Plan;
     objectKey: string;
     sizeBytes: number;
+    env?: EntitlementModeEnv;
+    projectId?: string;
+    channel?: string;
   }): Promise<EntitlementDecision> {
     assertSize(input.sizeBytes);
     await this.ensureTotal(input.workspace);
@@ -42,17 +49,27 @@ export class StorageUsageService {
     ]);
     const previousSize = existing?.sizeBytes ?? 0;
     const reservedDelta = Math.max(0, input.sizeBytes - previousSize);
-    const decision = evaluateEntitlement({
+    const evaluatedDecision = evaluateEntitlement({
       plan: input.plan,
       key: "storageBytes",
       used: total,
       amount: reservedDelta,
     });
+    const decision = input.env
+      ? applyEntitlementEnforcement(evaluatedDecision, {
+          env: input.env,
+          workspace: input.workspace,
+          projectId: input.projectId ?? null,
+          plan: input.plan,
+          channel: input.channel ?? "upload",
+          operationId: input.objectKey,
+        })
+      : evaluatedDecision;
     if (!decision.allowed) return decision;
 
     if (reservedDelta > 0) {
       const hardLimit = decision.hardLimit;
-      if (hardLimit === null) {
+      if (hardLimit === null || !evaluatedDecision.allowed) {
         await this.changeTotal(input.workspace, reservedDelta);
       } else {
         const updated = await this.db

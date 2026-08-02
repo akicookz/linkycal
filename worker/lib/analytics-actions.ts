@@ -20,6 +20,7 @@ import type { PlanLimits } from "../types";
 import { AnalyticsIntegrationService } from "../services/analytics-integration-service";
 import { configureAnalyticsIntegrationSchema } from "../validation";
 import { queryBookingRequestAnalytics } from "./booking-request-analytics";
+import { entitlementError } from "./entitlement-errors";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 type CommonAnalyticsQuery = Omit<AnalyticsQueryParams, "projectId">;
@@ -44,19 +45,49 @@ interface ConfigureAnalyticsIntegrationActionInput
 
 interface AnalyticsQueryActionInput extends AnalyticsActionInput {
   query: CommonAnalyticsQuery;
+  now?: Date;
 }
 
 interface BookingAnalyticsActionInput extends AnalyticsActionInput {
   query: CommonAnalyticsQuery & { timezone: string };
+  now?: Date;
 }
 
 function analyticsForbidden() {
+  const failure = entitlementError({
+    key: "analytics",
+    kind: "feature",
+    scope: "workspace",
+    enabled: false,
+    allowed: false,
+    status: "unavailable",
+    used: null,
+    limit: null,
+    hardLimit: null,
+    periodStart: null,
+    resetAt: null,
+    recommendedPlan: "pro",
+  }, "view analytics");
   return {
     ok: false as const,
-    status: 403 as const,
-    body: {
-      error: "Analytics requires a Pro or Business plan",
-    },
+    status: failure.status,
+    body: failure.body,
+  };
+}
+
+export function applyAnalyticsRetention(
+  query: CommonAnalyticsQuery,
+  retentionMonths: number,
+  now = new Date(),
+): CommonAnalyticsQuery {
+  if (query.period !== "custom" || !query.start || !query.end) return query;
+  const cutoff = new Date(now);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - retentionMonths);
+  const cutoffDate = cutoff.toISOString().slice(0, 10);
+  return {
+    ...query,
+    start: query.start < cutoffDate ? cutoffDate : query.start,
+    end: query.end < cutoffDate ? cutoffDate : query.end,
   };
 }
 
@@ -132,12 +163,17 @@ export async function getAnalyticsOverviewAction(
   input: AnalyticsQueryActionInput,
 ) {
   if (!input.planLimits.analytics) return analyticsForbidden();
+  const query = applyAnalyticsRetention(
+    input.query,
+    input.planLimits.analyticsRetentionMonths,
+    input.now,
+  );
   const body = await queryOverview(
     input.env.CF_ACCOUNT_ID,
     input.env.WAE_API_TOKEN,
     {
       projectId: input.projectId,
-      ...input.query,
+      ...query,
     },
   );
   return { ok: true as const, status: 200 as const, body };
@@ -147,12 +183,17 @@ export async function getBookingAnalyticsAction(
   input: BookingAnalyticsActionInput,
 ) {
   if (!input.planLimits.analytics) return analyticsForbidden();
+  const query = applyAnalyticsRetention(
+    input.query,
+    input.planLimits.analyticsRetentionMonths,
+    input.now,
+  ) as CommonAnalyticsQuery & { timezone: string };
   if (
-    input.query.resourceSlug &&
+    query.resourceSlug &&
     !(await ownsEventTypeSlug(
       input.db,
       input.projectId,
-      input.query.resourceSlug,
+      query.resourceSlug,
     ))
   ) {
     return {
@@ -164,7 +205,7 @@ export async function getBookingAnalyticsAction(
 
   const analyticsQuery = {
     projectId: input.projectId,
-    ...input.query,
+    ...query,
   };
   const [report, demand, bookingRequests] = await Promise.all([
     queryBookings(
@@ -180,11 +221,11 @@ export async function getBookingAnalyticsAction(
     queryBookingRequestAnalytics({
       db: input.db,
       projectId: input.projectId,
-      period: input.query.period,
-      start: input.query.start,
-      end: input.query.end,
-      resourceSlug: input.query.resourceSlug,
-      timezone: input.query.timezone,
+      period: query.period,
+      start: query.start,
+      end: query.end,
+      resourceSlug: query.resourceSlug,
+      timezone: query.timezone,
     }),
   ]);
   return {
@@ -198,12 +239,17 @@ export async function getFormAnalyticsAction(
   input: AnalyticsQueryActionInput,
 ) {
   if (!input.planLimits.analytics) return analyticsForbidden();
+  const query = applyAnalyticsRetention(
+    input.query,
+    input.planLimits.analyticsRetentionMonths,
+    input.now,
+  );
   if (
-    input.query.resourceSlug &&
+    query.resourceSlug &&
     !(await ownsFormSlug(
       input.db,
       input.projectId,
-      input.query.resourceSlug,
+      query.resourceSlug,
     ))
   ) {
     return {
@@ -218,7 +264,7 @@ export async function getFormAnalyticsAction(
     input.env.WAE_API_TOKEN,
     {
       projectId: input.projectId,
-      ...input.query,
+      ...query,
     },
   );
   return { ok: true as const, status: 200 as const, body };

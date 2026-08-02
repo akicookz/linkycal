@@ -194,14 +194,24 @@ bun run deploy:full      # Full deploy (app + widgets + migrations)
 
 ## Plan Limits
 
-| Feature          | Free | Pro   | Business  |
-| ---------------- | ---- | ----- | --------- |
-| Projects         | 1    | 5     | 20        |
-| Forms/project    | 3    | 20    | Unlimited |
-| Event types      | 3    | 20    | Unlimited |
-| Contacts/project | 100  | 5,000 | Unlimited |
-| Workflows        | 1    | 10    | Unlimited |
-| Calendar sync    | 1 connection | Unlimited | Unlimited |
-| Team members     | No   | Yes   | Yes       |
-| API access       | No   | Yes   | Yes       |
-| Custom widgets   | No   | No    | Yes       |
+| Feature | Free | Pro | Business |
+| --- | ---: | ---: | ---: |
+| Monthly price | $0 | $29 | $99 |
+| Annual monthly equivalent | $0 | $24 | $82 |
+| Projects | 1 | 5 | 20 |
+| Forms/project | 3 | 20 | Unlimited |
+| Event types/project | 3 | 20 | Unlimited |
+| Contacts/project | 500 | 5,000 | 10,000 |
+| Workflows/project | 1 | 10 | Unlimited |
+| Form responses/workspace/month | 500 | 10,000 | 50,000 |
+| Bookings | Unlimited | Unlimited | Unlimited |
+| Workflow executions/workspace/month | 250 | 5,000 | 25,000 |
+| Transactional emails/workspace/month | 500 | 10,000 | 50,000 |
+| API + MCP requests/workspace/month | 10,000 | 100,000 | 1,000,000 |
+| Enrichments/workspace/month | 5 | 50 | 100 |
+| Storage/workspace | 500 MB | 10 GB | 50 GB |
+| Calendar connections | 1 | Unlimited | Unlimited |
+| Team members | Not included | Unlimited | Unlimited |
+| Analytics history | Not included | 12 months | 36 months |
+| REST API, MCP, widgets, theme overrides | Included | Included | Included |
+| Custom CSS, branding removal | Not included | Included | Included |

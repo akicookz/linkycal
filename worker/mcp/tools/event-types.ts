@@ -45,6 +45,8 @@ export async function createEventType(
     db,
     projectId,
     key: "eventTypes",
+    env: ctx.env(),
+    channel: "mcp",
     create: async (transaction) =>
       new EventTypeService(transaction).create(projectId, {
         name: input.name,

@@ -22,6 +22,7 @@ import {
   withToolErrorsForContext,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
+import type { EntitlementErrorBody } from "../../lib/entitlement-errors";
 
 interface CommonAnalyticsInput {
   period?: "7d" | "30d" | "90d" | "custom";
@@ -68,9 +69,19 @@ function parseCommonQuery(input: CommonAnalyticsInput) {
 function actionResult(
   result:
     | { ok: true; body: unknown }
-    | { ok: false; body: { error: string } },
+    | { ok: false; body: { error: string; code?: string } },
 ): ToolResult {
-  return result.ok ? ok(result.body) : err(result.body.error);
+  if (result.ok) return ok(result.body);
+  if (result.body.code?.startsWith("plan_")) {
+    return {
+      content: [{ type: "text", text: result.body.error }],
+      isError: true,
+      structuredContent: {
+        entitlementError: result.body as EntitlementErrorBody,
+      },
+    };
+  }
+  return err(result.body.error);
 }
 
 async function actionInput(ctx: ToolContext) {

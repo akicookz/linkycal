@@ -18,6 +18,10 @@ import {
   EntitlementService,
   type ResourceEntitlementKey,
 } from "../services/entitlement-service";
+import {
+  applyEntitlementEnforcement,
+  type EntitlementModeEnv,
+} from "./entitlement-mode";
 
 export type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -41,12 +45,29 @@ export async function requireResourceCapacity(input: {
   key: ResourceEntitlementKey;
   amount?: number;
   actionLabel?: string;
+  env?: EntitlementModeEnv;
+  channel?: string;
+  operationId?: string;
 }): Promise<CapacityResult> {
-  const decision = await new EntitlementService(input.db).resource(
+  const service = new EntitlementService(input.db);
+  let decision = await service.resource(
     input.projectId,
     input.key,
     input.amount ?? 1,
   );
+  if (input.env && !decision.allowed) {
+    const resolved = await service.resolveProject(input.projectId);
+    if (resolved) {
+      decision = applyEntitlementEnforcement(decision, {
+        env: input.env,
+        workspace: resolved.workspace,
+        projectId: input.projectId,
+        plan: resolved.subscription.plan,
+        channel: input.channel ?? "unknown",
+        operationId: input.operationId,
+      });
+    }
+  }
   return capacityResult(
     decision,
     input.actionLabel ?? actionLabelFor(input.key, input.amount ?? 1),
@@ -59,6 +80,9 @@ export async function createWithResourceCapacity<T>(input: {
   key: ResourceEntitlementKey;
   amount?: number;
   actionLabel?: string;
+  env?: EntitlementModeEnv;
+  channel?: string;
+  operationId?: string;
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
   return input.db.transaction(async (rawTransaction) => {
@@ -69,6 +93,9 @@ export async function createWithResourceCapacity<T>(input: {
       key: input.key,
       amount: input.amount,
       actionLabel: input.actionLabel,
+      env: input.env,
+      channel: input.channel,
+      operationId: input.operationId,
     });
     if (!capacity.ok) return capacity;
     return { ok: true as const, value: await input.create(transaction) };
@@ -83,14 +110,27 @@ export async function requireWorkspaceResourceCapacity(input: {
   amount?: number;
   actionLabel?: string;
   now?: Date;
+  env?: EntitlementModeEnv;
+  channel?: string;
+  operationId?: string;
 }): Promise<CapacityResult> {
   const used = await workspaceResourceUsage(input);
-  const decision = evaluateEntitlement({
+  let decision = evaluateEntitlement({
     plan: input.plan,
     key: input.key,
     used,
     amount: input.amount ?? 1,
   });
+  if (input.env && !decision.allowed) {
+    decision = applyEntitlementEnforcement(decision, {
+      env: input.env,
+      workspace: input.workspace,
+      projectId: null,
+      plan: input.plan,
+      channel: input.channel ?? "unknown",
+      operationId: input.operationId,
+    });
+  }
   return capacityResult(
     decision,
     input.actionLabel ?? actionLabelFor(input.key, input.amount ?? 1),
@@ -105,6 +145,9 @@ export async function createWithWorkspaceResourceCapacity<T>(input: {
   amount?: number;
   actionLabel?: string;
   now?: Date;
+  env?: EntitlementModeEnv;
+  channel?: string;
+  operationId?: string;
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
   return input.db.transaction(async (rawTransaction) => {
@@ -117,6 +160,9 @@ export async function createWithWorkspaceResourceCapacity<T>(input: {
       amount: input.amount,
       actionLabel: input.actionLabel,
       now: input.now,
+      env: input.env,
+      channel: input.channel,
+      operationId: input.operationId,
     });
     if (!capacity.ok) return capacity;
     return { ok: true as const, value: await input.create(transaction) };

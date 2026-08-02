@@ -4,11 +4,11 @@
 
 ## Result
 
-- Registered route/method pairs: 146
-- API-key-supported or API-key-required routes: 93
+- Registered route/method pairs: 150
+- API-key-supported or API-key-required routes: 96
 - Anonymous visitor routes: 15
-- Session-only routes: 33
-- Operations in the public OpenAPI contract: 108
+- Session-only routes: 34
+- Operations in the public OpenAPI contract: 111
 
 All project resource routes approved for external automation use the canonical `/api/projects/:projectId/*` contract and accept either a dashboard session or a project-scoped API key. Account, team, billing, onboarding, OAuth lifecycle, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
 
@@ -21,8 +21,8 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 - Better Auth: 2
 - Invite token: 1
 - Invite token + session: 1
-- Session: 33
-- Session or API key: 91
+- Session: 34
+- Session or API key: 94
 - Stripe signature: 1
 
 ## Endpoint inventory
@@ -37,6 +37,7 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | GET | `/api/billing/subscription` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | GET | `/api/calendar/calendars` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | GET | `/api/integrations/gcal/callback` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
+| POST | `/api/internal/entitlements/storage/reconcile/:projectId` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | GET | `/api/invites/:token` | Invite token | No | No | No | Dashboard invitation preview using a single-purpose invite token. |
 | POST | `/api/invites/:token/accept` | Invite token + session | No | Required | No | Dashboard invitation acceptance; authenticated user must match the invite. |
 | ALL | `/api/mcp` | API key | Required | No | Yes | Streamable HTTP MCP transport; project-scoped API key required. |
@@ -85,6 +86,9 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | PUT | `/api/projects/:projectId/contacts/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | DELETE | `/api/projects/:projectId/contacts/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/contacts/import` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| GET | `/api/projects/:projectId/custom-css` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| PUT | `/api/projects/:projectId/custom-css` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| DELETE | `/api/projects/:projectId/custom-css` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/entitlements` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | GET | `/api/projects/:projectId/event-types` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | POST | `/api/projects/:projectId/event-types` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |

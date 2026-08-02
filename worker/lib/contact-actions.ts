@@ -51,6 +51,8 @@ export async function ensureContact(
     db,
     projectId,
     key: "contacts",
+    env,
+    channel: source,
     create: async (transaction) =>
       new ContactService(transaction).create(projectId, input),
   });
@@ -96,6 +98,7 @@ export async function importContactsWithCapacity(
   db: DrizzleD1Database<Record<string, unknown>>,
   projectId: string,
   rows: CreateContactInput[],
+  env?: AppEnv,
 ): Promise<
   | { ok: true; created: number; skipped: number; contacts: dbSchema.ContactRow[] }
   | CapacityFailure
@@ -132,6 +135,8 @@ export async function importContactsWithCapacity(
     db,
     projectId,
     key: "contacts",
+    env,
+    channel: "contact_import",
     amount: pending.length,
     actionLabel: "import these contacts",
     create: async (transaction) => {

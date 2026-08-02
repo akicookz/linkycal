@@ -8,6 +8,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { UsageMeter } from "@/components/UsageMeter";
+import {
+  ENTITLEMENT_METADATA,
+  type EntitlementDecision,
+  type EntitlementKey,
+} from "../../shared/plan-catalog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +46,7 @@ interface BillingData {
     role: string;
   };
   canManageBilling?: boolean;
+  entitlements?: Partial<Record<EntitlementKey, EntitlementDecision>> | null;
 }
 
 import { plans } from "@/lib/constants";
@@ -199,6 +206,60 @@ export default function Billing() {
         </div>
       )}
 
+      {data?.entitlements ? (
+        <section className="mb-8 space-y-4" aria-labelledby="workspace-usage">
+          <div>
+            <h2 id="workspace-usage" className="text-lg font-semibold">
+              Workspace usage
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Monthly usage is shared by every project in this workspace.
+            </p>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            {USAGE_GROUPS.map(function usageGroup(group) {
+              return (
+                <Card key={group.label}>
+                  <CardHeader>
+                    <CardTitle className="text-sm">{group.label}</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    {group.keys.map(function usageItem(key) {
+                      const decision = data.entitlements?.[key];
+                      if (!decision || decision.used == null) return null;
+                      return (
+                        <div key={key} className="space-y-1.5">
+                          <p className="text-xs text-muted-foreground">
+                            {ENTITLEMENT_METADATA[key].label}
+                          </p>
+                          {decision.limit == null ? (
+                            <p className="text-sm font-medium tabular-nums">
+                              {decision.used.toLocaleString("en-US")} used · Unlimited
+                            </p>
+                          ) : (
+                            <UsageMeter
+                              used={decision.used}
+                              limit={decision.limit}
+                              hardLimit={decision.hardLimit}
+                              formatValue={key === "storageBytes" ? formatBytes : undefined}
+                            />
+                          )}
+                          {decision.resetAt ? (
+                            <p className="text-[11px] text-muted-foreground">
+                              Resets {new Date(decision.resetAt).toLocaleDateString()}
+                            </p>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       {/* Billing interval toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">
         <div className="inline-flex items-center rounded-full border border-border bg-white p-1">
@@ -328,4 +389,17 @@ export default function Billing() {
       </div>
     </div>
   );
+}
+
+const USAGE_GROUPS: Array<{ label: string; keys: EntitlementKey[] }> = [
+  { label: "Capacity & storage", keys: ["formResponses", "bookings", "storageBytes"] },
+  { label: "Automation", keys: ["workflowExecutions", "transactionalEmails", "enrichments"] },
+  { label: "Integrations", keys: ["integrationRequests"] },
+];
+
+function formatBytes(value: number): string {
+  if (value >= 1_000_000_000) {
+    return `${(value / 1_000_000_000).toLocaleString("en-US", { maximumFractionDigits: 1 })} GB`;
+  }
+  return `${(value / 1_000_000).toLocaleString("en-US", { maximumFractionDigits: 1 })} MB`;
 }

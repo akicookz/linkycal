@@ -15,6 +15,10 @@ import {
   type EntitlementErrorBody,
   type EntitlementHttpError,
 } from "./entitlement-errors";
+import {
+  applyEntitlementEnforcement,
+  type EntitlementModeEnv,
+} from "./entitlement-mode";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -62,6 +66,7 @@ export async function reserveProjectUsage(input: {
   allowExistingOverage?: boolean;
   now?: Date;
   channel: string;
+  env?: EntitlementModeEnv;
 }): Promise<ProjectUsageReservation> {
   const resolved = await new EntitlementService(input.db).resolveProject(
     input.projectId,
@@ -79,7 +84,17 @@ export async function reserveProjectUsage(input: {
     now: input.now ?? new Date(),
   };
   const usage = new UsageService(input.db);
-  const decision = await usage.reserve(reservationInput);
+  const reservedDecision = await usage.reserve(reservationInput);
+  const decision = input.env
+    ? applyEntitlementEnforcement(reservedDecision, {
+        env: input.env,
+        workspace: resolved.workspace,
+        projectId: input.projectId,
+        plan: resolved.subscription.plan,
+        channel: input.channel,
+        operationId: input.operationId,
+      })
+    : reservedDecision;
 
   return {
     decision,
@@ -119,6 +134,7 @@ export async function recordEntitlementOutcome(input: {
 
 export async function createMeteredEmailDependency(input: {
   db: AppDatabase;
+  env?: EntitlementModeEnv;
   projectId: string;
   sourceType: string;
   sourceId: string;
@@ -144,6 +160,7 @@ export async function createMeteredEmailDependency(input: {
         operationId,
         now: input.now?.(),
         channel: input.channel,
+        env: input.env,
       });
       if (!reservation.decision.allowed) {
         await recordEntitlementOutcome({

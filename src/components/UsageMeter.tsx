@@ -5,6 +5,7 @@ interface UsageMeterProps {
   limit: number;
   hardLimit?: number | null;
   className?: string;
+  formatValue?: (value: number) => string;
 }
 
 export function UsageMeter({
@@ -12,6 +13,7 @@ export function UsageMeter({
   limit,
   hardLimit,
   className,
+  formatValue = formatCount,
 }: UsageMeterProps) {
   const ceiling = hardLimit ?? limit;
   const percent = ceiling <= 0 ? 100 : Math.min(100, (used / ceiling) * 100);
@@ -21,7 +23,7 @@ export function UsageMeter({
     <div className={cn("space-y-2", className)}>
       <div className="flex items-center justify-between gap-4 text-xs">
         <span className="font-medium tabular-nums">
-          {used.toLocaleString("en-US")} of {limit.toLocaleString("en-US")} used
+          {formatValue(used)} of {formatValue(limit)} used
         </span>
         {inGrace ? (
           <span className="font-medium text-amber-700">Grace capacity</span>
@@ -44,4 +46,8 @@ export function UsageMeter({
       </div>
     </div>
   );
+}
+
+function formatCount(value: number): string {
+  return value.toLocaleString("en-US");
 }

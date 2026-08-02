@@ -1863,8 +1863,8 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </Callout>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              API access is available on Pro and Business projects. Free projects return{" "}
-              <IC>api_access_unavailable</IC> even when the key itself is valid. Read{" "}
+              API and MCP access are available on every plan and share the workspace&apos;s monthly integration-request quota. Exhausted quotas return{" "}
+              <IC>plan_usage_limit_reached</IC> even when the key itself is valid. Read{" "}
               <IC>GET /api/projects/:projectId/entitlements</IC> when your integration needs the
               current resource limits.
             </p>

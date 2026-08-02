@@ -38,7 +38,11 @@ function getFormResponseNotificationEmail(settings: unknown): string | null {
 
 export async function notifyFormResponseCompleted(
   db: DrizzleD1Database<Record<string, unknown>>,
-  env: { RESEND_API_KEY: string },
+  env: {
+    RESEND_API_KEY: string;
+    ENTITLEMENT_ENFORCEMENT_MODE?: string;
+    ENTITLEMENT_OBSERVE_KEYS?: string;
+  },
   responseId: string,
   formId: string,
 ): Promise<void> {
@@ -108,6 +112,7 @@ export async function notifyFormResponseCompleted(
         sourceType: "form_response",
         sourceId: responseId,
         channel: "form_response_email",
+        env,
       }),
     );
     await emailService.sendFormResponseNotification({

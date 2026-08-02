@@ -38,6 +38,8 @@ Protected project management and MCP use a project-scoped API key. Create one un
 
 The key can reach exactly one project and must be used only from a trusted server or local agent. Visitor form, booking, availability, widget, and telemetry endpoints are anonymous and rate-limited.
 
+REST API and MCP access are included on Free, Pro, and Business. They share a workspace monthly request quota: 10,000 on Free, 100,000 on Pro, and 1,000,000 on Business.
+
 Send either a dashboard session or an API key, never both. Ambiguous credentials return 400; invalid bearer credentials return 401 and never fall back to a session.
 
 ## Protected management REST API
@@ -147,6 +149,8 @@ Booking and form widgets are zero-dependency IIFE bundles:
 
 Initialize LinkyCal.booking with projectSlug, container, and optional eventTypeSlug. Initialize LinkyCal.form with projectSlug, formSlug, and container. Widget journeys are attributed as source=widget and share one resource-scoped anonymous journey with their iframe.
 
+Standard widgets and theme overrides are included on every plan. Safely scoped Custom CSS and LinkyCal branding removal are available on Pro and Business.
+
 ## Workflows
 
 Triggers include form and booking lifecycle, contacts, tags, schedules, manual, and scheduled runs. Actions include email, AI research, tags, waits, conditions, webhooks, and contact updates. Webhook/email/calendar/provider failure is isolated according to each domain's delivery contract.
@@ -162,6 +166,8 @@ Triggers include form and booking lifecycle, contacts, tags, schedules, manual, 
 
 ## Errors
 
-Errors use JSON with error and an optional stable code. Common statuses: 400 validation or ambiguous credentials, 401 invalid key, 403 project/plan denial, 404 not found, 429 rate limited, and 500 server error.
+Errors use JSON with error and an optional stable code. Common statuses: 400 validation or ambiguous credentials, 401 invalid key, 403 project/feature/resource denial, 404 not found, 429 rate or metered usage limit, and 500 server error.
+
+Plan errors include code, entitlement, scope, used, limit, hardLimit, resetAt, and recommendedPlan. Stable codes are plan_feature_unavailable, plan_resource_limit_reached, and plan_usage_limit_reached. MCP returns the same object under structuredContent.entitlementError.
 `;
 }

@@ -437,6 +437,7 @@ export async function createBookingAction(
               sourceType: "booking",
               sourceId: booking.id,
               channel: "booking_email",
+              env,
             }),
           );
 
@@ -567,6 +568,7 @@ export async function createBookingAction(
               sourceType: "booking",
               sourceId: booking.id,
               channel: "booking_email",
+              env,
             }),
           );
 
@@ -786,6 +788,7 @@ export async function cancelBookingAction(
             sourceType: "booking",
             sourceId: bookingId,
             channel: "booking_email",
+            env,
           }),
         );
         await emailService.sendBookingCancellation({
@@ -977,6 +980,7 @@ export async function confirmBookingAction(
             sourceType: "booking",
             sourceId: bookingId,
             channel: "booking_email",
+            env,
           }),
         );
 
@@ -1101,6 +1105,7 @@ export async function declineBookingAction(
               sourceType: "booking",
               sourceId: bookingId,
               channel: "booking_email",
+              env,
             }),
           );
           await emailService.sendBookingDeclined({
