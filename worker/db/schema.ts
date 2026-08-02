@@ -982,6 +982,36 @@ export const apiKeys = sqliteTable(
 export type ApiKeyRow = typeof apiKeys.$inferSelect;
 export type NewApiKeyRow = typeof apiKeys.$inferInsert;
 
+// ─── MCP OAuth Grants ───────────────────────────────────────────────────────
+
+export const mcpOAuthGrants = sqliteTable(
+  "mcp_oauth_grants",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authSchema.users.id, { onDelete: "cascade" }),
+    clientId: text("client_id").notNull(),
+    clientName: text("client_name").notNull(),
+    scopes: text("scopes").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    revokedAt: integer("revoked_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    index("mcp_oauth_grants_project_id_idx").on(t.projectId),
+    index("mcp_oauth_grants_user_id_idx").on(t.userId),
+    index("mcp_oauth_grants_client_id_idx").on(t.clientId),
+  ],
+);
+
+export type McpOAuthGrantRow = typeof mcpOAuthGrants.$inferSelect;
+export type NewMcpOAuthGrantRow = typeof mcpOAuthGrants.$inferInsert;
+
 // ─── Unified Schema ─────────────────────────────────────────────────────────
 
 export const schema = {
@@ -1014,4 +1044,5 @@ export const schema = {
   subscriptions,
   usage,
   apiKeys,
+  mcpOAuthGrants,
 };
