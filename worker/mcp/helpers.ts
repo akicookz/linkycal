@@ -1,10 +1,15 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { eq, and } from "drizzle-orm";
 
+import {
+  MCP_TOOL_SCOPES,
+  type McpToolName,
+} from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 import type { PlanLimits } from "../types";
 import { PLAN_LIMITS } from "../lib/plan-limits";
 import { resolveProjectEntitlements } from "../lib/entitlements";
+import type { ToolContext } from "./agent";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -29,10 +34,15 @@ export function err(message: string): ToolResult {
  * instead of crashing the agent session.
  */
 export function withToolErrors<Input>(
-  name: string,
+  name: McpToolName,
+  ctx: ToolContext,
   fn: (input: Input) => Promise<ToolResult>,
 ): (input: Input) => Promise<ToolResult> {
-  return async (input: Input) => {
+  return async function guardedTool(input: Input): Promise<ToolResult> {
+    const requiredScope = MCP_TOOL_SCOPES[name];
+    if (!ctx.scopes().includes(requiredScope)) {
+      return err(`Authorization required: ${requiredScope} scope`);
+    }
     try {
       return await fn(input);
     } catch (e) {

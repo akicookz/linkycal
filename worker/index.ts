@@ -2369,7 +2369,10 @@ app.all("/api/mcp", async (c) => {
   const ctx = c.executionCtx as ExecutionContext & {
     props?: Record<string, unknown>;
   };
-  ctx.props = { projectId: apiKeyIdentity.projectId } satisfies McpProps;
+  ctx.props = {
+    projectId: apiKeyIdentity.projectId,
+    scopes: ["read", "write"],
+  } satisfies McpProps;
   return mcpHandler.fetch(c.req.raw, c.env, ctx);
 });
 

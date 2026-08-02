@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
+import type { McpOAuthScope } from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 import type { AppEnv } from "../types";
 import { registerBookingTools } from "./tools/bookings";
@@ -21,6 +22,7 @@ const { schema } = dbSchema;
 
 export interface McpProps extends Record<string, unknown> {
   projectId: string;
+  scopes: McpOAuthScope[];
 }
 
 // ─── Tool Context ────────────────────────────────────────────────────────────
@@ -30,6 +32,7 @@ export interface McpProps extends Record<string, unknown> {
 
 export interface ToolContext {
   projectId: () => string;
+  scopes: () => McpOAuthScope[];
   db: () => DrizzleD1Database<Record<string, unknown>>;
   env: () => AppEnv;
   waitUntil: (p: Promise<unknown>) => void;
@@ -46,6 +49,11 @@ export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpP
         const projectId = this.props?.projectId;
         if (!projectId) throw new Error("MCP session is missing projectId");
         return projectId;
+      },
+      scopes: () => {
+        const scopes = this.props?.scopes;
+        if (!scopes) throw new Error("MCP session is missing scopes");
+        return scopes;
       },
       db: () => drizzle(this.env.DB, { schema }),
       env: () => this.env,

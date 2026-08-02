@@ -34,7 +34,7 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext) {
         "List automation workflows in this project with their trigger (form_submitted, booking_created, tag_added, etc.) and status.",
       inputSchema: {},
     },
-    withToolErrors("list_workflows", () => listWorkflows(ctx)),
+    withToolErrors("list_workflows", ctx, () => listWorkflows(ctx)),
   );
 
   server.registerTool(
@@ -45,6 +45,6 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext) {
         workflowId: z.string().describe("Workflow id"),
       },
     },
-    withToolErrors("get_workflow", (input) => getWorkflow(ctx, input)),
+    withToolErrors("get_workflow", ctx, (input) => getWorkflow(ctx, input)),
   );
 }

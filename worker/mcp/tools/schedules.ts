@@ -42,7 +42,7 @@ export function registerScheduleTools(server: McpServer, ctx: ToolContext) {
       description: "List availability schedules in this project.",
       inputSchema: {},
     },
-    withToolErrors("list_schedules", () => listSchedules(ctx)),
+    withToolErrors("list_schedules", ctx, () => listSchedules(ctx)),
   );
 
   server.registerTool(
@@ -54,6 +54,6 @@ export function registerScheduleTools(server: McpServer, ctx: ToolContext) {
         scheduleId: z.string().describe("Schedule id (from list_schedules or get_event_type)"),
       },
     },
-    withToolErrors("get_schedule", (input) => getSchedule(ctx, input)),
+    withToolErrors("get_schedule", ctx, (input) => getSchedule(ctx, input)),
   );
 }

@@ -208,6 +208,7 @@ export function registerAnalyticsTools(
     },
     withToolErrors(
       "get_analytics_overview",
+      ctx,
       (input) => getAnalyticsOverview(ctx, input),
     ),
   );
@@ -227,6 +228,7 @@ export function registerAnalyticsTools(
     },
     withToolErrors(
       "get_booking_funnel_analytics",
+      ctx,
       (input) => getBookingFunnelAnalytics(ctx, input),
     ),
   );
@@ -243,6 +245,7 @@ export function registerAnalyticsTools(
     },
     withToolErrors(
       "get_form_funnel_analytics",
+      ctx,
       (input) => getFormFunnelAnalytics(ctx, input),
     ),
   );
@@ -256,6 +259,7 @@ export function registerAnalyticsTools(
     },
     withToolErrors(
       "list_analytics_integrations",
+      ctx,
       () => listAnalyticsIntegrations(ctx),
     ),
   );
@@ -276,6 +280,7 @@ export function registerAnalyticsTools(
     },
     withToolErrors(
       "configure_analytics_integration",
+      ctx,
       (input) => configureAnalyticsIntegration(ctx, input),
     ),
   );

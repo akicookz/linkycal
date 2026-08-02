@@ -99,6 +99,9 @@ describe("project-scoped analytics MCP tools", () => {
         projectId: function scopedProject() {
           return projectId;
         },
+        scopes: function scopes() {
+          return ["read", "write"];
+        },
         db: function database() {
           return testDatabase.db;
         },
@@ -212,6 +215,7 @@ describe("project-scoped analytics MCP tools", () => {
 
       const malformedTimezone = await withToolErrors(
         "get_booking_funnel_analytics",
+        pro,
         function bookingTool(input) {
           return getBookingFunnelAnalytics(pro, input);
         },

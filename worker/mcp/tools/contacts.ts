@@ -266,7 +266,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         limit: z.number().int().min(1).max(500).optional().describe("Max contacts to return (default 100)"),
       },
     },
-    withToolErrors("list_contacts", (input) => listContacts(ctx, input)),
+    withToolErrors("list_contacts", ctx, (input) => listContacts(ctx, input)),
   );
 
   server.registerTool(
@@ -277,7 +277,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         contactId: z.string().describe("Contact id"),
       },
     },
-    withToolErrors("get_contact", (input) => getContact(ctx, input)),
+    withToolErrors("get_contact", ctx, (input) => getContact(ctx, input)),
   );
 
   server.registerTool(
@@ -291,7 +291,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         notes: createContactSchema.shape.notes.describe("Free-form notes"),
       },
     },
-    withToolErrors("create_contact", (input) => createContact(ctx, input)),
+    withToolErrors("create_contact", ctx, (input) => createContact(ctx, input)),
   );
 
   server.registerTool(
@@ -306,7 +306,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         notes: updateContactSchema.shape.notes.describe("New notes (null to clear)"),
       },
     },
-    withToolErrors("update_contact", (input) => updateContact(ctx, input)),
+    withToolErrors("update_contact", ctx, (input) => updateContact(ctx, input)),
   );
 
   server.registerTool(
@@ -330,7 +330,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
           .describe("Optional exact ISO 8601 deadline"),
       },
     },
-    withToolErrors("set_contact_next_action", (input) =>
+    withToolErrors("set_contact_next_action", ctx, (input) =>
       setContactNextAction(ctx, input),
     ),
   );
@@ -344,7 +344,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         contactId: z.string().describe("Contact id"),
       },
     },
-    withToolErrors("complete_contact_next_action", (input) =>
+    withToolErrors("complete_contact_next_action", ctx, (input) =>
       completeContactNextAction(ctx, input),
     ),
   );
@@ -357,7 +357,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         contactId: z.string().describe("Contact id"),
       },
     },
-    withToolErrors("delete_contact", (input) => deleteContact(ctx, input)),
+    withToolErrors("delete_contact", ctx, (input) => deleteContact(ctx, input)),
   );
 
   server.registerTool(
@@ -366,7 +366,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
       description: "List all contact tags in this project.",
       inputSchema: {},
     },
-    withToolErrors("list_contact_tags", () => listContactTags(ctx)),
+    withToolErrors("list_contact_tags", ctx, () => listContactTags(ctx)),
   );
 
   server.registerTool(
@@ -378,7 +378,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         color: createTagSchema.shape.color.describe("Hex color like #6b7280 (optional)"),
       },
     },
-    withToolErrors("create_contact_tag", (input) => createContactTag(ctx, input)),
+    withToolErrors("create_contact_tag", ctx, (input) => createContactTag(ctx, input)),
   );
 
   server.registerTool(
@@ -389,7 +389,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         tagId: z.string().describe("Tag id"),
       },
     },
-    withToolErrors("get_contact_tag", (input) => getContactTag(ctx, input)),
+    withToolErrors("get_contact_tag", ctx, (input) => getContactTag(ctx, input)),
   );
 
   server.registerTool(
@@ -402,7 +402,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         color: tagColorSchema.optional().describe("New hex color"),
       },
     },
-    withToolErrors("update_contact_tag", (input) =>
+    withToolErrors("update_contact_tag", ctx, (input) =>
       updateContactTag(ctx, input),
     ),
   );
@@ -416,7 +416,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         tagId: z.string().describe("Tag id"),
       },
     },
-    withToolErrors("delete_contact_tag", (input) => deleteContactTag(ctx, input)),
+    withToolErrors("delete_contact_tag", ctx, (input) => deleteContactTag(ctx, input)),
   );
 
   server.registerTool(
@@ -428,7 +428,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         tagId: z.string().describe("Tag id (from list_contact_tags)"),
       },
     },
-    withToolErrors("add_tag_to_contact", (input) => addTagToContact(ctx, input)),
+    withToolErrors("add_tag_to_contact", ctx, (input) => addTagToContact(ctx, input)),
   );
 
   server.registerTool(
@@ -440,7 +440,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         tagId: z.string().describe("Tag id"),
       },
     },
-    withToolErrors("remove_tag_from_contact", (input) => removeTagFromContact(ctx, input)),
+    withToolErrors("remove_tag_from_contact", ctx, (input) => removeTagFromContact(ctx, input)),
   );
 
   server.registerTool(
@@ -452,6 +452,6 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         limit: z.number().int().min(1).max(200).optional().describe("Max entries (default 50)"),
       },
     },
-    withToolErrors("get_contact_activity", (input) => getContactActivity(ctx, input)),
+    withToolErrors("get_contact_activity", ctx, (input) => getContactActivity(ctx, input)),
   );
 }
