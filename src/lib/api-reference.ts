@@ -274,7 +274,7 @@ export const API_REFERENCE_SECTIONS: ApiReferenceSection[] = [
     description:
       "Read project-level activity and unique-journey booking/form funnels, then configure validated customer analytics providers.",
     notes: [
-      "Detailed analytics and provider configuration require a Pro or Business project. The Worker enforces entitlement and project scope for sessions, API keys, and MCP.",
+      "Detailed analytics and provider configuration require a Pro or Business project. The Worker enforces entitlement and project scope for sessions, REST API keys, and MCP OAuth grants.",
       "Analytics supports period=7d|30d|90d|custom. Custom requires both inclusive start and end ISO dates; preset periods omit them.",
       "Queries may filter by resourceSlug, UTM source/medium/campaign, direct or widget source, and mobile/tablet/desktop device type.",
       "Booking analytics additionally require an IANA timezone. Returned dates, weekdays, and times are grouped in that dashboard viewer timezone.",

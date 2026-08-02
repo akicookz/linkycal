@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { ScheduleService } from "../../services/schedule-service";
 import type { ToolContext } from "../agent";
-import { ok, err, withToolErrorsForContext } from "../helpers";
+import { ok, err, withToolErrors } from "../helpers";
 import type { ToolResult } from "../helpers";
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
@@ -36,14 +36,13 @@ export async function getSchedule(
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export function registerScheduleTools(server: McpServer, ctx: ToolContext) {
-  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_schedules",
     {
       description: "List availability schedules in this project.",
       inputSchema: {},
     },
-    withToolErrors("list_schedules", () => listSchedules(ctx)),
+    withToolErrors("list_schedules", ctx, () => listSchedules(ctx)),
   );
 
   server.registerTool(
@@ -55,6 +54,6 @@ export function registerScheduleTools(server: McpServer, ctx: ToolContext) {
         scheduleId: z.string().describe("Schedule id (from list_schedules or get_event_type)"),
       },
     },
-    withToolErrors("get_schedule", (input) => getSchedule(ctx, input)),
+    withToolErrors("get_schedule", ctx, (input) => getSchedule(ctx, input)),
   );
 }

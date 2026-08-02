@@ -155,38 +155,6 @@ function StatCard({
   );
 }
 
-// ─── Funnel Bar ──────────────────────────────────────────────────────────────
-
-function FunnelStep({
-  label,
-  value,
-  total,
-  color,
-}: {
-  label: string;
-  value: number;
-  total: number;
-  color: string;
-}) {
-  const pct = total > 0 ? (value / total) * 100 : 0;
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium">{label}</span>
-        <span className="text-muted-foreground">
-          {formatNumber(value)} ({pct.toFixed(1)}%)
-        </span>
-      </div>
-      <div className="h-3 rounded-full bg-muted overflow-hidden">
-        <div
-          className="h-full rounded-full transition-[width] duration-500"
-          style={{ width: `${Math.max(pct, 1)}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  );
-}
-
 // ─── Upgrade Prompt ──────────────────────────────────────────────────────────
 
 function UpgradePrompt({ projectId }: { projectId: string }) {
@@ -337,10 +305,12 @@ function DetailedReportSection({
   data,
   resourceSelected,
   resourceLabel,
+  showBreakdowns = true,
 }: {
   data: DetailedFunnelReport;
   resourceSelected: boolean;
   resourceLabel: string;
+  showBreakdowns?: boolean;
 }) {
   if (!resourceSelected) {
     return (
@@ -386,28 +356,30 @@ function DetailedReportSection({
         availableSince={data.availableSince}
         stages={data.stages}
       />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <AnalyticsBreakdownCard
-          title="Journey sources"
-          icon={Globe}
-          items={data.bySource.map(function sourceItem(item) {
-            return {
-              label: titleCaseAnalyticsValue(item.source),
-              value: item.visitors,
-            };
-          })}
-        />
-        <AnalyticsBreakdownCard
-          title="Visitor devices"
-          icon={MonitorSmartphone}
-          items={data.byDevice.map(function deviceItem(item) {
-            return {
-              label: titleCaseAnalyticsValue(item.deviceType),
-              value: item.visitors,
-            };
-          })}
-        />
-      </div>
+      {showBreakdowns && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <AnalyticsBreakdownCard
+            title="Journey sources"
+            icon={Globe}
+            items={data.bySource.map(function sourceItem(item) {
+              return {
+                label: titleCaseAnalyticsValue(item.source),
+                value: item.visitors,
+              };
+            })}
+          />
+          <AnalyticsBreakdownCard
+            title="Visitor devices"
+            icon={MonitorSmartphone}
+            items={data.byDevice.map(function deviceItem(item) {
+              return {
+                label: titleCaseAnalyticsValue(item.deviceType),
+                value: item.visitors,
+              };
+            })}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -416,15 +388,43 @@ function BookingAnalyticsBreakdownsSection({
   data,
   resourceSelected,
 }: {
-  data: BookingAnalyticsBreakdowns;
+  data: BookingsData;
   resourceSelected: boolean;
 }) {
   const bookingRequestDescription = resourceSelected
     ? "Booking requests in the selected period and event type; traffic and device filters do not apply."
     : "Booking requests in the selected period; traffic and device filters do not apply.";
+  const maxVisibleRows = Math.max(data.bookedWeekdays.length, 1);
 
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <AnalyticsBreakdownCard
+        title="Most booked weekdays"
+        description={bookingRequestDescription}
+        icon={CalendarDays}
+        emptyMessage="No booking requests in this period"
+        items={data.bookedWeekdays.map(function bookedWeekday(item) {
+          return {
+            label: item.weekday,
+            value: item.bookings,
+            displayValue: countLabel(item.bookings, "booking"),
+          };
+        })}
+      />
+      <AnalyticsBreakdownCard
+        title="Most booked times"
+        description={bookingRequestDescription}
+        icon={Clock3}
+        emptyMessage="No booking requests in this period"
+        maxVisibleRows={maxVisibleRows}
+        items={data.bookedTimes.map(function bookedTime(item) {
+          return {
+            label: item.time,
+            value: item.bookings,
+            displayValue: countLabel(item.bookings, "booking"),
+          };
+        })}
+      />
       {resourceSelected && (
         <>
           <AnalyticsBreakdownCard
@@ -458,34 +458,69 @@ function BookingAnalyticsBreakdownsSection({
               },
             )}
           />
+          <AnalyticsBreakdownCard
+            title="Journey sources"
+            icon={Globe}
+            items={data.bySource.map(function sourceItem(item) {
+              return {
+                label: titleCaseAnalyticsValue(item.source),
+                value: item.visitors,
+              };
+            })}
+          />
+          <AnalyticsBreakdownCard
+            title="Visitor devices"
+            icon={MonitorSmartphone}
+            items={data.byDevice.map(function deviceItem(item) {
+              return {
+                label: titleCaseAnalyticsValue(item.deviceType),
+                value: item.visitors,
+              };
+            })}
+          />
         </>
       )}
-      <AnalyticsBreakdownCard
-        title="Most booked weekdays"
-        description={bookingRequestDescription}
-        icon={CalendarDays}
-        emptyMessage="No booking requests in this period"
-        items={data.bookedWeekdays.map(function bookedWeekday(item) {
-          return {
-            label: item.weekday,
-            value: item.bookings,
-            displayValue: countLabel(item.bookings, "booking"),
-          };
-        })}
-      />
-      <AnalyticsBreakdownCard
-        title="Most booked times"
-        description={bookingRequestDescription}
-        icon={Clock3}
-        emptyMessage="No booking requests in this period"
-        items={data.bookedTimes.map(function bookedTime(item) {
-          return {
-            label: item.time,
-            value: item.bookings,
-            displayValue: countLabel(item.bookings, "booking"),
-          };
-        })}
-      />
+      {!resourceSelected && (
+        <Card className="rounded-[20px]">
+          <CardContent>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-primary/10">
+                <BarChart3 className="size-4 text-primary" />
+              </div>
+              <div>
+                <h3 className="text-balance text-sm font-semibold">
+                  By Event Type
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Page views, bookings, and conversion rate by event type.
+                </p>
+              </div>
+            </div>
+            <div
+              aria-label={data.byEventType.length > maxVisibleRows
+                ? "By Event Type list"
+                : undefined}
+              className="overflow-y-auto overscroll-contain focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              style={{ maxHeight: `${maxVisibleRows * 52 - 8}px` }}
+              tabIndex={data.byEventType.length > maxVisibleRows ? 0 : undefined}
+            >
+              <BreakdownTable
+                rows={data.byEventType}
+                columns={[
+                  { key: "slug", label: "Event Type" },
+                  { key: "views", label: "Views" },
+                  { key: "bookings", label: "Bookings" },
+                  {
+                    key: "rate",
+                    label: "Rate",
+                    format: (value) => `${Number(value).toFixed(1)}%`,
+                  },
+                ]}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
@@ -595,27 +630,6 @@ function BookingsTab({
         <StatCard label="Conversion Rate" value={data.funnel.conversionRate.toFixed(1)} icon={TrendingUp} suffix="%" />
       </div>
 
-      <DetailedReportSection
-        data={data}
-        resourceSelected={resourceSelected}
-        resourceLabel="event type"
-      />
-
-      <BookingAnalyticsBreakdownsSection
-        data={data}
-        resourceSelected={resourceSelected}
-      />
-
-      <Card className="rounded-[20px]">
-        <CardContent>
-          <h3 className="text-sm font-semibold mb-4">Booking Funnel</h3>
-          <div className="space-y-3">
-            <FunnelStep label="Page Views" value={data.funnel.pageViews} total={data.funnel.pageViews} color="#1B4332" />
-            <FunnelStep label="Bookings Created" value={data.funnel.bookingsCreated} total={data.funnel.pageViews} color="#2D6A4F" />
-          </div>
-        </CardContent>
-      </Card>
-
       <Card className="rounded-[20px]">
         <CardContent>
           <h3 className="text-sm font-semibold mb-4">Over Time</h3>
@@ -629,20 +643,19 @@ function BookingsTab({
         </CardContent>
       </Card>
 
-      <Card className="rounded-[20px]">
-        <CardContent>
-          <h3 className="text-sm font-semibold mb-4">By Event Type</h3>
-          <BreakdownTable
-            rows={data.byEventType}
-            columns={[
-              { key: "slug", label: "Event Type" },
-              { key: "views", label: "Views" },
-              { key: "bookings", label: "Bookings" },
-              { key: "rate", label: "Rate", format: (v) => `${Number(v).toFixed(1)}%` },
-            ]}
-          />
-        </CardContent>
-      </Card>
+      <BookingAnalyticsBreakdownsSection
+        data={data}
+        resourceSelected={resourceSelected}
+      />
+
+      {resourceSelected && (
+        <DetailedReportSection
+          data={data}
+          resourceSelected
+          resourceLabel="event type"
+          showBreakdowns={false}
+        />
+      )}
     </div>
   );
 }
@@ -681,52 +694,6 @@ function FormsTab({
         <StatCard label="Completed" value={data.funnel.completed} icon={TrendingUp} />
       </div>
 
-      <DetailedReportSection
-        data={data}
-        resourceSelected={resourceSelected}
-        resourceLabel="form"
-      />
-
-      <Card className="rounded-[20px]">
-        <CardContent>
-          <h3 className="text-sm font-semibold mb-4">Form Funnel</h3>
-          <div className="space-y-3">
-            <FunnelStep label="Form Views" value={data.funnel.views} total={data.funnel.views} color="#1B4332" />
-            <FunnelStep label="Started" value={data.funnel.started} total={data.funnel.views} color="#2D6A4F" />
-            <FunnelStep label="Completed" value={data.funnel.completed} total={data.funnel.views} color="#40916C" />
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card className="rounded-[20px]">
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
-                <TrendingUp className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Start Rate</p>
-                <p className="text-xl font-semibold">{data.funnel.startRate.toFixed(1)}%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="rounded-[20px]">
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-[12px] bg-primary/10 flex items-center justify-center">
-                <Percent className="w-4 h-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">Completion Rate</p>
-                <p className="text-xl font-semibold">{data.funnel.completionRate.toFixed(1)}%</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card className="rounded-[20px]">
         <CardContent>
           <h3 className="text-sm font-semibold mb-4">Over Time</h3>
@@ -741,21 +708,12 @@ function FormsTab({
         </CardContent>
       </Card>
 
-      <Card className="rounded-[20px]">
-        <CardContent>
-          <h3 className="text-sm font-semibold mb-4">By Form</h3>
-          <BreakdownTable
-            rows={data.byForm}
-            columns={[
-              { key: "slug", label: "Form" },
-              { key: "views", label: "Views" },
-              { key: "started", label: "Started" },
-              { key: "completed", label: "Completed" },
-              { key: "completionRate", label: "Rate", format: (v) => `${Number(v).toFixed(1)}%` },
-            ]}
-          />
-        </CardContent>
-      </Card>
+      <DetailedReportSection
+        data={data}
+        resourceSelected={resourceSelected}
+        resourceLabel="form"
+        showBreakdowns={false}
+      />
     </div>
   );
 }

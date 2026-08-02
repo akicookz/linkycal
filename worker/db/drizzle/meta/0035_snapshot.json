@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "c352caf2-5f5d-4d33-a241-f5aaa1fb5a78",
+  "id": "5db4c9fb-d3ba-4352-b796-3d60c529cd95",
   "prevId": "c8fff72f-f46b-4c40-82e1-84d85cbcf257",
   "tables": {
     "accounts": {
@@ -688,6 +688,13 @@
         "metadata": {
           "name": "metadata",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "usage_recorded_at": {
+          "name": "usage_recorded_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -1385,6 +1392,61 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "entitlement_resource_locks": {
+      "name": "entitlement_resource_locks",
+      "columns": {
+        "lock_key": {
+          "name": "lock_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch())"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(unixepoch())"
+        }
+      },
+      "indexes": {
+        "entitlement_resource_locks_expiry_idx": {
+          "name": "entitlement_resource_locks_expiry_idx",
+          "columns": [
+            "expires_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "event_types": {
       "name": "event_types",
       "columns": {
@@ -1966,6 +2028,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "usage_recorded_at": {
+          "name": "usage_recorded_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -2541,6 +2610,13 @@
         "settings": {
           "name": "settings",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deleting_at": {
+          "name": "deleting_at",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -4265,6 +4341,20 @@
           "notNull": true,
           "autoincrement": false,
           "default": 0
+        },
+        "superseded_at": {
+          "name": "superseded_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "superseded_by_id": {
+          "name": "superseded_by_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
         },
         "created_at": {
           "name": "created_at",

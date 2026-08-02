@@ -61,6 +61,7 @@ import {
   createWorkflowStepSchema,
   updateWorkflowStepSchema,
   createApiKeySchema,
+  mcpOAuthDecisionSchema,
   checkAvailabilitySchema,
   updateEventTypeCalendarsSchema,
   reorderFieldsSchema,
@@ -125,7 +126,13 @@ import {
 } from "./services/analytics-integration-service";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
 import { LinkyCalMcp } from "./mcp/agent";
-import type { McpProps } from "./mcp/agent";
+import {
+  decideMcpAuthorization,
+  listMcpConnections,
+  loadMcpAuthorizationContext,
+  revokeMcpConnection,
+} from "./mcp/oauth-authorization";
+import { createMcpOAuthProvider } from "./mcp/oauth-provider";
 
 // The Durable Object class must be exported from the worker entry module.
 export { LinkyCalMcp };
@@ -2497,35 +2504,6 @@ app.post("/api/subscription/webhook", async (c) => {
   }
 
   return c.json({ received: true });
-});
-
-// ─── MCP Server ──────────────────────────────────────────────────────────────
-// Streamable HTTP endpoint for AI clients (Claude Code, Cursor, etc.).
-// Auth is a project-scoped API key; the validated projectId rides into the
-// LinkyCalMcp Durable Object via ctx.props and scopes every tool call.
-
-const mcpHandler = LinkyCalMcp.serve("/api/mcp", { binding: "MCP_OBJECT" });
-
-app.all("/api/mcp", async (c) => {
-  const key = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
-  if (!key || !key.startsWith("lc_live_")) {
-    return c.json(
-      { error: "Missing API key. Pass Authorization: Bearer lc_live_..." },
-      401,
-    );
-  }
-
-  const db = drizzle(c.env.DB, { schema });
-  const apiKeyIdentity = await new ApiKeyService(db).validate(key); // also bumps lastUsedAt
-  if (!apiKeyIdentity) {
-    return c.json({ error: "Invalid API key" }, 401);
-  }
-
-  const ctx = c.executionCtx as ExecutionContext & {
-    props?: Record<string, unknown>;
-  };
-  ctx.props = { projectId: apiKeyIdentity.projectId } satisfies McpProps;
-  return mcpHandler.fetch(c.req.raw, c.env, ctx);
 });
 
 // ─── Session Middleware ──────────────────────────────────────────────────────
@@ -6478,6 +6456,90 @@ app.post("/api/projects/:projectId/workflows/:workflowId/test", async (c) => {
 
 // ─── API Keys ────────────────────────────────────────────────────────────────
 
+function canonicalMcpAuthorizationRequest(request: Request): Request {
+  const url = new URL(request.url);
+  url.pathname = "/oauth/authorize";
+  return new Request(url, { headers: request.headers });
+}
+
+function oauthRequestErrorName(error: unknown): string {
+  return error instanceof Error ? error.name : "UnknownError";
+}
+
+app.get("/api/oauth/mcp/authorization", async (c) => {
+  try {
+    const authorization = await loadMcpAuthorizationContext({
+      db: c.get("db"),
+      oauth: c.env.OAUTH_PROVIDER,
+      request: canonicalMcpAuthorizationRequest(c.req.raw),
+      userId: c.get("effectiveUserId"),
+    });
+    return c.json({ authorization });
+  } catch (error) {
+    console.warn(
+      `MCP OAuth authorization context rejected: ${oauthRequestErrorName(error)}`,
+    );
+    return c.json({ error: "Invalid or expired OAuth request" }, 400);
+  }
+});
+
+app.post("/api/oauth/mcp/authorization", async (c) => {
+  try {
+    const decision = validate(mcpOAuthDecisionSchema, await c.req.json());
+    const redirectTo = await decideMcpAuthorization({
+      db: c.get("db"),
+      oauth: c.env.OAUTH_PROVIDER,
+      request: canonicalMcpAuthorizationRequest(c.req.raw),
+      userId: c.get("effectiveUserId"),
+      decision,
+    });
+    return c.json({ redirectTo });
+  } catch (error) {
+    console.warn(
+      `MCP OAuth authorization decision rejected: ${oauthRequestErrorName(error)}`,
+    );
+    return c.json({ error: "Invalid or expired OAuth request" }, 400);
+  }
+});
+
+app.get("/api/projects/:projectId/mcp-connections", async (c) => {
+  try {
+    const connections = await listMcpConnections({
+      db: c.get("db"),
+      oauth: c.env.OAUTH_PROVIDER,
+      projectId: c.req.param("projectId"),
+    });
+    return c.json({ connections });
+  } catch (error) {
+    console.error(
+      `MCP connection listing failed: ${oauthRequestErrorName(error)}`,
+    );
+    return c.json({ error: "Failed to fetch MCP connections" }, 500);
+  }
+});
+
+app.delete(
+  "/api/projects/:projectId/mcp-connections/:connectionId",
+  async (c) => {
+    try {
+      await revokeMcpConnection({
+        db: c.get("db"),
+        oauth: c.env.OAUTH_PROVIDER,
+        projectId: c.req.param("projectId"),
+        connectionId: c.req.param("connectionId"),
+      });
+      return c.json({ success: true });
+    } catch (error) {
+      console.error(
+        `MCP connection revocation failed: ${oauthRequestErrorName(error)}`,
+      );
+      return c.json({ error: "Failed to revoke MCP connection" }, 500);
+    }
+  },
+);
+
+// ─── REST API Keys ─────────────────────────────────────────────
+
 app.get("/api/projects/:projectId/api-keys", async (c) => {
   try {
     const projectId = c.req.param("projectId");
@@ -7845,13 +7907,32 @@ app.use(
 
 // ─── Queue Consumer ──────────────────────────────────────────────────────────
 
+const mcpOAuthProvider = createMcpOAuthProvider({ fetch: app.fetch });
+
 export default {
-  fetch: app.fetch,
+  fetch(
+    request: Request,
+    env: import("./types").AppEnv,
+    ctx: ExecutionContext,
+  ) {
+    return mcpOAuthProvider.fetch(request, env, ctx);
+  },
 
   async scheduled(
     _event: ScheduledEvent,
     env: import("./types").AppEnv,
   ) {
+    try {
+      const result = await mcpOAuthProvider.purgeExpiredData(env, {
+        batchSize: 100,
+      });
+      console.log(
+        `OAuth cleanup checked ${result.grantsChecked} grant(s) and ${result.tokensChecked} token(s); purged ${result.grantsPurged + result.tokensPurged}`,
+      );
+    } catch (err) {
+      console.error("Cron: OAuth cleanup failed:", err);
+    }
+
     try {
       const db = drizzle(env.DB, { schema });
       const repaired = await reconcileConversionUsage(db, env);

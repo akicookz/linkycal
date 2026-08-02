@@ -1,1 +1,0 @@
-ALTER TABLE `workspace_usage_periods` ADD `superseded_by_id` text;

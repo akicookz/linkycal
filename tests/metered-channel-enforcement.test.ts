@@ -36,8 +36,8 @@ describe("metered channel enforcement", () => {
 
     const guarded = withToolErrors(
       "list_forms",
-      async () => ok({ shouldNotRun: true }),
       {
+        scopes: () => ["read"],
         reserveToolUsage: async () => {
           const reservation = await reserveProjectUsage({
             db: testDatabase!.db,
@@ -51,6 +51,7 @@ describe("metered channel enforcement", () => {
             : reservation.mcpError("use this MCP tool");
         },
       },
+      async () => ok({ shouldNotRun: true }),
     );
     const result = await guarded({});
     expect(result).toMatchObject({

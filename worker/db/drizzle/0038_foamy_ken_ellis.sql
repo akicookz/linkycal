@@ -1,1 +1,0 @@
-ALTER TABLE `projects` ADD `deleting_at` integer;

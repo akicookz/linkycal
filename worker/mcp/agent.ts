@@ -3,8 +3,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
+import type { McpOAuthScope } from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 import type { AppEnv } from "../types";
+import type { McpOAuthProps } from "./oauth-authorization";
 import { registerBookingTools } from "./tools/bookings";
 import { registerContactTools } from "./tools/contacts";
 import { registerEventTypeTools } from "./tools/event-types";
@@ -18,12 +20,10 @@ import type { ToolResult } from "./helpers";
 const { schema } = dbSchema;
 
 // ─── Props ───────────────────────────────────────────────────────────────────
-// Set by the /api/mcp route in worker/index.ts after validating the API key.
+// Set by the OAuth provider after validating the bearer token.
 // projectId hard-scopes every tool in the session — it is never a tool param.
 
-export interface McpProps extends Record<string, unknown> {
-  projectId: string;
-}
+export type McpProps = McpOAuthProps;
 
 // ─── Tool Context ────────────────────────────────────────────────────────────
 // Accessors instead of values so each tool call gets a fresh drizzle instance
@@ -32,6 +32,7 @@ export interface McpProps extends Record<string, unknown> {
 
 export interface ToolContext {
   projectId: () => string;
+  scopes: () => McpOAuthScope[];
   db: () => DrizzleD1Database<Record<string, unknown>>;
   env: () => AppEnv;
   waitUntil: (p: Promise<unknown>) => void;
@@ -49,6 +50,11 @@ export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpP
         const projectId = this.props?.projectId;
         if (!projectId) throw new Error("MCP session is missing projectId");
         return projectId;
+      },
+      scopes: () => {
+        const scopes = this.props?.scopes;
+        if (!scopes) throw new Error("MCP session is missing scopes");
+        return scopes;
       },
       db: () => drizzle(this.env.DB, { schema }),
       env: () => this.env,

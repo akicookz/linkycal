@@ -9,7 +9,7 @@ import type { ToolContext } from "../agent";
 import {
   ok,
   err,
-  withToolErrorsForContext,
+  withToolErrors,
   inProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
@@ -110,14 +110,13 @@ const createShape = createEventTypeSchema.shape;
 const updateShape = updateEventTypeSchema.shape;
 
 export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
-  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_event_types",
     {
       description: "List all event types (bookable meeting types) in this project.",
       inputSchema: {},
     },
-    withToolErrors("list_event_types", () => listEventTypes(ctx)),
+    withToolErrors("list_event_types", ctx, () => listEventTypes(ctx)),
   );
 
   server.registerTool(
@@ -128,7 +127,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
         eventTypeId: z.string().describe("Event type id"),
       },
     },
-    withToolErrors("get_event_type", (input) => getEventType(ctx, input)),
+    withToolErrors("get_event_type", ctx, (input) => getEventType(ctx, input)),
   );
 
   server.registerTool(
@@ -154,7 +153,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
         ),
       },
     },
-    withToolErrors("create_event_type", (input) => createEventType(ctx, input)),
+    withToolErrors("create_event_type", ctx, (input) => createEventType(ctx, input)),
   );
 
   server.registerTool(
@@ -178,6 +177,6 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
         requiresConfirmation: updateShape.requiresConfirmation.describe("Require manual confirmation"),
       },
     },
-    withToolErrors("update_event_type", (input) => updateEventType(ctx, input)),
+    withToolErrors("update_event_type", ctx, (input) => updateEventType(ctx, input)),
   );
 }

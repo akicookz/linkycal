@@ -1,4 +1,6 @@
-export type PublicApiAuth = "anonymous" | "apiKey";
+import type { McpToolName } from "../shared/mcp-tools";
+
+export type PublicApiAuth = "anonymous" | "apiKey" | "oauth";
 
 export interface PublicApiQueryParameter {
   name: string;
@@ -23,7 +25,7 @@ export interface PublicApiOperationDefinition {
 
 export interface McpToolGroup {
   domain: string;
-  tools: string[];
+  tools: McpToolName[];
   notes: string;
 }
 
@@ -403,7 +405,8 @@ export const PUBLIC_API_OPERATIONS: PublicApiOperationDefinition[] = [
     path: "/api/mcp",
     summary: "Connect to the LinkyCal MCP server",
     tag: "MCP",
-    auth: "apiKey",
-    notes: "Streamable HTTP MCP transport; project-scoped API key required.",
+    auth: "oauth",
+    notes:
+      "Streamable HTTP MCP transport authenticated with OAuth 2.1; each grant selects exactly one eligible project.",
   },
 ];

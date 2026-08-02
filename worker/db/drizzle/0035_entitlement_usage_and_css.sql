@@ -83,9 +83,44 @@ CREATE TABLE `workspace_usage_periods` (
 	`transactional_emails` integer DEFAULT 0 NOT NULL,
 	`integration_requests` integer DEFAULT 0 NOT NULL,
 	`enrichments` integer DEFAULT 0 NOT NULL,
+	`superseded_at` integer,
+	`superseded_by_id` text,
 	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
 	`updated_at` integer DEFAULT (unixepoch()) NOT NULL
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `workspace_usage_periods_workspace_start_unique` ON `workspace_usage_periods` (`workspace_type`,`workspace_id`,`period_start`);--> statement-breakpoint
-CREATE INDEX `workspace_usage_periods_workspace_end_idx` ON `workspace_usage_periods` (`workspace_type`,`workspace_id`,`period_end`);
+CREATE INDEX `workspace_usage_periods_workspace_end_idx` ON `workspace_usage_periods` (`workspace_type`,`workspace_id`,`period_end`);--> statement-breakpoint
+CREATE TABLE `entitlement_resource_locks` (
+	`lock_key` text PRIMARY KEY NOT NULL,
+	`token` text NOT NULL,
+	`expires_at` integer NOT NULL,
+	`created_at` integer DEFAULT (unixepoch()) NOT NULL,
+	`updated_at` integer DEFAULT (unixepoch()) NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `entitlement_resource_locks_expiry_idx` ON `entitlement_resource_locks` (`expires_at`);--> statement-breakpoint
+ALTER TABLE `bookings` ADD `usage_recorded_at` integer;--> statement-breakpoint
+UPDATE `bookings` SET `usage_recorded_at` = CASE WHEN typeof(`created_at`) = 'integer' THEN `created_at` ELSE unixepoch(`created_at`) END WHERE `usage_recorded_at` IS NULL;--> statement-breakpoint
+ALTER TABLE `form_responses` ADD `usage_recorded_at` integer;--> statement-breakpoint
+UPDATE `form_responses` SET `usage_recorded_at` = CASE WHEN typeof(`updated_at`) = 'integer' THEN `updated_at` ELSE unixepoch(`updated_at`) END WHERE `status` = 'completed' AND `usage_recorded_at` IS NULL;--> statement-breakpoint
+UPDATE `workspace_usage_periods` AS `usage_period` SET `bookings` = `bookings` + (
+	SELECT count(*) FROM `bookings`
+	INNER JOIN `event_types` ON `event_types`.`id` = `bookings`.`event_type_id`
+	INNER JOIN `projects` ON `projects`.`id` = `event_types`.`project_id`
+	WHERE `bookings`.`usage_recorded_at` >= `usage_period`.`period_start`
+		AND `bookings`.`usage_recorded_at` < `usage_period`.`period_end`
+		AND ((`usage_period`.`workspace_type` = 'team' AND `projects`.`team_id` = `usage_period`.`workspace_id`)
+			OR (`usage_period`.`workspace_type` = 'personal' AND `projects`.`team_id` IS NULL AND `projects`.`user_id` = `usage_period`.`workspace_id`))
+);--> statement-breakpoint
+UPDATE `workspace_usage_periods` AS `usage_period` SET `form_responses` = `form_responses` + (
+	SELECT count(*) FROM `form_responses`
+	INNER JOIN `forms` ON `forms`.`id` = `form_responses`.`form_id`
+	INNER JOIN `projects` ON `projects`.`id` = `forms`.`project_id`
+	WHERE `form_responses`.`status` = 'completed'
+		AND `form_responses`.`usage_recorded_at` >= `usage_period`.`period_start`
+		AND `form_responses`.`usage_recorded_at` < `usage_period`.`period_end`
+		AND ((`usage_period`.`workspace_type` = 'team' AND `projects`.`team_id` = `usage_period`.`workspace_id`)
+			OR (`usage_period`.`workspace_type` = 'personal' AND `projects`.`team_id` IS NULL AND `projects`.`user_id` = `usage_period`.`workspace_id`))
+);--> statement-breakpoint
+ALTER TABLE `projects` ADD `deleting_at` integer;

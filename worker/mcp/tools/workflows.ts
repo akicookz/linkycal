@@ -3,7 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { WorkflowService } from "../../services/workflow-service";
 import type { ToolContext } from "../agent";
-import { ok, err, withToolErrorsForContext, inProject } from "../helpers";
+import { ok, err, withToolErrors, inProject } from "../helpers";
 import type { ToolResult } from "../helpers";
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
@@ -27,7 +27,6 @@ export async function getWorkflow(
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export function registerWorkflowTools(server: McpServer, ctx: ToolContext) {
-  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_workflows",
     {
@@ -35,7 +34,7 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext) {
         "List automation workflows in this project with their trigger (form_submitted, booking_created, tag_added, etc.) and status.",
       inputSchema: {},
     },
-    withToolErrors("list_workflows", () => listWorkflows(ctx)),
+    withToolErrors("list_workflows", ctx, () => listWorkflows(ctx)),
   );
 
   server.registerTool(
@@ -46,6 +45,6 @@ export function registerWorkflowTools(server: McpServer, ctx: ToolContext) {
         workflowId: z.string().describe("Workflow id"),
       },
     },
-    withToolErrors("get_workflow", (input) => getWorkflow(ctx, input)),
+    withToolErrors("get_workflow", ctx, (input) => getWorkflow(ctx, input)),
   );
 }

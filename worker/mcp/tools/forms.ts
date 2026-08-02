@@ -9,7 +9,7 @@ import type { ToolContext } from "../agent";
 import {
   ok,
   err,
-  withToolErrorsForContext,
+  withToolErrors,
   inProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
@@ -87,14 +87,13 @@ const createShape = createFormSchema.shape;
 const updateShape = updateFormSchema.shape;
 
 export function registerFormTools(server: McpServer, ctx: ToolContext) {
-  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_forms",
     {
       description: "List forms in this project with their status (draft/active/archived).",
       inputSchema: {},
     },
-    withToolErrors("list_forms", () => listForms(ctx)),
+    withToolErrors("list_forms", ctx, () => listForms(ctx)),
   );
 
   server.registerTool(
@@ -105,7 +104,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         formId: z.string().describe("Form id"),
       },
     },
-    withToolErrors("get_form", (input) => getForm(ctx, input)),
+    withToolErrors("get_form", ctx, (input) => getForm(ctx, input)),
   );
 
   server.registerTool(
@@ -119,7 +118,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         type: createShape.type.describe("'single' page or 'multi_step' (default single)"),
       },
     },
-    withToolErrors("create_form", (input) => createForm(ctx, input)),
+    withToolErrors("create_form", ctx, (input) => createForm(ctx, input)),
   );
 
   server.registerTool(
@@ -134,7 +133,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         status: updateShape.status.describe("'draft', 'active', or 'archived'"),
       },
     },
-    withToolErrors("update_form", (input) => updateForm(ctx, input)),
+    withToolErrors("update_form", ctx, (input) => updateForm(ctx, input)),
   );
 
   server.registerTool(
@@ -146,6 +145,6 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         limit: z.number().int().min(1).max(200).optional().describe("Max responses (default 50)"),
       },
     },
-    withToolErrors("list_form_responses", (input) => listFormResponses(ctx, input)),
+    withToolErrors("list_form_responses", ctx, (input) => listFormResponses(ctx, input)),
   );
 }

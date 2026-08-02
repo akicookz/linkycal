@@ -303,6 +303,7 @@ export function requiredProjectPermission(
 ): ProjectPermission {
   const normalizedMethod = method.toUpperCase();
   if (path.includes("/api-keys")) return "project:api_keys";
+  if (path.includes("/mcp-connections")) return "project:api_keys";
   if (path.includes("/members")) {
     return normalizedMethod === "GET" || normalizedMethod === "HEAD"
       ? "project:read"

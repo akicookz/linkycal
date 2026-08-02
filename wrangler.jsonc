@@ -4,7 +4,7 @@
   "name": "linkycal",
   "main": "worker/index.ts",
   "compatibility_date": "2025-05-24",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
@@ -36,6 +36,11 @@
     {
       "binding": "CACHE",
       "id": "1b10094005db458db0079de926af47c1",
+      "remote": true,
+    },
+    {
+      "binding": "OAUTH_KV",
+      "id": "6bf8c6b3639e42f5ae6dd6a8cb1724f4",
       "remote": true,
     },
   ],

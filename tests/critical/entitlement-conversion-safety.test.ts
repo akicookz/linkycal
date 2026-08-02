@@ -186,17 +186,10 @@ describe("entitlement conversion safety", () => {
   });
 
   test("the conversion marker migration never charges historical rows to the rollout period", async () => {
-    testDatabase = createTestDb({ through: "0036_short_magdalene.sql" });
-    testDatabase.sqlite.run(
-      "ALTER TABLE projects ADD COLUMN deleting_at integer",
-    );
-    testDatabase.sqlite.run(
-      "ALTER TABLE workspace_usage_periods ADD COLUMN superseded_at integer",
-    );
-    testDatabase.sqlite.run(
-      "ALTER TABLE workspace_usage_periods ADD COLUMN superseded_by_id text",
-    );
-    await seedConversionProject(testDatabase);
+    testDatabase = createTestDb({
+      through: "0034_reconcile_contact_pipeline_stages.sql",
+    });
+    await seedConversionProject(testDatabase, { preEntitlementSchema: true });
     await testDatabase.db.insert(dbSchema.eventTypes).values({
       id: "event-before-rollout",
       projectId: "project-conversion",
@@ -221,8 +214,8 @@ describe("entitlement conversion safety", () => {
     );
 
     applyProductionMigrations(testDatabase.sqlite, {
-      after: "0036_short_magdalene.sql",
-      through: "0037_ordinary_thena.sql",
+      after: "0034_reconcile_contact_pipeline_stages.sql",
+      through: "0035_entitlement_usage_and_css.sql",
     });
 
     const booking = testDatabase.sqlite
@@ -254,7 +247,11 @@ describe("entitlement conversion safety", () => {
 
 async function seedConversionProject(
   testDatabase: TestDatabase,
-  options: { formResponses?: number; contacts?: number } = {},
+  options: {
+    formResponses?: number;
+    contacts?: number;
+    preEntitlementSchema?: boolean;
+  } = {},
 ): Promise<void> {
   await testDatabase.db.insert(dbSchema.schema.users).values({
     id: "owner-conversion",
@@ -268,13 +265,26 @@ async function seedConversionProject(
     name: "Conversion Team",
     slug: "conversion-team",
   });
-  await testDatabase.db.insert(dbSchema.projects).values({
-    id: "project-conversion",
-    userId: "owner-conversion",
-    teamId: "team-conversion",
-    name: "Conversion Project",
-    slug: "conversion-project",
-  });
+  if (options.preEntitlementSchema) {
+    testDatabase.sqlite.run(
+      "INSERT INTO projects (id, user_id, team_id, name, slug) VALUES (?, ?, ?, ?, ?)",
+      [
+        "project-conversion",
+        "owner-conversion",
+        "team-conversion",
+        "Conversion Project",
+        "conversion-project",
+      ],
+    );
+  } else {
+    await testDatabase.db.insert(dbSchema.projects).values({
+      id: "project-conversion",
+      userId: "owner-conversion",
+      teamId: "team-conversion",
+      name: "Conversion Project",
+      slug: "conversion-project",
+    });
+  }
   await testDatabase.db.insert(dbSchema.subscriptions).values({
     id: "subscription-conversion",
     userId: "owner-conversion",
@@ -295,14 +305,16 @@ async function seedConversionProject(
     title: "Submit",
     sortOrder: 0,
   });
-  await testDatabase.db.insert(dbSchema.workspaceUsagePeriods).values({
-    id: "period-conversion",
-    workspaceType: "team",
-    workspaceId: "team-conversion",
-    periodStart: new Date("2026-08-01T00:00:00.000Z"),
-    periodEnd: new Date("2026-09-01T00:00:00.000Z"),
-    formResponses: options.formResponses ?? 0,
-  });
+  if (!options.preEntitlementSchema) {
+    await testDatabase.db.insert(dbSchema.workspaceUsagePeriods).values({
+      id: "period-conversion",
+      workspaceType: "team",
+      workspaceId: "team-conversion",
+      periodStart: new Date("2026-08-01T00:00:00.000Z"),
+      periodEnd: new Date("2026-09-01T00:00:00.000Z"),
+      formResponses: options.formResponses ?? 0,
+    });
+  }
   const contacts = Array.from({ length: options.contacts ?? 0 }, (_, index) => ({
     id: `contact-${index}`,
     projectId: "project-conversion",

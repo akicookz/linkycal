@@ -257,36 +257,8 @@
     {
       "idx": 36,
       "version": "6",
-      "when": 1785686187831,
-      "tag": "0036_short_magdalene",
-      "breakpoints": true
-    },
-    {
-      "idx": 37,
-      "version": "6",
-      "when": 1785686350078,
-      "tag": "0037_ordinary_thena",
-      "breakpoints": true
-    },
-    {
-      "idx": 38,
-      "version": "6",
-      "when": 1785688605658,
-      "tag": "0038_foamy_ken_ellis",
-      "breakpoints": true
-    },
-    {
-      "idx": 39,
-      "version": "6",
-      "when": 1785689839339,
-      "tag": "0039_perfect_shinobi_shaw",
-      "breakpoints": true
-    },
-    {
-      "idx": 40,
-      "version": "6",
-      "when": 1785690308328,
-      "tag": "0040_charming_dreadnoughts",
+      "when": 1785702840594,
+      "tag": "0036_mcp_oauth_grants",
       "breakpoints": true
     }
   ]

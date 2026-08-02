@@ -35,6 +35,7 @@ import AlternativePage from "./pages/AlternativePage";
 import LegalPage from "./pages/LegalPage";
 import PublicResolver from "./pages/PublicResolver";
 import Invite from "./pages/Invite";
+import OAuthAuthorize from "./pages/OAuthAuthorize";
 
 // ─── Redirect /app to first project's dashboard ──────────────────────────────
 
@@ -69,6 +70,16 @@ function App() {
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
       <Route path="/terms" element={<LegalPage kind="terms" />} />
       <Route path="/invite/:token" element={<Invite />} />
+      <Route
+        path="/oauth/authorize"
+        element={
+          <ErrorBoundary>
+            <AuthGuard redirectToCurrent>
+              <OAuthAuthorize />
+            </AuthGuard>
+          </ErrorBoundary>
+        }
+      />
 
       <Route
         path="/api/auth/callback/:provider"

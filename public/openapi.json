@@ -3,7 +3,7 @@
   "info": {
     "title": "LinkyCal API",
     "version": "1.0.0",
-    "description": "Project-scoped LinkyCal REST API plus anonymous visitor endpoints. Send API keys as Authorization: Bearer lc_live_.... Dashboard session cookies are not part of this public contract."
+    "description": "Project-scoped LinkyCal REST API, anonymous visitor endpoints, and the OAuth-authenticated MCP transport. Send REST API keys as Authorization: Bearer lc_live_.... MCP clients complete OAuth 2.1 in the browser. Dashboard session cookies are not part of this public contract."
   },
   "servers": [
     {
@@ -9213,13 +9213,16 @@
       "post": {
         "operationId": "postMcp",
         "summary": "Connect to the LinkyCal MCP server",
-        "description": "Streamable HTTP MCP transport; project-scoped API key required.",
+        "description": "Streamable HTTP MCP transport authenticated with OAuth 2.1; each grant selects exactly one eligible project.",
         "tags": [
           "MCP"
         ],
         "security": [
           {
-            "bearerAuth": []
+            "mcpOAuth": [
+              "read",
+              "write"
+            ]
           }
         ],
         "requestBody": {
@@ -9244,7 +9247,7 @@
             }
           },
           "401": {
-            "description": "Missing or invalid API key",
+            "description": "Missing, expired, or invalid OAuth access token",
             "content": {
               "application/json": {
                 "schema": {
@@ -9254,7 +9257,7 @@
             }
           },
           "403": {
-            "description": "The credential cannot access this project or operation",
+            "description": "The OAuth grant, project, or requested MCP tool is not permitted",
             "content": {
               "application/json": {
                 "schema": {
@@ -9286,6 +9289,20 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "lc_live_..."
+      },
+      "mcpOAuth": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://linkycal.com/oauth/authorize",
+            "tokenUrl": "https://linkycal.com/oauth/token",
+            "scopes": {
+              "read": "Read project data through MCP tools.",
+              "write": "Create and update project data through MCP tools.",
+              "offline_access": "Refresh MCP access without another sign-in."
+            }
+          }
+        }
       }
     },
     "schemas": {

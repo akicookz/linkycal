@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import * as csstree from "css-tree";
+import * as csstree from "css-tree/dist/csstree.esm";
 
 import { evaluateEntitlement } from "../../shared/entitlement-decision";
 import type { EntitlementDecision, Plan } from "../../shared/plan-catalog";

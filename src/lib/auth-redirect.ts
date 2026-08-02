@@ -1,5 +1,22 @@
 export const AUTH_REDIRECT_STORAGE_KEY = "linkycal.authRedirect";
 
+interface AuthLocation {
+  pathname: string;
+  search: string;
+}
+
+export function authRedirectPath(
+  location: AuthLocation,
+  redirectToCurrent = false,
+): string {
+  if (!redirectToCurrent) return "/?show_auth=true";
+  const params = new URLSearchParams({
+    show_auth: "true",
+    redirect: `${location.pathname}${location.search}`,
+  });
+  return `/?${params.toString()}`;
+}
+
 export function getSafeAuthRedirect(value: string | null | undefined): string {
   if (!value) {
     return "/app";

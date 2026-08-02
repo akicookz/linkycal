@@ -1,10 +1,15 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { eq, and } from "drizzle-orm";
 
+import {
+  MCP_TOOL_SCOPES,
+  type McpToolName,
+} from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 import type { PlanLimits } from "../types";
 import { PLAN_LIMITS } from "../lib/plan-limits";
 import { resolveProjectEntitlements } from "../lib/entitlements";
+import type { ToolContext } from "./agent";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -29,15 +34,17 @@ export function err(message: string): ToolResult {
  * instead of crashing the agent session.
  */
 export function withToolErrors<Input>(
-  name: string,
+  name: McpToolName,
+  ctx: Pick<ToolContext, "scopes" | "reserveToolUsage">,
   fn: (input: Input) => Promise<ToolResult>,
-  usage?: {
-    reserveToolUsage?(toolName: string): Promise<ToolResult | null>;
-  },
 ): (input: Input) => Promise<ToolResult> {
-  return async (input: Input) => {
+  return async function guardedTool(input: Input): Promise<ToolResult> {
+    const requiredScope = MCP_TOOL_SCOPES[name];
+    if (!ctx.scopes().includes(requiredScope)) {
+      return err(`Authorization required: ${requiredScope} scope`);
+    }
     try {
-      const denial = await usage?.reserveToolUsage?.(name);
+      const denial = await ctx.reserveToolUsage?.(name);
       if (denial) return denial;
       return await fn(input);
     } catch (e) {
@@ -47,17 +54,6 @@ export function withToolErrors<Input>(
       console.error(`MCP tool ${name} failed:`, e);
       return err("Internal error");
     }
-  };
-}
-
-export function withToolErrorsForContext(usage: {
-  reserveToolUsage?(toolName: string): Promise<ToolResult | null>;
-}) {
-  return function withMeteredToolErrors<Input>(
-    name: string,
-    fn: (input: Input) => Promise<ToolResult>,
-  ): (input: Input) => Promise<ToolResult> {
-    return withToolErrors(name, fn, usage);
   };
 }
 

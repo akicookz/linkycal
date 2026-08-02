@@ -12,7 +12,7 @@ import {
   declineBookingAction,
 } from "../../lib/booking-actions";
 import type { ToolContext } from "../agent";
-import { ok, err, withToolErrorsForContext, bookingInProject, inProject } from "../helpers";
+import { ok, err, withToolErrors, bookingInProject, inProject } from "../helpers";
 import type { ToolResult } from "../helpers";
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
@@ -181,7 +181,6 @@ export async function declineBooking(
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export function registerBookingTools(server: McpServer, ctx: ToolContext) {
-  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_bookings",
     {
@@ -192,7 +191,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         limit: z.number().int().min(1).max(200).optional().describe("Max bookings to return (default 50)"),
       },
     },
-    withToolErrors("list_bookings", (input) => listBookings(ctx, input)),
+    withToolErrors("list_bookings", ctx, (input) => listBookings(ctx, input)),
   );
 
   server.registerTool(
@@ -203,7 +202,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         bookingId: z.string().describe("Booking id"),
       },
     },
-    withToolErrors("get_booking", (input) => getBooking(ctx, input)),
+    withToolErrors("get_booking", ctx, (input) => getBooking(ctx, input)),
   );
 
   server.registerTool(
@@ -217,7 +216,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         timezone: z.string().describe("IANA timezone, e.g. America/New_York"),
       },
     },
-    withToolErrors("get_available_slots", (input) => getAvailableSlots(ctx, input)),
+    withToolErrors("get_available_slots", ctx, (input) => getAvailableSlots(ctx, input)),
   );
 
   server.registerTool(
@@ -234,7 +233,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         notes: z.string().max(2000).optional().describe("Optional notes from the guest"),
       },
     },
-    withToolErrors("create_booking", (input) => createBooking(ctx, input)),
+    withToolErrors("create_booking", ctx, (input) => createBooking(ctx, input)),
   );
 
   server.registerTool(
@@ -247,7 +246,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         reason: z.string().max(500).optional().describe("Optional cancellation reason shown to the guest"),
       },
     },
-    withToolErrors("cancel_booking", (input) => cancelBooking(ctx, input)),
+    withToolErrors("cancel_booking", ctx, (input) => cancelBooking(ctx, input)),
   );
 
   server.registerTool(
@@ -259,7 +258,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         bookingId: z.string().describe("Booking id (must be pending)"),
       },
     },
-    withToolErrors("confirm_booking", (input) => confirmBooking(ctx, input)),
+    withToolErrors("confirm_booking", ctx, (input) => confirmBooking(ctx, input)),
   );
 
   server.registerTool(
@@ -272,6 +271,6 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         notify: z.boolean().optional().describe("Send a decline email to the guest (default true)"),
       },
     },
-    withToolErrors("decline_booking", (input) => declineBooking(ctx, input)),
+    withToolErrors("decline_booking", ctx, (input) => declineBooking(ctx, input)),
   );
 }

@@ -4,24 +4,25 @@
 
 ## Result
 
-- Registered route/method pairs: 150
-- API-key-supported or API-key-required routes: 96
+- Registered route/method pairs: 154
+- API-key-supported or API-key-required routes: 95
 - Anonymous visitor routes: 15
-- Session-only routes: 34
+- Session-only routes: 38
 - Operations in the public OpenAPI contract: 111
 
-All project resource routes approved for external automation use the canonical `/api/projects/:projectId/*` contract and accept either a dashboard session or a project-scoped API key. Account, team, billing, onboarding, OAuth lifecycle, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
+All project resource routes approved for external REST automation use the canonical `/api/projects/:projectId/*` contract and accept either a dashboard session or a project-scoped API key. The provider-owned `POST /api/mcp` transport requires OAuth and rejects API keys. Account, team, billing, onboarding, connection administration, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
 
 Credential resolution is deliberately unambiguous: a request with both a valid dashboard session and any `Authorization` header is rejected with HTTP 400. A malformed or invalid bearer credential is rejected and is never allowed to fall back to a session. Credentialed cross-origin requests are limited to trusted dashboard origins; anonymous and bearer-authenticated routes use non-credentialed CORS.
 
 ## Authentication totals
 
 - Anonymous: 15
-- API key: 2
+- API key: 1
 - Better Auth: 2
 - Invite token: 1
 - Invite token + session: 1
-- Session: 34
+- OAuth: 1
+- Session: 38
 - Session or API key: 94
 - Stripe signature: 1
 
@@ -40,7 +41,9 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | POST | `/api/internal/entitlements/storage/reconcile/:projectId` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | GET | `/api/invites/:token` | Invite token | No | No | No | Dashboard invitation preview using a single-purpose invite token. |
 | POST | `/api/invites/:token/accept` | Invite token + session | No | Required | No | Dashboard invitation acceptance; authenticated user must match the invite. |
-| ALL | `/api/mcp` | API key | Required | No | Yes | Streamable HTTP MCP transport; project-scoped API key required. |
+| POST | `/api/mcp` | OAuth | No | No | Yes | Provider-owned Streamable HTTP transport; OAuth grant selects one eligible project and API keys are rejected. |
+| GET | `/api/oauth/mcp/authorization` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
+| POST | `/api/oauth/mcp/authorization` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | POST | `/api/onboarding` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | POST | `/api/onboarding/complete` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
 | POST | `/api/onboarding/default-form` | Session | No | Required | No | Dashboard-only account, team, billing, onboarding, or OAuth endpoint. |
@@ -116,6 +119,8 @@ Credential resolution is deliberately unambiguous: a request with both a valid d
 | PUT | `/api/projects/:projectId/forms/:formId/steps/reorder` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | PUT | `/api/projects/:projectId/forms/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
 | DELETE | `/api/projects/:projectId/forms/:id` | Session or API key | Supported | Supported | Yes | Canonical project endpoint. API keys are project-scoped and require API access entitlement. |
+| GET | `/api/projects/:projectId/mcp-connections` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
+| DELETE | `/api/projects/:projectId/mcp-connections/:connectionId` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
 | GET | `/api/projects/:projectId/members` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
 | POST | `/api/projects/:projectId/members` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
 | PATCH | `/api/projects/:projectId/members/:memberId` | Session | No | Required | No | Dashboard administration endpoint; intentionally unavailable to API keys. |
