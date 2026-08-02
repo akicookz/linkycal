@@ -1439,6 +1439,7 @@ app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
       project.id,
       form.id,
       body.metadata,
+      c.env,
     );
     if (!started.ok) return c.json(started.body, started.status);
     const { response } = started.body;
@@ -1642,6 +1643,7 @@ app.patch(
         responseId,
         stepIndex,
         body,
+        c.env,
       );
       if (!result.ok) return c.json(result.body, result.status);
       const { response } = result.body;
@@ -1927,6 +1929,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/responses", async (c) => {
       project.id,
       form.id,
       body.metadata,
+      c.env,
     );
     if (!started.ok) return c.json(started.body, started.status);
     const { response } = started.body;
@@ -1977,6 +1980,7 @@ app.patch(
         responseId,
         stepIndex,
         body,
+        c.env,
       );
       if (!result.ok) {
         return c.json(result.body, result.status);
@@ -2142,6 +2146,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
       project.id,
       form.id,
       { source: "native_action" },
+      c.env,
     );
     if (!started.ok) {
       return createHtmlPageResponse(
@@ -2193,6 +2198,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
           fields: fieldsByStep.get(steps[stepIndex].id) ?? [],
           complete: stepIndex === steps.length - 1,
         },
+        c.env,
       );
       if (!submitted.ok) {
         return createHtmlPageResponse(
@@ -2210,6 +2216,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
         response.id,
         0,
         { fields: [], complete: true },
+        c.env,
       );
       latestResponse = submitted.ok ? submitted.body.response : null;
     }
@@ -3896,6 +3903,7 @@ app.put("/api/projects/:projectId/custom-css", async (c) => {
       c.req.param("projectId"),
       data.css,
       actorUserId,
+      c.env,
     );
     return c.json({
       customCss: {

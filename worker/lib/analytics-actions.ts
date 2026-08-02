@@ -17,10 +17,16 @@ import {
 } from "../services/analytics-service";
 import * as dbSchema from "../db/schema";
 import type { PlanLimits } from "../types";
+import type { EntitlementDecision } from "../../shared/plan-catalog";
 import { AnalyticsIntegrationService } from "../services/analytics-integration-service";
 import { configureAnalyticsIntegrationSchema } from "../validation";
 import { queryBookingRequestAnalytics } from "./booking-request-analytics";
 import { entitlementError } from "./entitlement-errors";
+import {
+  applyEntitlementEnforcement,
+  resolveEnforcementMode,
+} from "./entitlement-mode";
+import { EntitlementService } from "../services/entitlement-service";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 type CommonAnalyticsQuery = Omit<AnalyticsQueryParams, "projectId">;
@@ -28,6 +34,8 @@ type CommonAnalyticsQuery = Omit<AnalyticsQueryParams, "projectId">;
 export interface AnalyticsActionEnv {
   CF_ACCOUNT_ID: string;
   WAE_API_TOKEN: string;
+  ENTITLEMENT_ENFORCEMENT_MODE?: string;
+  ENTITLEMENT_OBSERVE_KEYS?: string;
 }
 
 interface AnalyticsActionInput {
@@ -53,11 +61,11 @@ interface BookingAnalyticsActionInput extends AnalyticsActionInput {
   now?: Date;
 }
 
-function analyticsForbidden() {
-  const failure = entitlementError({
+async function analyticsForbidden(input: AnalyticsActionInput) {
+  const evaluatedDecision: EntitlementDecision = {
     key: "analytics",
-    kind: "feature",
-    scope: "workspace",
+    kind: "feature" as const,
+    scope: "workspace" as const,
     enabled: false,
     allowed: false,
     status: "unavailable",
@@ -67,7 +75,24 @@ function analyticsForbidden() {
     periodStart: null,
     resetAt: null,
     recommendedPlan: "pro",
-  }, "view analytics");
+  };
+  let decision = evaluatedDecision;
+  if (resolveEnforcementMode(input.env, "analytics") === "observe") {
+    const resolved = await new EntitlementService(input.db).resolveProject(
+      input.projectId,
+    );
+    if (resolved) {
+      decision = applyEntitlementEnforcement(evaluatedDecision, {
+        env: input.env,
+        workspace: resolved.workspace,
+        projectId: input.projectId,
+        plan: resolved.subscription.plan,
+        channel: "analytics",
+      });
+    }
+  }
+  if (decision.allowed) return null;
+  const failure = entitlementError(decision, "view analytics");
   return {
     ok: false as const,
     status: failure.status,
@@ -162,7 +187,10 @@ async function ownsFormSlug(
 export async function getAnalyticsOverviewAction(
   input: AnalyticsQueryActionInput,
 ) {
-  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!input.planLimits.analytics) {
+    const denial = await analyticsForbidden(input);
+    if (denial) return denial;
+  }
   const query = applyAnalyticsRetention(
     input.query,
     input.planLimits.analyticsRetentionMonths,
@@ -182,7 +210,10 @@ export async function getAnalyticsOverviewAction(
 export async function getBookingAnalyticsAction(
   input: BookingAnalyticsActionInput,
 ) {
-  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!input.planLimits.analytics) {
+    const denial = await analyticsForbidden(input);
+    if (denial) return denial;
+  }
   const query = applyAnalyticsRetention(
     input.query,
     input.planLimits.analyticsRetentionMonths,
@@ -238,7 +269,10 @@ export async function getBookingAnalyticsAction(
 export async function getFormAnalyticsAction(
   input: AnalyticsQueryActionInput,
 ) {
-  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!input.planLimits.analytics) {
+    const denial = await analyticsForbidden(input);
+    if (denial) return denial;
+  }
   const query = applyAnalyticsRetention(
     input.query,
     input.planLimits.analyticsRetentionMonths,
@@ -273,7 +307,10 @@ export async function getFormAnalyticsAction(
 export async function getAnalyticsFiltersAction(
   input: AnalyticsActionInput,
 ) {
-  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!input.planLimits.analytics) {
+    const denial = await analyticsForbidden(input);
+    if (denial) return denial;
+  }
   const [observed, eventTypes, forms] = await Promise.all([
     queryFilterOptions(
       input.env.CF_ACCOUNT_ID,
@@ -311,7 +348,10 @@ export async function getAnalyticsFiltersAction(
 export async function listAnalyticsIntegrationsAction(
   input: AnalyticsActionInput,
 ) {
-  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!input.planLimits.analytics) {
+    const denial = await analyticsForbidden(input);
+    if (denial) return denial;
+  }
   const integrations = await new AnalyticsIntegrationService(input.db).list(
     input.projectId,
   );
@@ -338,7 +378,10 @@ function isAnalyticsProvider(value: string): value is AnalyticsProvider {
 export async function configureAnalyticsIntegrationAction(
   input: ConfigureAnalyticsIntegrationActionInput,
 ) {
-  if (!input.planLimits.analytics) return analyticsForbidden();
+  if (!input.planLimits.analytics) {
+    const denial = await analyticsForbidden(input);
+    if (denial) return denial;
+  }
   if (!isAnalyticsProvider(input.provider)) {
     return {
       ok: false as const,

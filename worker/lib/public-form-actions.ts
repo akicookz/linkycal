@@ -14,6 +14,7 @@ import {
   getProjectUsageDecision,
   reserveProjectUsage,
 } from "./metered-entitlements";
+import type { EntitlementModeEnv } from "./entitlement-mode";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -88,11 +89,14 @@ export async function startPublicFormResponseAction(
   projectId: string,
   formId: string,
   metadata?: Record<string, unknown>,
+  env?: EntitlementModeEnv,
 ) {
   const decision = await getProjectUsageDecision({
     db,
     projectId,
     key: "formResponses",
+    env,
+    channel: "public_form_start",
   });
   if (!decision.allowed) {
     return {
@@ -117,6 +121,7 @@ export async function submitPublicFormStepAction(
   responseId: string,
   stepIndex: number,
   rawBody: unknown,
+  env?: EntitlementModeEnv,
 ) {
   const parsed = submitFormStepSchema.safeParse(rawBody);
   if (!parsed.success) {
@@ -164,6 +169,7 @@ export async function submitPublicFormStepAction(
         operationId: response.id,
         allowExistingOverage: true,
         channel: "public_form_completion",
+        env,
       });
       await reservation.consume();
     }

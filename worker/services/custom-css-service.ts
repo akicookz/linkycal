@@ -6,6 +6,10 @@ import { evaluateEntitlement } from "../../shared/entitlement-decision";
 import type { EntitlementDecision, Plan } from "../../shared/plan-catalog";
 import * as dbSchema from "../db/schema";
 import { EntitlementService } from "./entitlement-service";
+import {
+  applyEntitlementEnforcement,
+  type EntitlementModeEnv,
+} from "../lib/entitlement-mode";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 const PUBLIC_ROOT = "[data-linkycal-public]";
@@ -134,11 +138,25 @@ export class CustomCssService {
     projectId: string,
     sourceCss: string,
     updatedByUserId: string,
+    env?: EntitlementModeEnv,
   ): Promise<dbSchema.ProjectCustomCssRow> {
-    const decision = await new EntitlementService(this.db).feature(
+    const entitlementService = new EntitlementService(this.db);
+    const evaluatedDecision = await entitlementService.feature(
       projectId,
       "customCss",
     );
+    const resolved = env && !evaluatedDecision.allowed
+      ? await entitlementService.resolveProject(projectId)
+      : null;
+    const decision = env && resolved
+      ? applyEntitlementEnforcement(evaluatedDecision, {
+          env,
+          workspace: resolved.workspace,
+          projectId,
+          plan: resolved.subscription.plan,
+          channel: "custom_css",
+        })
+      : evaluatedDecision;
     if (!decision.allowed) throw new CustomCssEntitlementError(decision);
     const compiled = this.compile(projectId, sourceCss);
     await this.db

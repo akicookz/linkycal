@@ -42,12 +42,14 @@ export async function getProjectUsageDecision(input: {
   key: MeteredEntitlementKey;
   amount?: number;
   now?: Date;
+  env?: EntitlementModeEnv;
+  channel?: string;
 }): Promise<EntitlementDecision> {
   const resolved = await new EntitlementService(input.db).resolveProject(
     input.projectId,
   );
   if (!resolved) throw new Error(`Project ${input.projectId} not found`);
-  return new UsageService(input.db).getDecision({
+  const decision = await new UsageService(input.db).getDecision({
     workspace: resolved.workspace,
     subscription: resolved.subscriptionRecord,
     plan: resolved.subscription.plan,
@@ -55,6 +57,15 @@ export async function getProjectUsageDecision(input: {
     amount: input.amount ?? 1,
     now: input.now ?? new Date(),
   });
+  return input.env
+    ? applyEntitlementEnforcement(decision, {
+        env: input.env,
+        workspace: resolved.workspace,
+        projectId: input.projectId,
+        plan: resolved.subscription.plan,
+        channel: input.channel ?? "unknown",
+      })
+    : decision;
 }
 
 export async function reserveProjectUsage(input: {
