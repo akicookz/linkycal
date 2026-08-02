@@ -361,6 +361,72 @@ describe("workspace usage entitlements", () => {
     }
   }, 30_000);
 
+  test("a stale reservation cannot write to a period after subscription rebasing", async () => {
+    const d1Database = await createD1TestDb();
+    try {
+      const service = new UsageService(d1Database.db);
+      const freePeriod = await service.getOrCreatePeriod({
+        workspace: FREE_WORKSPACE,
+        subscription: null,
+        now: NOW,
+      });
+      const upgradedSubscription = {
+        id: "subscription-stale-reservation",
+        userId: FREE_WORKSPACE.ownerUserId,
+        teamId: null,
+        plan: "pro" as const,
+        interval: "monthly" as const,
+        status: "active" as const,
+        stripeCustomerId: null,
+        stripeSubscriptionId: null,
+        currentPeriodStart: NOW,
+        currentPeriodEnd: new Date("2026-09-15T12:00:00.000Z"),
+        cancelAtPeriodEnd: false,
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+      const paidPeriod = await service.getOrCreatePeriod({
+        workspace: FREE_WORKSPACE,
+        subscription: upgradedSubscription,
+        now: NOW,
+      });
+
+      const staleWrite = await d1Database.d1
+        .prepare(
+          "UPDATE workspace_usage_periods SET transactional_emails = transactional_emails + 1 WHERE id = ? AND superseded_at IS NULL",
+        )
+        .bind(freePeriod.id)
+        .run();
+      expect(staleWrite.meta.changes).toBe(0);
+
+      const input = {
+        workspace: FREE_WORKSPACE,
+        subscription: null,
+        plan: "free" as const,
+        key: "transactionalEmails" as const,
+        amount: 1,
+        operationId: "email-stale-after-rebase",
+        now: NOW,
+      };
+      await service.reserve(input);
+      const [event] = await d1Database.db
+        .select()
+        .from(dbSchema.workspaceUsageEvents)
+        .where(eq(
+          dbSchema.workspaceUsageEvents.operationId,
+          input.operationId,
+        ));
+      const [updatedPaidPeriod] = await d1Database.db
+        .select()
+        .from(dbSchema.workspaceUsagePeriods)
+        .where(eq(dbSchema.workspaceUsagePeriods.id, paidPeriod.id));
+      expect(event?.usagePeriodId).toBe(paidPeriod.id);
+      expect(updatedPaidPeriod?.transactionalEmails).toBe(1);
+    } finally {
+      await d1Database.close();
+    }
+  }, 30_000);
+
   test("an in-progress form may finish in bounded overage and exhausted quotas serialize consistently", async () => {
     testDatabase = createTestDb();
     const service = new UsageService(testDatabase.db);

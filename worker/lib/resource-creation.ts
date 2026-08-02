@@ -85,9 +85,14 @@ export async function createWithResourceCapacity<T>(input: {
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
   const amount = input.amount ?? 1;
+  const claimPrefix = await resourceClaimPrefix(
+    input.db,
+    input.projectId,
+    input.key,
+  );
   return createWithResourceClaims({
     db: input.db,
-    claimPrefix: `project:${input.projectId}:${input.key}`,
+    claimPrefix,
     amount,
     actionLabel: input.actionLabel ?? actionLabelFor(input.key, amount),
     capacity: async function projectCapacity() {
@@ -104,6 +109,24 @@ export async function createWithResourceCapacity<T>(input: {
     },
     create: input.create,
   });
+}
+
+async function resourceClaimPrefix(
+  db: AppDatabase,
+  projectId: string,
+  key: ResourceEntitlementKey,
+): Promise<string> {
+  if (
+    key !== "projects" &&
+    key !== "teamMembers" &&
+    key !== "calendarConnections"
+  ) {
+    return `project:${projectId}:${key}`;
+  }
+
+  const resolved = await new EntitlementService(db).resolveProject(projectId);
+  if (!resolved) throw new Error(`Project ${projectId} not found`);
+  return `workspace:${resolved.workspace.type}:${resolved.workspace.id}:${key}`;
 }
 
 export async function requireWorkspaceResourceCapacity(input: {

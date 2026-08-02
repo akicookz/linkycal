@@ -193,6 +193,57 @@ describe("static entitlement enforcement", () => {
     }
   }, 30_000);
 
+  test("workspace capacity is shared across concurrent creation from different projects", async () => {
+    const d1Database = await createD1TestDb();
+    try {
+      await seedStaticWorkspace(d1Database, {});
+      await d1Database.db.insert(dbSchema.projects).values({
+        id: "project-static-two",
+        userId: "owner-static",
+        teamId: "team-static",
+        name: "Second static project",
+        slug: "second-static-project",
+      });
+      async function connectCalendar(projectId: string, suffix: string) {
+        return createWithResourceCapacity({
+          db: d1Database.db,
+          projectId,
+          key: "calendarConnections",
+          create: async (db) => {
+            const connectionId = `calendar-concurrent-${suffix}`;
+            await db.insert(dbSchema.calendarConnections).values({
+              id: connectionId,
+              userId: "owner-static",
+              accessToken: "access",
+              refreshToken: "refresh",
+              email: `${suffix}@example.com`,
+            });
+            await db.insert(dbSchema.teamCalendarConnections).values({
+              id: `team-calendar-concurrent-${suffix}`,
+              teamId: "team-static",
+              connectionId,
+              createdByUserId: "owner-static",
+            });
+          },
+        });
+      }
+
+      const results = await Promise.all([
+        connectCalendar("project-static", "one"),
+        connectCalendar("project-static-two", "two"),
+      ]);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.filter((result) => !result.ok)).toHaveLength(1);
+      expect(
+        await d1Database.db
+          .select({ count: sql<number>`count(*)` })
+          .from(dbSchema.teamCalendarConnections),
+      ).toEqual([{ count: 1 }]);
+    } finally {
+      await d1Database.close();
+    }
+  }, 30_000);
+
   test("contact imports reject as one unit, then deduplicate existing and repeated emails before capacity", async () => {
     testDatabase = createTestDb();
     await seedStaticWorkspace(testDatabase, { contacts: 499 });

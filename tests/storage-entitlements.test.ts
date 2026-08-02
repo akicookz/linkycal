@@ -281,6 +281,55 @@ describe("storage entitlements", () => {
       await d1Database.close();
     }
   }, 30_000);
+
+  test("project accounting rollback preserves metadata when release fails between statements", async () => {
+    testDatabase = createTestDb();
+    await seedStorageProject(testDatabase, 100);
+    await testDatabase.db.insert(dbSchema.storedObjects).values({
+      id: "fault-object",
+      workspaceType: "team",
+      workspaceId: "team-storage",
+      projectId: "project-storage",
+      objectKey: "projects/project-storage/fault.png",
+      category: "project_asset",
+      sizeBytes: 100,
+    });
+    const sqlite = testDatabase.sqlite;
+    const originalClient = (testDatabase.db as unknown as { $client: unknown })
+      .$client;
+    const faultClient = {
+      query(query: string) {
+        const statement = sqlite.query(query);
+        if (!query.startsWith("DELETE FROM stored_objects")) return statement;
+        return {
+          run(...params: unknown[]) {
+            statement.run(...params);
+            throw new Error("injected accounting release failure");
+          },
+        };
+      },
+      transaction<T>(callback: () => T) {
+        return sqlite.transaction(callback);
+      },
+    };
+    (testDatabase.db as unknown as { $client: unknown }).$client = faultClient;
+    const bucket = {
+      list: async () => ({ objects: [], truncated: false }),
+      delete: async () => {},
+    } as unknown as R2Bucket;
+
+    try {
+      await expect(
+        deleteProjectStorage(testDatabase.db, bucket, "project-storage"),
+      ).rejects.toThrow("injected accounting release failure");
+    } finally {
+      (testDatabase.db as unknown as { $client: unknown }).$client =
+        originalClient;
+    }
+    expect(await totalBytes(testDatabase)).toBe(100);
+    expect(await testDatabase.db.select().from(dbSchema.storedObjects))
+      .toHaveLength(1);
+  });
 });
 
 async function seedStorageProject(

@@ -103,25 +103,17 @@ export class UsageService {
         ),
       )
       .limit(1);
-    if (existingPeriod) return existingPeriod;
+    if (existingPeriod && !existingPeriod.supersededAt) return existingPeriod;
 
-    const [activePeriod] = await this.db
-      .select()
-      .from(dbSchema.workspaceUsagePeriods)
-      .where(
-        and(
-          eq(
-            dbSchema.workspaceUsagePeriods.workspaceType,
-            input.workspace.type,
-          ),
-          eq(dbSchema.workspaceUsagePeriods.workspaceId, input.workspace.id),
-          ne(dbSchema.workspaceUsagePeriods.periodStart, bounds.start),
-          lte(dbSchema.workspaceUsagePeriods.periodStart, input.now),
-          gt(dbSchema.workspaceUsagePeriods.periodEnd, input.now),
-        ),
-      )
-      .orderBy(desc(dbSchema.workspaceUsagePeriods.periodStart))
-      .limit(1);
+    if (existingPeriod?.supersededAt) {
+      const canonicalPeriod = await this.findActivePeriod(input);
+      if (canonicalPeriod) return canonicalPeriod;
+      throw new Error(
+        `Superseded usage period has no active replacement for ${input.workspace.type}:${input.workspace.id}`,
+      );
+    }
+
+    const activePeriod = await this.findActivePeriod(input, bounds.start);
     if (activePeriod) {
       await carryUsagePeriod(this.db, input, bounds, activePeriod);
     } else {
@@ -160,6 +152,7 @@ export class UsageService {
           ),
           eq(dbSchema.workspaceUsagePeriods.workspaceId, input.workspace.id),
           eq(dbSchema.workspaceUsagePeriods.periodStart, bounds.start),
+          isNull(dbSchema.workspaceUsagePeriods.supersededAt),
         ),
       )
       .limit(1);
@@ -170,6 +163,31 @@ export class UsageService {
       );
     }
     return period;
+  }
+
+  private async findActivePeriod(
+    input: PeriodInput,
+    excludedStart?: Date,
+  ): Promise<dbSchema.WorkspaceUsagePeriodRow | null> {
+    const conditions = [
+      eq(dbSchema.workspaceUsagePeriods.workspaceType, input.workspace.type),
+      eq(dbSchema.workspaceUsagePeriods.workspaceId, input.workspace.id),
+      lte(dbSchema.workspaceUsagePeriods.periodStart, input.now),
+      gt(dbSchema.workspaceUsagePeriods.periodEnd, input.now),
+      isNull(dbSchema.workspaceUsagePeriods.supersededAt),
+    ];
+    if (excludedStart) {
+      conditions.push(
+        ne(dbSchema.workspaceUsagePeriods.periodStart, excludedStart),
+      );
+    }
+    const [period] = await this.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(and(...conditions))
+      .orderBy(desc(dbSchema.workspaceUsagePeriods.periodStart))
+      .limit(1);
+    return period ?? null;
   }
 
   async getDecision(
@@ -191,6 +209,13 @@ export class UsageService {
     input: MeteredReservationInput,
   ): Promise<EntitlementDecision> {
     assertReservationAmount(input.amount);
+    return this.reserveCurrentPeriod(input, 0);
+  }
+
+  private async reserveCurrentPeriod(
+    input: MeteredReservationInput,
+    retryCount: number,
+  ): Promise<EntitlementDecision> {
     const period = await this.getOrCreatePeriod(input);
     const currentUsed = usageValue(period, input.key);
     const initialDecision = evaluateEntitlement({
@@ -223,6 +248,12 @@ export class UsageService {
         allowOverage,
       );
       const updated = await this.getPeriodById(period.id);
+      if (updated.supersededAt) {
+        if (retryCount >= 2) {
+          throw new Error("Usage period changed repeatedly during reservation");
+        }
+        return this.reserveCurrentPeriod(input, retryCount + 1);
+      }
       if (state === "reserved" || state === "consumed") {
         if (input.observe) return initialDecision;
         return successfulReservationDecision(
@@ -242,7 +273,14 @@ export class UsageService {
       allowOverage,
     );
     if (!changed) {
-      return decisionFromPeriod(input, await this.getPeriodById(period.id));
+      const updated = await this.getPeriodById(period.id);
+      if (updated.supersededAt) {
+        if (retryCount >= 2) {
+          throw new Error("Usage period changed repeatedly during reservation");
+        }
+        return this.reserveCurrentPeriod(input, retryCount + 1);
+      }
+      return decisionFromPeriod(input, updated);
     }
 
     return allowExistingFormCompletion
@@ -396,17 +434,17 @@ export class UsageService {
     allowOverage: boolean,
   ): Promise<boolean> {
     const column = counterColumn(key);
-    const condition =
-      hardLimit === null || allowOverage
-        ? eq(dbSchema.workspaceUsagePeriods.id, periodId)
-        : and(
-            eq(dbSchema.workspaceUsagePeriods.id, periodId),
-            sql`${column} + ${amount} <= ${hardLimit}`,
-          );
+    const conditions = [
+      eq(dbSchema.workspaceUsagePeriods.id, periodId),
+      isNull(dbSchema.workspaceUsagePeriods.supersededAt),
+    ];
+    if (hardLimit !== null && !allowOverage) {
+      conditions.push(sql`${column} + ${amount} <= ${hardLimit}`);
+    }
     const result = await this.db
       .update(dbSchema.workspaceUsagePeriods)
       .set(counterSet(key, amount))
-      .where(condition);
+      .where(and(...conditions));
     return changeCount(result) === 1;
   }
 
@@ -533,7 +571,7 @@ async function carryUsagePeriod(
     await client.batch([
       client
         .prepare(
-          "INSERT INTO workspace_usage_periods (id, workspace_type, workspace_id, period_start, period_end, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, created_at, updated_at) SELECT ?, ?, ?, ?, ?, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, unixepoch(), ? FROM workspace_usage_periods WHERE id = ? ON CONFLICT(workspace_type, workspace_id, period_start) DO NOTHING",
+          "INSERT INTO workspace_usage_periods (id, workspace_type, workspace_id, period_start, period_end, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, created_at, updated_at) SELECT ?, ?, ?, ?, ?, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, unixepoch(), ? FROM workspace_usage_periods WHERE id = ? AND superseded_at IS NULL ON CONFLICT(workspace_type, workspace_id, period_start) DO NOTHING",
         )
         .bind(
           periodId,
@@ -546,13 +584,18 @@ async function carryUsagePeriod(
         ),
       client
         .prepare(
-          "UPDATE workspace_usage_events SET usage_period_id = ?, updated_at = ? WHERE usage_period_id = ? AND state = 'reserved' AND changes() = 1",
+          "UPDATE workspace_usage_periods SET superseded_at = ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL AND changes() = 1",
         )
         .bind(
-          periodId,
+          toEpochSeconds(input.now),
           toEpochSeconds(input.now),
           activePeriod.id,
         ),
+      client
+        .prepare(
+          "UPDATE workspace_usage_events SET usage_period_id = ?, updated_at = ? WHERE usage_period_id = ? AND state = 'reserved' AND changes() = 1",
+        )
+        .bind(periodId, toEpochSeconds(input.now), activePeriod.id),
     ]);
     return;
   }
@@ -561,7 +604,7 @@ async function carryUsagePeriod(
     const run = client.transaction(function carryPeriodTransaction() {
       const inserted = client
         .query(
-          "INSERT OR IGNORE INTO workspace_usage_periods (id, workspace_type, workspace_id, period_start, period_end, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, created_at, updated_at) SELECT ?, ?, ?, ?, ?, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, unixepoch(), ? FROM workspace_usage_periods WHERE id = ?",
+          "INSERT OR IGNORE INTO workspace_usage_periods (id, workspace_type, workspace_id, period_start, period_end, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, created_at, updated_at) SELECT ?, ?, ?, ?, ?, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, unixepoch(), ? FROM workspace_usage_periods WHERE id = ? AND superseded_at IS NULL",
         )
         .run(
           periodId,
@@ -573,6 +616,18 @@ async function carryUsagePeriod(
           activePeriod.id,
         );
       if (changeCount(inserted) !== 1) return;
+      const superseded = client
+        .query(
+          "UPDATE workspace_usage_periods SET superseded_at = ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL",
+        )
+        .run(
+          toEpochSeconds(input.now),
+          toEpochSeconds(input.now),
+          activePeriod.id,
+        );
+      if (changeCount(superseded) !== 1) {
+        throw new Error("Active usage period changed during rebasing");
+      }
       client
         .query(
           "UPDATE workspace_usage_events SET usage_period_id = ?, updated_at = ? WHERE usage_period_id = ? AND state = 'reserved'",
@@ -602,6 +657,22 @@ async function carryUsagePeriod(
     })
     .returning({ id: dbSchema.workspaceUsagePeriods.id });
   if (inserted.length === 0) return;
+  const superseded = await db
+    .update(dbSchema.workspaceUsagePeriods)
+    .set({ supersededAt: input.now, updatedAt: input.now })
+    .where(
+      and(
+        eq(dbSchema.workspaceUsagePeriods.id, activePeriod.id),
+        isNull(dbSchema.workspaceUsagePeriods.supersededAt),
+      ),
+    )
+    .returning({ id: dbSchema.workspaceUsagePeriods.id });
+  if (superseded.length === 0) {
+    await db
+      .delete(dbSchema.workspaceUsagePeriods)
+      .where(eq(dbSchema.workspaceUsagePeriods.id, periodId));
+    return;
+  }
   await db
     .update(dbSchema.workspaceUsageEvents)
     .set({ usagePeriodId: periodId, updatedAt: input.now })
@@ -775,7 +846,7 @@ async function reserveWithD1Batch(
   statements.push(
     client
       .prepare(
-        `UPDATE workspace_usage_periods SET ${column} = ${column} + ?, updated_at = ? WHERE id = ?${eventReleasedGate}${capClause}`,
+        `UPDATE workspace_usage_periods SET ${column} = ${column} + ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL${eventReleasedGate}${capClause}`,
       )
       .bind(
         input.amount,
@@ -851,7 +922,7 @@ function reserveWithSqliteTransaction(
       hardLimit === null || allowOverage ? [] : [input.amount, hardLimit];
     const result = client
       .query(
-        `UPDATE workspace_usage_periods SET ${column} = ${column} + ?, updated_at = ? WHERE id = ?${capClause}`,
+        `UPDATE workspace_usage_periods SET ${column} = ${column} + ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL${capClause}`,
       )
       .run(
         input.amount,

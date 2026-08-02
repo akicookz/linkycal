@@ -6,6 +6,28 @@ import { resolveProjectEntitlements } from "./entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
+interface SyncStatement {
+  run(...params: unknown[]): unknown;
+}
+
+interface SyncSqliteClient {
+  query(query: string): SyncStatement;
+  transaction<T>(callback: () => T): () => T;
+}
+
+interface D1StatementLike {
+  bind(...values: unknown[]): D1StatementLike;
+}
+
+interface D1ClientLike {
+  prepare(query: string): D1StatementLike;
+  batch(statements: D1StatementLike[]): Promise<unknown[]>;
+}
+
+interface DatabaseWithClient {
+  $client?: unknown;
+}
+
 export async function reconcileProjectStorage(
   db: AppDatabase,
   bucket: R2Bucket,
@@ -126,30 +148,70 @@ export async function deleteProjectStorage(
     .from(dbSchema.storedObjects)
     .where(eq(dbSchema.storedObjects.projectId, projectId));
   const releasedBytes = Number(tracked?.sizeBytes ?? 0);
-  await db
-    .delete(dbSchema.storedObjects)
-    .where(eq(dbSchema.storedObjects.projectId, projectId));
-  if (releasedBytes > 0) {
-    await db
-      .update(dbSchema.workspaceStorageTotals)
-      .set({
-        sizeBytes:
-          sql`max(0, ${dbSchema.workspaceStorageTotals.sizeBytes} - ${releasedBytes})`,
-      })
-      .where(
-        and(
-          eq(
-            dbSchema.workspaceStorageTotals.workspaceType,
-            resolved.workspace.type,
-          ),
-          eq(
-            dbSchema.workspaceStorageTotals.workspaceId,
-            resolved.workspace.id,
-          ),
-        ),
-      );
-  }
+  await releaseProjectStorageAccounting(
+    db,
+    projectId,
+    resolved.workspace.type,
+    resolved.workspace.id,
+  );
   return { objectCount: objects.length, releasedBytes };
+}
+
+async function releaseProjectStorageAccounting(
+  db: AppDatabase,
+  projectId: string,
+  workspaceType: "personal" | "team",
+  workspaceId: string,
+): Promise<void> {
+  const client = (db as AppDatabase & DatabaseWithClient).$client;
+  if (isD1Client(client)) {
+    await client.batch([
+      client
+        .prepare(
+          "UPDATE workspace_storage_totals SET size_bytes = max(0, size_bytes - (SELECT coalesce(sum(size_bytes), 0) FROM stored_objects WHERE project_id = ?)), updated_at = unixepoch() WHERE workspace_type = ? AND workspace_id = ?",
+        )
+        .bind(projectId, workspaceType, workspaceId),
+      client
+        .prepare("DELETE FROM stored_objects WHERE project_id = ?")
+        .bind(projectId),
+    ]);
+    return;
+  }
+
+  if (isSyncSqliteClient(client)) {
+    const run = client.transaction(function releaseStorageTransaction() {
+      client
+        .query(
+          "UPDATE workspace_storage_totals SET size_bytes = max(0, size_bytes - (SELECT coalesce(sum(size_bytes), 0) FROM stored_objects WHERE project_id = ?)), updated_at = unixepoch() WHERE workspace_type = ? AND workspace_id = ?",
+        )
+        .run(projectId, workspaceType, workspaceId);
+      client
+        .query("DELETE FROM stored_objects WHERE project_id = ?")
+        .run(projectId);
+    });
+    run();
+    return;
+  }
+
+  throw new Error("Atomic storage accounting is unavailable");
+}
+
+function isD1Client(client: unknown): client is D1ClientLike {
+  if (!client || typeof client !== "object") return false;
+  const candidate = client as Partial<D1ClientLike>;
+  return (
+    typeof candidate.prepare === "function" &&
+    typeof candidate.batch === "function"
+  );
+}
+
+function isSyncSqliteClient(client: unknown): client is SyncSqliteClient {
+  if (!client || typeof client !== "object") return false;
+  const candidate = client as Partial<SyncSqliteClient>;
+  return (
+    typeof candidate.query === "function" &&
+    typeof candidate.transaction === "function"
+  );
 }
 
 async function listAll(bucket: R2Bucket, prefix: string): Promise<R2Object[]> {

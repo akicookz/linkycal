@@ -980,6 +980,7 @@ export const workspaceUsagePeriods = sqliteTable(
     transactionalEmails: integer("transactional_emails").notNull().default(0),
     integrationRequests: integer("integration_requests").notNull().default(0),
     enrichments: integer("enrichments").notNull().default(0),
+    supersededAt: integer("superseded_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),
