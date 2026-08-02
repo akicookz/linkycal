@@ -48,6 +48,8 @@ import {
 } from "@/lib/availability";
 import { queryClient } from "@/lib/query-client";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import {
   formSupportsMergedDetails,
   type FormExperienceForm,
@@ -235,7 +237,7 @@ export default function EventTypeForm() {
   const [busyCalendars, setBusyCalendars] = useState<Array<{ connectionId: string; calendarId: string }>>([]);
   const [inviteConnectionIds, setInviteConnectionIds] = useState<string[]>([]);
   const [calendarConnectError, setCalendarConnectError] = useState<string | null>(null);
-  const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
+  const planLimitDialog = usePlanLimitDialog();
 
   // Fetch existing event types (for copy-from selector)
   const { data: existingEventTypes } = useQuery<EventType[]>({
@@ -590,6 +592,8 @@ export default function EventTypeForm() {
         body: JSON.stringify({ returnUrl }),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to connect calendar");
       }
@@ -599,9 +603,7 @@ export default function EventTypeForm() {
       if (data.url) window.location.href = data.url;
     },
     onError: (err: Error) => {
-      if (err.message.includes("Plan limit")) {
-        setShowUpgradeDialog(true);
-      } else {
+      if (!planLimitDialog.handleEntitlementError(err, "connect another calendar")) {
         setCalendarConnectError(err.message);
       }
     },
@@ -1492,10 +1494,12 @@ export default function EventTypeForm() {
 
       {/* Upgrade Dialog */}
       <UpgradeDialog
-        open={showUpgradeDialog}
-        onClose={() => setShowUpgradeDialog(false)}
+        open={planLimitDialog.open}
+        onClose={planLimitDialog.closePlanLimitDialog}
         projectId={projectId!}
-        description="Your current plan allows 1 calendar connection. Upgrade to Pro to connect unlimited Google Calendar accounts."
+        entitlement="calendarConnections"
+        actionLabel={planLimitDialog.state?.actionLabel ?? "connect another calendar"}
+        decision={planLimitDialog.state?.decision}
       />
 
       {/* Add Override Dialog */}

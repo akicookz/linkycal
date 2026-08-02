@@ -27,6 +27,7 @@ import { AppBreadcrumb } from "@/components/AppBreadcrumb";
 import { ContactActivityTimeline } from "@/components/ContactActivityTimeline";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
 
 import {
   Card,
@@ -46,6 +47,8 @@ import {
 } from "@/components/NextActionComposer";
 import { TagPickerContent } from "@/components/TagPicker";
 import { useMinuteNow } from "@/hooks/use-minute-now";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import {
   formatNextActionDeadline,
   formatNextActionRelative,
@@ -333,6 +336,7 @@ export default function ContactDetailPage() {
   // ─── Enrichment ───
 
   const [enrichToast, setEnrichToast] = useState<string | null>(null);
+  const planLimitDialog = usePlanLimitDialog();
 
   useEffect(() => {
     if (!enrichToast) return;
@@ -347,6 +351,8 @@ export default function ContactDetailPage() {
     mutationFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/contacts/${contactId}/enrich`, { method: "POST" });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? "Failed to enrich contact");
       }
@@ -359,10 +365,9 @@ export default function ContactDetailPage() {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "contacts"] });
     },
     onError: (err: Error) => {
-      const msg = err.message.includes("Monthly enrichment limit")
-        ? "Monthly enrichment limit reached."
-        : (err.message || "Failed to enrich contact.");
-      setEnrichToast(msg);
+      if (!planLimitDialog.handleEntitlementError(err, "enrich this contact")) {
+        setEnrichToast(err.message || "Failed to enrich contact.");
+      }
     },
   });
 
@@ -953,6 +958,15 @@ export default function ContactDetailPage() {
           </Card>
         </div>
       </div>
+
+      <UpgradeDialog
+        open={planLimitDialog.open}
+        onClose={planLimitDialog.closePlanLimitDialog}
+        projectId={projectId!}
+        entitlement="enrichments"
+        actionLabel={planLimitDialog.state?.actionLabel ?? "enrich this contact"}
+        decision={planLimitDialog.state?.decision}
+      />
     </div>
   );
 }

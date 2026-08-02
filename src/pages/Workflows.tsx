@@ -41,6 +41,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import {
   workflowTemplates,
   type WorkflowTemplateDefinition,
@@ -100,6 +103,7 @@ const defaultFormData: CreateWorkflowData = {
 export default function Workflows() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const planLimitDialog = usePlanLimitDialog();
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
@@ -139,6 +143,8 @@ export default function Workflows() {
         body: JSON.stringify(data),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to create workflow");
       }
@@ -151,6 +157,9 @@ export default function Workflows() {
       if (data?.workflow?.id) {
         navigate(`/app/projects/${projectId}/workflows/${data.workflow.id}`);
       }
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(error, "create another workflow");
     },
   });
 
@@ -180,6 +189,8 @@ export default function Workflows() {
         }),
       });
       if (!createRes.ok) {
+        const planLimitError = await readEntitlementError(createRes.clone());
+        if (planLimitError) throw planLimitError;
         const err = await createRes.json().catch(() => ({}));
         throw new Error(err.error || "Failed to create workflow from template");
       }
@@ -217,6 +228,12 @@ export default function Workflows() {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId, "workflows"] });
       setTemplateDialogOpen(false);
       navigate(`/app/projects/${projectId}/workflows/${workflow.id}`);
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(
+        error,
+        "create a workflow from this template",
+      );
     },
   });
 
@@ -556,6 +573,15 @@ export default function Workflows() {
           }}
         />
       )}
+
+      <UpgradeDialog
+        open={planLimitDialog.open}
+        onClose={planLimitDialog.closePlanLimitDialog}
+        projectId={projectId!}
+        entitlement="workflows"
+        actionLabel={planLimitDialog.state?.actionLabel ?? "create another workflow"}
+        decision={planLimitDialog.state?.decision}
+      />
     </div>
   );
 }

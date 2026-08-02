@@ -46,6 +46,14 @@ import {
 import { ImageUpload } from "@/components/ImageUpload";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import { queryClient } from "@/lib/query-client";
+import {
+  isEntitlementRequestError,
+  readEntitlementError,
+} from "@/lib/entitlement-errors";
+import type {
+  EntitlementDecision,
+  EntitlementKey,
+} from "../../shared/plan-catalog";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -165,9 +173,13 @@ export default function Settings() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [disconnectDialogOpen, setDisconnectDialogOpen] = useState(false);
   const [showUpgradeDialog, setShowUpgradeDialog] = useState(false);
-  const [upgradeDescription, setUpgradeDescription] = useState(
-    "Upgrade to Pro to unlock this project feature.",
+  const [upgradeEntitlement, setUpgradeEntitlement] =
+    useState<EntitlementKey>("customCss");
+  const [upgradeActionLabel, setUpgradeActionLabel] = useState(
+    "use this feature",
   );
+  const [upgradeDecision, setUpgradeDecision] =
+    useState<EntitlementDecision | null>(null);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   // Theme state
@@ -338,6 +350,10 @@ export default function Settings() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ css: customCss }),
       });
+      if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
+      }
       const body = await res.json().catch(() => ({})) as { error?: string };
       if (!res.ok) throw new Error(body.error || "Failed to save Custom CSS");
       return body;
@@ -346,6 +362,13 @@ export default function Settings() {
       queryClient.invalidateQueries({
         queryKey: ["projects", projectId, "custom-css"],
       });
+    },
+    onError: (error) => {
+      if (!isEntitlementRequestError(error)) return;
+      setUpgradeEntitlement(error.decision.key);
+      setUpgradeActionLabel("publish Custom CSS");
+      setUpgradeDecision(error.decision);
+      setShowUpgradeDialog(true);
     },
   });
 
@@ -411,6 +434,8 @@ export default function Settings() {
         body: JSON.stringify({}),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to initiate calendar connection");
       }
@@ -421,10 +446,11 @@ export default function Settings() {
       window.location.href = data.url;
     },
     onError: (err: Error) => {
-      if (err.message.includes("Plan limit")) {
-        setUpgradeDescription(
-          "Your current plan allows 1 calendar connection. Upgrade to Pro to connect unlimited Google Calendar accounts.",
-        );
+      if (isEntitlementRequestError(err)) {
+        const { decision } = err;
+        setUpgradeEntitlement(decision.key);
+        setUpgradeActionLabel("connect another calendar");
+        setUpgradeDecision(decision);
         setShowUpgradeDialog(true);
       }
     },
@@ -800,9 +826,9 @@ export default function Settings() {
                 <Button
                   size="sm"
                   onClick={() => {
-                    setUpgradeDescription(
-                      "Custom CSS requires a Pro or Business plan.",
-                    );
+                    setUpgradeEntitlement("customCss");
+                    setUpgradeActionLabel("publish Custom CSS");
+                    setUpgradeDecision(null);
                     setShowUpgradeDialog(true);
                   }}
                 >
@@ -885,9 +911,9 @@ export default function Settings() {
                     size="sm"
                     aria-label="Upgrade to configure analytics"
                     onClick={() => {
-                      setUpgradeDescription(
-                        "Analytics integrations require a Pro or Business plan.",
-                      );
+                      setUpgradeEntitlement("analytics");
+                      setUpgradeActionLabel("configure analytics integrations");
+                      setUpgradeDecision(null);
                       setShowUpgradeDialog(true);
                     }}
                   >
@@ -1121,7 +1147,9 @@ export default function Settings() {
         open={showUpgradeDialog}
         onClose={() => setShowUpgradeDialog(false)}
         projectId={projectId!}
-        description={upgradeDescription}
+        entitlement={upgradeEntitlement}
+        actionLabel={upgradeActionLabel}
+        decision={upgradeDecision ?? undefined}
       />
     </div>
   );

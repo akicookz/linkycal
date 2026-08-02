@@ -215,7 +215,8 @@ function UpgradePrompt({ projectId }: { projectId: string }) {
         open={showUpgradeDialog}
         onClose={() => setShowUpgradeDialog(false)}
         projectId={projectId}
-        description="Analytics requires a Pro or Business plan."
+        entitlement="analytics"
+        actionLabel="view analytics"
       />
     </>
   );

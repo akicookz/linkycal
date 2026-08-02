@@ -42,6 +42,9 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { queryClient } from "@/lib/query-client";
+import { UpgradeDialog } from "@/components/UpgradeDialog";
+import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
+import { readEntitlementError } from "@/lib/entitlement-errors";
 import { copyToClipboard, copyToClipboardLazy } from "@/lib/utils";
 import {
   generateFormApiPrompt,
@@ -111,6 +114,7 @@ const defaultFormData: CreateFormData = {
 export default function Forms() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const planLimitDialog = usePlanLimitDialog();
 
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -159,8 +163,10 @@ export default function Forms() {
         body: JSON.stringify(data),
       });
       if (!res.ok) {
+        const planLimitError = await readEntitlementError(res.clone());
+        if (planLimitError) throw planLimitError;
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Failed to create form");
+        throw new Error(err.error || err.message || "Failed to create form");
       }
       const json = await res.json();
       return json;
@@ -171,6 +177,9 @@ export default function Forms() {
       if (data?.form?.id) {
         navigate(`/app/projects/${projectId}/forms/${data.form.id}`);
       }
+    },
+    onError: (error) => {
+      planLimitDialog.handleEntitlementError(error, "create another form");
     },
   });
 
@@ -610,6 +619,15 @@ export default function Forms() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <UpgradeDialog
+        open={planLimitDialog.open}
+        onClose={planLimitDialog.closePlanLimitDialog}
+        projectId={projectId!}
+        entitlement="forms"
+        actionLabel={planLimitDialog.state?.actionLabel ?? "create another form"}
+        decision={planLimitDialog.state?.decision}
+      />
     </div>
   );
 }
