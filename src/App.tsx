@@ -7,6 +7,7 @@ import AuthGuard from "./components/AuthGuard";
 import OnboardingGuard from "./components/OnboardingGuard";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Landing from "./pages/Landing";
+import Pricing from "./pages/Pricing";
 
 import Dashboard from "./pages/Dashboard";
 import Onboarding from "./pages/Onboarding";
@@ -61,6 +62,7 @@ function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/docs" element={<Docs />} />
       <Route path="/features/:slug" element={<FeaturePage />} />
       <Route path="/alternatives/:slug" element={<AlternativePage />} />

@@ -4,7 +4,7 @@ import { Logo } from "@/components/Logo";
 const pageLinks = [
   { label: "Home", to: "/" },
   { label: "Features", to: "/#features" },
-  { label: "Pricing", to: "/#pricing" },
+  { label: "Pricing", to: "/pricing" },
   { label: "FAQ", to: "/#faq" },
   { label: "Documentation", to: "/docs" },
 ];

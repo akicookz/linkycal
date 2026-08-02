@@ -1,70 +1,12 @@
 import { useState } from "react";
-import { Check } from "lucide-react";
+import { ArrowRight, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { plans } from "@/lib/constants";
 
 interface PricingCardsProps {
   onGetStarted?: () => void;
 }
-
-const plans = [
-  {
-    name: "Free",
-    monthlyPrice: 0,
-    annualPrice: 0,
-    description: "For personal projects and trying things out.",
-    features: [
-      "1 project",
-      "3 forms",
-      "3 event types",
-      "100 contacts",
-      "1 workflow",
-      "1 calendar connection",
-      "Solo workspace",
-      "Community support",
-    ],
-    cta: "Get Started Free",
-    highlighted: false,
-  },
-  {
-    name: "Pro",
-    monthlyPrice: 29,
-    annualPrice: 24,
-    description: "For growing teams that need more power.",
-    badge: "Most Popular",
-    features: [
-      "5 projects",
-      "20 forms per project",
-      "20 event types",
-      "5,000 contacts per project",
-      "10 workflows",
-      "Google Calendar sync",
-      "API access",
-      "Priority support",
-    ],
-    cta: "Start 7-Day Free Trial",
-    highlighted: true,
-  },
-  {
-    name: "Business",
-    monthlyPrice: 99,
-    annualPrice: 82,
-    description: "For teams that need everything, unlimited.",
-    features: [
-      "20 projects",
-      "Unlimited forms",
-      "Unlimited event types",
-      "Unlimited contacts",
-      "Unlimited workflows",
-      "Google Calendar sync",
-      "API access",
-      "Custom embeddable widgets",
-      "Dedicated support",
-    ],
-    cta: "Start 7-Day Free Trial",
-    highlighted: false,
-  },
-];
 
 function PricingCards({ onGetStarted }: PricingCardsProps) {
   const [annual, setAnnual] = useState(false);
@@ -104,22 +46,22 @@ function PricingCards({ onGetStarted }: PricingCardsProps) {
       {/* Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
         {plans.map((plan) => {
-          const price = annual ? plan.annualPrice : plan.monthlyPrice;
+          const price = annual ? plan.annualPrice : plan.price;
           return (
             <div
-              key={plan.name}
+              key={plan.id}
               className={cn(
                 "card-glow-secondary p-7 flex flex-col",
-                plan.highlighted && "card-glow-primary ring-2 ring-brand/15",
+                plan.popular && "card-glow-primary ring-2 ring-brand/15",
               )}
             >
               <div className="flex items-center gap-2 mb-1">
                 <h3 className="text-lg font-semibold text-foreground">
                   {plan.name}
                 </h3>
-                {plan.badge && (
+                {plan.popular && (
                   <span className="text-[11px] font-semibold text-brand bg-brand/8 border border-brand/10 px-2 py-0.5 rounded-full">
-                    {plan.badge}
+                    Most popular
                   </span>
                 )}
               </div>
@@ -141,11 +83,12 @@ function PricingCards({ onGetStarted }: PricingCardsProps) {
                 ))}
               </ul>
               <Button
-                variant={plan.highlighted ? "default" : "outline"}
+                variant={plan.popular ? "default" : "outline"}
                 className="w-full"
                 onClick={onGetStarted}
               >
-                {plan.cta}
+                <ArrowRight className="size-4" />
+                {plan.id === "free" ? "Get started free" : `Choose ${plan.name}`}
               </Button>
             </div>
           );

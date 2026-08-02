@@ -11,7 +11,7 @@ interface MarketingNavProps {
 const navLinks = [
   { label: "Features", to: "/#features" },
   { label: "How it works", to: "/#how-it-works" },
-  { label: "Pricing", to: "/#pricing" },
+  { label: "Pricing", to: "/pricing" },
   { label: "FAQ", to: "/#faq" },
   { label: "Docs", to: "/docs" },
 ];

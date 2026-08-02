@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { plans as customerPlans } from "@/lib/constants";
 import { CopyLlmsButton } from "@/components/marketing/CopyLlmsButton";
 
 interface MarketingCtaProps {
@@ -874,60 +875,18 @@ interface PricingPlan {
   excluded: string[];
 }
 
-const pricingPlans: PricingPlan[] = [
-  {
-    name: "Free plan",
-    audience: "For personal projects & trying things out",
-    monthlyPrice: 0,
-    annualPrice: 0,
-    highlighted: false,
-    cta: "Get Started",
-    features: [
-      "1 project",
-      "3 forms & 3 event types",
-      "100 contacts",
-      "1 workflow",
-      "1 calendar connection",
-      "Community support",
-    ],
-    excluded: ["Team members", "API access"],
-  },
-  {
-    name: "Pro plan",
-    audience: "For freelancers & small teams",
-    monthlyPrice: 29,
-    annualPrice: 24,
-    highlighted: true,
-    cta: "Start 7-Day Free Trial",
-    features: [
-      "5 projects",
-      "20 forms & 20 event types per project",
-      "5,000 contacts per project",
-      "10 workflows",
-      "Google Calendar sync",
-      "API & MCP access",
-      "Priority support",
-    ],
-    excluded: ["Custom embeddable widgets"],
-  },
-  {
-    name: "Business plan",
-    audience: "For growing teams & agencies",
-    monthlyPrice: 99,
-    annualPrice: 82,
-    highlighted: false,
-    cta: "Start 7-Day Free Trial",
-    features: [
-      "Everything in Pro +",
-      "20 projects",
-      "Unlimited forms, events & workflows",
-      "Unlimited contacts",
-      "Custom embeddable widgets",
-      "Dedicated support",
-    ],
-    excluded: [],
-  },
-];
+const pricingPlans: PricingPlan[] = customerPlans.map(function pricingPlan(plan) {
+  return {
+    name: `${plan.name} plan`,
+    audience: plan.description,
+    monthlyPrice: plan.price,
+    annualPrice: plan.annualPrice,
+    highlighted: plan.popular ?? false,
+    cta: plan.id === "free" ? "Get started free" : `Choose ${plan.name}`,
+    features: plan.features,
+    excluded: plan.limits,
+  };
+});
 
 export function PricingSection({ onGetStarted }: MarketingCtaProps) {
   const [annual, setAnnual] = useState(false);
@@ -1089,7 +1048,7 @@ const faqItems: FaqItemData[] = [
   {
     question: "What's included in the free plan?",
     answer:
-      "The free plan includes 1 project, 3 forms, 3 event types, 100 contacts, 1 workflow, and 1 calendar connection. Team members, more capacity, and API access require Pro or Business.",
+      "The free plan includes 1 project, 3 forms, 3 event types, 500 contacts, 500 responses per month, unlimited bookings, 1 workflow, 1 calendar connection, REST API access, MCP access, widgets, and theme overrides. Team collaboration, Custom CSS, branding removal, and analytics start on Pro.",
   },
   {
     question: "Can I migrate from Calendly or Typeform?",

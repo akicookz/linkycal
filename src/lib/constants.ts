@@ -1,3 +1,5 @@
+import { PLAN_CATALOG, PLAN_ORDER } from "../../shared/plan-catalog";
+
 // ─── Shared Constants ─────────────────────────────────────────────────────────
 
 // ─── Timezones ────────────────────────────────────────────────────────────────
@@ -90,72 +92,44 @@ export interface PlanDefinition {
   limits: string[];
 }
 
-export const plans: PlanDefinition[] = [
-  {
-    id: "free",
-    name: "Free",
-    price: 0,
-    annualPrice: 0,
-    interval: "forever",
-    description: "For getting started",
+export const plans: PlanDefinition[] = PLAN_ORDER.map(function planDefinition(id) {
+  const plan = PLAN_CATALOG[id];
+  const entitlement = plan.entitlements;
+  return {
+    id,
+    name: plan.name,
+    price: plan.prices.monthly,
+    annualPrice: plan.prices.annualMonthly,
+    interval: id === "free" ? "forever" : "month",
+    description: plan.description,
+    popular: plan.highlighted,
     features: [
-      "1 project",
-      "3 forms per project",
-      "3 event types",
-      "100 contacts per project",
-      "1 workflow",
-      "1 calendar connection",
-      "Community support",
+      `${formatLimit(entitlement.projects.limit)} projects`,
+      `${formatLimit(entitlement.forms.limit)} forms per project`,
+      `${formatLimit(entitlement.eventTypes.limit)} event types per project`,
+      `${formatLimit(entitlement.contacts.limit)} contacts per project`,
+      `${formatLimit(entitlement.formResponses.limit)} responses per month`,
+      "Unlimited bookings",
+      "REST API and MCP access",
+      "Widgets and theme overrides",
+      ...(entitlement.customCss.enabled
+        ? ["Custom CSS and branding removal"]
+        : []),
+      ...(entitlement.analytics.enabled
+        ? [`Analytics with ${entitlement.analyticsRetentionMonths.limit}-month history`]
+        : []),
     ],
     limits: [
-      "No team members",
-      "No API access",
-      "No custom widgets",
+      ...(!entitlement.teamMembers.enabled ? ["Team members not included"] : []),
+      ...(!entitlement.customCss.enabled ? ["Custom CSS not included"] : []),
+      ...(!entitlement.analytics.enabled ? ["Analytics not included"] : []),
     ],
-  },
-  {
-    id: "pro",
-    name: "Pro",
-    price: 29,
-    annualPrice: 24,
-    interval: "month",
-    description: "For growing businesses",
-    popular: true,
-    features: [
-      "5 projects",
-      "20 forms per project",
-      "20 event types",
-      "5,000 contacts per project",
-      "10 workflows",
-      "Google Calendar sync",
-      "Full API access",
-      "Priority support",
-    ],
-    limits: [
-      "No custom widgets",
-    ],
-  },
-  {
-    id: "business",
-    name: "Business",
-    price: 99,
-    annualPrice: 82,
-    interval: "month",
-    description: "For teams and agencies",
-    features: [
-      "20 projects",
-      "Unlimited forms",
-      "Unlimited event types",
-      "Unlimited contacts",
-      "Unlimited workflows",
-      "Google Calendar sync",
-      "Full API access",
-      "Custom embeddable widgets",
-      "Dedicated support",
-    ],
-    limits: [],
-  },
-];
+  };
+});
+
+function formatLimit(limit: number | null): string {
+  return limit === null ? "Unlimited" : limit.toLocaleString("en-US");
+}
 
 // ─── Form Field Defaults ──────────────────────────────────────────────────────
 
