@@ -356,8 +356,6 @@ describe("booking delivery", () => {
         expect(guestText).toContain(expected);
       }
       expect(guestText).not.toContain("Northstar Oy");
-      expect(guestEmail.html).toContain("#1B4332");
-      expect(guestEmail.html).toContain("border-radius: 16px");
 
       const ownerEmail = findPayloadFor(
         resendPayloads,

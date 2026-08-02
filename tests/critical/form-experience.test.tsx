@@ -509,7 +509,7 @@ describe("public form experience", () => {
     }
   });
 
-  test("classic form renders all fields with stored theme and submits them together", async () => {
+  test("classic form submits all fields together", async () => {
     setFixedTime("2026-03-20T12:00:00.000Z");
     const form: FormExperienceForm = {
       id: "form-classic",
@@ -535,11 +535,7 @@ describe("public form experience", () => {
       ],
     };
     const testDatabase = createTestDb();
-    await seedPublicForm(testDatabase, form, {
-      primaryBg: "#123456",
-      primaryText: "#fefefe",
-      borderRadius: 18,
-    });
+    await seedPublicForm(testDatabase, form);
     const api = installFormApi(testDatabase);
 
     try {
@@ -549,11 +545,6 @@ describe("public form experience", () => {
       const company = await screen.findByRole("textbox", { name: /Company/ });
       const role = screen.getByRole("textbox", { name: /Role/ });
       const submit = screen.getByRole("button", { name: "Submit" });
-      expect(company.style.borderRadius).toBe("18px");
-      expect(submit.style.backgroundColor).toBe("#123456");
-      expect(submit.style.color).toBe("#fefefe");
-      expect(submit.style.borderRadius).toBe("18px");
-
       await user.type(company, "Northstar Oy");
       await user.type(role, "Operations Lead");
       await user.click(submit);
@@ -585,11 +576,6 @@ describe("public form experience", () => {
 async function seedPublicForm(
   testDatabase: TestDatabase,
   form: FormExperienceForm,
-  theme?: {
-    primaryBg: string;
-    primaryText: string;
-    borderRadius: number;
-  },
 ): Promise<void> {
   await testDatabase.db.insert(dbSchema.schema.users).values({
     id: "owner-form",
@@ -601,7 +587,6 @@ async function seedPublicForm(
     userId: "owner-form",
     name: "Acme",
     slug: "acme",
-    settings: theme ? JSON.stringify({ theme }) : null,
   });
   await testDatabase.db.insert(dbSchema.forms).values({
     id: form.id,

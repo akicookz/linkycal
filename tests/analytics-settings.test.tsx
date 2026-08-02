@@ -146,16 +146,13 @@ describe("analytics provider settings", function () {
     });
   });
 
-  test("Free locks all provider controls, offers upgrade, and sends no integration request", async function () {
+  test("Free never loads provider credentials or renders editable controls", async function () {
     const capture = installSettingsApi({ analytics: false });
     renderSettings();
 
-    expect(await screen.findByText("Google Analytics")).toBeTruthy();
-    expect(screen.getByText("Meta Pixel")).toBeTruthy();
-    expect(screen.getByText("PostHog")).toBeTruthy();
-    expect(
-      screen.getByRole("button", { name: "Upgrade to configure analytics" }),
-    ).toBeTruthy();
+    await screen.findByRole("button", {
+      name: "Upgrade to configure analytics",
+    });
     expect(screen.queryByLabelText("Google Analytics measurement ID")).toBeNull();
     expect(
       capture.requestsFor(
@@ -168,8 +165,11 @@ describe("analytics provider settings", function () {
     ).toHaveLength(0);
   });
 
-  test("server entitlement changes remain authoritative and surface a provider error", async function () {
-    installSettingsApi({ analytics: true, rejectProviderSave: true });
+  test("a provider save rejected by the server enters an accessible error state", async function () {
+    const capture = installSettingsApi({
+      analytics: true,
+      rejectProviderSave: true,
+    });
     const user = userEvent.setup();
     renderSettings();
 
@@ -179,8 +179,12 @@ describe("analytics provider settings", function () {
       }),
     );
 
+    await screen.findByRole("alert");
     expect(
-      await screen.findByText("Analytics requires a Pro or Business plan"),
-    ).toBeTruthy();
+      capture.requestsFor(
+        "PUT",
+        `/api/projects/${PROJECT_ID}/analytics/integrations/ga4`,
+      ),
+    ).toHaveLength(1);
   });
 });

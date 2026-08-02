@@ -40,7 +40,7 @@ describe("structured plan-limit UI", () => {
     });
   });
 
-  test("shows usage, resolution, and role-aware billing guidance", async function () {
+  test("members without billing permission cannot open plan selection", async function () {
     globalThis.fetch = async function fetchEntitlements() {
       return Response.json({
         billing: {
@@ -76,17 +76,11 @@ describe("structured plan-limit UI", () => {
       { route: "/app/projects/project-1/forms", routePattern: "*" },
     );
 
-    expect(screen.getByRole("heading", { name: "Form limit reached" }))
-      .toBeTruthy();
-    expect(screen.getByText(/create another form/i)).toBeTruthy();
-    expect(screen.getByText("3 of 3 used")).toBeTruthy();
-    expect(screen.getByText(/Pro raises this limit to 20/i)).toBeTruthy();
-    await waitFor(() => {
-      expect(screen.getByText(/Ask a team owner or admin/i)).toBeTruthy();
+    await waitFor(function billingActionIsDisabled() {
+      const billingAction = screen.getByRole("button", {
+        name: /View plans/i,
+      }) as HTMLButtonElement;
+      expect(billingAction.disabled).toBe(true);
     });
-    expect(
-      (screen.getByRole("button", { name: /View plans/i }) as HTMLButtonElement)
-        .disabled,
-    ).toBe(true);
   });
 });

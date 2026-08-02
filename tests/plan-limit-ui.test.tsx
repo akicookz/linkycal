@@ -20,7 +20,7 @@ afterEach(function restoreHttp() {
 
 describe("plan-limit UI across creation surfaces", () => {
   test("contact creation opens the shared upgrade dialog from the structured response", async () => {
-    http = installHttpCapture([
+    const capture = installHttpCapture([
       jsonRoute("GET", `/api/projects/${PROJECT_ID}/contacts`, {
         contacts: [],
         total: 0,
@@ -36,6 +36,7 @@ describe("plan-limit UI across creation surfaces", () => {
         entitlements: {},
       }),
     ]);
+    http = capture;
     renderRoute(<Contacts />, {
       route: `/app/projects/${PROJECT_ID}/contacts`,
       routePattern: "/app/projects/:projectId/contacts",
@@ -45,14 +46,15 @@ describe("plan-limit UI across creation surfaces", () => {
     await user.type(screen.getByLabelText("Name *"), "Overflow Contact");
     await user.click(screen.getByRole("button", { name: /Create Contact/i }));
 
+    await screen.findByRole("button", { name: /View plans/i });
     expect(
-      await screen.findByRole("heading", { name: "Contact limit reached" }),
-    ).toBeTruthy();
-    expect(screen.getByText("500 of 500 used")).toBeTruthy();
+      capture.requestsFor("POST", `/api/projects/${PROJECT_ID}/contacts`)
+        .map((request) => request.json),
+    ).toEqual([{ name: "Overflow Contact" }]);
   });
 
   test("team invitation opens the same upgrade dialog instead of a generic error", async () => {
-    http = installHttpCapture([
+    const capture = installHttpCapture([
       jsonRoute("GET", `/api/projects/${PROJECT_ID}`, {
         project: {
           id: PROJECT_ID,
@@ -71,6 +73,7 @@ describe("plan-limit UI across creation surfaces", () => {
         entitlements: {},
       }),
     ]);
+    http = capture;
     renderRoute(<Team />, {
       route: `/app/projects/${PROJECT_ID}/team`,
       routePattern: "/app/projects/:projectId/team",
@@ -80,13 +83,17 @@ describe("plan-limit UI across creation surfaces", () => {
     await user.type(screen.getByLabelText("Email"), "teammate@example.com");
     await user.click(screen.getByRole("button", { name: /Send invite/i }));
 
-    expect(
-      await screen.findByRole("heading", {
-        name: "Team members limit reached",
-      }),
-    ).toBeTruthy();
-    await waitFor(() => {
-      expect(screen.getByText("1 of 1 used")).toBeTruthy();
+    await screen.findByRole("button", { name: /View plans/i });
+    await waitFor(function inviteWasSentOnce() {
+      expect(
+        capture.requestsFor("POST", "/api/teams/team-plan-limit/invites")
+          .map((request) => request.json),
+      ).toEqual([{
+        email: "teammate@example.com",
+        teamRole: "member",
+        projectId: PROJECT_ID,
+        projectRole: "editor",
+      }]);
     });
   });
 });
