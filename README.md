@@ -67,8 +67,8 @@ The main boundaries are:
 | Stripe | Plans, checkout, subscriptions, and billing webhooks |
 | PostHog / Analytics Engine | Internal product analytics and additive, PII-free customer funnel analytics |
 
-All dashboard and API data is project-scoped. MCP authentication resolves a
-project from an API key before tools execute; callers do not choose an
+All dashboard and API data is project-scoped. MCP OAuth authorization binds a
+grant to one eligible project before tools execute; callers do not choose an
 untrusted `projectId` tool argument.
 
 Detailed customer analytics uses the existing Cloudflare Analytics Engine

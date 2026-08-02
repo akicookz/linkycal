@@ -259,7 +259,7 @@ export function RestApiKeys({ projectId }: RestApiKeysProps) {
             Example REST request
           </p>
           <pre className="mt-2 overflow-x-auto whitespace-pre-wrap break-all font-mono text-xs leading-6 text-foreground">
-            {`curl -H "Authorization: Bearer YOUR_API_KEY" \\\n+  ${window.location.origin}/api/projects/${projectId}/contacts`}
+            {`curl -H "Authorization: Bearer YOUR_API_KEY" \\\n  ${window.location.origin}/api/projects/${projectId}/contacts`}
           </pre>
         </div>
 

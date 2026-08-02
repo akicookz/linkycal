@@ -1084,7 +1084,7 @@ const faqItems: FaqItemData[] = [
   {
     question: "Is there an API?",
     answer:
-      "Yes, LinkyCal is headless-friendly. Visitor forms, widgets, availability, and booking creation use anonymous rate-limited endpoints, so no key is exposed in the browser. Protected project management and MCP use a project-scoped API key from trusted server-side or local agent environments. Full OpenAPI docs and llms.txt are included.",
+      "Yes, LinkyCal is headless-friendly. Visitor forms, widgets, availability, and booking creation use anonymous rate-limited endpoints. Protected REST management uses a project-scoped API key from a trusted server, while MCP clients connect through browser-based OAuth. Full OpenAPI docs and llms.txt are included.",
   },
   {
     question: "What's included in the free plan?",

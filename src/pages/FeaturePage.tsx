@@ -370,8 +370,7 @@ curl -X POST https://linkycal.com/api/v1/bookings \\
 const MCP_SNIPPET = `{
   "linkycal": {
     "type": "http",
-    "url": "https://linkycal.com/api/mcp",
-    "headers": { "Authorization": "Bearer lc_live_..." }
+    "url": "https://linkycal.com/api/mcp"
   }
 }`;
 
@@ -796,7 +795,7 @@ const FEATURES: Record<string, FeaturePageData> = {
     headline: "Forms and scheduling,",
     highlightedHeadline: "headless.",
     subcopy:
-      "POST forms from plain HTML, fetch from any framework, and drive the full booking flow over REST. Or hand a project-scoped API key to an AI agent through the built-in MCP server.",
+      "POST forms from plain HTML, fetch from any framework, and drive the full booking flow over REST. Or connect an AI agent through the built-in MCP server and approve access with OAuth.",
     checkmarks: [
       "Native HTML & JavaScript forms",
       "Headless availability & booking API",
@@ -871,10 +870,10 @@ const FEATURES: Record<string, FeaturePageData> = {
         title: "Built for",
         highlightedTitle: "AI agents.",
         description:
-          "LinkyCal ships an MCP server at /api/mcp. Connect any MCP client with an API key and your agent can check availability, book meetings, manage contacts, and read form responses, all scoped to one project.",
+          "LinkyCal ships an MCP server at /api/mcp. Connect a compatible client, sign in with OAuth, and choose one project. Your agent can check availability, book meetings, manage contacts, and read form responses without handling a LinkyCal API key.",
         points: [
           {
-            title: "32 tools out of the box",
+            title: "40 tools out of the box",
             description:
               "Bookings, availability, contacts, event types, forms, and workflows, read and write.",
           },

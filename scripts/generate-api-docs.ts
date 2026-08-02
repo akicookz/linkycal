@@ -4,6 +4,7 @@ import {
 } from "../worker/lib/api-route-policy";
 import {
   PUBLIC_API_OPERATIONS,
+  type PublicApiAuth,
   type PublicApiQueryParameter,
   type PublicApiOperationDefinition,
 } from "./api-docs-catalog";
@@ -22,6 +23,7 @@ type OpenApiMethod = "get" | "post" | "put" | "patch" | "delete";
 type AuditAuth =
   | "Anonymous"
   | "API key"
+  | "OAuth"
   | "Session or API key"
   | "Session"
   | "Invite token"
@@ -43,7 +45,8 @@ export interface AuditRow extends RegisteredRoute {
 }
 
 interface OpenApiSecurityRequirement {
-  bearerAuth: never[];
+  bearerAuth?: never[];
+  mcpOAuth?: Array<"read" | "write">;
 }
 
 export interface OpenApiOperation {
@@ -74,6 +77,16 @@ export interface OpenApiDocument {
         scheme: "bearer";
         bearerFormat: "lc_live_...";
       };
+      mcpOAuth: {
+        type: "oauth2";
+        flows: {
+          authorizationCode: {
+            authorizationUrl: string;
+            tokenUrl: string;
+            scopes: Record<string, string>;
+          };
+        };
+      };
     };
     schemas: Record<string, unknown>;
   };
@@ -91,7 +104,7 @@ export interface GeneratedApiArtifacts {
 interface OperationMetadata {
   summary: string;
   tag: string;
-  auth: "anonymous" | "apiKey";
+  auth: PublicApiAuth;
   notes?: string;
   queryParameters?: PublicApiQueryParameter[];
   requestSchema?: string;
@@ -260,11 +273,12 @@ function classifyRoute(
   if (route.path === "/api/mcp") {
     return {
       ...route,
-      auth: "API key",
-      apiKeySupport: "Required",
+      auth: "OAuth",
+      apiKeySupport: "No",
       sessionSupport: "No",
       documented: true,
-      notes: "Streamable HTTP MCP transport; project-scoped API key required.",
+      notes:
+        "Provider-owned Streamable HTTP transport; OAuth grant selects one eligible project and API keys are rejected.",
     };
   }
 
@@ -451,15 +465,21 @@ function responsesFor(
     },
   };
 
-  if (auth === "apiKey") {
+  if (auth === "apiKey" || auth === "oauth") {
     responses["401"] = {
-      description: "Missing or invalid API key",
+      description:
+        auth === "oauth"
+          ? "Missing, expired, or invalid OAuth access token"
+          : "Missing or invalid API key",
       content: {
         "application/json": { schema: { $ref: "#/components/schemas/Error" } },
       },
     };
     responses["403"] = {
-      description: "The credential cannot access this project or operation",
+      description:
+        auth === "oauth"
+          ? "The OAuth grant, project, or requested MCP tool is not permitted"
+          : "The credential cannot access this project or operation",
       content: {
         "application/json": { schema: { $ref: "#/components/schemas/Error" } },
       },
@@ -824,7 +844,12 @@ function createOperation(
     summary: metadata.summary,
     ...(metadata.notes ? { description: metadata.notes } : {}),
     tags: [metadata.tag],
-    security: metadata.auth === "apiKey" ? [{ bearerAuth: [] }] : [],
+    security:
+      metadata.auth === "apiKey"
+        ? [{ bearerAuth: [] }]
+        : metadata.auth === "oauth"
+          ? [{ mcpOAuth: ["read", "write"] }]
+          : [],
     ...(parameters.length > 0 ? { parameters } : {}),
     ...(body ? { requestBody: body } : {}),
     responses: responsesFor(metadata.auth),
@@ -887,7 +912,7 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
 
   for (const operation of PUBLIC_API_OPERATIONS) {
     if (operation.path.startsWith("/api/projects/")) continue;
-    const registeredMethod = operation.path === "/api/mcp" ? "ALL" : operation.method;
+    const registeredMethod = operation.method;
     if (!routeKeys.has(routeKey(registeredMethod, operation.path))) {
       throw new Error(
         `Documented public route is not registered: ${operation.method} ${operation.path}`,
@@ -917,7 +942,7 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
       title: "LinkyCal API",
       version: "1.0.0",
       description:
-        "Project-scoped LinkyCal REST API plus anonymous visitor endpoints. Send API keys as Authorization: Bearer lc_live_.... Dashboard session cookies are not part of this public contract.",
+        "Project-scoped LinkyCal REST API, anonymous visitor endpoints, and the OAuth-authenticated MCP transport. Send REST API keys as Authorization: Bearer lc_live_.... MCP clients complete OAuth 2.1 in the browser. Dashboard session cookies are not part of this public contract.",
     },
     servers: [
       { url: "https://linkycal.com", description: "Production" },
@@ -930,6 +955,21 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
           type: "http",
           scheme: "bearer",
           bearerFormat: "lc_live_...",
+        },
+        mcpOAuth: {
+          type: "oauth2",
+          flows: {
+            authorizationCode: {
+              authorizationUrl: "https://linkycal.com/oauth/authorize",
+              tokenUrl: "https://linkycal.com/oauth/token",
+              scopes: {
+                read: "Read project data through MCP tools.",
+                write: "Create and update project data through MCP tools.",
+                offline_access:
+                  "Refresh MCP access without another sign-in.",
+              },
+            },
+          },
         },
       },
       schemas: {
@@ -1744,7 +1784,7 @@ function buildAuditMarkdown(rows: AuditRow[]): string {
 - Session-only routes: ${sessionOnlyCount}
 - Operations in the public OpenAPI contract: ${documentedCount}
 
-All project resource routes approved for external automation use the canonical \`/api/projects/:projectId/*\` contract and accept either a dashboard session or a project-scoped API key. Account, team, billing, onboarding, OAuth lifecycle, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
+All project resource routes approved for external REST automation use the canonical \`/api/projects/:projectId/*\` contract and accept either a dashboard session or a project-scoped API key. The provider-owned \`POST /api/mcp\` transport requires OAuth and rejects API keys. Account, team, billing, onboarding, connection administration, API-key management, member administration, and project deletion routes remain session-only. Visitor form, booking, widget, availability, and public-file routes remain anonymous.
 
 Credential resolution is deliberately unambiguous: a request with both a valid dashboard session and any \`Authorization\` header is rejected with HTTP 400. A malformed or invalid bearer credential is rejected and is never allowed to fall back to a session. Credentialed cross-origin requests are limited to trusted dashboard origins; anonymous and bearer-authenticated routes use non-credentialed CORS.
 
@@ -1761,7 +1801,22 @@ ${tableRows}
 }
 
 export function generateApiArtifacts(source: string): GeneratedApiArtifacts {
-  const routes = extractApiRoutes(source);
+  const extractedRoutes = extractApiRoutes(source);
+  const providerOwnedRoutes = PUBLIC_API_OPERATIONS.filter(
+    function isProviderOwnedOperation(operation) {
+      return operation.auth === "oauth";
+    },
+  ).map(function toRegisteredRoute(operation): RegisteredRoute {
+    return { method: operation.method, path: operation.path };
+  });
+  const routes = [
+    ...new Map(
+      [...extractedRoutes, ...providerOwnedRoutes].map((route) => [
+        routeKey(route.method, route.path),
+        route,
+      ]),
+    ).values(),
+  ].sort(compareRoutes);
   const apiKeyProjectRoutes = projectRouteKeySet(PROJECT_API_KEY_ROUTES);
   const sessionProjectRoutes = projectRouteKeySet(PROJECT_SESSION_ONLY_ROUTES);
   const publicMetadata = metadataByRoute();

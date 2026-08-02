@@ -12,9 +12,9 @@ import {
 // ─── Onboarding timeline shown after the copy ────────────────────────────────
 
 const STEPS = [
-  "Sign up free and get your API key",
+  "Create your LinkyCal account",
   "Paste this llms.txt into your website builder",
-  "You're done. Your AI agent can take it from there",
+  "Connect your AI agent and approve OAuth access",
 ];
 
 interface CopyLlmsButtonProps {
@@ -89,7 +89,7 @@ export function CopyLlmsButton({ className, iconClassName = "w-4 h-4" }: CopyLlm
             onClick={() => setOpen(false)}
             className="marketing-pill-cta h-12 w-full justify-center gap-2 text-sm font-medium"
           >
-            Get your free API key
+            Create your free account
             <ArrowRight className="w-4 h-4" />
           </Link>
         </DialogContent>

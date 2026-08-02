@@ -10,6 +10,7 @@ import {
   generateApiArtifacts,
   generatedArtifactFiles,
 } from "../scripts/generate-api-docs";
+import { MCP_TOOL_SCOPES } from "../shared/mcp-tools";
 
 describe("generated detailed analytics documentation", function () {
   test("OpenAPI publishes all analytics reports, filters, integrations, and anonymous event bounds", async function () {
@@ -184,6 +185,68 @@ describe("generated detailed analytics documentation", function () {
     );
     expect(artifacts.llmsText).toContain(
       "never contain names, emails, raw answers, journey IDs, IP addresses, or raw errors",
+    );
+  });
+
+  test("MCP is published as OAuth while REST management remains API-key authenticated", async function () {
+    const source = await Bun.file("worker/index.ts").text();
+    const artifacts = generateApiArtifacts(source);
+    const documentedTools = MCP_TOOL_GROUPS.flatMap(function tools(group) {
+      return group.tools;
+    });
+
+    expect(new Set(documentedTools)).toEqual(
+      new Set(Object.keys(MCP_TOOL_SCOPES)),
+    );
+    expect(
+      PUBLIC_API_OPERATIONS.find(function mcpOperation(operation) {
+        return operation.path === "/api/mcp";
+      })?.auth,
+    ).toBe("oauth");
+
+    expect(artifacts.openApi.components.securitySchemes.mcpOAuth).toEqual({
+      type: "oauth2",
+      flows: {
+        authorizationCode: {
+          authorizationUrl: "https://linkycal.com/oauth/authorize",
+          tokenUrl: "https://linkycal.com/oauth/token",
+          scopes: {
+            read: "Read project data through MCP tools.",
+            write: "Create and update project data through MCP tools.",
+            offline_access: "Refresh MCP access without another sign-in.",
+          },
+        },
+      },
+    });
+    expect(artifacts.openApi.paths["/api/mcp"]?.post?.security).toEqual([
+      { mcpOAuth: ["read", "write"] },
+    ]);
+    expect(
+      artifacts.openApi.paths["/api/mcp"]?.post?.security,
+    ).not.toContainEqual({ bearerAuth: [] });
+
+    const mcpAudit = artifacts.auditRows.find(function mcpRow(row) {
+      return row.path === "/api/mcp";
+    });
+    expect(mcpAudit).toMatchObject({
+      method: "POST",
+      auth: "OAuth",
+      apiKeySupport: "No",
+      sessionSupport: "No",
+      documented: true,
+    });
+
+    expect(artifacts.llmsText).toContain(
+      "Connect to https://linkycal.com/api/mcp and complete OAuth in the browser",
+    );
+    expect(artifacts.llmsText).not.toContain(
+      "MCP use a project-scoped API key",
+    );
+    expect(artifacts.llmsText).not.toContain(
+      "Auth: project API key as a Bearer token",
+    );
+    expect(artifacts.llmsText).toContain(
+      "Authorization: Bearer lc_live_...",
     );
   });
 

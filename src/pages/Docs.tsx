@@ -154,10 +154,7 @@ const MCP_CLIENT_CONFIG = `{
   "mcpServers": {
     "linkycal": {
       "type": "http",
-      "url": "https://linkycal.com/api/mcp",
-      "headers": {
-        "Authorization": "Bearer lc_live_a1b2c3d4e5f6..."
-      }
+      "url": "https://linkycal.com/api/mcp"
     }
   }
 }`;
@@ -1751,19 +1748,19 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </CodeBlock>
 
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              MCP connections authenticate with a project API key passed as a Bearer
-              token. Every tool is hard-scoped to that key's project — agents
-              never pass a project ID and can never reach data outside the
-              project the key belongs to.
+              MCP connections use OAuth 2.1. During browser authorization you
+              choose one eligible project and approve read/write access. Every
+              tool is hard-scoped to that grant, so agents never pass a project
+              ID and cannot reach another project.
             </p>
 
             <SectionHeading id="mcp-connect" level="h2">
               Connecting
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Create an API key in the dashboard under <IC>MCP &amp; APIs</IC>,
-              then register the server with your MCP client using the endpoint
-              and authorization header below.
+              Register the endpoint below in your MCP client. LinkyCal opens in
+              your browser so you can sign in, choose a project, review access,
+              and approve the connection.
             </p>
 
             <CodeBlock title="MCP Client Config" language="json">
@@ -1771,9 +1768,9 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </CodeBlock>
 
             <Callout type="warning">
-              The API key grants access to the MCP tools for its project. Configure it in
-              server-side or local agent environments only — never ship it in client-side code.
-              Project and key administration remain dashboard-only.
+              Review connected clients under <IC>MCP &amp; APIs</IC>. Revoking a
+              connection invalidates its access and refresh tokens. MCP rejects
+              LinkyCal REST API keys at this boundary.
             </Callout>
 
             <Callout type="tip">
@@ -1846,10 +1843,11 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               API Keys
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Create API keys in the dashboard under <IC>MCP &amp; APIs</IC>.
-              Include your key in the <IC>Authorization</IC> header as a Bearer token for MCP and
-              protected <IC>/api/projects/:projectId/*</IC> requests. Visitor endpoints are
-              anonymous and must not receive this header.
+              Create REST API keys in the dashboard under <IC>MCP &amp; APIs</IC>.
+              Include your key in the <IC>Authorization</IC> header as a Bearer
+              token for protected <IC>/api/projects/:projectId/*</IC> requests.
+              MCP uses OAuth instead; visitor endpoints are anonymous and must
+              not receive this header.
             </p>
 
             <CodeBlock title="Authorization Header" language="bash">

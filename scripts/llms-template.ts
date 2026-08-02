@@ -32,11 +32,11 @@ OpenAPI 3.1: https://linkycal.com/openapi.json
 
 ## Authentication
 
-Protected project management and MCP use a project-scoped API key. Create one under MCP & APIs and send:
+Protected REST project management uses a project-scoped API key. Create one under MCP & APIs and send:
 
     Authorization: Bearer lc_live_...
 
-The key can reach exactly one project and must be used only from a trusted server or local agent. Visitor form, booking, availability, widget, and telemetry endpoints are anonymous and rate-limited.
+The REST key can reach exactly one project and must be used only from a trusted server. Visitor form, booking, availability, widget, and telemetry endpoints are anonymous and rate-limited.
 
 Send either a dashboard session or an API key, never both. Ambiguous credentials return 400; invalid bearer credentials return 401 and never fall back to a session.
 
@@ -58,7 +58,7 @@ Project creation/deletion, membership, API-key management, teams, billing, onboa
 
 ## Detailed analytics REST API
 
-Detailed reports and provider configuration require Pro or Business. The Worker enforces this entitlement for dashboard sessions, API keys, MCP, provider mutation, and provider publication.
+Detailed reports and provider configuration require Pro or Business. The Worker enforces this entitlement for dashboard sessions, REST API keys, MCP OAuth grants, provider mutation, and provider publication.
 
 ${analyticsRestInventory()}
 
@@ -90,9 +90,9 @@ Anonymous telemetry uses POST /api/v1/t. It accepts one canonical event or an ar
 
 Endpoint: https://linkycal.com/api/mcp
 Transport: Streamable HTTP
-Auth: project API key as a Bearer token
+Auth: OAuth 2.1 browser sign-in
 
-Every tool is hard-scoped to the API key project, so no tool accepts projectId.
+Connect to https://linkycal.com/api/mcp and complete OAuth in the browser, then select one eligible project. Each grant is hard-scoped to that project, so no tool accepts projectId. OAuth scopes are read, write, and offline_access; the MCP boundary rejects LinkyCal API keys.
 
 The server exposes ${MCP_TOOL_COUNT} tools:
 ${mcpInventory()}
