@@ -70,6 +70,10 @@ export const updateProjectSchema = z.object({
   onboarded: z.boolean().optional(),
 });
 
+export const customCssSchema = z.object({
+  css: z.string().max(20 * 1024),
+});
+
 // ─── Event Types ─────────────────────────────────────────────────────────────
 
 export const createEventTypeSchema = z.object({

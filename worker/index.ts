@@ -62,6 +62,7 @@ import {
   updateTeamMemberSchema,
   upsertProjectMemberSchema,
   updateProjectMemberSchema,
+  customCssSchema,
   validate,
 } from "./validation";
 
@@ -179,6 +180,10 @@ import { reserveProjectUsage } from "./lib/metered-entitlements";
 import { entitlementError } from "./lib/entitlement-errors";
 import { StorageUsageService } from "./services/storage-usage-service";
 import { reconcileProjectStorage } from "./lib/storage-reconciliation";
+import {
+  CustomCssEntitlementError,
+  CustomCssService,
+} from "./services/custom-css-service";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -3840,6 +3845,58 @@ app.get("/api/projects/:projectId/entitlements", async (c) => {
   return snapshot
     ? c.json(snapshot)
     : c.json({ error: "Project not found" }, 404);
+});
+
+app.get("/api/projects/:projectId/custom-css", async (c) => {
+  const css = await new CustomCssService(c.get("db")).getForSettings(
+    c.req.param("projectId"),
+  );
+  return c.json({
+    customCss: css
+      ? {
+          sourceCss: css.sourceCss,
+          sourceBytes: css.sourceBytes,
+          updatedAt: css.updatedAt,
+        }
+      : null,
+  });
+});
+
+app.put("/api/projects/:projectId/custom-css", async (c) => {
+  try {
+    const data = validate(customCssSchema, await c.req.json());
+    const actorUserId =
+      c.get("effectiveUserId") ?? c.get("projectScope")?.ownerUserId;
+    const saved = await new CustomCssService(c.get("db")).save(
+      c.req.param("projectId"),
+      data.css,
+      actorUserId,
+    );
+    return c.json({
+      customCss: {
+        sourceCss: saved.sourceCss,
+        sourceBytes: saved.sourceBytes,
+        updatedAt: saved.updatedAt,
+      },
+    });
+  } catch (error) {
+    if (error instanceof CustomCssEntitlementError) {
+      const failure = entitlementError(error.decision, "save Custom CSS");
+      return c.json(failure.body, failure.status);
+    }
+    if (error instanceof Error && error.name === "ZodError") {
+      return c.json({ error: "Custom CSS must be 20 KB or less" }, 400);
+    }
+    if (error instanceof Error) {
+      return c.json({ error: error.message }, 400);
+    }
+    return c.json({ error: "Failed to save Custom CSS" }, 500);
+  }
+});
+
+app.delete("/api/projects/:projectId/custom-css", async (c) => {
+  await new CustomCssService(c.get("db")).remove(c.req.param("projectId"));
+  return c.json({ success: true });
 });
 
 // Update project

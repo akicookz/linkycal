@@ -87,6 +87,7 @@ export default function PublicForm() {
     form: FormExperienceForm;
     project: ProjectInfo | null;
     canHideBranding?: boolean;
+    compiledCss?: string | null;
     analyticsIntegrations?: AnalyticsIntegrationConfig[];
   }>({
     queryKey: ["public-form", projectSlug, formSlug],
@@ -104,6 +105,7 @@ export default function PublicForm() {
   const form = formData?.form;
   const project = formData?.project;
   const canHideBranding = formData?.canHideBranding;
+  const compiledCss = formData?.compiledCss;
   const analyticsIntegrations = formData?.analyticsIntegrations;
   const themeFromProject = project?.settings?.theme;
   const theme = useMemo<FormExperienceTheme | undefined>(() => {
@@ -575,59 +577,68 @@ export default function PublicForm() {
 
     if (isFocusedExperience) {
       return (
-        <FocusedFormExperienceShell
-          theme={theme}
-          canHideBranding={canHideBranding}
-          progressPct={100}
-          showNav={false}
-        >
-          {seoHead}
-          {completionContent}
-        </FocusedFormExperienceShell>
+        <div data-linkycal-public>
+          {compiledCss ? <style>{compiledCss}</style> : null}
+          <FocusedFormExperienceShell
+            theme={theme}
+            canHideBranding={canHideBranding}
+            progressPct={100}
+            showNav={false}
+          >
+            {seoHead}
+            {completionContent}
+          </FocusedFormExperienceShell>
+        </div>
       );
     }
 
     return (
-      <FormExperiencePageShell
-        theme={theme}
-        canHideBranding={canHideBranding}
-      >
-        {seoHead}
-        <div className="py-16">{completionContent}</div>
-      </FormExperiencePageShell>
+      <div data-linkycal-public>
+        {compiledCss ? <style>{compiledCss}</style> : null}
+        <FormExperiencePageShell
+          theme={theme}
+          canHideBranding={canHideBranding}
+        >
+          {seoHead}
+          <div className="py-16">{completionContent}</div>
+        </FormExperiencePageShell>
+      </div>
     );
   }
 
   return (
-    <FormExperience
-      form={form}
-      surface="standalone"
-      values={values}
-      files={files}
-      submitting={submitting}
-      error={error}
-      theme={theme}
-      canHideBranding={canHideBranding}
-      head={seoHead}
-      honeypot={
-        <div className="sr-only" aria-hidden="true">
-          <label htmlFor="website">Website</label>
-          <input
-            id="website"
-            type="text"
-            name="website"
-            autoComplete="url"
-            tabIndex={-1}
-            value={spamField}
-            onChange={(event) => setSpamField(event.target.value)}
-          />
-        </div>
-      }
-      onValueChange={setValue}
-      onFileChange={setFileValue}
-      onClearFields={clearFields}
-      onCheckpoint={submitStepValues}
-      onAnalyticsEvent={handleFormAnalyticsEvent}
-    />
+    <div data-linkycal-public>
+      {compiledCss ? <style>{compiledCss}</style> : null}
+      <FormExperience
+        form={form}
+        surface="standalone"
+        values={values}
+        files={files}
+        submitting={submitting}
+        error={error}
+        theme={theme}
+        canHideBranding={canHideBranding}
+        head={seoHead}
+        honeypot={
+          <div className="sr-only" aria-hidden="true">
+            <label htmlFor="website">Website</label>
+            <input
+              id="website"
+              type="text"
+              name="website"
+              autoComplete="url"
+              tabIndex={-1}
+              value={spamField}
+              onChange={(event) => setSpamField(event.target.value)}
+            />
+          </div>
+        }
+        onValueChange={setValue}
+        onFileChange={setFileValue}
+        onClearFields={clearFields}
+        onCheckpoint={submitStepValues}
+        onAnalyticsEvent={handleFormAnalyticsEvent}
+      />
+    </div>
   );
 }

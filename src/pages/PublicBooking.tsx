@@ -308,6 +308,7 @@ export default function PublicBooking({
     bookingForm: FormExperienceForm | null;
     availableDays: number[];
     canHideBranding?: boolean;
+    compiledCss?: string | null;
     analyticsIntegrations?: AnalyticsIntegrationConfig[];
   }>({
     queryKey: ["public-event-type", projectSlug, eventSlug, timezone],
@@ -933,6 +934,7 @@ export default function PublicBooking({
 
   return (
     <div
+      data-linkycal-public
       ref={containerRef}
       className={isEmbedded
         ? "w-full flex justify-center"
@@ -966,6 +968,7 @@ export default function PublicBooking({
         } : {}),
       }}
     >
+      {data?.compiledCss ? <style>{data.compiledCss}</style> : null}
       <SEOHead
         title={`Book ${eventType.name}`}
         description={seoDescription}

@@ -180,6 +180,8 @@ export default function Settings() {
   const [themeBackgroundImage, setThemeBackgroundImage] = useState("");
   const [themeBannerImage, setThemeBannerImage] = useState("");
   const [themeInitialized, setThemeInitialized] = useState(false);
+  const [customCss, setCustomCss] = useState("");
+  const [customCssInitialized, setCustomCssInitialized] = useState(false);
 
   // Fetch project
   const {
@@ -237,6 +239,26 @@ export default function Settings() {
   } = useEntitlements(projectId ?? "");
   const hasAnalyticsAccess =
     entitlements?.planLimits.analytics === true;
+  const hasCustomCssAccess = entitlements?.planLimits.customCss === true;
+
+  const { isLoading: loadingCustomCss } = useQuery<{
+    customCss: { sourceCss: string; sourceBytes: number } | null;
+  }>({
+    queryKey: ["projects", projectId, "custom-css"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/custom-css`);
+      if (!res.ok) throw new Error("Failed to fetch Custom CSS");
+      const data = await res.json() as {
+        customCss: { sourceCss: string; sourceBytes: number } | null;
+      };
+      if (!customCssInitialized) {
+        setCustomCss(data.customCss?.sourceCss ?? "");
+        setCustomCssInitialized(true);
+      }
+      return data;
+    },
+    enabled: !!projectId,
+  });
 
   const {
     data: analyticsIntegrations,
@@ -306,6 +328,39 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["projects", projectId] });
+    },
+  });
+
+  const saveCustomCssMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/custom-css`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ css: customCss }),
+      });
+      const body = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) throw new Error(body.error || "Failed to save Custom CSS");
+      return body;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "custom-css"],
+      });
+    },
+  });
+
+  const resetCustomCssMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/custom-css`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to reset Custom CSS");
+    },
+    onSuccess: () => {
+      setCustomCss("");
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "custom-css"],
+      });
     },
   });
 
@@ -658,6 +713,104 @@ export default function Settings() {
                 />
               </div>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Custom CSS */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              {hasCustomCssAccess ? (
+                <Sparkles className="size-4 text-muted-foreground" />
+              ) : (
+                <LockKeyhole className="size-4 text-muted-foreground" />
+              )}
+              Custom CSS
+            </CardTitle>
+            <CardDescription>
+              Add scoped styles to public forms and booking pages. Available on
+              Pro and Business.
+            </CardDescription>
+            {hasCustomCssAccess ? (
+              <CardAction>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => resetCustomCssMutation.mutate()}
+                    disabled={resetCustomCssMutation.isPending || !customCss}
+                  >
+                    {resetCustomCssMutation.isPending ? (
+                      <Loader className="size-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="size-4" />
+                    )}
+                    Reset
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => saveCustomCssMutation.mutate()}
+                    disabled={saveCustomCssMutation.isPending}
+                  >
+                    {saveCustomCssMutation.isPending ? (
+                      <Loader className="size-4 animate-spin" />
+                    ) : (
+                      <Save className="size-4" />
+                    )}
+                    Save CSS
+                  </Button>
+                </div>
+              </CardAction>
+            ) : null}
+          </CardHeader>
+          <CardContent>
+            {loadingCustomCss || loadingEntitlements ? (
+              <Skeleton className="h-48 w-full rounded-[16px]" />
+            ) : hasCustomCssAccess ? (
+              <div className="space-y-3">
+                <textarea
+                  aria-label="Custom CSS"
+                  value={customCss}
+                  onChange={(event) => setCustomCss(event.target.value)}
+                  placeholder=".booking-card { box-shadow: none; }"
+                  spellCheck={false}
+                  className="min-h-48 w-full resize-y rounded-[12px] bg-muted/45 px-4 py-3 font-mono text-sm outline-none transition-[box-shadow,background-color] focus:bg-background focus:ring-2 focus:ring-ring"
+                />
+                <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span>Selectors are scoped to LinkyCal public pages.</span>
+                  <span className="tabular-nums">
+                    {new TextEncoder().encode(customCss).byteLength.toLocaleString()} / 20,480 bytes
+                  </span>
+                </div>
+                {saveCustomCssMutation.isError ? (
+                  <p role="alert" className="text-sm text-destructive">
+                    {saveCustomCssMutation.error.message}
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex flex-col items-start justify-between gap-4 rounded-[16px] bg-muted/50 px-4 py-4 sm:flex-row sm:items-center">
+                <div>
+                  <p className="text-sm font-medium">Unlock project Custom CSS</p>
+                  <p className="text-xs text-muted-foreground">
+                    Upgrade to Pro to publish safely scoped CSS and remove
+                    LinkyCal branding.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setUpgradeDescription(
+                      "Custom CSS requires a Pro or Business plan.",
+                    );
+                    setShowUpgradeDialog(true);
+                  }}
+                >
+                  <Sparkles className="size-4" />
+                  Upgrade to Pro
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
 

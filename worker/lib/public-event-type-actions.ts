@@ -4,6 +4,7 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 import { EventTypeService } from "../services/event-type-service";
 import { FormService } from "../services/form-service";
+import { CustomCssService } from "../services/custom-css-service";
 import {
   AnalyticsIntegrationService,
   stripAnalyticsIntegrationsFromSettings,
@@ -102,9 +103,13 @@ export async function loadPublicEventTypeAction(
   }
 
   const entitlements = await resolveProjectEntitlements(db, project.id);
-  const canHideBranding =
-    entitlements?.subscription.plan === "pro" ||
-    entitlements?.subscription.plan === "business";
+  const canHideBranding = entitlements?.planLimits.removeBranding === true;
+  const compiledCss = entitlements
+    ? await new CustomCssService(db).getPublished(
+        project.id,
+        entitlements.subscription.plan,
+      )
+    : null;
   const analyticsIntegrations = await new AnalyticsIntegrationService(
     db,
   ).getPublished(project.id);
@@ -124,6 +129,7 @@ export async function loadPublicEventTypeAction(
       bookingForm,
       availableDays,
       canHideBranding,
+      compiledCss,
       analyticsIntegrations,
     },
   };
