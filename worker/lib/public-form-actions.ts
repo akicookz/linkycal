@@ -9,6 +9,10 @@ import {
 } from "../services/analytics-integration-service";
 import { submitFormStepSchema } from "../validation";
 import { resolveProjectEntitlements } from "./entitlements";
+import {
+  getProjectUsageDecision,
+  reserveProjectUsage,
+} from "./metered-entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -73,6 +77,35 @@ export async function loadPublicFormAction(
   };
 }
 
+export async function startPublicFormResponseAction(
+  db: AppDatabase,
+  projectId: string,
+  formId: string,
+  metadata?: Record<string, unknown>,
+) {
+  const decision = await getProjectUsageDecision({
+    db,
+    projectId,
+    key: "formResponses",
+  });
+  if (!decision.allowed) {
+    return {
+      ok: false as const,
+      status: 429 as const,
+      body: {
+        error: "This form is temporarily unavailable",
+        code: "plan_usage_limit_reached" as const,
+      },
+    };
+  }
+  const response = await new FormService(db).createResponse(formId, metadata);
+  return {
+    ok: true as const,
+    status: 201 as const,
+    body: { response },
+  };
+}
+
 export async function submitPublicFormStepAction(
   db: AppDatabase,
   responseId: string,
@@ -88,7 +121,9 @@ export async function submitPublicFormStepAction(
     };
   }
 
-  const response = await new FormService(db).submitStep(
+  const service = new FormService(db);
+  const previous = await service.getResponseById(responseId);
+  const response = await service.submitStep(
     responseId,
     stepIndex,
     parsed.data.fields,
@@ -103,6 +138,29 @@ export async function submitPublicFormStepAction(
       status: 404 as const,
       body: { error: "Response not found" },
     };
+  }
+
+  if (
+    previous?.status !== "completed" &&
+    response.status === "completed" &&
+    response.formId
+  ) {
+    const [form] = await db
+      .select({ projectId: dbSchema.forms.projectId })
+      .from(dbSchema.forms)
+      .where(eq(dbSchema.forms.id, response.formId))
+      .limit(1);
+    if (form) {
+      const reservation = await reserveProjectUsage({
+        db,
+        projectId: form.projectId,
+        key: "formResponses",
+        operationId: response.id,
+        allowExistingOverage: true,
+        channel: "public_form_completion",
+      });
+      await reservation.consume();
+    }
   }
 
   return {

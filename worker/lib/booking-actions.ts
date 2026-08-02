@@ -25,9 +25,27 @@ import {
 import { buildIcs } from "./ics";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 import { ensureContact } from "./contact-actions";
-import { createMeteredEmailDependency } from "./metered-entitlements";
+import {
+  createMeteredEmailDependency,
+  reserveProjectUsage,
+} from "./metered-entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
+
+export async function recordPersistedBookingUsage(
+  db: AppDatabase,
+  projectId: string,
+  bookingId: string,
+): Promise<void> {
+  const reservation = await reserveProjectUsage({
+    db,
+    projectId,
+    key: "bookings",
+    operationId: bookingId,
+    channel: "booking_created",
+  });
+  await reservation.consume();
+}
 
 // ─── Shared Deps ─────────────────────────────────────────────────────────────
 // Booking lifecycle flows (create/cancel/confirm/decline) are shared between
@@ -390,6 +408,11 @@ export async function createBookingAction(
     country: input.geo?.country ?? null,
     city: input.geo?.city ?? null,
   });
+  try {
+    await recordPersistedBookingUsage(db, project.id, booking.id);
+  } catch (error) {
+    console.error("Booking usage observation failed:", error);
+  }
 
   // 7. Look up project owner for calendar invite + email notification
   const ownerRows = await db
@@ -613,22 +636,25 @@ export async function createBookingAction(
           project.id,
           { name: input.name, email: input.email },
           "booking",
+          {
+            preserveSource: true,
+            sourceType: "booking",
+            sourceId: booking.id,
+          },
         );
-        const contactService = new ContactService(db);
-
-        // Link contact to the booking row
-        await db
-          .update(dbSchema.bookings)
-          .set({ contactId: contact.id })
-          .where(eq(dbSchema.bookings.id, booking.id));
-
-        // Log booking activity for the contact
-        await contactService.logActivity(contact.id, "booked", booking.id);
+        if (contact) {
+          const contactService = new ContactService(db);
+          await db
+            .update(dbSchema.bookings)
+            .set({ contactId: contact.id })
+            .where(eq(dbSchema.bookings.id, booking.id));
+          await contactService.logActivity(contact.id, "booked", booking.id);
+        }
 
         const bookingContext: TriggerContext = {
           projectId: project.id,
           bookingId: booking.id,
-          contactId: contact.id,
+          contactId: contact?.id,
           contactEmail: input.email,
           contactName: input.name,
         };

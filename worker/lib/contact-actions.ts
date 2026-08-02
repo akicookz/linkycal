@@ -10,6 +10,7 @@ import {
   createWithResourceCapacity,
   type CapacityFailure,
 } from "./resource-creation";
+import { recordEntitlementOutcome } from "./metered-entitlements";
 
 // ─── Contact creation + new_contact_created dispatch ─────────────────────────
 // Called from HTTP/MCP request handlers (like booking-actions). It dedupes +
@@ -17,9 +18,11 @@ import {
 // `new_contact_created` workflow trigger. NEVER call this from workflow step
 // execution — that would violate the no-workflow-loop contract.
 
-export type EnsureContactResult = Awaited<
-  ReturnType<ContactService["findOrCreate"]>
->;
+export interface EnsureContactResult {
+  contact: dbSchema.ContactRow | null;
+  created: boolean;
+  skippedReason: "plan_resource_limit_reached" | null;
+}
 
 export async function ensureContact(
   db: DrizzleD1Database<Record<string, unknown>>,
@@ -27,11 +30,56 @@ export async function ensureContact(
   projectId: string,
   input: CreateContactInput,
   source: string,
+  options?: {
+    preserveSource?: boolean;
+    sourceType: string;
+    sourceId: string;
+  },
 ): Promise<EnsureContactResult> {
   const service = new ContactService(db);
-  const result = await service.findOrCreate(projectId, input);
+  const duplicate = await service.findDuplicate(projectId, input);
+  if (duplicate) {
+    const updated = await service.update(duplicate.id, input);
+    return {
+      contact: updated ?? duplicate,
+      created: false,
+      skippedReason: null,
+    };
+  }
 
-  if (result.created) {
+  const creation = await createWithResourceCapacity({
+    db,
+    projectId,
+    key: "contacts",
+    create: async (transaction) =>
+      new ContactService(transaction).create(projectId, input),
+  });
+  if (!creation.ok) {
+    if (!options?.preserveSource) {
+      throw new Error(creation.body.error);
+    }
+    await recordEntitlementOutcome({
+      db,
+      projectId,
+      sourceType: options.sourceType,
+      sourceId: options.sourceId,
+      entitlementKey: "contacts",
+      channel: source,
+    });
+    return {
+      contact: null,
+      created: false,
+      skippedReason: "plan_resource_limit_reached",
+    };
+  }
+
+  const result: EnsureContactResult = {
+    contact: creation.value,
+    created: true,
+    skippedReason: null,
+  };
+
+  if (result.contact) {
     await dispatchWorkflowTrigger(db, env, projectId, "new_contact_created", {
       projectId,
       contactId: result.contact.id,

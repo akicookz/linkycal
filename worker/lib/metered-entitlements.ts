@@ -32,6 +32,27 @@ export interface ProjectUsageReservation {
   };
 }
 
+export async function getProjectUsageDecision(input: {
+  db: AppDatabase;
+  projectId: string;
+  key: MeteredEntitlementKey;
+  amount?: number;
+  now?: Date;
+}): Promise<EntitlementDecision> {
+  const resolved = await new EntitlementService(input.db).resolveProject(
+    input.projectId,
+  );
+  if (!resolved) throw new Error(`Project ${input.projectId} not found`);
+  return new UsageService(input.db).getDecision({
+    workspace: resolved.workspace,
+    subscription: resolved.subscriptionRecord,
+    plan: resolved.subscription.plan,
+    key: input.key,
+    amount: input.amount ?? 1,
+    now: input.now ?? new Date(),
+  });
+}
+
 export async function reserveProjectUsage(input: {
   db: AppDatabase;
   projectId: string;

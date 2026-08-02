@@ -34,7 +34,6 @@ import {
   updateFormStepSchema,
   createFormFieldSchema,
   updateFormFieldSchema,
-  submitFormStepSchema,
   createContactSchema,
   importContactsSchema,
   updateContactSchema,
@@ -90,6 +89,7 @@ import {
 } from "./lib/booking-actions";
 import {
   loadPublicFormAction,
+  startPublicFormResponseAction,
   submitPublicFormStepAction,
 } from "./lib/public-form-actions";
 import { loadPublicEventTypeAction } from "./lib/public-event-type-actions";
@@ -950,15 +950,22 @@ async function dispatchFormSubmittedTrigger(
           email: resolvedEmail,
         },
         "form",
+        {
+          preserveSource: true,
+          sourceType: "form_response",
+          sourceId: responseId,
+        },
       );
-      contactId = contact.id;
+      contactId = contact?.id;
 
       // Log form_submitted activity for the contact
-      await new ContactService(db).logActivity(
-        contact.id,
-        "form_submitted",
-        responseId,
-      );
+      if (contact) {
+        await new ContactService(db).logActivity(
+          contact.id,
+          "form_submitted",
+          responseId,
+        );
+      }
     }
 
     await dispatchWorkflowTrigger(db, env, form.projectId, "form_submitted", {
@@ -1380,7 +1387,14 @@ app.post("/api/v1/forms/:projectSlug/:formSlug/responses", async (c) => {
       (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
-    const response = await service.createResponse(form.id, body.metadata);
+    const started = await startPublicFormResponseAction(
+      db,
+      project.id,
+      form.id,
+      body.metadata,
+    );
+    if (!started.ok) return c.json(started.body, started.status);
+    const { response } = started.body;
 
     if (geoIp || geoCountry || geoCity) {
       await db
@@ -1569,24 +1583,15 @@ app.patch(
 
     try {
       const body = await c.req.json();
-      const data = validate(submitFormStepSchema, body);
-
       const db = drizzle(c.env.DB, { schema });
-      const service = new FormService(db);
-
-      const response = await service.submitStep(
+      const result = await submitPublicFormStepAction(
+        db,
         responseId,
         stepIndex,
-        data.fields,
-        {
-          complete: data.complete === true,
-          clearedFieldIds: data.clearedFieldIds,
-        },
+        body,
       );
-
-      if (!response) {
-        return c.json({ error: "Response not found" }, 404);
-      }
+      if (!result.ok) return c.json(result.body, result.status);
+      const { response } = result.body;
 
       try {
         if (response.formId) {
@@ -1597,7 +1602,7 @@ app.patch(
             {
               formId: response.formId,
               resourceSlug: c.req.param("formSlug"),
-              correlation: data.analytics,
+              correlation: result.analytics,
               completed: response.status === "completed",
               country: (cf?.country as string) ?? "",
               city: (cf?.city as string) ?? "",
@@ -1864,7 +1869,14 @@ app.post("/api/public/forms/:projectSlug/:formSlug/responses", async (c) => {
       (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
-    const response = await service.createResponse(form.id, body.metadata);
+    const started = await startPublicFormResponseAction(
+      db,
+      project.id,
+      form.id,
+      body.metadata,
+    );
+    if (!started.ok) return c.json(started.body, started.status);
+    const { response } = started.body;
 
     if (geoIp || geoCountry || geoCity) {
       await db
@@ -2072,9 +2084,20 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
       (cf?.country as string) ?? c.req.header("cf-ipcountry") ?? null;
     const geoCity = (cf?.city as string) ?? null;
 
-    const response = await service.createResponse(form.id, {
-      source: "native_action",
-    });
+    const started = await startPublicFormResponseAction(
+      db,
+      project.id,
+      form.id,
+      { source: "native_action" },
+    );
+    if (!started.ok) {
+      return createHtmlPageResponse(
+        "Form temporarily unavailable",
+        "Please try again later.",
+        started.status,
+      );
+    }
+    const { response } = started.body;
 
     if (geoIp || geoCountry || geoCity || respondentEmail) {
       await db
@@ -2109,27 +2132,33 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
 
     let latestResponse: typeof response | null = response;
     for (let stepIndex = 0; stepIndex < steps.length; stepIndex++) {
-      latestResponse = await service.submitStep(
+      const submitted = await submitPublicFormStepAction(
+        db,
         response.id,
         stepIndex,
-        fieldsByStep.get(steps[stepIndex].id) ?? [],
+        {
+          fields: fieldsByStep.get(steps[stepIndex].id) ?? [],
+          complete: stepIndex === steps.length - 1,
+        },
       );
-
-      if (!latestResponse) {
+      if (!submitted.ok) {
         return createHtmlPageResponse(
           "Submission failed",
           "We couldn't store your response. Please try again.",
-          500,
+          submitted.status,
         );
       }
+      latestResponse = submitted.body.response;
     }
 
     if (steps.length === 0) {
-      await db
-        .update(dbSchema.formResponses)
-        .set({ status: "completed" })
-        .where(eq(dbSchema.formResponses.id, response.id));
-      latestResponse = await service.getResponseById(response.id);
+      const submitted = await submitPublicFormStepAction(
+        db,
+        response.id,
+        0,
+        { fields: [], complete: true },
+      );
+      latestResponse = submitted.ok ? submitted.body.response : null;
     }
 
     if (latestResponse?.status === "completed" && latestResponse.formId) {
