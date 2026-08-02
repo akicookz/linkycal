@@ -1,47 +1,18 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
-import type { Plan } from "../shared/plan-catalog";
+import type {
+  Plan,
+  PlanLimits,
+  WorkspaceRef,
+} from "../shared/plan-catalog";
 import type { RequestAuth } from "./lib/request-auth";
 
 // ─── Plan Types ──────────────────────────────────────────────────────────────
 
-export type { Plan };
-
-export interface PlanLimits {
-  maxProjects: number;
-  maxFormsPerProject: number;
-  maxEventTypes: number;
-  maxContactsPerProject: number;
-  maxWorkflows: number;
-  calendarSync: boolean;
-  maxCalendarConnections: number; // -1 = unlimited
-  maxTeamMembers: number; // non-owner members; -1 = unlimited
-  apiAccess: boolean;
-  mcpAccess: boolean;
-  customCss: boolean;
-  removeBranding: boolean;
-  analytics: boolean;
-  analyticsRetentionMonths: number;
-  widgets: boolean;
-  themeOverrides: boolean;
-  maxFormResponsesPerMonth: number;
-  maxBookingsPerMonth: number;
-  maxWorkflowExecutionsPerMonth: number;
-  maxTransactionalEmailsPerMonth: number;
-  maxIntegrationRequestsPerMonth: number;
-  maxEnrichmentsPerMonth: number; // -1 = unlimited
-  maxStorageBytes: number;
-}
+export type { Plan, PlanLimits, WorkspaceRef };
 
 export type TeamRole = "owner" | "admin" | "member";
 export type ProjectRole = "admin" | "editor" | "viewer";
-
-export interface WorkspaceRef {
-  type: "personal" | "team";
-  id: string;
-  ownerUserId: string;
-  teamId: string | null;
-}
 
 export interface ProjectAccessContext {
   projectId: string;

@@ -44,6 +44,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { ImageUpload } from "@/components/ImageUpload";
+import { useEntitlements } from "@/hooks/use-entitlements";
 import { queryClient } from "@/lib/query-client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -73,12 +74,6 @@ interface CalendarConnection {
   provider: "google";
   email: string;
   createdAt: string;
-}
-
-interface ProjectEntitlements {
-  planLimits: {
-    analytics: boolean;
-  };
 }
 
 interface AnalyticsIntegrationsResponse {
@@ -239,15 +234,7 @@ export default function Settings() {
   const {
     data: entitlements,
     isLoading: loadingEntitlements,
-  } = useQuery<ProjectEntitlements>({
-    queryKey: ["projects", projectId, "entitlements"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/entitlements`);
-      if (!res.ok) throw new Error("Failed to fetch project entitlements");
-      return res.json();
-    },
-    enabled: !!projectId,
-  });
+  } = useEntitlements(projectId ?? "");
   const hasAnalyticsAccess =
     entitlements?.planLimits.analytics === true;
 

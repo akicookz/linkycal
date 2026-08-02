@@ -1,5 +1,38 @@
 export type Plan = "free" | "pro" | "business";
 
+export interface PlanLimits {
+  maxProjects: number;
+  maxFormsPerProject: number;
+  maxEventTypes: number;
+  maxContactsPerProject: number;
+  maxWorkflows: number;
+  calendarSync: boolean;
+  maxCalendarConnections: number;
+  maxTeamMembers: number;
+  apiAccess: boolean;
+  mcpAccess: boolean;
+  customCss: boolean;
+  removeBranding: boolean;
+  analytics: boolean;
+  analyticsRetentionMonths: number;
+  widgets: boolean;
+  themeOverrides: boolean;
+  maxFormResponsesPerMonth: number;
+  maxBookingsPerMonth: number;
+  maxWorkflowExecutionsPerMonth: number;
+  maxTransactionalEmailsPerMonth: number;
+  maxIntegrationRequestsPerMonth: number;
+  maxEnrichmentsPerMonth: number;
+  maxStorageBytes: number;
+}
+
+export interface WorkspaceRef {
+  type: "personal" | "team";
+  id: string;
+  ownerUserId: string;
+  teamId: string | null;
+}
+
 export type EntitlementScope = "project" | "workspace";
 export type EntitlementKind = "feature" | "resource" | "metered";
 export type EntitlementStatus =
@@ -88,6 +121,42 @@ export interface EntitlementDecision {
   periodStart: string | null;
   resetAt: string | null;
   recommendedPlan: "pro" | "business" | null;
+}
+
+export interface EntitlementOutcomeSummary {
+  id: string;
+  sourceType: string;
+  sourceId: string;
+  entitlement: EntitlementKey;
+  outcome: "blocked" | "skipped";
+  channel: string;
+  createdAt: string;
+}
+
+export interface ProjectEntitlementSnapshot {
+  workspace: WorkspaceRef;
+  plan: {
+    id: Plan;
+    name: string;
+    status: string;
+    interval: "monthly" | "annual";
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+  };
+  billing: {
+    teamId: string | null;
+    ownerUserId: string;
+    canManageBilling: boolean;
+  };
+  access: {
+    teamRole: "owner" | "admin" | "member" | null;
+    projectRole: "admin" | "editor" | "viewer" | null;
+    effectiveProjectRole: "admin" | "editor" | "viewer" | null;
+  };
+  entitlements: Record<EntitlementKey, EntitlementDecision>;
+  recentOutcomes: EntitlementOutcomeSummary[];
+  subscription: { plan: Plan; status: string };
+  planLimits: PlanLimits;
 }
 
 export const PLAN_ORDER: Plan[] = ["free", "pro", "business"];

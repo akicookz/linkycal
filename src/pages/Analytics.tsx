@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
+import { useEntitlements } from "@/hooks/use-entitlements";
 import type {
   BookingAnalyticsBreakdowns,
   DetailedFunnelReport,
@@ -79,12 +80,6 @@ interface FilterOptions {
   deviceTypes: string[];
   eventTypes: Array<{ id: string; slug: string; name: string }>;
   forms: Array<{ id: string; slug: string; name: string }>;
-}
-
-interface ProjectEntitlements {
-  planLimits: {
-    analytics: boolean;
-  };
 }
 
 type Period = "7d" | "30d" | "90d" | "custom";
@@ -806,15 +801,8 @@ export default function Analytics() {
   const dashboardTimezone =
     Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
-  const { data: entitlements, isLoading: entitlementsLoading } = useQuery<ProjectEntitlements>({
-    queryKey: ["projects", projectId, "entitlements"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/entitlements`);
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
-    },
-    enabled: !!projectId,
-  });
+  const { data: entitlements, isLoading: entitlementsLoading } =
+    useEntitlements(projectId ?? "");
 
   const hasAccess = entitlements?.planLimits?.analytics === true;
 

@@ -1,5 +1,4 @@
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { CreditCard, Loader, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +9,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 interface UpgradeDialogProps {
   open: boolean;
@@ -18,24 +18,9 @@ interface UpgradeDialogProps {
   description: string;
 }
 
-interface ProjectEntitlements {
-  billing: {
-    teamId: string | null;
-    canManageBilling: boolean;
-  };
-}
-
 export function UpgradeDialog({ open, onClose, projectId, description }: UpgradeDialogProps) {
   const navigate = useNavigate();
-  const { data: entitlements, isLoading } = useQuery<ProjectEntitlements>({
-    queryKey: ["projects", projectId, "entitlements"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/${projectId}/entitlements`);
-      if (!res.ok) throw new Error("Failed to fetch entitlements");
-      return res.json();
-    },
-    enabled: open && !!projectId,
-  });
+  const { data: entitlements, isLoading } = useEntitlements(projectId);
 
   const canManageBilling = entitlements?.billing.canManageBilling === true;
   const billingHref = entitlements?.billing.teamId

@@ -148,6 +148,7 @@ import {
 } from "./lib/form-response-notification";
 import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
+import { EntitlementService } from "./services/entitlement-service";
 import type { TriggerContext } from "./services/workflow-execution-service";
 import { parseWorkflowTriggerConfig } from "./lib/workflow-schedule";
 import { ApiKeyService } from "./services/api-key-service";
@@ -3771,28 +3772,17 @@ app.get("/api/projects/:projectId", async (c) => {
 });
 
 app.get("/api/projects/:projectId/entitlements", async (c) => {
-  const access = c.get("projectAccess");
-  const subscription = c.get("projectSubscription") ?? c.get("subscription");
-  const planLimits = c.get("projectPlanLimits") ?? c.get("planLimits");
-  const canManageBilling =
-    access?.isLegacyOwner === true ||
-    access?.teamRole === "owner" ||
-    access?.teamRole === "admin";
-
-  return c.json({
-    subscription,
-    planLimits,
-    billing: {
-      teamId: access?.teamId ?? null,
-      ownerUserId: access?.ownerUserId ?? null,
-      canManageBilling,
-    },
-    access: {
-      teamRole: access?.teamRole ?? null,
-      projectRole: access?.projectRole ?? null,
-      effectiveProjectRole: access?.effectiveProjectRole ?? null,
-    },
-  });
+  const projectId = c.req.param("projectId");
+  const requestAuth = c.get("requestAuth");
+  const actorUserId =
+    requestAuth?.kind === "session" ? requestAuth.user.id : undefined;
+  const snapshot = await new EntitlementService(c.get("db")).snapshot(
+    projectId,
+    actorUserId,
+  );
+  return snapshot
+    ? c.json(snapshot)
+    : c.json({ error: "Project not found" }, 404);
 });
 
 // Update project
