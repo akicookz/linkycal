@@ -308,4 +308,41 @@ describe("public provider publication", () => {
       }
     }
   });
+
+  test("observe mode publishes staged paid features consistently to public visitors", async () => {
+    const testDatabase = createTestDb();
+    await seedProject(testDatabase, "free");
+    await testDatabase.db.insert(dbSchema.projectCustomCss).values({
+      id: "css-observe",
+      projectId: "project-analytics",
+      sourceCss: ".card { color: red; }",
+      compiledCss: "[data-linkycal-public] .card{color:red}",
+      sourceBytes: 20,
+      updatedByUserId: "owner-analytics",
+    });
+    const env = { ENTITLEMENT_ENFORCEMENT_MODE: "observe" };
+
+    try {
+      const booking = await loadPublicEventTypeAction(
+        testDatabase.db,
+        "acme",
+        "intro-call",
+        undefined,
+        env,
+      );
+      const form = await loadPublicFormAction(
+        testDatabase.db,
+        "acme",
+        "lead-form",
+        env,
+      );
+      for (const result of [booking, form]) {
+        expect(result.body.canHideBranding).toBe(true);
+        expect(result.body.compiledCss).toContain(".card{color:red}");
+        expect(result.body.analyticsIntegrations).toHaveLength(2);
+      }
+    } finally {
+      testDatabase.close();
+    }
+  });
 });

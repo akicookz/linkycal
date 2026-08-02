@@ -267,6 +267,13 @@
       "when": 1785686350078,
       "tag": "0037_ordinary_thena",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "6",
+      "when": 1785688605658,
+      "tag": "0038_foamy_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

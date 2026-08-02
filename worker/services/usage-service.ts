@@ -1,4 +1,16 @@
-import { and, desc, eq, gt, lte, ne, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  gte,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  sql,
+} from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
 import { evaluateEntitlement } from "../../shared/entitlement-decision";
@@ -110,23 +122,32 @@ export class UsageService {
       )
       .orderBy(desc(dbSchema.workspaceUsagePeriods.periodStart))
       .limit(1);
-    await this.db
-      .insert(dbSchema.workspaceUsagePeriods)
-      .values({
-        id: crypto.randomUUID(),
-        workspaceType: input.workspace.type,
-        workspaceId: input.workspace.id,
-        periodStart: bounds.start,
-        periodEnd: bounds.end,
-        ...(activePeriod ? usageCounters(activePeriod) : {}),
-      })
-      .onConflictDoNothing({
-        target: [
-          dbSchema.workspaceUsagePeriods.workspaceType,
-          dbSchema.workspaceUsagePeriods.workspaceId,
-          dbSchema.workspaceUsagePeriods.periodStart,
-        ],
-      });
+    if (activePeriod) {
+      await carryUsagePeriod(this.db, input, bounds, activePeriod);
+    } else {
+      const initialConversions = await initialConversionCounters(
+        this.db,
+        input.workspace,
+        bounds,
+      );
+      await this.db
+        .insert(dbSchema.workspaceUsagePeriods)
+        .values({
+          id: crypto.randomUUID(),
+          workspaceType: input.workspace.type,
+          workspaceId: input.workspace.id,
+          periodStart: bounds.start,
+          periodEnd: bounds.end,
+          ...initialConversions,
+        })
+        .onConflictDoNothing({
+          target: [
+            dbSchema.workspaceUsagePeriods.workspaceType,
+            dbSchema.workspaceUsagePeriods.workspaceId,
+            dbSchema.workspaceUsagePeriods.periodStart,
+          ],
+        });
+    }
 
     const [period] = await this.db
       .select()
@@ -255,7 +276,7 @@ export class UsageService {
 
     const client = (this.db as AppDatabase & DatabaseWithClient).$client;
     if (isD1Client(client)) {
-      await releaseWithD1Batch(client, event, input.key, event.amount, input.now);
+      await releaseWithD1Batch(client, event, input.key, input.now);
       return;
     }
     if (isSyncSqliteClient(client)) {
@@ -263,7 +284,6 @@ export class UsageService {
         client,
         event,
         input.key,
-        event.amount,
         input.now,
       );
       return;
@@ -439,6 +459,158 @@ function usageCounters(
     integrationRequests: period.integrationRequests,
     enrichments: period.enrichments,
   };
+}
+
+async function initialConversionCounters(
+  db: AppDatabase,
+  workspace: WorkspaceRef,
+  bounds: UsagePeriodBounds,
+): Promise<
+  Pick<dbSchema.NewWorkspaceUsagePeriodRow, "bookings" | "formResponses">
+> {
+  const projectCondition = workspace.teamId
+    ? eq(dbSchema.projects.teamId, workspace.teamId)
+    : and(
+        eq(dbSchema.projects.userId, workspace.ownerUserId),
+        isNull(dbSchema.projects.teamId),
+      );
+  const [bookingRows, responseRows] = await Promise.all([
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(dbSchema.bookings)
+      .innerJoin(
+        dbSchema.eventTypes,
+        eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id),
+      )
+      .innerJoin(
+        dbSchema.projects,
+        eq(dbSchema.eventTypes.projectId, dbSchema.projects.id),
+      )
+      .where(
+        and(
+          projectCondition,
+          isNotNull(dbSchema.bookings.usageRecordedAt),
+          gte(dbSchema.bookings.usageRecordedAt, bounds.start),
+          lt(dbSchema.bookings.usageRecordedAt, bounds.end),
+        ),
+      ),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(dbSchema.formResponses)
+      .innerJoin(
+        dbSchema.forms,
+        eq(dbSchema.formResponses.formId, dbSchema.forms.id),
+      )
+      .innerJoin(
+        dbSchema.projects,
+        eq(dbSchema.forms.projectId, dbSchema.projects.id),
+      )
+      .where(
+        and(
+          projectCondition,
+          eq(dbSchema.formResponses.status, "completed"),
+          isNotNull(dbSchema.formResponses.usageRecordedAt),
+          gte(dbSchema.formResponses.usageRecordedAt, bounds.start),
+          lt(dbSchema.formResponses.usageRecordedAt, bounds.end),
+        ),
+      ),
+  ]);
+  return {
+    bookings: Number(bookingRows[0]?.count ?? 0),
+    formResponses: Number(responseRows[0]?.count ?? 0),
+  };
+}
+
+async function carryUsagePeriod(
+  db: AppDatabase,
+  input: PeriodInput,
+  bounds: UsagePeriodBounds,
+  activePeriod: dbSchema.WorkspaceUsagePeriodRow,
+): Promise<void> {
+  const periodId = crypto.randomUUID();
+  const client = (db as AppDatabase & DatabaseWithClient).$client;
+  if (isD1Client(client)) {
+    await client.batch([
+      client
+        .prepare(
+          "INSERT INTO workspace_usage_periods (id, workspace_type, workspace_id, period_start, period_end, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, created_at, updated_at) SELECT ?, ?, ?, ?, ?, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, unixepoch(), ? FROM workspace_usage_periods WHERE id = ? ON CONFLICT(workspace_type, workspace_id, period_start) DO NOTHING",
+        )
+        .bind(
+          periodId,
+          input.workspace.type,
+          input.workspace.id,
+          toEpochSeconds(bounds.start),
+          toEpochSeconds(bounds.end),
+          toEpochSeconds(input.now),
+          activePeriod.id,
+        ),
+      client
+        .prepare(
+          "UPDATE workspace_usage_events SET usage_period_id = ?, updated_at = ? WHERE usage_period_id = ? AND state = 'reserved' AND changes() = 1",
+        )
+        .bind(
+          periodId,
+          toEpochSeconds(input.now),
+          activePeriod.id,
+        ),
+    ]);
+    return;
+  }
+
+  if (isSyncSqliteClient(client)) {
+    const run = client.transaction(function carryPeriodTransaction() {
+      const inserted = client
+        .query(
+          "INSERT OR IGNORE INTO workspace_usage_periods (id, workspace_type, workspace_id, period_start, period_end, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, created_at, updated_at) SELECT ?, ?, ?, ?, ?, form_responses, bookings, workflow_executions, transactional_emails, integration_requests, enrichments, unixepoch(), ? FROM workspace_usage_periods WHERE id = ?",
+        )
+        .run(
+          periodId,
+          input.workspace.type,
+          input.workspace.id,
+          toEpochSeconds(bounds.start),
+          toEpochSeconds(bounds.end),
+          toEpochSeconds(input.now),
+          activePeriod.id,
+        );
+      if (changeCount(inserted) !== 1) return;
+      client
+        .query(
+          "UPDATE workspace_usage_events SET usage_period_id = ?, updated_at = ? WHERE usage_period_id = ? AND state = 'reserved'",
+        )
+        .run(periodId, toEpochSeconds(input.now), activePeriod.id);
+    });
+    run();
+    return;
+  }
+
+  const inserted = await db
+    .insert(dbSchema.workspaceUsagePeriods)
+    .values({
+      id: periodId,
+      workspaceType: input.workspace.type,
+      workspaceId: input.workspace.id,
+      periodStart: bounds.start,
+      periodEnd: bounds.end,
+      ...usageCounters(activePeriod),
+    })
+    .onConflictDoNothing({
+      target: [
+        dbSchema.workspaceUsagePeriods.workspaceType,
+        dbSchema.workspaceUsagePeriods.workspaceId,
+        dbSchema.workspaceUsagePeriods.periodStart,
+      ],
+    })
+    .returning({ id: dbSchema.workspaceUsagePeriods.id });
+  if (inserted.length === 0) return;
+  await db
+    .update(dbSchema.workspaceUsageEvents)
+    .set({ usagePeriodId: periodId, updatedAt: input.now })
+    .where(
+      and(
+        eq(dbSchema.workspaceUsageEvents.usagePeriodId, activePeriod.id),
+        eq(dbSchema.workspaceUsageEvents.state, "reserved"),
+      ),
+    );
 }
 
 export function usagePeriodBounds(
@@ -707,16 +879,15 @@ async function releaseWithD1Batch(
   client: D1ClientLike,
   event: dbSchema.WorkspaceUsageEventRow,
   key: MeteredEntitlementKey,
-  amount: number,
   now: Date,
 ): Promise<void> {
   const column = counterSqlColumn(key);
   await client.batch([
     client
       .prepare(
-        `UPDATE workspace_usage_periods SET ${column} = max(0, ${column} - ?), updated_at = ? WHERE id = ? AND EXISTS (SELECT 1 FROM workspace_usage_events WHERE id = ? AND state = 'reserved')`,
+        `UPDATE workspace_usage_periods SET ${column} = max(0, ${column} - coalesce((SELECT amount FROM workspace_usage_events WHERE id = ? AND state = 'reserved'), 0)), updated_at = ? WHERE id = (SELECT usage_period_id FROM workspace_usage_events WHERE id = ? AND state = 'reserved')`,
       )
-      .bind(amount, toEpochSeconds(now), event.usagePeriodId, event.id),
+      .bind(event.id, toEpochSeconds(now), event.id),
     client
       .prepare(
         "UPDATE workspace_usage_events SET state = 'released', updated_at = ? WHERE id = ? AND state = 'reserved' AND changes() = 1",
@@ -729,12 +900,13 @@ function releaseWithSqliteTransaction(
   client: SyncSqliteClient,
   event: dbSchema.WorkspaceUsageEventRow,
   key: MeteredEntitlementKey,
-  amount: number,
   now: Date,
 ): void {
   const run = client.transaction(function releaseTransaction() {
     const current = client
-      .query("SELECT state FROM workspace_usage_events WHERE id = ? LIMIT 1")
+      .query(
+        "SELECT state, usage_period_id, amount FROM workspace_usage_events WHERE id = ? LIMIT 1",
+      )
       .get(event.id);
     if (current?.state !== "reserved") return;
     const column = counterSqlColumn(key);
@@ -742,7 +914,11 @@ function releaseWithSqliteTransaction(
       .query(
         `UPDATE workspace_usage_periods SET ${column} = max(0, ${column} - ?), updated_at = ? WHERE id = ?`,
       )
-      .run(amount, toEpochSeconds(now), event.usagePeriodId);
+      .run(
+        Number(current.amount),
+        toEpochSeconds(now),
+        String(current.usage_period_id),
+      );
     client
       .query(
         "UPDATE workspace_usage_events SET state = 'released', updated_at = ? WHERE id = ? AND state = 'reserved'",

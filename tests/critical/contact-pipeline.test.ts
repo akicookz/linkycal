@@ -379,12 +379,15 @@ describe("contact pipeline stage data migration", function () {
           showUntagged: true,
         };
 
-        await testDatabase.db.insert(dbSchema.projects).values({
-          id: project.id,
-          userId: "owner-contact-migration",
-          name: project.id,
-          slug: project.slug,
-        });
+        testDatabase.sqlite.run(
+          "INSERT INTO projects (id, user_id, name, slug) VALUES (?, ?, ?, ?)",
+          [
+            project.id,
+            "owner-contact-migration",
+            project.id,
+            project.slug,
+          ],
+        );
         await testDatabase.db.insert(dbSchema.tags).values([
           {
             id: leadTagId,

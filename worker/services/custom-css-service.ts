@@ -5,11 +5,13 @@ import * as csstree from "css-tree";
 import { evaluateEntitlement } from "../../shared/entitlement-decision";
 import type { EntitlementDecision, Plan } from "../../shared/plan-catalog";
 import * as dbSchema from "../db/schema";
+import type { ProjectEntitlements } from "../lib/entitlements";
 import { EntitlementService } from "./entitlement-service";
 import {
   applyEntitlementEnforcement,
   type EntitlementModeEnv,
 } from "../lib/entitlement-mode";
+import { publicFeatureDecision } from "../lib/public-entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 const PUBLIC_ROOT = "[data-linkycal-public]";
@@ -151,8 +153,20 @@ export class CustomCssService {
     return row ?? null;
   }
 
-  async getPublished(projectId: string, plan: Plan): Promise<string | null> {
-    const decision = evaluateEntitlement({ plan, key: "customCss" });
+  async getPublished(
+    projectId: string,
+    planOrEntitlements: Plan | ProjectEntitlements,
+    env?: EntitlementModeEnv,
+  ): Promise<string | null> {
+    const decision = typeof planOrEntitlements === "string"
+      ? evaluateEntitlement({ plan: planOrEntitlements, key: "customCss" })
+      : publicFeatureDecision(
+          planOrEntitlements,
+          projectId,
+          "customCss",
+          env,
+          "public_custom_css",
+        );
     if (!decision.allowed) return null;
     return (await this.getForSettings(projectId))?.compiledCss ?? null;
   }

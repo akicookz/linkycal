@@ -1,4 +1,4 @@
-import { and, eq, lte } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
 import { evaluateEntitlement } from "../../shared/entitlement-decision";
@@ -84,24 +84,26 @@ export async function createWithResourceCapacity<T>(input: {
   operationId?: string;
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
-  return withResourceCreationLease(
-    input.db,
-    `project:${input.projectId}:${input.key}`,
-    async function createWithProjectLease() {
-      const capacity = await requireResourceCapacity({
+  const amount = input.amount ?? 1;
+  return createWithResourceClaims({
+    db: input.db,
+    claimPrefix: `project:${input.projectId}:${input.key}`,
+    amount,
+    actionLabel: input.actionLabel ?? actionLabelFor(input.key, amount),
+    capacity: async function projectCapacity() {
+      return requireResourceCapacity({
         db: input.db,
         projectId: input.projectId,
         key: input.key,
-        amount: input.amount,
+        amount,
         actionLabel: input.actionLabel,
         env: input.env,
         channel: input.channel,
         operationId: input.operationId,
       });
-      if (!capacity.ok) return capacity;
-      return { ok: true as const, value: await input.create(input.db) };
     },
-  );
+    create: input.create,
+  });
 }
 
 export async function requireWorkspaceResourceCapacity(input: {
@@ -152,73 +154,173 @@ export async function createWithWorkspaceResourceCapacity<T>(input: {
   operationId?: string;
   create(db: AppDatabase): Promise<T>;
 }): Promise<{ ok: true; value: T } | CapacityFailure> {
-  return withResourceCreationLease(
-    input.db,
-    `workspace:${input.workspace.type}:${input.workspace.id}:${input.key}`,
-    async function createWithWorkspaceLease() {
-      const capacity = await requireWorkspaceResourceCapacity({
+  const amount = input.amount ?? 1;
+  return createWithResourceClaims({
+    db: input.db,
+    claimPrefix:
+      `workspace:${input.workspace.type}:${input.workspace.id}:${input.key}`,
+    amount,
+    actionLabel: input.actionLabel ?? actionLabelFor(input.key, amount),
+    capacity: async function workspaceCapacity() {
+      return requireWorkspaceResourceCapacity({
         db: input.db,
         workspace: input.workspace,
         plan: input.plan,
         key: input.key,
-        amount: input.amount,
+        amount,
         actionLabel: input.actionLabel,
         now: input.now,
         env: input.env,
         channel: input.channel,
         operationId: input.operationId,
       });
-      if (!capacity.ok) return capacity;
-      return { ok: true as const, value: await input.create(input.db) };
     },
+    create: input.create,
+  });
+}
+
+async function createWithResourceClaims<T>(input: {
+  db: AppDatabase;
+  claimPrefix: string;
+  amount: number;
+  actionLabel: string;
+  capacity(): Promise<CapacityResult>;
+  create(db: AppDatabase): Promise<T>;
+}): Promise<{ ok: true; value: T } | CapacityFailure> {
+  if (input.amount <= 0) {
+    return { ok: true, value: await input.create(input.db) };
+  }
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const capacity = await input.capacity();
+    if (!capacity.ok) return capacity;
+    const hardLimit = capacity.decision.hardLimit;
+    const used = capacity.decision.used;
+    if (
+      hardLimit === null ||
+      used === null ||
+      used + input.amount > hardLimit
+    ) {
+      return { ok: true, value: await input.create(input.db) };
+    }
+
+    const claim = await tryClaimResourceSlots({
+      db: input.db,
+      claimPrefix: input.claimPrefix,
+      token: crypto.randomUUID(),
+      used,
+      amount: input.amount,
+      hardLimit,
+    });
+    if (claim.status === "acquired") {
+      try {
+        return { ok: true, value: await input.create(input.db) };
+      } finally {
+        await input.db
+          .delete(dbSchema.entitlementResourceLocks)
+          .where(eq(dbSchema.entitlementResourceLocks.token, claim.token));
+      }
+    }
+    if (claim.status === "full" && attempt >= 3) {
+      return reservedCapacityFailure(
+        capacity.decision,
+        used + claim.activeClaims,
+        input.actionLabel,
+      );
+    }
+    await waitForClaim(25);
+  }
+
+  const capacity = await input.capacity();
+  if (!capacity.ok) return capacity;
+  return reservedCapacityFailure(
+    capacity.decision,
+    capacity.decision.hardLimit ?? capacity.decision.used ?? 0,
+    input.actionLabel,
   );
 }
 
-async function withResourceCreationLease<T>(
-  db: AppDatabase,
-  lockKey: string,
-  action: () => Promise<T>,
-): Promise<T> {
-  const token = crypto.randomUUID();
-  await acquireResourceCreationLease(db, lockKey, token);
+type ClaimResult =
+  | { status: "acquired"; token: string }
+  | { status: "collision" }
+  | { status: "full"; activeClaims: number };
+
+async function tryClaimResourceSlots(input: {
+  db: AppDatabase;
+  claimPrefix: string;
+  token: string;
+  used: number;
+  amount: number;
+  hardLimit: number;
+}): Promise<ClaimResult> {
+  const rows = await input.db
+    .select({ lockKey: dbSchema.entitlementResourceLocks.lockKey })
+    .from(dbSchema.entitlementResourceLocks);
+  const prefix = `${input.claimPrefix}:slot:`;
+  const activeKeys = new Set(
+    rows
+      .map((row) => row.lockKey)
+      .filter((lockKey) => lockKey.startsWith(prefix)),
+  );
+  const availableSlots: number[] = [];
+  for (
+    let slot = input.used;
+    slot < input.hardLimit && availableSlots.length < input.amount;
+    slot += 1
+  ) {
+    if (!activeKeys.has(`${prefix}${slot}`)) availableSlots.push(slot);
+  }
+  if (availableSlots.length < input.amount) {
+    return { status: "full", activeClaims: activeKeys.size };
+  }
+
   try {
-    return await action();
-  } finally {
-    await db
-      .delete(dbSchema.entitlementResourceLocks)
-      .where(
-        and(
-          eq(dbSchema.entitlementResourceLocks.lockKey, lockKey),
-          eq(dbSchema.entitlementResourceLocks.token, token),
-        ),
-      );
+    await input.db.insert(dbSchema.entitlementResourceLocks).values(
+      availableSlots.map((slot) => ({
+        lockKey: `${prefix}${slot}`,
+        token: input.token,
+        // Claims deliberately do not expire: capacity fails closed if an
+        // isolate dies, so a stale writer can never cross a hard limit.
+        expiresAt: new Date("9999-12-31T23:59:59.000Z"),
+      })),
+    );
+    return { status: "acquired", token: input.token };
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return { status: "collision" };
+    throw error;
   }
 }
 
-async function acquireResourceCreationLease(
-  db: AppDatabase,
-  lockKey: string,
-  token: string,
-): Promise<void> {
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 15_000);
-    const claimed = await db
-      .insert(dbSchema.entitlementResourceLocks)
-      .values({ lockKey, token, expiresAt })
-      .onConflictDoUpdate({
-        target: dbSchema.entitlementResourceLocks.lockKey,
-        set: { token, expiresAt, updatedAt: now },
-        setWhere: lte(dbSchema.entitlementResourceLocks.expiresAt, now),
-      })
-      .returning({ token: dbSchema.entitlementResourceLocks.token });
-    if (claimed[0]?.token === token) return;
-    await waitForLease(25);
+function isUniqueConstraintError(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 5 && current; depth += 1) {
+    if (/unique constraint|constraint failed/i.test(String(current))) {
+      return true;
+    }
+    current = typeof current === "object" && "cause" in current
+      ? (current as { cause?: unknown }).cause
+      : null;
   }
-  throw new Error("Resource capacity check is busy; retry the request");
+  return false;
 }
 
-async function waitForLease(milliseconds: number): Promise<void> {
+function reservedCapacityFailure(
+  decision: EntitlementDecision,
+  used: number,
+  actionLabel: string,
+): CapacityFailure {
+  const reservedDecision: EntitlementDecision = {
+    ...decision,
+    allowed: false,
+    status: "blocked",
+    used,
+  };
+  const failure = capacityResult(reservedDecision, actionLabel);
+  if (failure.ok) throw new Error("Reserved capacity must be blocked");
+  return failure;
+}
+
+async function waitForClaim(milliseconds: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 

@@ -8,6 +8,8 @@ import type {
 } from "../../shared/funnel-analytics";
 import * as dbSchema from "../db/schema";
 import { resolveProjectEntitlements } from "../lib/entitlements";
+import type { EntitlementModeEnv } from "../lib/entitlement-mode";
+import { publicFeatureDecision } from "../lib/public-entitlements";
 import { configureAnalyticsIntegrationSchema } from "../validation";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -197,9 +199,19 @@ export class AnalyticsIntegrationService {
 
   async getPublished(
     projectId: string,
+    env?: EntitlementModeEnv,
   ): Promise<AnalyticsIntegrationConfig[]> {
     const entitlements = await resolveProjectEntitlements(this.db, projectId);
-    if (!entitlements?.planLimits.analytics) return [];
+    if (
+      !entitlements ||
+      !publicFeatureDecision(
+        entitlements,
+        projectId,
+        "analytics",
+        env,
+        "public_analytics_integrations",
+      ).allowed
+    ) return [];
 
     const integrations = await this.list(projectId);
     return (integrations ?? []).filter(function isEnabled(config) {

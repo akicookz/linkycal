@@ -136,6 +136,63 @@ describe("static entitlement enforcement", () => {
     }
   }, 30_000);
 
+  test("an in-flight D1 capacity claim cannot expire and admit a stale concurrent writer", async () => {
+    const d1Database = await createD1TestDb();
+    try {
+      await seedStaticWorkspace(d1Database, { forms: 2 });
+      let releaseFirst = function releaseFirstPlaceholder() {};
+      const firstMayFinish = new Promise<void>((resolve) => {
+        releaseFirst = resolve;
+      });
+      let markFirstEntered = function markFirstEnteredPlaceholder() {};
+      const firstEntered = new Promise<void>((resolve) => {
+        markFirstEntered = resolve;
+      });
+      let secondEntered = false;
+      const first = createWithResourceCapacity({
+        db: d1Database.db,
+        projectId: "project-static",
+        key: "forms",
+        create: async (db) => {
+          markFirstEntered();
+          await firstMayFinish;
+          return new FormService(db).create("project-static", {
+            name: "Slow final form",
+            slug: "slow-final-form",
+            type: "single",
+          });
+        },
+      });
+      await firstEntered;
+      await d1Database.db
+        .update(dbSchema.entitlementResourceLocks)
+        .set({ expiresAt: new Date(0) });
+      const second = createWithResourceCapacity({
+        db: d1Database.db,
+        projectId: "project-static",
+        key: "forms",
+        create: async (db) => {
+          secondEntered = true;
+          return new FormService(db).create("project-static", {
+            name: "Concurrent stale writer",
+            slug: "concurrent-stale-writer",
+            type: "single",
+          });
+        },
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const staleWriterEntered = secondEntered;
+      releaseFirst();
+      const results = await Promise.all([first, second]);
+      expect(staleWriterEntered).toBe(false);
+      expect(results.filter((result) => result.ok)).toHaveLength(1);
+      expect(results.filter((result) => !result.ok)).toHaveLength(1);
+    } finally {
+      await d1Database.close();
+    }
+  }, 30_000);
+
   test("contact imports reject as one unit, then deduplicate existing and repeated emails before capacity", async () => {
     testDatabase = createTestDb();
     await seedStaticWorkspace(testDatabase, { contacts: 499 });

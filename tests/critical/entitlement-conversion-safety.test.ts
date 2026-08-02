@@ -5,12 +5,17 @@ import * as dbSchema from "../../worker/db/schema";
 import { recordPersistedBookingUsage } from "../../worker/lib/booking-actions";
 import { ensureContact } from "../../worker/lib/contact-actions";
 import { reconcileConversionUsage } from "../../worker/lib/conversion-usage";
+import { UsageService } from "../../worker/services/usage-service";
 import {
   startPublicFormResponseAction,
   submitPublicFormStepAction,
 } from "../../worker/lib/public-form-actions";
 import type { AppEnv } from "../../worker/types";
-import { createTestDb, type TestDatabase } from "../support/test-db";
+import {
+  applyProductionMigrations,
+  createTestDb,
+  type TestDatabase,
+} from "../support/test-db";
 
 describe("entitlement conversion safety", () => {
   let testDatabase: TestDatabase | null = null;
@@ -177,6 +182,66 @@ describe("entitlement conversion safety", () => {
       .select()
       .from(dbSchema.workspaceUsagePeriods)
       .where(eq(dbSchema.workspaceUsagePeriods.id, "period-conversion"));
+    expect(period).toMatchObject({ bookings: 1, formResponses: 1 });
+  });
+
+  test("the conversion marker migration never charges historical rows to the rollout period", async () => {
+    testDatabase = createTestDb({ through: "0036_short_magdalene.sql" });
+    testDatabase.sqlite.run(
+      "ALTER TABLE projects ADD COLUMN deleting_at integer",
+    );
+    await seedConversionProject(testDatabase);
+    await testDatabase.db.insert(dbSchema.eventTypes).values({
+      id: "event-before-rollout",
+      projectId: "project-conversion",
+      name: "Historical event",
+      slug: "historical-event",
+    });
+    testDatabase.sqlite.run(
+      "INSERT INTO bookings (id, event_type_id, name, email, start_time, end_time, timezone) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [
+        "booking-before-rollout",
+        "event-before-rollout",
+        "Historical guest",
+        "historical@example.com",
+        1784541600,
+        1784543400,
+        "UTC",
+      ],
+    );
+    testDatabase.sqlite.run(
+      "INSERT INTO form_responses (id, form_id, status) VALUES (?, ?, ?)",
+      ["response-before-rollout", "form-conversion", "completed"],
+    );
+
+    applyProductionMigrations(testDatabase.sqlite, {
+      after: "0036_short_magdalene.sql",
+      through: "0037_ordinary_thena.sql",
+    });
+
+    const booking = testDatabase.sqlite
+      .query("SELECT usage_recorded_at FROM bookings WHERE id = ?")
+      .get("booking-before-rollout") as { usage_recorded_at: number | null };
+    const response = testDatabase.sqlite
+      .query("SELECT usage_recorded_at FROM form_responses WHERE id = ?")
+      .get("response-before-rollout") as { usage_recorded_at: number | null };
+    expect(booking.usage_recorded_at).not.toBeNull();
+    expect(response.usage_recorded_at).not.toBeNull();
+    const migrationCounts = testDatabase.sqlite.query(
+      "SELECT (SELECT count(*) FROM bookings INNER JOIN event_types ON event_types.id = bookings.event_type_id INNER JOIN projects ON projects.id = event_types.project_id WHERE projects.team_id = 'team-conversion' AND bookings.usage_recorded_at >= 1785542400 AND bookings.usage_recorded_at < 1788220800) AS bookings, (SELECT count(*) FROM form_responses INNER JOIN forms ON forms.id = form_responses.form_id INNER JOIN projects ON projects.id = forms.project_id WHERE projects.team_id = 'team-conversion' AND form_responses.usage_recorded_at >= 1785542400 AND form_responses.usage_recorded_at < 1788220800) AS form_responses",
+    ).get() as { bookings: number; form_responses: number };
+    expect(migrationCounts).toEqual({ bookings: 1, form_responses: 1 });
+
+    const period = await new UsageService(testDatabase.db).getOrCreatePeriod({
+      workspace: {
+        type: "team",
+        id: "team-conversion",
+        ownerUserId: "owner-conversion",
+        teamId: "team-conversion",
+      },
+      subscription: null,
+      now: new Date("2026-08-15T12:00:00.000Z"),
+    });
     expect(period).toMatchObject({ bookings: 1, formResponses: 1 });
   });
 });

@@ -14,6 +14,7 @@ import {
   getProjectUsageDecision,
 } from "./metered-entitlements";
 import type { EntitlementModeEnv } from "./entitlement-mode";
+import { publicFeatureDecision } from "./public-entitlements";
 import { recordPersistedFormResponseUsage } from "./conversion-usage";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -22,6 +23,7 @@ export async function loadPublicFormAction(
   db: AppDatabase,
   projectSlug: string,
   formSlug: string,
+  env?: EntitlementModeEnv,
 ) {
   const [project] = await db
     .select({
@@ -55,16 +57,25 @@ export async function loadPublicFormAction(
   }
 
   const entitlements = await resolveProjectEntitlements(db, project.id);
-  const canHideBranding = entitlements?.planLimits.removeBranding === true;
+  const canHideBranding = entitlements
+    ? publicFeatureDecision(
+        entitlements,
+        project.id,
+        "removeBranding",
+        env,
+        "public_form_branding",
+      ).allowed
+    : false;
   const compiledCss = entitlements
     ? await new CustomCssService(db).getPublished(
         project.id,
-        entitlements.subscription.plan,
+        entitlements,
+        env,
       )
     : null;
   const analyticsIntegrations = await new AnalyticsIntegrationService(
     db,
-  ).getPublished(project.id);
+  ).getPublished(project.id, env);
 
   return {
     ok: true as const,

@@ -86,23 +86,35 @@ describe("workspace usage entitlements", () => {
       })
       .where(eq(dbSchema.workspaceUsagePeriods.id, freePeriod.id));
 
+    const outstandingReservation = {
+      workspace: FREE_WORKSPACE,
+      subscription: null,
+      plan: "free" as const,
+      key: "transactionalEmails" as const,
+      amount: 1,
+      operationId: "email-reserved-before-upgrade",
+      now: NOW,
+    };
+    await service.reserve(outstandingReservation);
+
+    const upgradedSubscription = {
+      id: "subscription-upgrade",
+      userId: FREE_WORKSPACE.ownerUserId,
+      teamId: null,
+      plan: "pro" as const,
+      interval: "monthly" as const,
+      status: "active" as const,
+      stripeCustomerId: null,
+      stripeSubscriptionId: null,
+      currentPeriodStart: NOW,
+      currentPeriodEnd: new Date("2026-09-15T12:00:00.000Z"),
+      cancelAtPeriodEnd: false,
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
     const paidPeriod = await service.getOrCreatePeriod({
       workspace: FREE_WORKSPACE,
-      subscription: {
-        id: "subscription-upgrade",
-        userId: FREE_WORKSPACE.ownerUserId,
-        teamId: null,
-        plan: "pro",
-        interval: "monthly",
-        status: "active",
-        stripeCustomerId: null,
-        stripeSubscriptionId: null,
-        currentPeriodStart: NOW,
-        currentPeriodEnd: new Date("2026-09-15T12:00:00.000Z"),
-        cancelAtPeriodEnd: false,
-        createdAt: NOW,
-        updatedAt: NOW,
-      },
+      subscription: upgradedSubscription,
       now: NOW,
     });
 
@@ -110,6 +122,25 @@ describe("workspace usage entitlements", () => {
     expect(paidPeriod.formResponses).toBe(321);
     expect(paidPeriod.workflowExecutions).toBe(42);
     expect(paidPeriod.integrationRequests).toBe(8_765);
+    expect(paidPeriod.transactionalEmails).toBe(1);
+
+    await service.release({
+      ...outstandingReservation,
+      subscription: upgradedSubscription,
+    });
+    const [releasedPaidPeriod] = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsagePeriods)
+      .where(eq(dbSchema.workspaceUsagePeriods.id, paidPeriod.id));
+    const [movedEvent] = await testDatabase.db
+      .select()
+      .from(dbSchema.workspaceUsageEvents)
+      .where(eq(
+        dbSchema.workspaceUsageEvents.operationId,
+        outstandingReservation.operationId,
+      ));
+    expect(releasedPaidPeriod?.transactionalEmails).toBe(0);
+    expect(movedEvent?.usagePeriodId).toBe(paidPeriod.id);
   });
 
   test("warning, grace, hard-limit, and unlimited decisions use persisted workspace counters", async () => {

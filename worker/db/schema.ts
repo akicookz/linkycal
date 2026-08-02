@@ -92,6 +92,7 @@ export const projects = sqliteTable(
     timezone: text("timezone").notNull().default("America/New_York"),
     onboarded: integer("onboarded", { mode: "boolean" }).notNull().default(false),
     settings: text("settings"),
+    deletingAt: integer("deleting_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
       .default(sql`(unixepoch())`),

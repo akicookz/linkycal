@@ -6,7 +6,11 @@ import { deleteProjectStorage } from "../worker/lib/storage-reconciliation";
 import { entitlementError } from "../worker/lib/entitlement-errors";
 import { StorageUsageService } from "../worker/services/storage-usage-service";
 import type { WorkspaceRef } from "../worker/types";
-import { createTestDb, type TestDatabase } from "./support/test-db";
+import {
+  createD1TestDb,
+  createTestDb,
+  type TestDatabase,
+} from "./support/test-db";
 
 const WORKSPACE: WorkspaceRef = {
   type: "team",
@@ -180,10 +184,107 @@ describe("storage entitlements", () => {
     expect(await testDatabase.db.select().from(dbSchema.storedObjects))
       .toEqual([]);
   });
+
+  test("an upload cannot commit after project deletion starts and its reservation is releasable", async () => {
+    testDatabase = createTestDb();
+    await seedStorageProject(testDatabase, 0);
+    try {
+      testDatabase.sqlite.run(
+        "ALTER TABLE projects ADD COLUMN deleting_at integer",
+      );
+    } catch (error) {
+      if (!String(error).includes("duplicate column name")) throw error;
+    }
+    const service = new StorageUsageService(testDatabase.db);
+    const objectKey = "projects/project-storage/racing-upload.png";
+    await service.reserve({
+      workspace: WORKSPACE,
+      plan: "free",
+      objectKey,
+      sizeBytes: 100,
+    });
+    testDatabase.sqlite.run(
+      "UPDATE projects SET deleting_at = unixepoch() WHERE id = ?",
+      ["project-storage"],
+    );
+
+    await expect(
+      service.commit({
+        workspace: WORKSPACE,
+        projectId: "project-storage",
+        objectKey,
+        category: "project_asset",
+        sizeBytes: 100,
+      }),
+    ).rejects.toThrow("being deleted");
+    await service.releaseFailed(WORKSPACE, objectKey);
+    expect(await totalBytes(testDatabase)).toBe(0);
+    expect(await testDatabase.db.select().from(dbSchema.storedObjects))
+      .toEqual([]);
+  });
+
+  test("D1 conditionally commits upload metadata only while the project is active", async () => {
+    const d1Database = await createD1TestDb();
+    try {
+      await seedStorageProject(d1Database, 0);
+      const service = new StorageUsageService(d1Database.db);
+      await service.reserve({
+        workspace: WORKSPACE,
+        plan: "free",
+        objectKey: "projects/project-storage/active.png",
+        sizeBytes: 100,
+      });
+      await service.commit({
+        workspace: WORKSPACE,
+        projectId: "project-storage",
+        objectKey: "projects/project-storage/active.png",
+        category: "project_asset",
+        sizeBytes: 100,
+      });
+
+      const racingKey = "projects/project-storage/deleting.png";
+      await service.reserve({
+        workspace: WORKSPACE,
+        plan: "free",
+        objectKey: racingKey,
+        sizeBytes: 50,
+      });
+      await d1Database.db
+        .update(dbSchema.projects)
+        .set({ deletingAt: new Date() })
+        .where(eq(dbSchema.projects.id, "project-storage"));
+      await expect(
+        service.commit({
+          workspace: WORKSPACE,
+          projectId: "project-storage",
+          objectKey: racingKey,
+          category: "project_asset",
+          sizeBytes: 50,
+        }),
+      ).rejects.toThrow("being deleted");
+      await service.releaseFailed(WORKSPACE, racingKey);
+
+      const [total] = await d1Database.db
+        .select()
+        .from(dbSchema.workspaceStorageTotals)
+        .where(eq(
+          dbSchema.workspaceStorageTotals.workspaceId,
+          WORKSPACE.id,
+        ));
+      expect(total?.sizeBytes).toBe(100);
+      expect(
+        await d1Database.db
+          .select({ objectKey: dbSchema.storedObjects.objectKey })
+          .from(dbSchema.storedObjects),
+      ).toEqual([{ objectKey: "projects/project-storage/active.png" }]);
+    } finally {
+      await d1Database.close();
+    }
+  }, 30_000);
 });
 
 async function seedStorageProject(
-  testDatabase: TestDatabase,
+  testDatabase: Pick<TestDatabase, "db">,
   sizeBytes: number,
 ): Promise<void> {
   await testDatabase.db.insert(dbSchema.schema.users).values({

@@ -4,7 +4,18 @@ import { cors } from "hono/cors";
 import { except } from "hono/combine";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, ne, and, or, desc, like, sql, gte, inArray } from "drizzle-orm";
+import {
+  eq,
+  ne,
+  and,
+  or,
+  desc,
+  like,
+  sql,
+  gte,
+  inArray,
+  isNull,
+} from "drizzle-orm";
 import type Stripe from "stripe";
 
 import { createAuth } from "./auth";
@@ -178,7 +189,10 @@ import {
 } from "./lib/resource-creation";
 import { reserveProjectUsage } from "./lib/metered-entitlements";
 import { entitlementError } from "./lib/entitlement-errors";
-import { StorageUsageService } from "./services/storage-usage-service";
+import {
+  ProjectStorageUnavailableError,
+  StorageUsageService,
+} from "./services/storage-usage-service";
 import {
   deleteProjectStorage,
   reconcileProjectStorage,
@@ -493,6 +507,14 @@ async function storePrivateFormUpload(
     context.projectId,
   );
   if (!entitlements) throw new Error("Project not found");
+  const [projectState] = await db
+    .select({ deletingAt: dbSchema.projects.deletingAt })
+    .from(dbSchema.projects)
+    .where(eq(dbSchema.projects.id, context.projectId))
+    .limit(1);
+  if (!projectState || projectState.deletingAt) {
+    throw new ProjectStorageUnavailableError();
+  }
   const storage = new StorageUsageService(db);
   const decision = await storage.reserve({
     workspace: entitlements.workspace,
@@ -521,17 +543,23 @@ async function storePrivateFormUpload(
         fieldId: context.fieldId,
       },
     });
+    await storage.commit({
+      workspace: entitlements.workspace,
+      projectId: context.projectId,
+      objectKey: key,
+      category: "response_upload",
+      sizeBytes: file.size,
+    });
   } catch (error) {
-    await storage.releaseFailed(entitlements.workspace, key);
+    try {
+      await env.UPLOADS.delete(key);
+    } catch (cleanupError) {
+      console.error("Failed to clean up rejected form upload:", cleanupError);
+    } finally {
+      await storage.releaseFailed(entitlements.workspace, key);
+    }
     throw error;
   }
-  await storage.commit({
-    workspace: entitlements.workspace,
-    projectId: context.projectId,
-    objectKey: key,
-    category: "response_upload",
-    sizeBytes: file.size,
-  });
 
   return {
     key,
@@ -1560,6 +1588,9 @@ app.post(
         }
         return c.json(err.failure.body, err.failure.status);
       }
+      if (err instanceof ProjectStorageUnavailableError) {
+        return c.json({ error: err.message }, 409);
+      }
       console.error("Form file upload error:", err);
       return c.json({ error: "Failed to upload file" }, 500);
     }
@@ -1747,6 +1778,7 @@ app.get("/api/v1/event-types/:projectSlug/:eventSlug", async (c) => {
       projectSlug,
       eventSlug,
       c.req.query("timezone"),
+      c.env,
     );
     return result.ok
       ? c.json(result.body)
@@ -1867,7 +1899,12 @@ app.get("/api/public/forms/:projectSlug/:formSlug", async (c) => {
     const projectSlug = c.req.param("projectSlug");
     const formSlug = c.req.param("formSlug");
     const db = drizzle(c.env.DB, { schema });
-    const result = await loadPublicFormAction(db, projectSlug, formSlug);
+    const result = await loadPublicFormAction(
+      db,
+      projectSlug,
+      formSlug,
+      c.env,
+    );
     return result.ok
       ? c.json(result.body)
       : c.json(result.body, result.status);
@@ -2251,6 +2288,13 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
         "Storage limit reached",
         "This form cannot accept this file right now.",
         err.failure.status,
+      );
+    }
+    if (err instanceof ProjectStorageUnavailableError) {
+      return createHtmlPageResponse(
+        "Project unavailable",
+        "This project is being deleted and cannot accept files.",
+        409,
       );
     }
     console.error("Native HTML form submission error:", err);
@@ -4046,11 +4090,32 @@ const projectRoutes = teamRoutes.delete(
     try {
       const projectId = c.req.param("projectId");
       const db = c.get("db");
+      const marked = await db
+        .update(dbSchema.projects)
+        .set({ deletingAt: new Date() })
+        .where(
+          and(
+            eq(dbSchema.projects.id, projectId),
+            isNull(dbSchema.projects.deletingAt),
+          ),
+        )
+        .returning({ id: dbSchema.projects.id });
+      if (marked.length === 0) {
+        return c.json({ error: "Project deletion is already in progress" }, 409);
+      }
 
-      await deleteProjectStorage(db, c.env.UPLOADS, projectId);
-      await db
-        .delete(dbSchema.projects)
-        .where(eq(dbSchema.projects.id, projectId));
+      try {
+        await deleteProjectStorage(db, c.env.UPLOADS, projectId);
+        await db
+          .delete(dbSchema.projects)
+          .where(eq(dbSchema.projects.id, projectId));
+      } catch (error) {
+        await db
+          .update(dbSchema.projects)
+          .set({ deletingAt: null })
+          .where(eq(dbSchema.projects.id, projectId));
+        throw error;
+      }
 
       return c.json({ success: true });
     } catch (err) {
@@ -4155,6 +4220,14 @@ app.post("/api/projects/:projectId/uploads", async (c) => {
       projectId,
     );
     if (!entitlements) return c.json({ error: "Project not found" }, 404);
+    const [projectState] = await c.get("db")
+      .select({ deletingAt: dbSchema.projects.deletingAt })
+      .from(dbSchema.projects)
+      .where(eq(dbSchema.projects.id, projectId))
+      .limit(1);
+    if (!projectState || projectState.deletingAt) {
+      return c.json({ error: "Project deletion is in progress" }, 409);
+    }
     const storage = new StorageUsageService(c.get("db"));
     const decision = await storage.reserve({
       workspace: entitlements.workspace,
@@ -4177,20 +4250,29 @@ app.post("/api/projects/:projectId/uploads", async (c) => {
       await c.env.UPLOADS.put(key, file.stream(), {
         httpMetadata: { contentType: file.type },
       });
+      await storage.commit({
+        workspace: entitlements.workspace,
+        projectId,
+        objectKey: key,
+        category: "project_asset",
+        sizeBytes: file.size,
+      });
     } catch (error) {
-      await storage.releaseFailed(entitlements.workspace, key);
+      try {
+        await c.env.UPLOADS.delete(key);
+      } catch (cleanupError) {
+        console.error("Failed to clean up rejected project upload:", cleanupError);
+      } finally {
+        await storage.releaseFailed(entitlements.workspace, key);
+      }
       throw error;
     }
-    await storage.commit({
-      workspace: entitlements.workspace,
-      projectId,
-      objectKey: key,
-      category: "project_asset",
-      sizeBytes: file.size,
-    });
 
     return c.json({ key, url: `/api/uploads/${key}` }, 201);
   } catch (err) {
+    if (err instanceof ProjectStorageUnavailableError) {
+      return c.json({ error: err.message }, 409);
+    }
     console.error("Upload error:", err);
     return c.json({ error: "Failed to upload file" }, 500);
   }

@@ -27,6 +27,40 @@ interface PendingReservation {
   reservedDelta: number;
 }
 
+interface ChangeResult {
+  changes?: number;
+  meta?: { changes?: number };
+}
+
+interface SyncStatement {
+  run(...params: unknown[]): ChangeResult;
+}
+
+interface SyncSqliteClient {
+  query(query: string): SyncStatement;
+  transaction<T>(callback: () => T): () => T;
+}
+
+interface D1StatementLike {
+  bind(...values: unknown[]): D1StatementLike;
+}
+
+interface D1ClientLike {
+  prepare(query: string): D1StatementLike;
+  batch(statements: D1StatementLike[]): Promise<unknown[]>;
+}
+
+interface DatabaseWithClient {
+  $client?: unknown;
+}
+
+export class ProjectStorageUnavailableError extends Error {
+  constructor() {
+    super("This project is being deleted");
+    this.name = "ProjectStorageUnavailableError";
+  }
+}
+
 export class StorageUsageService {
   private pending = new Map<string, PendingReservation>();
 
@@ -114,33 +148,18 @@ export class StorageUsageService {
     const existing = pending ? null : await this.getObject(input.objectKey);
     const previousSize = pending?.previousSize ?? existing?.sizeBytes ?? 0;
     const reservedDelta = pending?.reservedDelta ?? 0;
-
-    await this.db
-      .insert(dbSchema.storedObjects)
-      .values({
-        id: existing?.id ?? crypto.randomUUID(),
-        workspaceType: input.workspace.type,
-        workspaceId: input.workspace.id,
-        projectId: input.projectId,
-        objectKey: input.objectKey,
-        category: input.category,
-        sizeBytes: input.sizeBytes,
-      })
-      .onConflictDoUpdate({
-        target: dbSchema.storedObjects.objectKey,
-        set: {
-          workspaceType: input.workspace.type,
-          workspaceId: input.workspace.id,
-          projectId: input.projectId,
-          category: input.category,
-          sizeBytes: input.sizeBytes,
-          updatedAt: new Date(),
-        },
-      });
-
     const adjustment = input.sizeBytes - previousSize - reservedDelta;
-    if (adjustment !== 0) {
-      await this.changeTotal(input.workspace, adjustment);
+    const committed = await commitStoredObjectIfProjectActive(this.db, {
+      id: existing?.id ?? crypto.randomUUID(),
+      workspace: input.workspace,
+      projectId: input.projectId,
+      objectKey: input.objectKey,
+      category: input.category,
+      sizeBytes: input.sizeBytes,
+      adjustment,
+    });
+    if (!committed) {
+      throw new ProjectStorageUnavailableError();
     }
     this.pending.delete(input.objectKey);
   }
@@ -252,6 +271,142 @@ export class StorageUsageService {
       })
       .where(workspaceTotalCondition(workspace));
   }
+}
+
+async function commitStoredObjectIfProjectActive(
+  db: AppDatabase,
+  input: {
+    id: string;
+    workspace: WorkspaceRef;
+    projectId: string;
+    objectKey: string;
+    category: StoredObjectCategory;
+    sizeBytes: number;
+    adjustment: number;
+  },
+): Promise<boolean> {
+  const client = (db as AppDatabase & DatabaseWithClient).$client;
+  const insertSql =
+    "INSERT INTO stored_objects (id, workspace_type, workspace_id, project_id, object_key, category, size_bytes, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, unixepoch(), unixepoch() FROM projects WHERE id = ? AND deleting_at IS NULL ON CONFLICT(object_key) DO UPDATE SET workspace_type = excluded.workspace_type, workspace_id = excluded.workspace_id, project_id = excluded.project_id, category = excluded.category, size_bytes = excluded.size_bytes, updated_at = unixepoch()";
+  const values = [
+    input.id,
+    input.workspace.type,
+    input.workspace.id,
+    input.projectId,
+    input.objectKey,
+    input.category,
+    input.sizeBytes,
+    input.projectId,
+  ];
+  const adjustmentSql =
+    "UPDATE workspace_storage_totals SET size_bytes = max(0, size_bytes + ?), updated_at = unixepoch() WHERE workspace_type = ? AND workspace_id = ? AND changes() = 1";
+
+  if (isD1Client(client)) {
+    const statements = [client.prepare(insertSql).bind(...values)];
+    if (input.adjustment !== 0) {
+      statements.push(
+        client
+          .prepare(adjustmentSql)
+          .bind(
+            input.adjustment,
+            input.workspace.type,
+            input.workspace.id,
+          ),
+      );
+    }
+    const results = await client.batch(statements);
+    return changeCount(results[0]) === 1;
+  }
+
+  if (isSyncSqliteClient(client)) {
+    let committed = false;
+    const run = client.transaction(function commitStoredObjectTransaction() {
+      const inserted = client.query(insertSql).run(...values);
+      if (changeCount(inserted) !== 1) return;
+      if (input.adjustment !== 0) {
+        client
+          .query(
+            "UPDATE workspace_storage_totals SET size_bytes = max(0, size_bytes + ?), updated_at = unixepoch() WHERE workspace_type = ? AND workspace_id = ?",
+          )
+          .run(
+            input.adjustment,
+            input.workspace.type,
+            input.workspace.id,
+          );
+      }
+      committed = true;
+    });
+    run();
+    return committed;
+  }
+
+  const [project] = await db
+    .select({ id: dbSchema.projects.id })
+    .from(dbSchema.projects)
+    .where(
+      and(
+        eq(dbSchema.projects.id, input.projectId),
+        sql`${dbSchema.projects.deletingAt} IS NULL`,
+      ),
+    )
+    .limit(1);
+  if (!project) return false;
+  await db
+    .insert(dbSchema.storedObjects)
+    .values({
+      id: input.id,
+      workspaceType: input.workspace.type,
+      workspaceId: input.workspace.id,
+      projectId: input.projectId,
+      objectKey: input.objectKey,
+      category: input.category,
+      sizeBytes: input.sizeBytes,
+    })
+    .onConflictDoUpdate({
+      target: dbSchema.storedObjects.objectKey,
+      set: {
+        workspaceType: input.workspace.type,
+        workspaceId: input.workspace.id,
+        projectId: input.projectId,
+        category: input.category,
+        sizeBytes: input.sizeBytes,
+        updatedAt: new Date(),
+      },
+    });
+  if (input.adjustment !== 0) {
+    await db
+      .update(dbSchema.workspaceStorageTotals)
+      .set({
+        sizeBytes:
+          sql`max(0, ${dbSchema.workspaceStorageTotals.sizeBytes} + ${input.adjustment})`,
+      })
+      .where(workspaceTotalCondition(input.workspace));
+  }
+  return true;
+}
+
+function changeCount(result: unknown): number {
+  if (!result || typeof result !== "object") return 0;
+  const value = result as ChangeResult;
+  return Number(value.changes ?? value.meta?.changes ?? 0);
+}
+
+function isD1Client(client: unknown): client is D1ClientLike {
+  if (!client || typeof client !== "object") return false;
+  const candidate = client as Partial<D1ClientLike>;
+  return (
+    typeof candidate.prepare === "function" &&
+    typeof candidate.batch === "function"
+  );
+}
+
+function isSyncSqliteClient(client: unknown): client is SyncSqliteClient {
+  if (!client || typeof client !== "object") return false;
+  const candidate = client as Partial<SyncSqliteClient>;
+  return (
+    typeof candidate.query === "function" &&
+    typeof candidate.transaction === "function"
+  );
 }
 
 function workspaceTotalCondition(workspace: WorkspaceRef) {
