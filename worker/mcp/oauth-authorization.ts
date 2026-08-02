@@ -110,9 +110,15 @@ export function resolveEffectiveMcpTokenScopes(
   return [...scopes];
 }
 
+function isSafeMcpClientCharacter(character: string): boolean {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return codePoint > 31 && codePoint !== 127;
+}
+
 export function sanitizeMcpClientName(value: string | undefined): string {
-  const safe = (value ?? "")
-    .replace(/[\u0000-\u001f\u007f]/g, "")
+  const safe = Array.from(value ?? "")
+    .filter(isSafeMcpClientCharacter)
+    .join("")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80)
