@@ -669,6 +669,20 @@ export const createApiKeySchema = z.object({
   label: z.string().max(100).optional(),
 });
 
+export const mcpOAuthDecisionSchema = z.discriminatedUnion("decision", [
+  z
+    .object({
+      decision: z.literal("approve"),
+      projectId: z.string().min(1).max(128),
+    })
+    .strict(),
+  z
+    .object({
+      decision: z.literal("deny"),
+    })
+    .strict(),
+]);
+
 // ─── Availability ────────────────────────────────────────────────────────────
 
 export const checkAvailabilitySchema = z.object({

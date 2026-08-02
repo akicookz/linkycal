@@ -2,6 +2,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { z } from "zod";
 
+import type { McpOAuthScope } from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -11,22 +12,20 @@ const mcpGrantScopesSchema = z
   .min(1)
   .max(3);
 
-export type McpGrantScope = z.infer<typeof mcpGrantScopesSchema>[number];
-
 export interface NewMcpOAuthGrant {
   id: string;
   projectId: string;
   userId: string;
   clientId: string;
   clientName: string;
-  scopes: McpGrantScope[];
+  scopes: McpOAuthScope[];
   createdAt?: Date;
 }
 
 export interface McpConnectionDto {
   id: string;
   clientName: string;
-  scopes: McpGrantScope[];
+  scopes: McpOAuthScope[];
   createdAt: string;
   authorizedBy: {
     name: string;
@@ -34,7 +33,17 @@ export interface McpConnectionDto {
   };
 }
 
-function parseStoredScopes(value: string): McpGrantScope[] {
+export interface ActiveMcpOAuthGrant {
+  id: string;
+  projectId: string;
+  userId: string;
+  clientId: string;
+  clientName: string;
+  scopes: McpOAuthScope[];
+  createdAt: Date;
+}
+
+function parseStoredScopes(value: string): McpOAuthScope[] {
   return mcpGrantScopesSchema.parse(JSON.parse(value));
 }
 
@@ -116,6 +125,35 @@ export class McpOAuthGrantService {
           name: row.authorizerName,
           email: row.authorizerEmail,
         },
+      };
+    });
+  }
+
+  async listActiveGrantRecordsForProject(
+    projectId: string,
+  ): Promise<ActiveMcpOAuthGrant[]> {
+    const rows = await this.db
+      .select({
+        id: dbSchema.mcpOAuthGrants.id,
+        projectId: dbSchema.mcpOAuthGrants.projectId,
+        userId: dbSchema.mcpOAuthGrants.userId,
+        clientId: dbSchema.mcpOAuthGrants.clientId,
+        clientName: dbSchema.mcpOAuthGrants.clientName,
+        scopes: dbSchema.mcpOAuthGrants.scopes,
+        createdAt: dbSchema.mcpOAuthGrants.createdAt,
+      })
+      .from(dbSchema.mcpOAuthGrants)
+      .where(
+        and(
+          eq(dbSchema.mcpOAuthGrants.projectId, projectId),
+          isNull(dbSchema.mcpOAuthGrants.revokedAt),
+        ),
+      );
+
+    return rows.map(function parseGrant(row): ActiveMcpOAuthGrant {
+      return {
+        ...row,
+        scopes: parseStoredScopes(row.scopes),
       };
     });
   }
