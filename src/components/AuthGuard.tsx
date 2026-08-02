@@ -1,11 +1,18 @@
 import { useEffect } from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useSession } from "@/lib/auth-client";
+import { authRedirectPath } from "@/lib/auth-redirect";
 import { usePostHog } from "@posthog/react";
 
-function AuthGuard({ children }: { children: React.ReactNode }) {
+interface AuthGuardProps {
+  children: React.ReactNode;
+  redirectToCurrent?: boolean;
+}
+
+function AuthGuard({ children, redirectToCurrent = false }: AuthGuardProps) {
   const { data: session, isPending } = useSession();
   const posthog = usePostHog();
+  const location = useLocation();
 
   useEffect(() => {
     if (session?.user) {
@@ -26,7 +33,12 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (!session) {
-    return <Navigate to="/?show_auth=true" replace />;
+    return (
+      <Navigate
+        to={authRedirectPath(location, redirectToCurrent)}
+        replace
+      />
+    );
   }
 
   return <>{children}</>;
