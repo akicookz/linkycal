@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { usePostHog } from "@posthog/react";
-import { Check, CreditCard, ExternalLink, Loader } from "lucide-react";
+import { Check, CreditCard, ExternalLink, Loader, Users } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,7 +26,8 @@ interface PlanLimits {
   maxCalendarConnections: number;
   maxTeamMembers: number;
   apiAccess: boolean;
-  customWidgets: boolean;
+  mcpAccess: boolean;
+  customCss: boolean;
   analytics: boolean;
 }
 
@@ -99,10 +100,13 @@ export default function Billing() {
 
   const currentPlan = data?.subscription?.plan ?? "free";
   const subscriptionStatus = data?.subscription?.status ?? "active";
+  const canManageBilling = data?.canManageBilling === true;
   const isAnnual = selectedInterval === "year";
   const billingTitle = data?.team?.name ? `${data.team.name} Billing` : "Billing";
   const billingDescription = data?.team?.name
-    ? "Manage this team's subscription and billing"
+    ? canManageBilling
+      ? "Manage this team's subscription and billing"
+      : "View this team's subscription and plan"
     : "Manage your subscription and billing";
 
   function handleUpgrade(planId: string) {
@@ -133,7 +137,7 @@ export default function Billing() {
   return (
     <div>
       <PageHeader title={billingTitle} description={billingDescription}>
-        {currentPlan !== "free" && (
+        {canManageBilling && currentPlan !== "free" && (
           <Button
             variant="outline"
             onClick={() => portalMutation.mutate()}
@@ -178,6 +182,22 @@ export default function Billing() {
           </div>
         </CardContent>
       </Card>
+
+      {!isLoading && data && !canManageBilling && (
+        <div className="mb-8 flex items-center gap-3 rounded-[16px] bg-muted/50 px-4 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-primary/10">
+            <Users className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              Plan details are read-only
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Ask a team owner or admin to change this plan.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Billing interval toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">
@@ -269,30 +289,38 @@ export default function Billing() {
                   ))}
                 </ul>
 
-                <Button
-                  variant={isCurrent ? "outline" : "default"}
-                  className="w-full"
-                  disabled={isCurrent || checkoutMutation.isPending || portalMutation.isPending}
-                  onClick={() => {
-                    if (action === "upgrade") {
-                      handleUpgrade(plan.id);
-                    } else if (action === "downgrade") {
-                      handleDowngrade();
-                    }
-                  }}
-                >
-                  {(checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id) ||
+                {canManageBilling && (
+                  <Button
+                    variant={isCurrent ? "outline" : "default"}
+                    className="w-full"
+                    disabled={isCurrent || checkoutMutation.isPending || portalMutation.isPending}
+                    onClick={() => {
+                      if (action === "upgrade") {
+                        handleUpgrade(plan.id);
+                      } else if (action === "downgrade") {
+                        handleDowngrade();
+                      }
+                    }}
+                  >
+                    {(checkoutMutation.isPending && checkoutMutation.variables?.plan === plan.id) ||
                     (action === "downgrade" && portalMutation.isPending) ? (
-                    <Loader className="h-4 w-4 animate-spin" />
-                  ) : null}
-                  {isCurrent
-                    ? "Current Plan"
-                    : action === "upgrade"
-                      ? currentPlan === "free"
-                        ? `Start 7-Day Free Trial`
-                        : `Upgrade to ${plan.name}`
-                      : `Switch to ${plan.name}`}
-                </Button>
+                      <Loader className="h-4 w-4 animate-spin" />
+                    ) : isCurrent ? (
+                      <Check className="h-4 w-4" />
+                    ) : action === "upgrade" ? (
+                      <CreditCard className="h-4 w-4" />
+                    ) : (
+                      <ExternalLink className="h-4 w-4" />
+                    )}
+                    {isCurrent
+                      ? "Current Plan"
+                      : action === "upgrade"
+                        ? currentPlan === "free"
+                          ? `Start 7-Day Free Trial`
+                          : `Upgrade to ${plan.name}`
+                        : `Switch to ${plan.name}`}
+                  </Button>
+                )}
               </CardContent>
             </Card>
           );

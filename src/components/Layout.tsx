@@ -49,6 +49,7 @@ interface Project {
   id: string;
   name: string;
   slug: string;
+  teamId?: string | null;
   teamName?: string | null;
   teamRole?: "owner" | "admin" | "member" | null;
   effectiveProjectRole?: "admin" | "editor" | "viewer" | null;
@@ -90,6 +91,9 @@ function LayoutInner() {
   const currentProject = params.projectId
     ? projects?.find((p) => p.id === params.projectId)
     : projects?.[0];
+  const billingHref = currentProject?.teamId
+    ? `/app/account/billing?teamId=${encodeURIComponent(currentProject.teamId)}`
+    : "/app/account/billing";
 
   useEffect(() => {
     if (!projects || projects.length === 0) return;
@@ -287,7 +291,7 @@ function LayoutInner() {
                     My Profile
                   </Link>
                   <Link
-                    to="/app/account/billing"
+                    to={billingHref}
                     className="flex items-center gap-2.5 px-3 py-2 rounded-[10px] text-sm text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
                   >
                     <CreditCard className="w-4 h-4 shrink-0" />

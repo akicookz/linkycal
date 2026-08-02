@@ -154,10 +154,11 @@ import { ApiKeyService } from "./services/api-key-service";
 import {
   ensureOwnerMembership,
   ensurePersonalTeam,
+  getTeamBillingReadContext,
   getTeamMembership,
   hasProjectPermission,
+  requiredProjectPermission,
   resolveProjectAccess,
-  type ProjectPermission,
 } from "./lib/team-access";
 import { getEnrichmentUsage, incrementEnrichmentUsage } from "./lib/usage";
 import { resolveRequestAuth } from "./lib/request-auth";
@@ -2565,24 +2566,6 @@ app.use("/api/*", async (c, next) => {
 // Resolves team/project RBAC for :projectId and swaps project routes to the
 // owning team's plan limits. Legacy rows without team_id fall back to user_id.
 
-function permissionForProjectRequest(
-  method: string,
-  path: string,
-): ProjectPermission {
-  if (path.includes("/api-keys")) return "project:api_keys";
-  if (path.includes("/members")) return "project:members";
-  if (path.includes("/calendar/")) return "project:write";
-  if (path.includes("/calendars")) return "project:write";
-  if (method === "PUT" && /^\/api\/projects\/[^/]+$/.test(path)) {
-    return "project:settings";
-  }
-  if (method === "DELETE" && /^\/api\/projects\/[^/]+$/.test(path)) {
-    return "project:delete";
-  }
-  if (method === "GET" || method === "HEAD") return "project:read";
-  return "project:write";
-}
-
 async function scheduleBelongsToProject(
   db: AppDatabase,
   scheduleId: string,
@@ -2727,26 +2710,7 @@ const projectAccessMiddleware = async (
 
   const { access, plan, status } = projectContext;
   const planLimits = PLAN_LIMITS[plan];
-  const isEntitlementsRequest =
-    c.req.method === "GET" &&
-    /^\/api\/projects\/[^/]+\/entitlements$/.test(c.req.path);
-
-  if (
-    planLimits.maxTeamMembers === 0 &&
-    !access.isLegacyOwner &&
-    access.teamRole !== "owner" &&
-    !isEntitlementsRequest
-  ) {
-    return c.json(
-      {
-        error: "Team collaboration requires a paid plan",
-        code: "teams_requires_paid_plan",
-      },
-      403,
-    );
-  }
-
-  const permission = permissionForProjectRequest(c.req.method, c.req.path);
+  const permission = requiredProjectPermission(c.req.method, c.req.path);
   if (!hasProjectPermission(access, permission)) {
     return c.json({ error: "Forbidden" }, 403);
   }
@@ -2849,7 +2813,7 @@ const teamRoutes = app
     const teamId = c.req.param("teamId");
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
-    const context = await getTeamAdminContext(db, teamId, userId);
+    const context = await getTeamBillingReadContext(db, teamId, userId);
     if (!context) return c.json({ error: "Forbidden" }, 403);
 
     const members = await db
@@ -2881,7 +2845,10 @@ const teamRoutes = app
         ),
       );
 
-    return c.json({ members, invites });
+    return c.json({
+      members,
+      invites: context.canManageBilling ? invites : [],
+    });
   })
 
   .post("/api/teams/:teamId/invites", async (c) => {
@@ -3548,7 +3515,7 @@ app.get("/api/teams/:teamId/billing/subscription", async (c) => {
   const teamId = c.req.param("teamId");
   const db = c.get("db");
   const userId = c.get("effectiveUserId");
-  const context = await getTeamAdminContext(db, teamId, userId);
+  const context = await getTeamBillingReadContext(db, teamId, userId);
   if (!context) return c.json({ error: "Forbidden" }, 403);
 
   const subscription = await ensureTeamSubscriptionRecord(
@@ -3565,7 +3532,7 @@ app.get("/api/teams/:teamId/billing/subscription", async (c) => {
       name: context.team.name,
       role: context.member.role,
     },
-    canManageBilling: true,
+    canManageBilling: context.canManageBilling,
   });
 });
 
@@ -7161,7 +7128,7 @@ app.post("/api/billing/portal", async (c) => {
 app.get("/api/billing/subscription", async (c) => {
   const subscription = c.get("subscription");
   const planLimits = c.get("planLimits");
-  return c.json({ subscription, planLimits });
+  return c.json({ subscription, planLimits, canManageBilling: true });
 });
 
 // ─── Onboarding ──────────────────────────────────────────────────────────────

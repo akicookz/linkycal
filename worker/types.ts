@@ -36,6 +36,13 @@ export interface PlanLimits {
 export type TeamRole = "owner" | "admin" | "member";
 export type ProjectRole = "admin" | "editor" | "viewer";
 
+export interface WorkspaceRef {
+  type: "personal" | "team";
+  id: string;
+  ownerUserId: string;
+  teamId: string | null;
+}
+
 export interface ProjectAccessContext {
   projectId: string;
   teamId: string | null;

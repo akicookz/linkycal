@@ -18,6 +18,12 @@ export type ProjectPermission =
   | "project:members"
   | "project:delete";
 
+export interface TeamBillingReadContext {
+  team: dbSchema.TeamRow;
+  member: dbSchema.TeamMemberRow;
+  canManageBilling: boolean;
+}
+
 interface UserIdentity {
   id: string;
   name: string;
@@ -139,6 +145,31 @@ export async function getTeamMembership(
     .limit(1);
 
   return member ?? null;
+}
+
+export async function getTeamBillingReadContext(
+  db: AppDatabase,
+  teamId: string,
+  userId: string,
+): Promise<TeamBillingReadContext | null> {
+  const [team] = await db
+    .select()
+    .from(dbSchema.teams)
+    .where(eq(dbSchema.teams.id, teamId))
+    .limit(1);
+  if (!team) return null;
+
+  let member = await getTeamMembership(db, teamId, userId);
+  if (!member && team.ownerUserId === userId) {
+    member = await ensureOwnerMembership(db, teamId, userId);
+  }
+  if (!member) return null;
+
+  return {
+    team,
+    member,
+    canManageBilling: member.role === "owner" || member.role === "admin",
+  };
 }
 
 export async function resolveProjectAccess(
@@ -266,3 +297,30 @@ export function hasProjectPermission(
   return false;
 }
 
+export function requiredProjectPermission(
+  method: string,
+  path: string,
+): ProjectPermission {
+  const normalizedMethod = method.toUpperCase();
+  if (path.includes("/api-keys")) return "project:api_keys";
+  if (path.includes("/members")) {
+    return normalizedMethod === "GET" || normalizedMethod === "HEAD"
+      ? "project:read"
+      : "project:members";
+  }
+  if (path.includes("/calendar/")) return "project:write";
+  if (path.includes("/calendars")) return "project:write";
+  if (normalizedMethod === "PUT" && /^\/api\/projects\/[^/]+$/.test(path)) {
+    return "project:settings";
+  }
+  if (
+    normalizedMethod === "DELETE" &&
+    /^\/api\/projects\/[^/]+$/.test(path)
+  ) {
+    return "project:delete";
+  }
+  if (normalizedMethod === "GET" || normalizedMethod === "HEAD") {
+    return "project:read";
+  }
+  return "project:write";
+}

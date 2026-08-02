@@ -2,7 +2,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
 import * as dbSchema from "../db/schema";
-import type { Plan, PlanLimits } from "../types";
+import type { Plan, PlanLimits, WorkspaceRef } from "../types";
 import { PLAN_LIMITS } from "./plan-limits";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
@@ -15,7 +15,9 @@ export interface SubscriptionSummary {
 export interface ProjectEntitlements {
   ownerUserId: string;
   teamId: string | null;
+  workspace: WorkspaceRef;
   subscription: SubscriptionSummary;
+  subscriptionRecord: dbSchema.SubscriptionRow | null;
   planLimits: PlanLimits;
 }
 
@@ -178,6 +180,36 @@ export async function resolveProjectEntitlements(
   projectId: string,
   options: { ensureSubscription?: boolean } = {},
 ): Promise<ProjectEntitlements | null> {
+  const workspace = await resolveProjectWorkspace(db, projectId);
+  if (!workspace) return null;
+
+  const subscription = workspace.teamId
+    ? options.ensureSubscription
+      ? await ensureTeamSubscriptionRecord(
+          db,
+          workspace.ownerUserId,
+          workspace.teamId,
+        )
+      : await getSubscriptionRecordByTeamId(db, workspace.teamId)
+    : options.ensureSubscription
+      ? await ensureLegacySubscriptionRecord(db, workspace.ownerUserId)
+      : await getLegacySubscriptionRecordByUserId(db, workspace.ownerUserId);
+  const summary = resolveSubscriptionPlan(subscription);
+
+  return {
+    ownerUserId: workspace.ownerUserId,
+    teamId: workspace.teamId,
+    workspace,
+    subscription: summary,
+    subscriptionRecord: subscription,
+    planLimits: PLAN_LIMITS[summary.plan],
+  };
+}
+
+export async function resolveProjectWorkspace(
+  db: AppDatabase,
+  projectId: string,
+): Promise<WorkspaceRef | null> {
   const [project] = await db
     .select({
       userId: dbSchema.projects.userId,
@@ -190,15 +222,11 @@ export async function resolveProjectEntitlements(
   if (!project) return null;
 
   if (!project.teamId) {
-    const subscription = options.ensureSubscription
-      ? await ensureLegacySubscriptionRecord(db, project.userId)
-      : await getLegacySubscriptionRecordByUserId(db, project.userId);
-    const summary = resolveSubscriptionPlan(subscription);
     return {
+      type: "personal",
+      id: project.userId,
       ownerUserId: project.userId,
       teamId: null,
-      subscription: summary,
-      planLimits: PLAN_LIMITS[summary.plan],
     };
   }
 
@@ -208,17 +236,20 @@ export async function resolveProjectEntitlements(
     .where(eq(dbSchema.teams.id, project.teamId))
     .limit(1);
 
-  const ownerUserId = team?.ownerUserId ?? project.userId;
-  const subscription = options.ensureSubscription
-    ? await ensureTeamSubscriptionRecord(db, ownerUserId, project.teamId)
-    : await getSubscriptionRecordByTeamId(db, project.teamId);
-  const summary = resolveSubscriptionPlan(subscription);
+  if (!team) {
+    return {
+      type: "personal",
+      id: project.userId,
+      ownerUserId: project.userId,
+      teamId: null,
+    };
+  }
 
   return {
-    ownerUserId,
+    type: "team",
+    id: project.teamId,
+    ownerUserId: team.ownerUserId,
     teamId: project.teamId,
-    subscription: summary,
-    planLimits: PLAN_LIMITS[summary.plan],
   };
 }
 
