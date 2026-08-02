@@ -1,10 +1,11 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
+import type { Plan } from "../shared/plan-catalog";
 import type { RequestAuth } from "./lib/request-auth";
 
 // ─── Plan Types ──────────────────────────────────────────────────────────────
 
-export type Plan = "free" | "pro" | "business";
+export type { Plan };
 
 export interface PlanLimits {
   maxProjects: number;
@@ -16,9 +17,20 @@ export interface PlanLimits {
   maxCalendarConnections: number; // -1 = unlimited
   maxTeamMembers: number; // non-owner members; -1 = unlimited
   apiAccess: boolean;
-  customWidgets: boolean;
+  mcpAccess: boolean;
+  customCss: boolean;
+  removeBranding: boolean;
   analytics: boolean;
+  analyticsRetentionMonths: number;
+  widgets: boolean;
+  themeOverrides: boolean;
+  maxFormResponsesPerMonth: number;
+  maxBookingsPerMonth: number;
+  maxWorkflowExecutionsPerMonth: number;
+  maxTransactionalEmailsPerMonth: number;
+  maxIntegrationRequestsPerMonth: number;
   maxEnrichmentsPerMonth: number; // -1 = unlimited
+  maxStorageBytes: number;
 }
 
 export type TeamRole = "owner" | "admin" | "member";
