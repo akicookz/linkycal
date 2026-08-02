@@ -365,10 +365,11 @@ describe("workspace usage entitlements", () => {
     const d1Database = await createD1TestDb();
     try {
       const service = new UsageService(d1Database.db);
+      const staleRequestTime = new Date("2026-08-15T11:59:59.000Z");
       const freePeriod = await service.getOrCreatePeriod({
         workspace: FREE_WORKSPACE,
         subscription: null,
-        now: NOW,
+        now: staleRequestTime,
       });
       const upgradedSubscription = {
         id: "subscription-stale-reservation",
@@ -406,7 +407,7 @@ describe("workspace usage entitlements", () => {
         key: "transactionalEmails" as const,
         amount: 1,
         operationId: "email-stale-after-rebase",
-        now: NOW,
+        now: staleRequestTime,
       };
       await service.reserve(input);
       const [event] = await d1Database.db

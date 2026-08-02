@@ -106,11 +106,7 @@ export class UsageService {
     if (existingPeriod && !existingPeriod.supersededAt) return existingPeriod;
 
     if (existingPeriod?.supersededAt) {
-      const canonicalPeriod = await this.findActivePeriod(input);
-      if (canonicalPeriod) return canonicalPeriod;
-      throw new Error(
-        `Superseded usage period has no active replacement for ${input.workspace.type}:${input.workspace.id}`,
-      );
+      return this.findCanonicalSuccessor(existingPeriod);
     }
 
     const activePeriod = await this.findActivePeriod(input, bounds.start);
@@ -188,6 +184,38 @@ export class UsageService {
       .orderBy(desc(dbSchema.workspaceUsagePeriods.periodStart))
       .limit(1);
     return period ?? null;
+  }
+
+  private async findCanonicalSuccessor(
+    period: dbSchema.WorkspaceUsagePeriodRow,
+  ): Promise<dbSchema.WorkspaceUsagePeriodRow> {
+    let current = period;
+    const visited = new Set<string>();
+    while (current.supersededAt) {
+      if (visited.has(current.id)) break;
+      visited.add(current.id);
+      if (!current.supersededById) break;
+      const [successor] = await this.db
+        .select()
+        .from(dbSchema.workspaceUsagePeriods)
+        .where(
+          and(
+            eq(dbSchema.workspaceUsagePeriods.id, current.supersededById),
+            eq(
+              dbSchema.workspaceUsagePeriods.workspaceType,
+              period.workspaceType,
+            ),
+            eq(dbSchema.workspaceUsagePeriods.workspaceId, period.workspaceId),
+          ),
+        )
+        .limit(1);
+      if (!successor) break;
+      current = successor;
+    }
+    if (!current.supersededAt) return current;
+    throw new Error(
+      `Superseded usage period has no canonical replacement for ${period.workspaceType}:${period.workspaceId}`,
+    );
   }
 
   async getDecision(
@@ -584,10 +612,11 @@ async function carryUsagePeriod(
         ),
       client
         .prepare(
-          "UPDATE workspace_usage_periods SET superseded_at = ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL AND changes() = 1",
+          "UPDATE workspace_usage_periods SET superseded_at = ?, superseded_by_id = ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL AND changes() = 1",
         )
         .bind(
           toEpochSeconds(input.now),
+          periodId,
           toEpochSeconds(input.now),
           activePeriod.id,
         ),
@@ -618,10 +647,11 @@ async function carryUsagePeriod(
       if (changeCount(inserted) !== 1) return;
       const superseded = client
         .query(
-          "UPDATE workspace_usage_periods SET superseded_at = ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL",
+          "UPDATE workspace_usage_periods SET superseded_at = ?, superseded_by_id = ?, updated_at = ? WHERE id = ? AND superseded_at IS NULL",
         )
         .run(
           toEpochSeconds(input.now),
+          periodId,
           toEpochSeconds(input.now),
           activePeriod.id,
         );
@@ -659,7 +689,11 @@ async function carryUsagePeriod(
   if (inserted.length === 0) return;
   const superseded = await db
     .update(dbSchema.workspaceUsagePeriods)
-    .set({ supersededAt: input.now, updatedAt: input.now })
+    .set({
+      supersededAt: input.now,
+      supersededById: periodId,
+      updatedAt: input.now,
+    })
     .where(
       and(
         eq(dbSchema.workspaceUsagePeriods.id, activePeriod.id),

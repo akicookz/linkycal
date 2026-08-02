@@ -193,6 +193,9 @@ describe("entitlement conversion safety", () => {
     testDatabase.sqlite.run(
       "ALTER TABLE workspace_usage_periods ADD COLUMN superseded_at integer",
     );
+    testDatabase.sqlite.run(
+      "ALTER TABLE workspace_usage_periods ADD COLUMN superseded_by_id text",
+    );
     await seedConversionProject(testDatabase);
     await testDatabase.db.insert(dbSchema.eventTypes).values({
       id: "event-before-rollout",

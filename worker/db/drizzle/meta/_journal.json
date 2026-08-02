@@ -281,6 +281,13 @@
       "when": 1785689839339,
       "tag": "0039_perfect_shinobi_shaw",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1785690308328,
+      "tag": "0040_charming_dreadnoughts",
+      "breakpoints": true
     }
   ]
 }
