@@ -69,7 +69,7 @@ and hashed/encrypted token storage. LinkyCal will configure:
 
 Primary references:
 
-- [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization)
+- [MCP authorization specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)
 - [Cloudflare Workers OAuth Provider](https://github.com/cloudflare/workers-oauth-provider)
 - [Cloudflare MCP authorization guidance](https://developers.cloudflare.com/agents/model-context-protocol/protocol/authorization/)
 
@@ -126,6 +126,14 @@ interface McpOAuthProps {
 }
 ```
 
+LinkyCal will complete each authorization with
+`revokeExistingGrants: false`. The provider otherwise revokes older grants for
+the same user and client by default, which would silently disconnect a second
+project-specific connection. Token exchange will replace `props.scopes` with
+the provider's effective requested scope exactly, without applying the
+consent-time default, so a downscoped access token cannot inherit broader
+permissions.
+
 No API key, session token, OAuth access token, refresh token, authorization
 code, or PKCE verifier is written to D1, logs, analytics, or client-visible
 grant metadata.
@@ -179,6 +187,11 @@ OAuth provider KV is the source of truth for whether tokens and grants are
 valid. D1 will contain a non-secret project index and audit record so project
 administrators can list connections across all users without scanning provider
 KV.
+
+When the dashboard lists connections, LinkyCal will reconcile active D1 rows
+against the provider's active grant summaries, grouped by grant owner. Missing
+or expired provider grants are marked revoked in D1 and omitted from the
+response so the project index never presents stale access as connected.
 
 The `mcp_oauth_grants` table will contain:
 
