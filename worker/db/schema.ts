@@ -959,6 +959,232 @@ export const usage = sqliteTable(
 export type UsageRow = typeof usage.$inferSelect;
 export type NewUsageRow = typeof usage.$inferInsert;
 
+// ─── Workspace Entitlement Usage ───────────────────────────────────────────
+
+export const workspaceUsagePeriods = sqliteTable(
+  "workspace_usage_periods",
+  {
+    id: text("id").primaryKey(),
+    workspaceType: text("workspace_type", {
+      enum: ["personal", "team"],
+    }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    periodStart: integer("period_start", { mode: "timestamp" }).notNull(),
+    periodEnd: integer("period_end", { mode: "timestamp" }).notNull(),
+    formResponses: integer("form_responses").notNull().default(0),
+    bookings: integer("bookings").notNull().default(0),
+    workflowExecutions: integer("workflow_executions").notNull().default(0),
+    transactionalEmails: integer("transactional_emails").notNull().default(0),
+    integrationRequests: integer("integration_requests").notNull().default(0),
+    enrichments: integer("enrichments").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("workspace_usage_periods_workspace_start_unique").on(
+      t.workspaceType,
+      t.workspaceId,
+      t.periodStart,
+    ),
+    index("workspace_usage_periods_workspace_end_idx").on(
+      t.workspaceType,
+      t.workspaceId,
+      t.periodEnd,
+    ),
+  ],
+);
+
+export type WorkspaceUsagePeriodRow = typeof workspaceUsagePeriods.$inferSelect;
+export type NewWorkspaceUsagePeriodRow = typeof workspaceUsagePeriods.$inferInsert;
+
+export const workspaceUsageEvents = sqliteTable(
+  "workspace_usage_events",
+  {
+    id: text("id").primaryKey(),
+    usagePeriodId: text("usage_period_id")
+      .notNull()
+      .references(() => workspaceUsagePeriods.id, { onDelete: "cascade" }),
+    workspaceType: text("workspace_type", {
+      enum: ["personal", "team"],
+    }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    entitlementKey: text("entitlement_key", {
+      enum: [
+        "formResponses",
+        "bookings",
+        "workflowExecutions",
+        "transactionalEmails",
+        "integrationRequests",
+        "enrichments",
+      ],
+    }).notNull(),
+    operationId: text("operation_id").notNull(),
+    amount: integer("amount").notNull(),
+    state: text("state", {
+      enum: ["reserved", "consumed", "released"],
+    })
+      .notNull()
+      .default("reserved"),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("workspace_usage_events_operation_unique").on(
+      t.workspaceType,
+      t.workspaceId,
+      t.entitlementKey,
+      t.operationId,
+    ),
+    index("workspace_usage_events_period_state_idx").on(
+      t.usagePeriodId,
+      t.state,
+    ),
+  ],
+);
+
+export type WorkspaceUsageEventRow = typeof workspaceUsageEvents.$inferSelect;
+export type NewWorkspaceUsageEventRow = typeof workspaceUsageEvents.$inferInsert;
+
+export const workspaceStorageTotals = sqliteTable(
+  "workspace_storage_totals",
+  {
+    id: text("id").primaryKey(),
+    workspaceType: text("workspace_type", {
+      enum: ["personal", "team"],
+    }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("workspace_storage_totals_workspace_unique").on(
+      t.workspaceType,
+      t.workspaceId,
+    ),
+  ],
+);
+
+export type WorkspaceStorageTotalRow = typeof workspaceStorageTotals.$inferSelect;
+export type NewWorkspaceStorageTotalRow = typeof workspaceStorageTotals.$inferInsert;
+
+export const storedObjects = sqliteTable(
+  "stored_objects",
+  {
+    id: text("id").primaryKey(),
+    workspaceType: text("workspace_type", {
+      enum: ["personal", "team"],
+    }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    objectKey: text("object_key").notNull(),
+    category: text("category", {
+      enum: ["project_asset", "form_asset", "response_upload"],
+    }).notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("stored_objects_object_key_unique").on(t.objectKey),
+    index("stored_objects_workspace_idx").on(t.workspaceType, t.workspaceId),
+    index("stored_objects_project_idx").on(t.projectId),
+  ],
+);
+
+export type StoredObjectRow = typeof storedObjects.$inferSelect;
+export type NewStoredObjectRow = typeof storedObjects.$inferInsert;
+
+export const projectCustomCss = sqliteTable(
+  "project_custom_css",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    sourceCss: text("source_css").notNull(),
+    compiledCss: text("compiled_css").notNull(),
+    sourceBytes: integer("source_bytes").notNull().default(0),
+    updatedByUserId: text("updated_by_user_id").references(
+      () => authSchema.users.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [uniqueIndex("project_custom_css_project_unique").on(t.projectId)],
+);
+
+export type ProjectCustomCssRow = typeof projectCustomCss.$inferSelect;
+export type NewProjectCustomCssRow = typeof projectCustomCss.$inferInsert;
+
+export const entitlementOutcomes = sqliteTable(
+  "entitlement_outcomes",
+  {
+    id: text("id").primaryKey(),
+    workspaceType: text("workspace_type", {
+      enum: ["personal", "team"],
+    }).notNull(),
+    workspaceId: text("workspace_id").notNull(),
+    projectId: text("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    sourceType: text("source_type").notNull(),
+    sourceId: text("source_id").notNull(),
+    entitlementKey: text("entitlement_key").notNull(),
+    outcome: text("outcome", { enum: ["blocked", "skipped"] }).notNull(),
+    channel: text("channel").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`),
+    updatedAt: integer("updated_at", { mode: "timestamp" })
+      .notNull()
+      .default(sql`(unixepoch())`)
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("entitlement_outcomes_workspace_created_idx").on(
+      t.workspaceType,
+      t.workspaceId,
+      t.createdAt,
+    ),
+    index("entitlement_outcomes_project_created_idx").on(
+      t.projectId,
+      t.createdAt,
+    ),
+  ],
+);
+
+export type EntitlementOutcomeRow = typeof entitlementOutcomes.$inferSelect;
+export type NewEntitlementOutcomeRow = typeof entitlementOutcomes.$inferInsert;
+
 // ─── API Keys ────────────────────────────────────────────────────────────────
 
 export const apiKeys = sqliteTable(
@@ -1013,5 +1239,11 @@ export const schema = {
   workflowRuns,
   subscriptions,
   usage,
+  workspaceUsagePeriods,
+  workspaceUsageEvents,
+  workspaceStorageTotals,
+  storedObjects,
+  projectCustomCss,
+  entitlementOutcomes,
   apiKeys,
 };
