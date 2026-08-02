@@ -9,7 +9,7 @@ import type { ToolContext } from "../agent";
 import {
   ok,
   err,
-  withToolErrors,
+  withToolErrorsForContext,
   inProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
@@ -108,6 +108,7 @@ const createShape = createEventTypeSchema.shape;
 const updateShape = updateEventTypeSchema.shape;
 
 export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
+  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_event_types",
     {

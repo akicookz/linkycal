@@ -291,10 +291,14 @@ export class WorkflowService {
     return row ? { ...row.run, workflowName: row.workflowName } : null;
   }
 
-  async createRun(workflowId: string, triggerId?: string, context?: string) {
-    const id = crypto.randomUUID();
+  async createRun(
+    workflowId: string,
+    triggerId?: string,
+    context?: string,
+    runId = crypto.randomUUID(),
+  ) {
     await this.db.insert(dbSchema.workflowRuns).values({
-      id,
+      id: runId,
       workflowId,
       triggerId: triggerId ?? null,
       context: context ?? null,
@@ -305,7 +309,7 @@ export class WorkflowService {
     const rows = await this.db
       .select()
       .from(dbSchema.workflowRuns)
-      .where(eq(dbSchema.workflowRuns.id, id))
+      .where(eq(dbSchema.workflowRuns.id, runId))
       .limit(1);
     return rows[0] ?? null;
   }

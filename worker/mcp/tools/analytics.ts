@@ -19,7 +19,7 @@ import {
   err,
   getPlanLimitsForProject,
   ok,
-  withToolErrors,
+  withToolErrorsForContext,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
 
@@ -199,6 +199,7 @@ export function registerAnalyticsTools(
   server: McpServer,
   ctx: ToolContext,
 ): void {
+  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "get_analytics_overview",
     {

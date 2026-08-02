@@ -20,7 +20,7 @@ import type { ToolContext } from "../agent";
 import {
   ok,
   err,
-  withToolErrors,
+  withToolErrorsForContext,
   inProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
@@ -261,6 +261,7 @@ export async function getContactActivity(
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export function registerContactTools(server: McpServer, ctx: ToolContext) {
+  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_contacts",
     {

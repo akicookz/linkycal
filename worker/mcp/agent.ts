@@ -12,6 +12,8 @@ import { registerScheduleTools } from "./tools/schedules";
 import { registerFormTools } from "./tools/forms";
 import { registerWorkflowTools } from "./tools/workflows";
 import { registerAnalyticsTools } from "./tools/analytics";
+import { reserveProjectUsage } from "../lib/metered-entitlements";
+import type { ToolResult } from "./helpers";
 
 const { schema } = dbSchema;
 
@@ -33,6 +35,7 @@ export interface ToolContext {
   db: () => DrizzleD1Database<Record<string, unknown>>;
   env: () => AppEnv;
   waitUntil: (p: Promise<unknown>) => void;
+  reserveToolUsage?(toolName: string): Promise<ToolResult | null>;
 }
 
 // ─── Agent ───────────────────────────────────────────────────────────────────
@@ -53,6 +56,17 @@ export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpP
       // error logging is safe here (no ExecutionContext.waitUntil in a DO).
       waitUntil: (p) => {
         void p.catch((err) => console.error("MCP background task failed:", err));
+      },
+      reserveToolUsage: async (toolName) => {
+        const reservation = await reserveProjectUsage({
+          db: drizzle(this.env.DB, { schema }),
+          projectId: ctx.projectId(),
+          key: "integrationRequests",
+          channel: `mcp:${toolName}`,
+        });
+        return reservation.decision.allowed
+          ? null
+          : reservation.mcpError(`use the ${toolName} MCP tool`);
       },
     };
 

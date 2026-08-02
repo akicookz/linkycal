@@ -25,6 +25,7 @@ import {
 import { buildIcs } from "./ics";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 import { ensureContact } from "./contact-actions";
+import { createMeteredEmailDependency } from "./metered-entitlements";
 
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
@@ -405,7 +406,16 @@ export async function createBookingAction(
     waitUntil(
       (async () => {
         try {
-          const emailService = new EmailService(env.RESEND_API_KEY);
+          const emailService = new EmailService(
+            env.RESEND_API_KEY,
+            await createMeteredEmailDependency({
+              db,
+              projectId: project.id,
+              sourceType: "booking",
+              sourceId: booking.id,
+              channel: "booking_email",
+            }),
+          );
 
           // Send "request received" email to guest
           await emailService.sendBookingRequestReceived({
@@ -526,7 +536,16 @@ export async function createBookingAction(
         }
 
         try {
-          const emailService = new EmailService(env.RESEND_API_KEY);
+          const emailService = new EmailService(
+            env.RESEND_API_KEY,
+            await createMeteredEmailDependency({
+              db,
+              projectId: project.id,
+              sourceType: "booking",
+              sourceId: booking.id,
+              channel: "booking_email",
+            }),
+          );
 
           const icsContent = buildBookingIcs({
             bookingId: booking.id,
@@ -733,7 +752,16 @@ export async function cancelBookingAction(
           theme = parseProjectTheme(project?.settings);
         }
 
-        const emailService = new EmailService(env.RESEND_API_KEY);
+        const emailService = new EmailService(
+          env.RESEND_API_KEY,
+          await createMeteredEmailDependency({
+            db,
+            projectId,
+            sourceType: "booking",
+            sourceId: bookingId,
+            channel: "booking_email",
+          }),
+        );
         await emailService.sendBookingCancellation({
           to: booking.email,
           guestName: booking.name,
@@ -915,7 +943,16 @@ export async function confirmBookingAction(
       }
 
       try {
-        const emailService = new EmailService(env.RESEND_API_KEY);
+        const emailService = new EmailService(
+          env.RESEND_API_KEY,
+          await createMeteredEmailDependency({
+            db,
+            projectId,
+            sourceType: "booking",
+            sourceId: bookingId,
+            channel: "booking_email",
+          }),
+        );
 
         const icsContent = buildBookingIcs({
           bookingId: booking.id,
@@ -1030,7 +1067,16 @@ export async function declineBookingAction(
     waitUntil(
       (async () => {
         try {
-          const emailService = new EmailService(env.RESEND_API_KEY);
+          const emailService = new EmailService(
+            env.RESEND_API_KEY,
+            await createMeteredEmailDependency({
+              db,
+              projectId,
+              sourceType: "booking",
+              sourceId: bookingId,
+              channel: "booking_email",
+            }),
+          );
           await emailService.sendBookingDeclined({
             to: booking.email,
             guestName: booking.name,

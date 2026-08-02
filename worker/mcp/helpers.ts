@@ -31,9 +31,14 @@ export function err(message: string): ToolResult {
 export function withToolErrors<Input>(
   name: string,
   fn: (input: Input) => Promise<ToolResult>,
+  usage?: {
+    reserveToolUsage?(toolName: string): Promise<ToolResult | null>;
+  },
 ): (input: Input) => Promise<ToolResult> {
   return async (input: Input) => {
     try {
+      const denial = await usage?.reserveToolUsage?.(name);
+      if (denial) return denial;
       return await fn(input);
     } catch (e) {
       if (e instanceof Error && e.name === "ZodError") {
@@ -42,6 +47,17 @@ export function withToolErrors<Input>(
       console.error(`MCP tool ${name} failed:`, e);
       return err("Internal error");
     }
+  };
+}
+
+export function withToolErrorsForContext(usage: {
+  reserveToolUsage?(toolName: string): Promise<ToolResult | null>;
+}) {
+  return function withMeteredToolErrors<Input>(
+    name: string,
+    fn: (input: Input) => Promise<ToolResult>,
+  ): (input: Input) => Promise<ToolResult> {
+    return withToolErrors(name, fn, usage);
   };
 }
 

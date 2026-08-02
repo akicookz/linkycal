@@ -103,6 +103,19 @@ interface FormResponseNotificationParams {
   theme?: EmailTheme;
 }
 
+export interface MeteredEmailDependency {
+  beforeSend(message: {
+    to: string;
+    cc?: string[];
+    subject: string;
+  }): Promise<{
+    allowed: boolean;
+    operationId: string;
+    consume(): Promise<void>;
+    release(): Promise<void>;
+  }>;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const RESEND_API_URL = "https://api.resend.com/emails";
@@ -224,7 +237,10 @@ function bookingSubmittedFieldsSection(
 // ─── Service ────────────────────────────────────────────────────────────────
 
 export class EmailService {
-  constructor(private resendApiKey: string) {}
+  constructor(
+    private resendApiKey: string,
+    private meteredSend?: MeteredEmailDependency,
+  ) {}
 
   // ─── Send Booking Confirmation ────────────────────────────────────────────
 
@@ -582,6 +598,13 @@ export class EmailService {
     html: string;
     attachments?: Array<{ filename: string; content: string; contentType?: string }>;
   }): Promise<void> {
+    const reservation = await this.meteredSend?.beforeSend({
+      to: params.to,
+      cc: params.cc,
+      subject: params.subject,
+    });
+    if (reservation && !reservation.allowed) return;
+
     const body: Record<string, unknown> = {
       from: FROM_ADDRESS,
       to: [params.to],
@@ -599,18 +622,27 @@ export class EmailService {
       }));
     }
 
-    const response = await fetch(RESEND_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.resendApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
+    try {
+      const response = await fetch(RESEND_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.resendApiKey}`,
+          "Content-Type": "application/json",
+          ...(reservation
+            ? { "Idempotency-Key": reservation.operationId }
+            : {}),
+        },
+        body: JSON.stringify(body),
+      });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to send email: ${error}`);
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(`Failed to send email: ${error}`);
+      }
+      await reservation?.consume();
+    } catch (error) {
+      await reservation?.release();
+      throw error;
     }
   }
 }

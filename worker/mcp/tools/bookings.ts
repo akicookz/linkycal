@@ -12,7 +12,7 @@ import {
   declineBookingAction,
 } from "../../lib/booking-actions";
 import type { ToolContext } from "../agent";
-import { ok, err, withToolErrors, bookingInProject, inProject } from "../helpers";
+import { ok, err, withToolErrorsForContext, bookingInProject, inProject } from "../helpers";
 import type { ToolResult } from "../helpers";
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
@@ -181,6 +181,7 @@ export async function declineBooking(
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export function registerBookingTools(server: McpServer, ctx: ToolContext) {
+  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_bookings",
     {

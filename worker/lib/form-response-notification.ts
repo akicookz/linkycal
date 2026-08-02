@@ -4,7 +4,7 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 import { EmailService } from "../services/email-service";
 import { parseProjectTheme } from "./booking-actions";
-import { resolveProjectEntitlements } from "./entitlements";
+import { createMeteredEmailDependency } from "./metered-entitlements";
 
 export function uploadedFileDisplayValue(
   value: string | null,
@@ -66,9 +66,6 @@ export async function notifyFormResponseCompleted(
       .limit(1);
     if (!project) return;
 
-    const entitlements = await resolveProjectEntitlements(db, project.id);
-    if (!entitlements || entitlements.subscription.plan === "free") return;
-
     const [owner] = await db
       .select({
         name: dbSchema.schema.users.name,
@@ -103,7 +100,16 @@ export async function notifyFormResponseCompleted(
 
     const notificationEmail =
       getFormResponseNotificationEmail(form.settings) ?? owner.email;
-    const emailService = new EmailService(env.RESEND_API_KEY);
+    const emailService = new EmailService(
+      env.RESEND_API_KEY,
+      await createMeteredEmailDependency({
+        db,
+        projectId: project.id,
+        sourceType: "form_response",
+        sourceId: responseId,
+        channel: "form_response_email",
+      }),
+    );
     await emailService.sendFormResponseNotification({
       to: notificationEmail,
       ownerName: owner.name ?? "there",

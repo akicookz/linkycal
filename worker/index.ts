@@ -164,7 +164,6 @@ import {
   requiredProjectPermission,
   resolveProjectAccess,
 } from "./lib/team-access";
-import { getEnrichmentUsage, incrementEnrichmentUsage } from "./lib/usage";
 import { resolveRequestAuth } from "./lib/request-auth";
 import { projectRouteAccess } from "./lib/api-route-policy";
 import { authorizeApiKeyProjectRequest } from "./lib/project-api-access";
@@ -176,6 +175,7 @@ import {
   requireResourceCapacity,
   requireWorkspaceResourceCapacity,
 } from "./lib/resource-creation";
+import { reserveProjectUsage } from "./lib/metered-entitlements";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -2643,6 +2643,20 @@ const projectAccessMiddleware = async (
         { error: accessFailure.error, code: accessFailure.code },
         accessFailure.status,
       );
+    }
+
+    const reservation = await reserveProjectUsage({
+      db,
+      projectId,
+      key: "integrationRequests",
+      channel: "api",
+    });
+    if (!reservation.decision.allowed) {
+      const failure = reservation.httpError("use the REST API");
+      for (const [name, value] of Object.entries(failure.headers)) {
+        c.header(name, value);
+      }
+      return c.json(failure.body, failure.status);
     }
 
     const { plan, status } = entitlements.subscription;
@@ -5637,22 +5651,31 @@ app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
     if (!(await service.contactInProject(projectId, contactId))) {
       return c.json({ error: "Contact not found" }, 404);
     }
-    const ent = await resolveProjectEntitlements(db, projectId, {
-      ensureSubscription: true,
+    const reservation = await reserveProjectUsage({
+      db,
+      projectId,
+      key: "enrichments",
+      operationId: crypto.randomUUID(),
+      channel: "contact_enrichment",
     });
-    if (!ent) return c.json({ error: "Project not found" }, 404);
-    const limit = ent.planLimits.maxEnrichmentsPerMonth;
-    const now = new Date();
-    const used = await getEnrichmentUsage(db, ent.ownerUserId, now);
-    if (limit !== -1 && used >= limit) {
-      return c.json({ error: "Monthly enrichment limit reached" }, 403);
+    if (!reservation.decision.allowed) {
+      const failure = reservation.httpError("enrich this contact");
+      for (const [name, value] of Object.entries(failure.headers)) {
+        c.header(name, value);
+      }
+      return c.json(failure.body, failure.status);
     }
     // Run the research inline and return the enriched contact so the client can
     // show the new fields immediately — no queue, no polling. Usage is only
     // counted once the enrichment actually succeeds.
     const execution = new WorkflowExecutionService(db);
-    await execution.enrichContact(projectId, contactId, c.env);
-    await incrementEnrichmentUsage(db, ent.ownerUserId, now);
+    try {
+      await execution.enrichContact(projectId, contactId, c.env);
+      await reservation.consume();
+    } catch (error) {
+      await reservation.release();
+      throw error;
+    }
     const contact = await service.getById(contactId);
     return c.json({
       success: true,

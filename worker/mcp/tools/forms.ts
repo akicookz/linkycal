@@ -9,7 +9,7 @@ import type { ToolContext } from "../agent";
 import {
   ok,
   err,
-  withToolErrors,
+  withToolErrorsForContext,
   inProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
@@ -85,6 +85,7 @@ const createShape = createFormSchema.shape;
 const updateShape = updateFormSchema.shape;
 
 export function registerFormTools(server: McpServer, ctx: ToolContext) {
+  const withToolErrors = withToolErrorsForContext(ctx);
   server.registerTool(
     "list_forms",
     {

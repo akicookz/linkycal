@@ -41,6 +41,10 @@ import {
 } from "./workflow-ai-research-service";
 import { ContactService } from "./contact-service";
 import { TagService } from "./tag-service";
+import {
+  recordEntitlementOutcome,
+  reserveProjectUsage,
+} from "../lib/metered-entitlements";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -314,12 +318,46 @@ export class WorkflowExecutionService {
     context: TriggerContext,
     env: AppEnv,
   ): Promise<string | null> {
+    const runId = crypto.randomUUID();
+    const reservation = await reserveProjectUsage({
+      db: this.db,
+      projectId: context.projectId,
+      key: "workflowExecutions",
+      operationId: runId,
+      channel: "workflow_dispatch",
+    });
+    if (!reservation.decision.allowed) {
+      await recordEntitlementOutcome({
+        db: this.db,
+        projectId: context.projectId,
+        sourceType: context.formResponseId
+          ? "form_response"
+          : context.bookingId
+            ? "booking"
+            : context.contactId
+              ? "contact"
+              : "workflow",
+        sourceId:
+          context.formResponseId ??
+          context.bookingId ??
+          context.contactId ??
+          workflowId,
+        entitlementKey: "workflowExecutions",
+        channel: "workflow_dispatch",
+      });
+      return null;
+    }
+
     const run = await this.workflowService.createRun(
       workflowId,
       context.formResponseId ?? context.bookingId ?? context.contactId ?? undefined,
       serializeWorkflowContextForPersistence(context),
+      runId,
     );
-    if (!run) return null;
+    if (!run) {
+      await reservation.release();
+      return null;
+    }
 
     const pendingLogs: StepLog[] = steps.map((s, i) => ({
       stepIndex: i,
@@ -338,13 +376,19 @@ export class WorkflowExecutionService {
         maxAttempts: MAX_WORKFLOW_ATTEMPTS,
       },
     }));
-    await this.workflowService.updateStepLogs(run.id, pendingLogs);
-
-    await env.WORKFLOW_QUEUE.send({
-      workflowRunId: run.id,
-      stepIndex: 0,
-    });
-    return run.id;
+    try {
+      await this.workflowService.updateStepLogs(run.id, pendingLogs);
+      await env.WORKFLOW_QUEUE.send({
+        workflowRunId: run.id,
+        stepIndex: 0,
+      });
+      await reservation.consume();
+      return run.id;
+    } catch (error) {
+      await reservation.release();
+      await this.workflowService.failRun(run.id, "Failed to queue workflow run");
+      throw error;
+    }
   }
 
   // ─── Step Execution ────────────────────────────────────────────────────
@@ -1109,31 +1153,59 @@ export class WorkflowExecutionService {
       ? body
       : body.replace(/\n/g, "<br>");
 
-    const response = await workflowFetch(RESEND_API_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": buildResendIdempotencyKey(
-          progress.workflowRunId,
-          progress.stepIndex,
-        ),
-      },
-      body: JSON.stringify({
-        from: FROM_ADDRESS,
-        to: recipients,
-        subject,
-        html: htmlBody || "",
-      }),
+    const reservation = await reserveProjectUsage({
+      db: this.db,
+      projectId: context.projectId,
+      key: "transactionalEmails",
+      amount: recipients.length,
+      operationId: `${progress.workflowRunId}:${progress.stepIndex}:email`,
+      channel: "workflow_email",
     });
+    if (!reservation.decision.allowed) {
+      await recordEntitlementOutcome({
+        db: this.db,
+        projectId: context.projectId,
+        sourceType: "workflow_run",
+        sourceId: progress.workflowRunId,
+        entitlementKey: "transactionalEmails",
+        channel: "workflow_email",
+      });
+      snap.output = { sent: false, skipped: "plan_usage_limit_reached" };
+      return;
+    }
 
+    let response: Response;
+    try {
+      response = await workflowFetch(RESEND_API_URL, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": buildResendIdempotencyKey(
+            progress.workflowRunId,
+            progress.stepIndex,
+          ),
+        },
+        body: JSON.stringify({
+          from: FROM_ADDRESS,
+          to: recipients,
+          subject,
+          html: htmlBody || "",
+        }),
+      });
+    } catch (error) {
+      await reservation.release();
+      throw error;
+    }
     if (!response.ok) {
+      await reservation.release();
       throw new WorkflowProviderResponseError(
         "Email provider",
         response.status,
       );
     }
 
+    await reservation.consume();
     snap.output = { sent: true, recipientCount: recipients.length };
   }
 
