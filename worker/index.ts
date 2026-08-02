@@ -176,6 +176,9 @@ import {
   requireWorkspaceResourceCapacity,
 } from "./lib/resource-creation";
 import { reserveProjectUsage } from "./lib/metered-entitlements";
+import { entitlementError } from "./lib/entitlement-errors";
+import { StorageUsageService } from "./services/storage-usage-service";
+import { reconcileProjectStorage } from "./lib/storage-reconciliation";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -362,6 +365,15 @@ interface StoredFormFile {
   size: number;
 }
 
+class StorageCapacityError extends Error {
+  constructor(
+    readonly failure: ReturnType<typeof entitlementError>,
+  ) {
+    super(failure.body.error);
+    this.name = "StorageCapacityError";
+  }
+}
+
 const PRIVATE_FORM_UPLOAD_PREFIX = "form-responses/";
 const MAX_FORM_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_FORM_FILE_TYPES = new Set([
@@ -446,6 +458,7 @@ function validateFormUploadFile(file: File): string | null {
 }
 
 async function storePrivateFormUpload(
+  db: AppDatabase,
   env: AppEnv,
   file: File,
   context: {
@@ -467,19 +480,45 @@ async function storePrivateFormUpload(
     `${crypto.randomUUID()}${suffix}`,
   ].join("/");
   const contentType = file.type || "application/octet-stream";
+  const entitlements = await new EntitlementService(db).resolveProject(
+    context.projectId,
+  );
+  if (!entitlements) throw new Error("Project not found");
+  const storage = new StorageUsageService(db);
+  const decision = await storage.reserve({
+    workspace: entitlements.workspace,
+    plan: entitlements.subscription.plan,
+    objectKey: key,
+    sizeBytes: file.size,
+  });
+  if (!decision.allowed) {
+    throw new StorageCapacityError(entitlementError(decision, "upload this file"));
+  }
 
-  await env.UPLOADS.put(key, file.stream(), {
-    httpMetadata: {
-      contentType,
-      contentDisposition: `attachment; filename="${filename.replace(/"/g, "")}"`,
-    },
-    customMetadata: {
-      filename,
-      projectId: context.projectId,
-      formId: context.formId,
-      responseId: context.responseId,
-      fieldId: context.fieldId,
-    },
+  try {
+    await env.UPLOADS.put(key, file.stream(), {
+      httpMetadata: {
+        contentType,
+        contentDisposition: `attachment; filename="${filename.replace(/"/g, "")}"`,
+      },
+      customMetadata: {
+        filename,
+        projectId: context.projectId,
+        formId: context.formId,
+        responseId: context.responseId,
+        fieldId: context.fieldId,
+      },
+    });
+  } catch (error) {
+    await storage.releaseFailed(entitlements.workspace, key);
+    throw error;
+  }
+  await storage.commit({
+    workspace: entitlements.workspace,
+    projectId: context.projectId,
+    objectKey: key,
+    category: "response_upload",
+    sizeBytes: file.size,
   });
 
   return {
@@ -1482,7 +1521,7 @@ app.post(
         return c.json({ error: "Field is not a file upload field" }, 400);
       }
 
-      const upload = await storePrivateFormUpload(c.env, file, {
+      const upload = await storePrivateFormUpload(db, c.env, file, {
         projectId: project.id,
         formId: form.id,
         responseId,
@@ -1502,6 +1541,12 @@ app.post(
         201,
       );
     } catch (err) {
+      if (err instanceof StorageCapacityError) {
+        for (const [name, value] of Object.entries(err.failure.headers)) {
+          c.header(name, value);
+        }
+        return c.json(err.failure.body, err.failure.status);
+      }
       console.error("Form file upload error:", err);
       return c.json({ error: "Failed to upload file" }, 500);
     }
@@ -2113,7 +2158,7 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
 
     for (const parsed of parsedFields) {
       if (parsed.file) {
-        const upload = await storePrivateFormUpload(c.env, parsed.file, {
+        const upload = await storePrivateFormUpload(db, c.env, parsed.file, {
           projectId: project.id,
           formId: form.id,
           responseId: response.id,
@@ -2182,6 +2227,13 @@ app.post("/api/public/forms/:projectSlug/:formSlug/submit", async (c) => {
 
     return createNativeFormSuccessResponse(form.settings);
   } catch (err) {
+    if (err instanceof StorageCapacityError) {
+      return createHtmlPageResponse(
+        "Storage limit reached",
+        "This form cannot accept this file right now.",
+        err.failure.status,
+      );
+    }
     console.error("Native HTML form submission error:", err);
     return createHtmlPageResponse(
       "Submission failed",
@@ -2483,6 +2535,7 @@ app.use("/api/*", async (c, next) => {
     path.startsWith("/api/widget/") ||
     path.startsWith("/api/public/") ||
     path.startsWith("/api/uploads/") ||
+    path.startsWith("/api/internal/") ||
     path === "/api/mcp" ||
     path === "/api/subscription/webhook"
   ) {
@@ -3914,6 +3967,28 @@ const projectRoutes = teamRoutes.delete(
 
 // ─── Uploads (R2) ────────────────────────────────────────────────────────────
 
+app.post(
+  "/api/internal/entitlements/storage/reconcile/:projectId",
+  async (c) => {
+    const authorization = c.req.header("authorization");
+    if (authorization !== `Bearer ${c.env.CRON_SECRET}`) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    try {
+      const db = drizzle(c.env.DB, { schema });
+      const result = await reconcileProjectStorage(
+        db,
+        c.env.UPLOADS,
+        c.req.param("projectId"),
+      );
+      return c.json(result);
+    } catch (error) {
+      console.error("Storage reconciliation failed:", error);
+      return c.json({ error: "Failed to reconcile storage" }, 500);
+    }
+  },
+);
+
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
   "image/png",
@@ -3981,9 +4056,39 @@ app.post("/api/projects/:projectId/uploads", async (c) => {
 
     const ext = file.name.split(".").pop() ?? "jpg";
     const key = `projects/${projectId}/${crypto.randomUUID()}.${ext}`;
+    const entitlements = await new EntitlementService(c.get("db")).resolveProject(
+      projectId,
+    );
+    if (!entitlements) return c.json({ error: "Project not found" }, 404);
+    const storage = new StorageUsageService(c.get("db"));
+    const decision = await storage.reserve({
+      workspace: entitlements.workspace,
+      plan: entitlements.subscription.plan,
+      objectKey: key,
+      sizeBytes: file.size,
+    });
+    if (!decision.allowed) {
+      const failure = entitlementError(decision, "upload this file");
+      for (const [name, value] of Object.entries(failure.headers)) {
+        c.header(name, value);
+      }
+      return c.json(failure.body, failure.status);
+    }
 
-    await c.env.UPLOADS.put(key, file.stream(), {
-      httpMetadata: { contentType: file.type },
+    try {
+      await c.env.UPLOADS.put(key, file.stream(), {
+        httpMetadata: { contentType: file.type },
+      });
+    } catch (error) {
+      await storage.releaseFailed(entitlements.workspace, key);
+      throw error;
+    }
+    await storage.commit({
+      workspace: entitlements.workspace,
+      projectId,
+      objectKey: key,
+      category: "project_asset",
+      sizeBytes: file.size,
     });
 
     return c.json({ key, url: `/api/uploads/${key}` }, 201);
@@ -4001,6 +4106,15 @@ app.delete("/api/projects/:projectId/uploads/:key{.+}", async (c) => {
       return c.json({ error: "Upload not found" }, 404);
     }
     await c.env.UPLOADS.delete(key);
+    const entitlements = await new EntitlementService(c.get("db")).resolveProject(
+      projectId,
+    );
+    if (entitlements) {
+      await new StorageUsageService(c.get("db")).remove(
+        entitlements.workspace,
+        key,
+      );
+    }
     return c.json({ success: true });
   } catch (err) {
     console.error("Delete upload error:", err);
