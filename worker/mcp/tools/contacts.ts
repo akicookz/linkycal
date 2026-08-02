@@ -14,14 +14,14 @@ import {
   tagColorSchema,
 } from "../../validation";
 import { dispatchWorkflowTrigger } from "../../lib/workflow-dispatch";
-import { ensureContact } from "../../lib/contact-actions";
+import { mcpEntitlementError } from "../../lib/entitlement-errors";
+import { createWithResourceCapacity } from "../../lib/resource-creation";
 import type { ToolContext } from "../agent";
 import {
   ok,
   err,
   withToolErrors,
   inProject,
-  getPlanLimitsForProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
 
@@ -62,18 +62,25 @@ export async function createContact(
   const duplicate = await service.findDuplicate(projectId, input);
   if (duplicate) return ok(duplicate);
 
-  const planLimits = await getPlanLimitsForProject(db, projectId);
-  const existing = await service.list(projectId);
-  if (
-    planLimits.maxContactsPerProject !== -1 &&
-    existing.length >= planLimits.maxContactsPerProject
-  ) {
-    return err(`Plan limit reached: maximum ${planLimits.maxContactsPerProject} contacts`);
+  const creation = await createWithResourceCapacity({
+    db,
+    projectId,
+    key: "contacts",
+    create: async (transaction) =>
+      new ContactService(transaction).create(projectId, input),
+  });
+  if (!creation.ok) {
+    return mcpEntitlementError(creation.decision, "create another contact");
   }
 
-  // Creates + fires new_contact_created (no duplicate exists at this point).
-  const { contact } = await ensureContact(db, ctx.env(), projectId, input, "mcp");
-  return ok(contact);
+  await dispatchWorkflowTrigger(db, ctx.env(), projectId, "new_contact_created", {
+    projectId,
+    contactId: creation.value.id,
+    contactEmail: creation.value.email ?? undefined,
+    contactName: creation.value.name,
+    metadata: { source: "mcp" },
+  });
+  return ok(creation.value);
 }
 
 export async function updateContact(

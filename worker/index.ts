@@ -141,7 +141,10 @@ import {
   ContactActivityService,
   parseContactActivityListOptions,
 } from "./services/contact-activity-service";
-import { ensureContact } from "./lib/contact-actions";
+import {
+  ensureContact,
+  importContactsWithCapacity,
+} from "./lib/contact-actions";
 import {
   notifyFormResponseCompleted,
   uploadedFileDisplayValue,
@@ -167,6 +170,12 @@ import { projectRouteAccess } from "./lib/api-route-policy";
 import { authorizeApiKeyProjectRequest } from "./lib/project-api-access";
 import { projectCanUseCalendarConnections } from "./lib/calendar-connection-scope";
 import { isTrustedOrigin, sessionOriginAllowed } from "./lib/cors-policy";
+import {
+  createWithResourceCapacity,
+  createWithWorkspaceResourceCapacity,
+  requireResourceCapacity,
+  requireWorkspaceResourceCapacity,
+} from "./lib/resource-creation";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -2585,34 +2594,6 @@ async function scheduleBelongsToProject(
   return !!schedule;
 }
 
-async function getTeamMemberUsage(db: AppDatabase, teamId: string) {
-  const [memberCount] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(dbSchema.teamMembers)
-    .where(
-      and(
-        eq(dbSchema.teamMembers.teamId, teamId),
-        ne(dbSchema.teamMembers.role, "owner"),
-      ),
-    );
-
-  const [pendingInviteCount] = await db
-    .select({ count: sql<number>`count(*)` })
-    .from(dbSchema.teamInvites)
-    .where(
-      and(
-        eq(dbSchema.teamInvites.teamId, teamId),
-        eq(dbSchema.teamInvites.status, "pending"),
-        gte(dbSchema.teamInvites.expiresAt, new Date()),
-      ),
-    );
-
-  return {
-    members: Number(memberCount?.count ?? 0),
-    pendingInvites: Number(pendingInviteCount?.count ?? 0),
-  };
-}
-
 const projectAccessMiddleware = async (
   c: Context<HonoAppContext>,
   next: Next,
@@ -2866,16 +2847,6 @@ const teamRoutes = app
         teamId,
       );
       const { plan } = resolveSubscriptionPlan(subscription);
-      const planLimits = PLAN_LIMITS[plan];
-      if (planLimits.maxTeamMembers === 0) {
-        return c.json(
-          {
-            error: "Team collaboration requires a paid plan",
-            code: "teams_requires_paid_plan",
-          },
-          403,
-        );
-      }
 
       const data = validate(createTeamInviteSchema, await c.req.json());
       const email = data.email.trim().toLowerCase();
@@ -2929,20 +2900,21 @@ const teamRoutes = app
         .limit(1);
 
       const inviteId = existingInvite?.id ?? crypto.randomUUID();
-      if (!existingInvite && planLimits.maxTeamMembers !== -1) {
-        const usage = await getTeamMemberUsage(db, teamId);
-        if (usage.members + usage.pendingInvites >= planLimits.maxTeamMembers) {
-          return c.json(
-            {
-              error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
-              code: "team_member_limit_reached",
-            },
-            403,
-          );
-        }
-      }
+      const workspace = {
+        type: "team" as const,
+        id: teamId,
+        ownerUserId: context.team.ownerUserId,
+        teamId,
+      };
 
       if (existingInvite) {
+        const capacity = await requireWorkspaceResourceCapacity({
+          db,
+          workspace,
+          plan,
+          key: "teamMembers",
+        });
+        if (!capacity.ok) return c.json(capacity.body, capacity.status);
         await db
           .update(dbSchema.teamInvites)
           .set({
@@ -2956,17 +2928,26 @@ const teamRoutes = app
           })
           .where(eq(dbSchema.teamInvites.id, existingInvite.id));
       } else {
-        await db.insert(dbSchema.teamInvites).values({
-          id: inviteId,
-          teamId,
-          email,
-          teamRole: data.teamRole,
-          projectId: data.projectId ?? null,
-          projectRole: data.projectRole ?? null,
-          tokenHash,
-          invitedByUserId: user.id,
-          expiresAt,
+        const creation = await createWithWorkspaceResourceCapacity({
+          db,
+          workspace,
+          plan,
+          key: "teamMembers",
+          create: async (transaction) => {
+            await transaction.insert(dbSchema.teamInvites).values({
+              id: inviteId,
+              teamId,
+              email,
+              teamRole: data.teamRole,
+              projectId: data.projectId ?? null,
+              projectRole: data.projectRole ?? null,
+              tokenHash,
+              invitedByUserId: user.id,
+              expiresAt,
+            });
+          },
         });
+        if (!creation.ok) return c.json(creation.body, creation.status);
       }
 
       await sendTeamInviteEmail(c.env, {
@@ -3007,16 +2988,6 @@ const teamRoutes = app
         teamId,
       );
       const { plan } = resolveSubscriptionPlan(subscription);
-      const planLimits = PLAN_LIMITS[plan];
-      if (planLimits.maxTeamMembers === 0) {
-        return c.json(
-          {
-            error: "Team collaboration requires a paid plan",
-            code: "teams_requires_paid_plan",
-          },
-          403,
-        );
-      }
 
       const [invite] = await db
         .select()
@@ -3030,6 +3001,21 @@ const teamRoutes = app
         )
         .limit(1);
       if (!invite) return c.json({ error: "Invite not found" }, 404);
+
+      const capacity = await requireWorkspaceResourceCapacity({
+        db,
+        workspace: {
+          type: "team",
+          id: teamId,
+          ownerUserId: context.team.ownerUserId,
+          teamId,
+        },
+        plan,
+        key: "teamMembers",
+        amount: 0,
+        actionLabel: "resend this team invitation",
+      });
+      if (!capacity.ok) return c.json(capacity.body, capacity.status);
 
       const token = generateInviteToken();
       const tokenHash = await hashSecret(token);
@@ -3257,31 +3243,23 @@ const teamRoutes = app
         invite.teamId,
       );
       const { plan } = resolveSubscriptionPlan(subscription);
-      const planLimits = PLAN_LIMITS[plan];
 
       let member = await getTeamMembership(db, invite.teamId, session.user.id);
       if (!member) {
-        if (planLimits.maxTeamMembers === 0) {
-          return c.json(
-            {
-              error: "Team collaboration requires a paid plan",
-              code: "teams_requires_paid_plan",
-            },
-            403,
-          );
-        }
-        if (planLimits.maxTeamMembers !== -1) {
-          const usage = await getTeamMemberUsage(db, invite.teamId);
-          if (usage.members >= planLimits.maxTeamMembers) {
-            return c.json(
-              {
-                error: `Plan limit reached: maximum ${planLimits.maxTeamMembers} team member(s)`,
-                code: "team_member_limit_reached",
-              },
-              403,
-            );
-          }
-        }
+        const capacity = await requireWorkspaceResourceCapacity({
+          db,
+          workspace: {
+            type: "team",
+            id: invite.teamId,
+            ownerUserId: team.ownerUserId,
+            teamId: invite.teamId,
+          },
+          plan,
+          key: "teamMembers",
+          amount: 0,
+          actionLabel: "accept this team invitation",
+        });
+        if (!capacity.ok) return c.json(capacity.body, capacity.status);
 
         const memberId = crypto.randomUUID();
         await db.insert(dbSchema.teamMembers).values({
@@ -3394,16 +3372,6 @@ const teamRoutes = app
       const access = c.get("projectAccess");
       const db = c.get("db");
       if (!access?.teamId) return c.json({ error: "Project has no team" }, 400);
-      const planLimits = c.get("planLimits");
-      if (planLimits.maxTeamMembers === 0) {
-        return c.json(
-          {
-            error: "Team collaboration requires a paid plan",
-            code: "teams_requires_paid_plan",
-          },
-          403,
-        );
-      }
 
       const data = validate(upsertProjectMemberSchema, await c.req.json());
       const [teamMember] = await db
@@ -3435,12 +3403,20 @@ const teamRoutes = app
           .set({ role: data.role })
           .where(eq(dbSchema.projectMembers.id, existing.id));
       } else {
-        await db.insert(dbSchema.projectMembers).values({
-          id: crypto.randomUUID(),
+        const creation = await createWithResourceCapacity({
+          db,
           projectId,
-          teamMemberId: teamMember.id,
-          role: data.role,
+          key: "teamMembers",
+          create: async (transaction) => {
+            await transaction.insert(dbSchema.projectMembers).values({
+              id: crypto.randomUUID(),
+              projectId,
+              teamMemberId: teamMember.id,
+              role: data.role,
+            });
+          },
         });
+        if (!creation.ok) return c.json(creation.body, creation.status);
       }
 
       return c.json({ success: true });
@@ -3458,16 +3434,6 @@ const teamRoutes = app
       const projectId = c.req.param("projectId");
       const memberId = c.req.param("memberId");
       const db = c.get("db");
-      const planLimits = c.get("planLimits");
-      if (planLimits.maxTeamMembers === 0) {
-        return c.json(
-          {
-            error: "Team collaboration requires a paid plan",
-            code: "teams_requires_paid_plan",
-          },
-          403,
-        );
-      }
 
       const data = validate(updateProjectMemberSchema, await c.req.json());
       const [grant] = await db
@@ -3692,25 +3658,7 @@ app.post("/api/projects", async (c) => {
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
     const accountTeamId = c.get("accountTeamId");
-    const planLimits = c.get("planLimits");
-
-    // Check plan limits
-    const existingProjects = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.teamId, accountTeamId));
-
-    if (
-      planLimits.maxProjects !== -1 &&
-      existingProjects.length >= planLimits.maxProjects
-    ) {
-      return c.json(
-        {
-          error: `Plan limit reached: maximum ${planLimits.maxProjects} project(s)`,
-        },
-        403,
-      );
-    }
+    const { plan } = c.get("subscription");
 
     // Check for slug uniqueness
     const [existingSlug] = await db
@@ -3723,23 +3671,36 @@ app.post("/api/projects", async (c) => {
       return c.json({ error: "Slug is already taken" }, 409);
     }
 
-    const id = crypto.randomUUID();
-    await db.insert(dbSchema.projects).values({
-      id,
-      userId,
-      teamId: accountTeamId,
-      name: data.name,
-      slug: data.slug,
-      timezone: data.timezone,
+    const creation = await createWithWorkspaceResourceCapacity({
+      db,
+      workspace: {
+        type: "team",
+        id: accountTeamId,
+        ownerUserId: userId,
+        teamId: accountTeamId,
+      },
+      plan,
+      key: "projects",
+      create: async (transaction) => {
+        const id = crypto.randomUUID();
+        await transaction.insert(dbSchema.projects).values({
+          id,
+          userId,
+          teamId: accountTeamId,
+          name: data.name,
+          slug: data.slug,
+          timezone: data.timezone,
+        });
+        const [project] = await transaction
+          .select()
+          .from(dbSchema.projects)
+          .where(eq(dbSchema.projects.id, id))
+          .limit(1);
+        return project;
+      },
     });
-
-    const [project] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, id))
-      .limit(1);
-
-    return c.json({ project }, 201);
+    if (!creation.ok) return c.json(creation.body, creation.status);
+    return c.json({ project: creation.value }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -4061,43 +4022,32 @@ app.post("/api/projects/:projectId/event-types", async (c) => {
     const data = validate(createEventTypeSchema, body);
 
     const db = c.get("db");
-    const planLimits = c.get("planLimits");
-
-    // Check plan limits for event types
-    const service = new EventTypeService(db);
-    const existing = await service.list(projectId);
-
-    if (
-      planLimits.maxEventTypes !== -1 &&
-      existing.length >= planLimits.maxEventTypes
-    ) {
-      return c.json(
-        {
-          error: `Plan limit reached: maximum ${planLimits.maxEventTypes} event type(s)`,
-        },
-        403,
-      );
-    }
-
-    const eventType = await service.create(projectId, {
-      name: data.name,
-      slug: data.slug,
-      duration: data.duration,
-      description: data.description ?? undefined,
-      location: data.location ?? undefined,
-      color: data.color ?? undefined,
-      bufferBefore: data.bufferBefore,
-      bufferAfter: data.bufferAfter,
-      maxPerDay: data.maxPerDay ?? undefined,
-      maxPerWeek: data.maxPerWeek ?? undefined,
-      weekStart: data.weekStart,
-      enabled: data.enabled,
-      requiresConfirmation: data.requiresConfirmation,
-      bookingFormId: data.bookingFormId ?? undefined,
-      settings: data.settings ?? undefined,
-      copyFromEventTypeId: data.copyFromEventTypeId ?? undefined,
+    const creation = await createWithResourceCapacity({
+      db,
+      projectId,
+      key: "eventTypes",
+      create: async (transaction) =>
+        new EventTypeService(transaction).create(projectId, {
+          name: data.name,
+          slug: data.slug,
+          duration: data.duration,
+          description: data.description ?? undefined,
+          location: data.location ?? undefined,
+          color: data.color ?? undefined,
+          bufferBefore: data.bufferBefore,
+          bufferAfter: data.bufferAfter,
+          maxPerDay: data.maxPerDay ?? undefined,
+          maxPerWeek: data.maxPerWeek ?? undefined,
+          weekStart: data.weekStart,
+          enabled: data.enabled,
+          requiresConfirmation: data.requiresConfirmation,
+          bookingFormId: data.bookingFormId ?? undefined,
+          settings: data.settings ?? undefined,
+          copyFromEventTypeId: data.copyFromEventTypeId ?? undefined,
+        }),
     });
-    return c.json({ eventType }, 201);
+    if (!creation.ok) return c.json(creation.body, creation.status);
+    return c.json({ eventType: creation.value }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -4613,22 +4563,7 @@ app.post("/api/projects/:projectId/forms", async (c) => {
     const data = validate(createFormSchema, body);
 
     const db = c.get("db");
-    const planLimits = c.get("planLimits");
     const service = new FormService(db);
-
-    // Check plan limits
-    const existing = await service.list(projectId);
-    if (
-      planLimits.maxFormsPerProject !== -1 &&
-      existing.length >= planLimits.maxFormsPerProject
-    ) {
-      return c.json(
-        {
-          error: `Plan limit reached: maximum ${planLimits.maxFormsPerProject} form(s)`,
-        },
-        403,
-      );
-    }
 
     // Check slug uniqueness within the project
     const existingSlug = await service.getBySlug(projectId, data.slug);
@@ -4642,8 +4577,15 @@ app.post("/api/projects/:projectId/forms", async (c) => {
       );
     }
 
-    const form = await service.create(projectId, data);
-    return c.json({ form }, 201);
+    const creation = await createWithResourceCapacity({
+      db,
+      projectId,
+      key: "forms",
+      create: async (transaction) =>
+        new FormService(transaction).create(projectId, data),
+    });
+    if (!creation.ok) return c.json(creation.body, creation.status);
+    return c.json({ form: creation.value }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -5186,7 +5128,6 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
     const data = validate(createContactSchema, body);
 
     const db = c.get("db");
-    const planLimits = c.get("planLimits");
     const service = new ContactService(db);
 
     // Dedupe first: a matching contact returns the existing row (no duplicate,
@@ -5196,29 +5137,23 @@ app.post("/api/projects/:projectId/contacts", async (c) => {
       return c.json({ contact: duplicate }, 200);
     }
 
-    // Enforce the plan limit only when this would create a brand-new contact.
-    const existing = await service.list(projectId);
-    if (
-      planLimits.maxContactsPerProject !== -1 &&
-      existing.length >= planLimits.maxContactsPerProject
-    ) {
-      return c.json(
-        {
-          error: `Plan limit reached: maximum ${planLimits.maxContactsPerProject} contacts`,
-        },
-        403,
-      );
-    }
-
-    // Creates + fires new_contact_created (no duplicate exists at this point).
-    const { contact } = await ensureContact(
+    const creation = await createWithResourceCapacity({
       db,
-      c.env,
       projectId,
-      data,
-      "manual",
-    );
-    return c.json({ contact }, 201);
+      key: "contacts",
+      create: async (transaction) =>
+        new ContactService(transaction).create(projectId, data),
+    });
+    if (!creation.ok) return c.json(creation.body, creation.status);
+
+    await dispatchWorkflowTrigger(db, c.env, projectId, "new_contact_created", {
+      projectId,
+      contactId: creation.value.id,
+      contactEmail: creation.value.email ?? undefined,
+      contactName: creation.value.name,
+      metadata: { source: "manual" },
+    });
+    return c.json({ contact: creation.value }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -5235,7 +5170,6 @@ app.post("/api/projects/:projectId/contacts/import", async (c) => {
     const data = validate(importContactsSchema, body);
 
     const db = c.get("db");
-    const planLimits = c.get("planLimits");
     const service = new ContactService(db);
     const existing = await service.list(projectId);
     const existingEmails = new Set(
@@ -5244,23 +5178,14 @@ app.post("/api/projects/:projectId/contacts/import", async (c) => {
         .filter((email): email is string => !!email),
     );
 
-    let remainingCapacity =
-      planLimits.maxContactsPerProject === -1
-        ? Number.POSITIVE_INFINITY
-        : Math.max(0, planLimits.maxContactsPerProject - existing.length);
-    let imported = 0;
     let skipped = 0;
     let failed = 0;
     const errors: ContactImportError[] = [];
+    const contactsToImport: Array<Parameters<ContactService["create"]>[1]> = [];
+    const pendingEmails = new Set<string>();
 
     for (const [index, row] of data.rows.entries()) {
       const rowNumber = index + 2;
-      if (remainingCapacity <= 0) {
-        skipped += 1;
-        addContactImportError(errors, rowNumber, "Plan contact limit reached");
-        continue;
-      }
-
       const email = normalizeContactImportEmail(
         getContactImportCell(row, data.mapping.email),
       );
@@ -5291,31 +5216,39 @@ app.post("/api/projects/:projectId/contacts/import", async (c) => {
         continue;
       }
 
-      if (email && existingEmails.has(email)) {
+      if (email && (existingEmails.has(email) || pendingEmails.has(email))) {
         skipped += 1;
         addContactImportError(errors, rowNumber, "Email already exists");
         continue;
       }
-
-      try {
-        await service.create(projectId, parsedContact.data);
-        imported += 1;
-        remainingCapacity -= 1;
-        if (email) existingEmails.add(email);
-      } catch (err) {
-        failed += 1;
-        console.error("Contact import row error:", err);
-        addContactImportError(errors, rowNumber, "Failed to create contact");
-      }
+      if (email) pendingEmails.add(email);
+      contactsToImport.push(parsedContact.data);
     }
+
+    const result = await importContactsWithCapacity(
+      db,
+      projectId,
+      contactsToImport,
+    );
+    if (!result.ok) return c.json(result.body, result.status);
+    skipped += result.skipped;
+
+    const snapshot = await new EntitlementService(db).resource(
+      projectId,
+      "contacts",
+      0,
+    );
+    const remainingCapacity =
+      snapshot.limit === null
+        ? null
+        : Math.max(0, snapshot.limit - (snapshot.used ?? 0));
 
     return c.json({
       total: data.rows.length,
-      imported,
+      imported: result.created,
       skipped,
       failed,
-      remainingCapacity:
-        planLimits.maxContactsPerProject === -1 ? null : remainingCapacity,
+      remainingCapacity,
       errors,
     });
   } catch (err) {
@@ -5775,25 +5708,15 @@ app.post("/api/projects/:projectId/workflows", async (c) => {
     const data = validate(createWorkflowSchema, body);
 
     const db = c.get("db");
-    const planLimits = c.get("planLimits");
-    const service = new WorkflowService(db);
-
-    // Check plan limits
-    const existing = await service.list(projectId);
-    if (
-      planLimits.maxWorkflows !== -1 &&
-      existing.length >= planLimits.maxWorkflows
-    ) {
-      return c.json(
-        {
-          error: `Plan limit reached: maximum ${planLimits.maxWorkflows} workflow(s)`,
-        },
-        403,
-      );
-    }
-
-    const workflow = await service.create(projectId, data);
-    return c.json({ workflow }, 201);
+    const creation = await createWithResourceCapacity({
+      db,
+      projectId,
+      key: "workflows",
+      create: async (transaction) =>
+        new WorkflowService(transaction).create(projectId, data),
+    });
+    if (!creation.ok) return c.json(creation.body, creation.status);
+    return c.json({ workflow: creation.value }, 201);
   } catch (err) {
     if (err instanceof Error && err.name === "ZodError") {
       return c.json({ error: "Invalid request" }, 400);
@@ -6273,38 +6196,12 @@ app.post("/api/projects/:projectId/calendar/connect", async (c) => {
   try {
     const projectId = c.req.param("projectId");
     const db = c.get("db");
-    const userId = c.get("effectiveUserId");
-    const planLimits = c.get("planLimits");
-    const access = c.get("projectAccess");
-
-    if (!planLimits.calendarSync) {
-      return c.json(
-        { error: "Calendar sync is not available on this plan" },
-        403,
-      );
-    }
-
-    // Check connection count limit
-    if (planLimits.maxCalendarConnections !== -1) {
-      const existing = access?.teamId
-        ? await db
-            .select()
-            .from(dbSchema.teamCalendarConnections)
-            .where(eq(dbSchema.teamCalendarConnections.teamId, access.teamId))
-        : await db
-            .select()
-            .from(dbSchema.calendarConnections)
-            .where(eq(dbSchema.calendarConnections.userId, userId));
-
-      if (existing.length >= planLimits.maxCalendarConnections) {
-        return c.json(
-          {
-            error: `Plan limit reached: maximum ${planLimits.maxCalendarConnections} calendar connection(s)`,
-          },
-          403,
-        );
-      }
-    }
+    const capacity = await requireResourceCapacity({
+      db,
+      projectId,
+      key: "calendarConnections",
+    });
+    if (!capacity.ok) return c.json(capacity.body, capacity.status);
 
     const calendarService = new CalendarService(db, {
       GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
@@ -6357,6 +6254,13 @@ app.get("/api/integrations/gcal/callback", async (c) => {
 
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
+    if (!projectId) {
+      return c.json({ error: "Missing project context" }, 400);
+    }
+    const access = await resolveProjectAccess(db, projectId, userId);
+    if (!access || !hasProjectPermission(access, "project:write")) {
+      return c.json({ error: "Project not found" }, 404);
+    }
 
     const calendarService = new CalendarService(db, {
       GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
@@ -6370,43 +6274,37 @@ app.get("/api/integrations/gcal/callback", async (c) => {
     const tokens = await calendarService.exchangeCode(code, redirectUri);
 
     const id = crypto.randomUUID();
-    await db.insert(dbSchema.calendarConnections).values({
-      id,
-      userId,
-      provider: "google",
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken,
-      email: tokens.email,
-    });
-
-    if (projectId) {
-      const [project] = await db
-        .select({
-          teamId: dbSchema.projects.teamId,
-          userId: dbSchema.projects.userId,
-        })
-        .from(dbSchema.projects)
-        .where(eq(dbSchema.projects.id, projectId))
-        .limit(1);
-      if (project?.teamId) {
-        await db.insert(dbSchema.teamCalendarConnections).values({
-          id: crypto.randomUUID(),
-          teamId: project.teamId,
-          connectionId: id,
-          createdByUserId: userId,
+    const creation = await createWithResourceCapacity({
+      db,
+      projectId,
+      key: "calendarConnections",
+      create: async (transaction) => {
+        await transaction.insert(dbSchema.calendarConnections).values({
+          id,
+          userId,
+          provider: "google",
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          email: tokens.email,
         });
-      }
-    }
+        if (access.teamId) {
+          await transaction.insert(dbSchema.teamCalendarConnections).values({
+            id: crypto.randomUUID(),
+            teamId: access.teamId,
+            connectionId: id,
+            createdByUserId: userId,
+          });
+        }
+      },
+    });
+    if (!creation.ok) return c.json(creation.body, creation.status);
 
     // Redirect back to the page that initiated the connection
     if (returnUrl) {
       const separator = returnUrl.includes("?") ? "&" : "?";
       return c.redirect(`${returnUrl}${separator}connected=true`);
     }
-    if (projectId) {
-      return c.redirect(`/app/projects/${projectId}/settings?connected=true`);
-    }
-    return c.redirect("/app");
+    return c.redirect(`/app/projects/${projectId}/settings?connected=true`);
   } catch (err) {
     console.error("Calendar callback error:", err);
     return c.json({ error: "Failed to connect calendar" }, 500);
@@ -7131,25 +7029,7 @@ app.post("/api/onboarding", async (c) => {
     const db = c.get("db");
     const userId = c.get("effectiveUserId");
     const accountTeamId = c.get("accountTeamId");
-    const planLimits = c.get("planLimits");
-
-    // Check plan limits for projects
-    const existingProjects = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.teamId, accountTeamId));
-
-    if (
-      planLimits.maxProjects !== -1 &&
-      existingProjects.length >= planLimits.maxProjects
-    ) {
-      return c.json(
-        {
-          error: `Plan limit reached: maximum ${planLimits.maxProjects} project(s)`,
-        },
-        403,
-      );
-    }
+    const { plan } = c.get("subscription");
 
     // Check for slug uniqueness
     const [existingSlug] = await db
@@ -7162,17 +7042,30 @@ app.post("/api/onboarding", async (c) => {
       return c.json({ error: "Slug is already taken" }, 409);
     }
 
-    // Create the project
     const projectId = crypto.randomUUID();
-    await db.insert(dbSchema.projects).values({
-      id: projectId,
-      userId,
-      teamId: accountTeamId,
-      name: data.name,
-      slug: data.slug,
-      timezone: data.timezone,
-      onboarded: false,
+    const creation = await createWithWorkspaceResourceCapacity({
+      db,
+      workspace: {
+        type: "team",
+        id: accountTeamId,
+        ownerUserId: userId,
+        teamId: accountTeamId,
+      },
+      plan,
+      key: "projects",
+      create: async (transaction) => {
+        await transaction.insert(dbSchema.projects).values({
+          id: projectId,
+          userId,
+          teamId: accountTeamId,
+          name: data.name,
+          slug: data.slug,
+          timezone: data.timezone,
+          onboarded: false,
+        });
+      },
     });
+    if (!creation.ok) return c.json(creation.body, creation.status);
 
     // Create default schedule with Mon-Fri 9-5
     const scheduleService = new ScheduleService(db);
@@ -7255,11 +7148,19 @@ app.post("/api/onboarding/default-form", async (c) => {
       slug = `contact-${suffix++}`;
     }
 
-    const form = await formService.create(projectId, {
-      name: "Contact form",
-      slug,
-      type: "single",
+    const creation = await createWithResourceCapacity({
+      db,
+      projectId,
+      key: "forms",
+      create: async (transaction) =>
+        new FormService(transaction).create(projectId, {
+          name: "Contact form",
+          slug,
+          type: "single",
+        }),
     });
+    if (!creation.ok) return c.json(creation.body, creation.status);
+    const form = creation.value;
 
     if (!form) {
       return c.json({ error: "Failed to create form" }, 500);

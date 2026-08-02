@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { FormService } from "../../services/form-service";
+import { mcpEntitlementError } from "../../lib/entitlement-errors";
+import { createWithResourceCapacity } from "../../lib/resource-creation";
 import { createFormSchema, updateFormSchema } from "../../validation";
 import type { ToolContext } from "../agent";
 import {
@@ -9,7 +11,6 @@ import {
   err,
   withToolErrors,
   inProject,
-  getPlanLimitsForProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
 
@@ -40,19 +41,16 @@ export async function createForm(
 ): Promise<ToolResult> {
   const db = ctx.db();
   const projectId = ctx.projectId();
-  const service = new FormService(db);
-
-  const planLimits = await getPlanLimitsForProject(db, projectId);
-  const existing = await service.list(projectId);
-  if (
-    planLimits.maxFormsPerProject !== -1 &&
-    existing.length >= planLimits.maxFormsPerProject
-  ) {
-    return err(`Plan limit reached: maximum ${planLimits.maxFormsPerProject} form(s)`);
-  }
-
-  const form = await service.create(projectId, input);
-  return ok(form);
+  const creation = await createWithResourceCapacity({
+    db,
+    projectId,
+    key: "forms",
+    create: async (transaction) =>
+      new FormService(transaction).create(projectId, input),
+  });
+  return creation.ok
+    ? ok(creation.value)
+    : mcpEntitlementError(creation.decision, "create another form");
 }
 
 export async function updateForm(

@@ -1,8 +1,15 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
+
+import * as dbSchema from "../db/schema";
 import { ContactService } from "../services/contact-service";
 import type { CreateContactInput } from "../services/contact-service";
+import { normalizeEmail } from "../services/contact-service";
 import { dispatchWorkflowTrigger } from "./workflow-dispatch";
 import type { AppEnv } from "../types";
+import {
+  createWithResourceCapacity,
+  type CapacityFailure,
+} from "./resource-creation";
 
 // ─── Contact creation + new_contact_created dispatch ─────────────────────────
 // Called from HTTP/MCP request handlers (like booking-actions). It dedupes +
@@ -35,4 +42,64 @@ export async function ensureContact(
   }
 
   return result;
+}
+
+export async function importContactsWithCapacity(
+  db: DrizzleD1Database<Record<string, unknown>>,
+  projectId: string,
+  rows: CreateContactInput[],
+): Promise<
+  | { ok: true; created: number; skipped: number; contacts: dbSchema.ContactRow[] }
+  | CapacityFailure
+> {
+  const service = new ContactService(db);
+  const existing = await service.list(projectId);
+  const knownEmails = new Set(
+    existing
+      .map((contact) => normalizeEmail(contact.email))
+      .filter((email): email is string => email !== null),
+  );
+  const pendingEmails = new Set<string>();
+  const pending: CreateContactInput[] = [];
+  let skipped = 0;
+
+  for (const row of rows) {
+    const email = normalizeEmail(row.email);
+    if (
+      email &&
+      (knownEmails.has(email) || pendingEmails.has(email))
+    ) {
+      skipped += 1;
+      continue;
+    }
+    if (email) pendingEmails.add(email);
+    pending.push({ ...row, email });
+  }
+
+  if (pending.length === 0) {
+    return { ok: true, created: 0, skipped, contacts: [] };
+  }
+
+  const creation = await createWithResourceCapacity({
+    db,
+    projectId,
+    key: "contacts",
+    amount: pending.length,
+    actionLabel: "import these contacts",
+    create: async (transaction) => {
+      const transactionService = new ContactService(transaction);
+      const contacts: dbSchema.ContactRow[] = [];
+      for (const row of pending) {
+        contacts.push(await transactionService.create(projectId, row));
+      }
+      return contacts;
+    },
+  });
+  if (!creation.ok) return creation;
+  return {
+    ok: true,
+    created: creation.value.length,
+    skipped,
+    contacts: creation.value,
+  };
 }

@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { EventTypeService } from "../../services/event-type-service";
+import { mcpEntitlementError } from "../../lib/entitlement-errors";
+import { createWithResourceCapacity } from "../../lib/resource-creation";
 import { createEventTypeSchema, updateEventTypeSchema } from "../../validation";
 import type { ToolContext } from "../agent";
 import {
@@ -9,7 +11,6 @@ import {
   err,
   withToolErrors,
   inProject,
-  getPlanLimitsForProject,
 } from "../helpers";
 import type { ToolResult } from "../helpers";
 
@@ -40,35 +41,32 @@ export async function createEventType(
 ): Promise<ToolResult> {
   const db = ctx.db();
   const projectId = ctx.projectId();
-  const service = new EventTypeService(db);
-
-  const planLimits = await getPlanLimitsForProject(db, projectId);
-  const existing = await service.list(projectId);
-  if (
-    planLimits.maxEventTypes !== -1 &&
-    existing.length >= planLimits.maxEventTypes
-  ) {
-    return err(`Plan limit reached: maximum ${planLimits.maxEventTypes} event type(s)`);
-  }
-
-  const eventType = await service.create(projectId, {
-    name: input.name,
-    slug: input.slug,
-    duration: input.duration,
-    description: input.description ?? undefined,
-    location: input.location ?? undefined,
-    color: input.color ?? undefined,
-    bufferBefore: input.bufferBefore,
-    bufferAfter: input.bufferAfter,
-    maxPerDay: input.maxPerDay ?? undefined,
-    maxPerWeek: input.maxPerWeek ?? undefined,
-    weekStart: input.weekStart,
-    enabled: input.enabled,
-    requiresConfirmation: input.requiresConfirmation,
-    bookingFormId: input.bookingFormId ?? undefined,
-    settings: input.settings ?? undefined,
+  const creation = await createWithResourceCapacity({
+    db,
+    projectId,
+    key: "eventTypes",
+    create: async (transaction) =>
+      new EventTypeService(transaction).create(projectId, {
+        name: input.name,
+        slug: input.slug,
+        duration: input.duration,
+        description: input.description ?? undefined,
+        location: input.location ?? undefined,
+        color: input.color ?? undefined,
+        bufferBefore: input.bufferBefore,
+        bufferAfter: input.bufferAfter,
+        maxPerDay: input.maxPerDay ?? undefined,
+        maxPerWeek: input.maxPerWeek ?? undefined,
+        weekStart: input.weekStart,
+        enabled: input.enabled,
+        requiresConfirmation: input.requiresConfirmation,
+        bookingFormId: input.bookingFormId ?? undefined,
+        settings: input.settings ?? undefined,
+      }),
   });
-  return ok(eventType);
+  return creation.ok
+    ? ok(creation.value)
+    : mcpEntitlementError(creation.decision, "create another event type");
 }
 
 export async function updateEventType(

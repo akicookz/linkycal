@@ -26,6 +26,7 @@ export interface EntitlementHttpError {
 }
 
 interface McpEntitlementError {
+  [key: string]: unknown;
   isError: true;
   content: Array<{ type: "text"; text: string }>;
   structuredContent: { entitlementError: EntitlementErrorBody };
