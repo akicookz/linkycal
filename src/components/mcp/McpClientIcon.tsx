@@ -1,11 +1,4 @@
-import type { LucideIcon } from "lucide-react";
-import {
-  Bot,
-  Heart,
-  MousePointer2,
-  PlugZap,
-  Sparkles,
-} from "lucide-react";
+import { PlugZap } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -14,34 +7,28 @@ interface McpClientIconProps {
   className?: string;
 }
 
-interface ClientIconStyle {
-  icon: LucideIcon;
-  className: string;
-}
-
-function clientIconStyle(clientName: string): ClientIconStyle {
+function clientLogoPath(clientName: string): string | null {
   const normalized = clientName.toLowerCase();
   if (normalized.includes("claude")) {
-    return { icon: Sparkles, className: "text-[#D97757]" };
+    return "/mcp-client-logos/claude.svg";
   }
   if (normalized.includes("chatgpt")) {
-    return { icon: Bot, className: "text-[#10A37F]" };
+    return "/mcp-client-logos/chatgpt.svg";
   }
   if (normalized.includes("cursor")) {
-    return { icon: MousePointer2, className: "text-foreground" };
+    return "/mcp-client-logos/cursor.svg";
   }
   if (normalized.includes("lovable")) {
-    return { icon: Heart, className: "text-[#E855A5]" };
+    return "/mcp-client-logos/lovable.svg";
   }
-  return { icon: PlugZap, className: "text-primary" };
+  return null;
 }
 
 export function McpClientIcon({
   clientName,
   className,
 }: McpClientIconProps) {
-  const style = clientIconStyle(clientName);
-  const Icon = style.icon;
+  const logoPath = clientLogoPath(clientName);
 
   return (
     <span
@@ -51,7 +38,11 @@ export function McpClientIcon({
       )}
       aria-hidden="true"
     >
-      <Icon className={cn("size-5", style.className)} />
+      {logoPath ? (
+        <img src={logoPath} alt="" className="size-5 object-contain" />
+      ) : (
+        <PlugZap className="size-5 text-primary" />
+      )}
     </span>
   );
 }
