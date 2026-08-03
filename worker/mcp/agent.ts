@@ -1,5 +1,5 @@
 import { McpAgent } from "agents/mcp";
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { drizzle } from "drizzle-orm/d1";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 
@@ -7,15 +7,9 @@ import type { McpOAuthScope } from "../../shared/mcp-tools";
 import * as dbSchema from "../db/schema";
 import type { AppEnv } from "../types";
 import type { McpOAuthProps } from "./oauth-authorization";
-import { registerBookingTools } from "./tools/bookings";
-import { registerContactTools } from "./tools/contacts";
-import { registerEventTypeTools } from "./tools/event-types";
-import { registerScheduleTools } from "./tools/schedules";
-import { registerFormTools } from "./tools/forms";
-import { registerWorkflowTools } from "./tools/workflows";
-import { registerAnalyticsTools } from "./tools/analytics";
 import { reserveProjectUsage } from "../lib/metered-entitlements";
 import type { ToolResult } from "./helpers";
+import { createLinkyCalMcpServer } from "./server";
 
 const { schema } = dbSchema;
 
@@ -42,7 +36,7 @@ export interface ToolContext {
 // ─── Agent ───────────────────────────────────────────────────────────────────
 
 export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpProps> {
-  server = new McpServer({ name: "linkycal", version: "1.0.0" });
+  server!: McpServer;
 
   async init() {
     const ctx: ToolContext = {
@@ -77,12 +71,6 @@ export class LinkyCalMcp extends McpAgent<Cloudflare.Env & AppEnv, unknown, McpP
       },
     };
 
-    registerBookingTools(this.server, ctx);
-    registerContactTools(this.server, ctx);
-    registerEventTypeTools(this.server, ctx);
-    registerScheduleTools(this.server, ctx);
-    registerFormTools(this.server, ctx);
-    registerWorkflowTools(this.server, ctx);
-    registerAnalyticsTools(this.server, ctx);
+    this.server = createLinkyCalMcpServer(ctx);
   }
 }

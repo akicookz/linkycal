@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import {
   MCP_TOOL_COUNT,
   MCP_TOOL_GROUPS,
+  groupMcpToolsByDomain,
 } from "../../scripts/api-docs-catalog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1785,27 +1786,40 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               The server exposes {MCP_TOOL_COUNT} tools for the project, grouped by
-              domain. Read tools return JSON; write tools enforce the same plan
-              limits and validation as the dashboard.
+              read or write access, then by domain. Read tools return JSON;
+              write tools enforce the same plan limits and validation as the
+              dashboard.
             </p>
 
-            <div className="my-4 space-y-2">
+            <div className="my-4 space-y-3">
               {MCP_TOOL_GROUPS.map((row) => (
                 <div
-                  key={row.domain}
-                  className="grid grid-cols-1 items-start gap-1 rounded-[16px] bg-muted/50 px-4 py-3 text-sm sm:grid-cols-[130px_1fr] sm:gap-4"
+                  key={row.scope}
+                  className="rounded-[20px] bg-muted/50 p-5 text-sm"
                 >
-                  <span className="text-foreground font-medium">
-                    {row.domain}
-                  </span>
-                  <span>
-                    <span className="font-mono text-[13px] text-muted-foreground leading-relaxed">
-                      {row.tools.join(" · ")}
-                    </span>
-                    <span className="mt-1 block text-xs text-muted-foreground">
+                  <div className="space-y-1">
+                    <p className="text-balance font-medium text-foreground">
+                      {row.title}
+                    </p>
+                    <p className="text-pretty text-xs text-muted-foreground">
                       {row.notes}
-                    </span>
-                  </span>
+                    </p>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {groupMcpToolsByDomain(row.tools).map((domain) => (
+                      <div
+                        key={domain.domain}
+                        className="grid gap-1 sm:grid-cols-[110px_1fr] sm:gap-4"
+                      >
+                        <span className="font-medium text-foreground">
+                          {domain.domain}
+                        </span>
+                        <span className="font-mono text-[13px] leading-relaxed text-muted-foreground">
+                          {domain.tools.join(" · ")}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>

@@ -17,6 +17,7 @@ import { dispatchWorkflowTrigger } from "../../lib/workflow-dispatch";
 import { mcpEntitlementError } from "../../lib/entitlement-errors";
 import { createWithResourceCapacity } from "../../lib/resource-creation";
 import type { ToolContext } from "../agent";
+import { withMcpToolDiscovery } from "../tool-discovery";
 import {
   ok,
   err,
@@ -265,7 +266,7 @@ export async function getContactActivity(
 export function registerContactTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "list_contacts",
-    {
+    withMcpToolDiscovery("list_contacts", {
       description:
         "List contacts in this project with their tags, newest first. Supports text search (name/email/phone) and tag filtering.",
       inputSchema: {
@@ -274,24 +275,24 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         matchAllTags: z.boolean().optional().describe("Require all tagIds instead of any (default any)"),
         limit: z.number().int().min(1).max(500).optional().describe("Max contacts to return (default 100)"),
       },
-    },
+    }),
     withToolErrors("list_contacts", ctx, (input) => listContacts(ctx, input)),
   );
 
   server.registerTool(
     "get_contact",
-    {
+    withMcpToolDiscovery("get_contact", {
       description: "Get a contact by id with tags and recent activity.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
       },
-    },
+    }),
     withToolErrors("get_contact", ctx, (input) => getContact(ctx, input)),
   );
 
   server.registerTool(
     "create_contact",
-    {
+    withMcpToolDiscovery("create_contact", {
       description: "Create a contact in this project.",
       inputSchema: {
         name: createContactSchema.shape.name.describe("Contact name"),
@@ -299,13 +300,13 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         phone: createContactSchema.shape.phone.describe("Phone number"),
         notes: createContactSchema.shape.notes.describe("Free-form notes"),
       },
-    },
+    }),
     withToolErrors("create_contact", ctx, (input) => createContact(ctx, input)),
   );
 
   server.registerTool(
     "update_contact",
-    {
+    withMcpToolDiscovery("update_contact", {
       description: "Update a contact's fields. Only provided fields change; pass null to clear a field.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
@@ -314,13 +315,13 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
         phone: updateContactSchema.shape.phone.describe("New phone (null to clear)"),
         notes: updateContactSchema.shape.notes.describe("New notes (null to clear)"),
       },
-    },
+    }),
     withToolErrors("update_contact", ctx, (input) => updateContact(ctx, input)),
   );
 
   server.registerTool(
     "set_contact_next_action",
-    {
+    withMcpToolDiscovery("set_contact_next_action", {
       description:
         "Set or replace the contact's single Next Action, optionally with an exact deadline.",
       inputSchema: {
@@ -338,7 +339,7 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
           .optional()
           .describe("Optional exact ISO 8601 deadline"),
       },
-    },
+    }),
     withToolErrors("set_contact_next_action", ctx, (input) =>
       setContactNextAction(ctx, input),
     ),
@@ -346,13 +347,13 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
 
   server.registerTool(
     "complete_contact_next_action",
-    {
+    withMcpToolDiscovery("complete_contact_next_action", {
       description:
         "Mark the contact's current Next Action complete and clear it.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
       },
-    },
+    }),
     withToolErrors("complete_contact_next_action", ctx, (input) =>
       completeContactNextAction(ctx, input),
     ),
@@ -360,57 +361,57 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
 
   server.registerTool(
     "delete_contact",
-    {
+    withMcpToolDiscovery("delete_contact", {
       description: "Permanently delete a contact and its tag assignments and activity history.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
       },
-    },
+    }),
     withToolErrors("delete_contact", ctx, (input) => deleteContact(ctx, input)),
   );
 
   server.registerTool(
     "list_contact_tags",
-    {
+    withMcpToolDiscovery("list_contact_tags", {
       description: "List all contact tags in this project.",
       inputSchema: {},
-    },
+    }),
     withToolErrors("list_contact_tags", ctx, () => listContactTags(ctx)),
   );
 
   server.registerTool(
     "create_contact_tag",
-    {
+    withMcpToolDiscovery("create_contact_tag", {
       description: "Create a contact tag in this project.",
       inputSchema: {
         name: createTagSchema.shape.name.describe("Tag name"),
         color: createTagSchema.shape.color.describe("Hex color like #6b7280 (optional)"),
       },
-    },
+    }),
     withToolErrors("create_contact_tag", ctx, (input) => createContactTag(ctx, input)),
   );
 
   server.registerTool(
     "get_contact_tag",
-    {
+    withMcpToolDiscovery("get_contact_tag", {
       description: "Get a contact tag by id in this project.",
       inputSchema: {
         tagId: z.string().describe("Tag id"),
       },
-    },
+    }),
     withToolErrors("get_contact_tag", ctx, (input) => getContactTag(ctx, input)),
   );
 
   server.registerTool(
     "update_contact_tag",
-    {
+    withMcpToolDiscovery("update_contact_tag", {
       description: "Rename or recolor a contact tag.",
       inputSchema: {
         tagId: z.string().describe("Tag id"),
         name: tagNameSchema.optional().describe("New tag name"),
         color: tagColorSchema.optional().describe("New hex color"),
       },
-    },
+    }),
     withToolErrors("update_contact_tag", ctx, (input) =>
       updateContactTag(ctx, input),
     ),
@@ -418,49 +419,49 @@ export function registerContactTools(server: McpServer, ctx: ToolContext) {
 
   server.registerTool(
     "delete_contact_tag",
-    {
+    withMcpToolDiscovery("delete_contact_tag", {
       description:
         "Delete a contact tag unless it is referenced by a workflow.",
       inputSchema: {
         tagId: z.string().describe("Tag id"),
       },
-    },
+    }),
     withToolErrors("delete_contact_tag", ctx, (input) => deleteContactTag(ctx, input)),
   );
 
   server.registerTool(
     "add_tag_to_contact",
-    {
+    withMcpToolDiscovery("add_tag_to_contact", {
       description: "Assign a tag to a contact. Triggers any tag_added workflows configured for the project.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
         tagId: z.string().describe("Tag id (from list_contact_tags)"),
       },
-    },
+    }),
     withToolErrors("add_tag_to_contact", ctx, (input) => addTagToContact(ctx, input)),
   );
 
   server.registerTool(
     "remove_tag_from_contact",
-    {
+    withMcpToolDiscovery("remove_tag_from_contact", {
       description: "Remove a tag from a contact.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
         tagId: z.string().describe("Tag id"),
       },
-    },
+    }),
     withToolErrors("remove_tag_from_contact", ctx, (input) => removeTagFromContact(ctx, input)),
   );
 
   server.registerTool(
     "get_contact_activity",
-    {
+    withMcpToolDiscovery("get_contact_activity", {
       description: "Get a contact's activity timeline (bookings, form submissions, tag changes), newest first.",
       inputSchema: {
         contactId: z.string().describe("Contact id"),
         limit: z.number().int().min(1).max(200).optional().describe("Max entries (default 50)"),
       },
-    },
+    }),
     withToolErrors("get_contact_activity", ctx, (input) => getContactActivity(ctx, input)),
   );
 }

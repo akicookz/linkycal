@@ -78,14 +78,43 @@ Auth: OAuth 2.1 browser sign-in
 Connect to https://linkycal.com/api/mcp and complete OAuth in the browser, then select one eligible project. Each grant is hard-scoped to that project, so no tool accepts projectId. OAuth scopes are read, write, and offline_access; the MCP boundary rejects LinkyCal API keys.
 
 The server exposes 40 tools:
-- Bookings: list_bookings, get_booking, get_available_slots, create_booking, cancel_booking, confirm_booking, decline_booking — Read and manage bookings and public availability.
-- Event Types: list_event_types, get_event_type, create_event_type, update_event_type — Define bookable meeting types.
-- Schedules: list_schedules, get_schedule — Inspect the working hours behind event types.
-- Contacts: list_contacts, get_contact, create_contact, update_contact, set_contact_next_action, complete_contact_next_action, delete_contact, get_contact_activity — Manage CRM records and their activity.
-- Tags: list_contact_tags, get_contact_tag, create_contact_tag, update_contact_tag, delete_contact_tag, add_tag_to_contact, remove_tag_from_contact — Manage tags and contact assignments.
-- Forms: list_forms, get_form, create_form, update_form, list_form_responses — Build forms and inspect aggregate submissions.
-- Workflows: list_workflows, get_workflow — Inspect workflows; writes remain REST/dashboard-only.
-- Analytics: get_analytics_overview, get_booking_funnel_analytics, get_form_funnel_analytics, list_analytics_integrations, configure_analytics_integration — Read aggregate funnels and configure validated GA4, Meta Pixel, and PostHog public identifiers.
+### Read tools
+
+Discover IDs and inspect project state. Read tools never mutate LinkyCal data.
+
+- Bookings: list_bookings, get_booking, get_available_slots
+- Event types: list_event_types, get_event_type
+- Schedules: list_schedules, get_schedule
+- Contacts: list_contacts, get_contact, get_contact_activity
+- Tags: list_contact_tags, get_contact_tag
+- Forms: list_forms, get_form, list_form_responses
+- Workflows: list_workflows, get_workflow
+- Analytics: get_analytics_overview, get_booking_funnel_analytics, get_form_funnel_analytics, list_analytics_integrations
+
+### Write tools
+
+Create or change project data. Read the current resource first; destructive and externally visible operations are identified by MCP annotations.
+
+- Bookings: create_booking, cancel_booking, confirm_booking, decline_booking
+- Event types: create_event_type, update_event_type
+- Contacts: create_contact, update_contact, set_contact_next_action, complete_contact_next_action, delete_contact
+- Tags: create_contact_tag, update_contact_tag, delete_contact_tag, add_tag_to_contact, remove_tag_from_contact
+- Forms: create_form, update_form
+- Analytics: configure_analytics_integration
+
+Recommended tool flow:
+- Never invent IDs. Use a list tool first, then a get tool when current state matters.
+- Book a meeting: list_event_types -> get_available_slots -> create_booking. Use an exact returned UTC slot.
+- Find and tag a contact: list_contacts -> list_contact_tags -> add_tag_to_contact.
+- Inspect a form and submissions: list_forms -> get_form -> list_form_responses.
+- Before a destructive write, verify the target and confirm the exact action unless it was explicitly requested.
+
+Tool display titles begin with Read or Write. MCP annotations also publish read-only, destructive, idempotent, and open-world hints. Existing tool IDs remain stable.
+
+Further documentation:
+- Human-readable docs: https://linkycal.com/docs
+- AI-oriented reference: https://linkycal.com/llms.txt
+- OpenAPI 3.1: https://linkycal.com/openapi.json
 
 Analytics MCP details:
 - get_analytics_overview: common period, custom dates, UTM, source, and device inputs; returns aggregate totals/time series.

@@ -2,12 +2,21 @@ import {
   MCP_TOOL_COUNT,
   MCP_TOOL_GROUPS,
   PUBLIC_API_OPERATIONS,
+  groupMcpToolsByDomain,
 } from "./api-docs-catalog";
+
+function toolsByDomain(tools: (typeof MCP_TOOL_GROUPS)[number]["tools"]): string {
+  return groupMcpToolsByDomain(tools)
+    .map(function renderDomain(entry) {
+      return `- ${entry.domain}: ${entry.tools.join(", ")}`;
+    })
+    .join("\n");
+}
 
 function mcpInventory(): string {
   return MCP_TOOL_GROUPS.map(function renderGroup(group) {
-    return `- ${group.domain}: ${group.tools.join(", ")} — ${group.notes}`;
-  }).join("\n");
+    return `### ${group.title}\n\n${group.notes}\n\n${toolsByDomain(group.tools)}`;
+  }).join("\n\n");
 }
 
 function analyticsRestInventory(): string {
@@ -98,6 +107,20 @@ Connect to https://linkycal.com/api/mcp and complete OAuth in the browser, then 
 
 The server exposes ${MCP_TOOL_COUNT} tools:
 ${mcpInventory()}
+
+Recommended tool flow:
+- Never invent IDs. Use a list tool first, then a get tool when current state matters.
+- Book a meeting: list_event_types -> get_available_slots -> create_booking. Use an exact returned UTC slot.
+- Find and tag a contact: list_contacts -> list_contact_tags -> add_tag_to_contact.
+- Inspect a form and submissions: list_forms -> get_form -> list_form_responses.
+- Before a destructive write, verify the target and confirm the exact action unless it was explicitly requested.
+
+Tool display titles begin with Read or Write. MCP annotations also publish read-only, destructive, idempotent, and open-world hints. Existing tool IDs remain stable.
+
+Further documentation:
+- Human-readable docs: https://linkycal.com/docs
+- AI-oriented reference: https://linkycal.com/llms.txt
+- OpenAPI 3.1: https://linkycal.com/openapi.json
 
 Analytics MCP details:
 - get_analytics_overview: common period, custom dates, UTM, source, and device inputs; returns aggregate totals/time series.

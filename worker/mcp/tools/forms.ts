@@ -6,6 +6,7 @@ import { mcpEntitlementError } from "../../lib/entitlement-errors";
 import { createWithResourceCapacity } from "../../lib/resource-creation";
 import { createFormSchema, updateFormSchema } from "../../validation";
 import type { ToolContext } from "../agent";
+import { withMcpToolDiscovery } from "../tool-discovery";
 import {
   ok,
   err,
@@ -89,27 +90,27 @@ const updateShape = updateFormSchema.shape;
 export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "list_forms",
-    {
+    withMcpToolDiscovery("list_forms", {
       description: "List forms in this project with their status (draft/active/archived).",
       inputSchema: {},
-    },
+    }),
     withToolErrors("list_forms", ctx, () => listForms(ctx)),
   );
 
   server.registerTool(
     "get_form",
-    {
+    withMcpToolDiscovery("get_form", {
       description: "Get a form by id with all its steps and fields.",
       inputSchema: {
         formId: z.string().describe("Form id"),
       },
-    },
+    }),
     withToolErrors("get_form", ctx, (input) => getForm(ctx, input)),
   );
 
   server.registerTool(
     "create_form",
-    {
+    withMcpToolDiscovery("create_form", {
       description:
         "Create a form (starts as a draft with one empty section). Use update_form with status 'active' to publish.",
       inputSchema: {
@@ -117,13 +118,13 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         slug: createShape.slug.describe("URL slug, lowercase letters/numbers/hyphens"),
         type: createShape.type.describe("'single' page or 'multi_step' (default single)"),
       },
-    },
+    }),
     withToolErrors("create_form", ctx, (input) => createForm(ctx, input)),
   );
 
   server.registerTool(
     "update_form",
-    {
+    withMcpToolDiscovery("update_form", {
       description: "Update a form's name, slug, type, or status. Only provided fields change.",
       inputSchema: {
         formId: z.string().describe("Form id"),
@@ -132,19 +133,19 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         type: updateShape.type.describe("'single' or 'multi_step'"),
         status: updateShape.status.describe("'draft', 'active', or 'archived'"),
       },
-    },
+    }),
     withToolErrors("update_form", ctx, (input) => updateForm(ctx, input)),
   );
 
   server.registerTool(
     "list_form_responses",
-    {
+    withMcpToolDiscovery("list_form_responses", {
       description: "List a form's responses with their submitted field values, newest first.",
       inputSchema: {
         formId: z.string().describe("Form id"),
         limit: z.number().int().min(1).max(200).optional().describe("Max responses (default 50)"),
       },
-    },
+    }),
     withToolErrors("list_form_responses", ctx, (input) => listFormResponses(ctx, input)),
   );
 }

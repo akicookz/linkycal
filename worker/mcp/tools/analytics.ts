@@ -15,6 +15,7 @@ import {
   bookingAnalyticsQuerySchema,
 } from "../../validation";
 import type { ToolContext } from "../agent";
+import { withMcpToolDiscovery } from "../tool-discovery";
 import {
   err,
   getPlanLimitsForProject,
@@ -212,11 +213,11 @@ export function registerAnalyticsTools(
 ): void {
   server.registerTool(
     "get_analytics_overview",
-    {
+    withMcpToolDiscovery("get_analytics_overview", {
       description:
         "Get aggregate views, conversions, time series, sources, and countries for this project. Requires Pro or Business.",
       inputSchema: commonInputShape,
-    },
+    }),
     withToolErrors(
       "get_analytics_overview",
       ctx,
@@ -226,7 +227,7 @@ export function registerAnalyticsTools(
 
   server.registerTool(
     "get_booking_funnel_analytics",
-    {
+    withMcpToolDiscovery("get_booking_funnel_analytics", {
       description:
         "Get UTC-backed clicked weekday and availability demand plus persisted booking-request weekday/time distributions in the required dashboard timezone. Pass a project-owned eventTypeId for exact unique-journey stages.",
       inputSchema: {
@@ -236,7 +237,7 @@ export function registerAnalyticsTools(
           .string()
           .describe("IANA timezone used to group dates, weekdays, and times"),
       },
-    },
+    }),
     withToolErrors(
       "get_booking_funnel_analytics",
       ctx,
@@ -246,14 +247,14 @@ export function registerAnalyticsTools(
 
   server.registerTool(
     "get_form_funnel_analytics",
-    {
+    withMcpToolDiscovery("get_form_funnel_analytics", {
       description:
         "Get form analytics. Pass a project-owned formId for rendered stages, conditional skips, journey sources, and visitor devices.",
       inputSchema: {
         ...commonInputShape,
         formId: z.string().optional(),
       },
-    },
+    }),
     withToolErrors(
       "get_form_funnel_analytics",
       ctx,
@@ -263,11 +264,11 @@ export function registerAnalyticsTools(
 
   server.registerTool(
     "list_analytics_integrations",
-    {
+    withMcpToolDiscovery("list_analytics_integrations", {
       description:
         "List GA4, Meta Pixel, and PostHog public analytics integration settings for this project. Requires Pro or Business.",
       inputSchema: {},
-    },
+    }),
     withToolErrors(
       "list_analytics_integrations",
       ctx,
@@ -277,7 +278,7 @@ export function registerAnalyticsTools(
 
   server.registerTool(
     "configure_analytics_integration",
-    {
+    withMcpToolDiscovery("configure_analytics_integration", {
       description:
         "Configure one allowlisted analytics provider. Arbitrary scripts, URLs, and secrets are not accepted.",
       inputSchema: {
@@ -288,7 +289,7 @@ export function registerAnalyticsTools(
         projectKey: z.string().optional(),
         host: z.enum(["us", "eu"]).optional(),
       },
-    },
+    }),
     withToolErrors(
       "configure_analytics_integration",
       ctx,

@@ -3,6 +3,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { ScheduleService } from "../../services/schedule-service";
 import type { ToolContext } from "../agent";
+import { withMcpToolDiscovery } from "../tool-discovery";
 import { ok, err, withToolErrors } from "../helpers";
 import type { ToolResult } from "../helpers";
 
@@ -38,22 +39,22 @@ export async function getSchedule(
 export function registerScheduleTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "list_schedules",
-    {
+    withMcpToolDiscovery("list_schedules", {
       description: "List availability schedules in this project.",
       inputSchema: {},
-    },
+    }),
     withToolErrors("list_schedules", ctx, () => listSchedules(ctx)),
   );
 
   server.registerTool(
     "get_schedule",
-    {
+    withMcpToolDiscovery("get_schedule", {
       description:
         "Get a schedule by id with its weekly availability rules (dayOfWeek 0=Sunday, HH:MM times) and date overrides.",
       inputSchema: {
         scheduleId: z.string().describe("Schedule id (from list_schedules or get_event_type)"),
       },
-    },
+    }),
     withToolErrors("get_schedule", ctx, (input) => getSchedule(ctx, input)),
   );
 }

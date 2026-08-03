@@ -1,4 +1,8 @@
-import type { McpToolName } from "../shared/mcp-tools";
+import {
+  MCP_TOOL_DISCOVERY,
+  type McpToolName,
+  type McpToolScope,
+} from "../shared/mcp-tools";
 
 export type PublicApiAuth = "anonymous" | "apiKey" | "oauth";
 
@@ -24,94 +28,73 @@ export interface PublicApiOperationDefinition {
 }
 
 export interface McpToolGroup {
-  domain: string;
+  scope: McpToolScope;
+  title: string;
   tools: McpToolName[];
   notes: string;
 }
 
+export interface McpToolDomainGroup {
+  domain: string;
+  tools: McpToolName[];
+}
+
 export const MCP_TOOL_GROUPS: McpToolGroup[] = [
   {
-    domain: "Bookings",
+    scope: "read",
+    title: "Read tools",
     tools: [
       "list_bookings",
       "get_booking",
       "get_available_slots",
+      "list_event_types",
+      "get_event_type",
+      "list_schedules",
+      "get_schedule",
+      "list_contacts",
+      "get_contact",
+      "get_contact_activity",
+      "list_contact_tags",
+      "get_contact_tag",
+      "list_forms",
+      "get_form",
+      "list_form_responses",
+      "list_workflows",
+      "get_workflow",
+      "get_analytics_overview",
+      "get_booking_funnel_analytics",
+      "get_form_funnel_analytics",
+      "list_analytics_integrations",
+    ],
+    notes:
+      "Discover IDs and inspect project state. Read tools never mutate LinkyCal data.",
+  },
+  {
+    scope: "write",
+    title: "Write tools",
+    tools: [
       "create_booking",
       "cancel_booking",
       "confirm_booking",
       "decline_booking",
-    ],
-    notes: "Read and manage bookings and public availability.",
-  },
-  {
-    domain: "Event Types",
-    tools: [
-      "list_event_types",
-      "get_event_type",
       "create_event_type",
       "update_event_type",
-    ],
-    notes: "Define bookable meeting types.",
-  },
-  {
-    domain: "Schedules",
-    tools: ["list_schedules", "get_schedule"],
-    notes: "Inspect the working hours behind event types.",
-  },
-  {
-    domain: "Contacts",
-    tools: [
-      "list_contacts",
-      "get_contact",
       "create_contact",
       "update_contact",
       "set_contact_next_action",
       "complete_contact_next_action",
       "delete_contact",
-      "get_contact_activity",
-    ],
-    notes: "Manage CRM records and their activity.",
-  },
-  {
-    domain: "Tags",
-    tools: [
-      "list_contact_tags",
-      "get_contact_tag",
       "create_contact_tag",
       "update_contact_tag",
       "delete_contact_tag",
       "add_tag_to_contact",
       "remove_tag_from_contact",
-    ],
-    notes: "Manage tags and contact assignments.",
-  },
-  {
-    domain: "Forms",
-    tools: [
-      "list_forms",
-      "get_form",
       "create_form",
       "update_form",
-      "list_form_responses",
-    ],
-    notes: "Build forms and inspect aggregate submissions.",
-  },
-  {
-    domain: "Workflows",
-    tools: ["list_workflows", "get_workflow"],
-    notes: "Inspect workflows; writes remain REST/dashboard-only.",
-  },
-  {
-    domain: "Analytics",
-    tools: [
-      "get_analytics_overview",
-      "get_booking_funnel_analytics",
-      "get_form_funnel_analytics",
-      "list_analytics_integrations",
       "configure_analytics_integration",
     ],
     notes:
-      "Read aggregate funnels and configure validated GA4, Meta Pixel, and PostHog public identifiers.",
+      "Create or change project data. Read the current resource first; destructive and externally visible operations are identified by MCP annotations.",
   },
 ];
 
@@ -121,6 +104,21 @@ export const MCP_TOOL_COUNT = MCP_TOOL_GROUPS.reduce(
   },
   0,
 );
+
+export function groupMcpToolsByDomain(
+  tools: McpToolName[],
+): McpToolDomainGroup[] {
+  const domains = new Map<string, McpToolName[]>();
+
+  for (const tool of tools) {
+    const domain = MCP_TOOL_DISCOVERY[tool].domain;
+    domains.set(domain, [...(domains.get(domain) ?? []), tool]);
+  }
+
+  return Array.from(domains.entries()).map(function domainGroup(entry) {
+    return { domain: entry[0], tools: entry[1] };
+  });
+}
 
 const ANALYTICS_REPORT_QUERY_PARAMETERS: PublicApiQueryParameter[] = [
   {

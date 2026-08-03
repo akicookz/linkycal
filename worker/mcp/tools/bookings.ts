@@ -12,6 +12,7 @@ import {
   declineBookingAction,
 } from "../../lib/booking-actions";
 import type { ToolContext } from "../agent";
+import { withMcpToolDiscovery } from "../tool-discovery";
 import { ok, err, withToolErrors, bookingInProject, inProject } from "../helpers";
 import type { ToolResult } from "../helpers";
 
@@ -183,31 +184,31 @@ export async function declineBooking(
 export function registerBookingTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "list_bookings",
-    {
+    withMcpToolDiscovery("list_bookings", {
       description:
         "List bookings for this project, newest first. Optionally filter by status and cap the number returned (default 50).",
       inputSchema: {
         status: z.enum(BOOKING_STATUSES).optional().describe("Filter by booking status"),
         limit: z.number().int().min(1).max(200).optional().describe("Max bookings to return (default 50)"),
       },
-    },
+    }),
     withToolErrors("list_bookings", ctx, (input) => listBookings(ctx, input)),
   );
 
   server.registerTool(
     "get_booking",
-    {
+    withMcpToolDiscovery("get_booking", {
       description: "Get a single booking by id, including guest details, times, status, and meeting URL.",
       inputSchema: {
         bookingId: z.string().describe("Booking id"),
       },
-    },
+    }),
     withToolErrors("get_booking", ctx, (input) => getBooking(ctx, input)),
   );
 
   server.registerTool(
     "get_available_slots",
-    {
+    withMcpToolDiscovery("get_available_slots", {
       description:
         "Get open time slots for an event type on a given day. Returns slots as ISO 8601 UTC instants; pass one of them as startTime to create_booking.",
       inputSchema: {
@@ -215,13 +216,13 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Day to check, YYYY-MM-DD in the given timezone"),
         timezone: z.string().describe("IANA timezone, e.g. America/New_York"),
       },
-    },
+    }),
     withToolErrors("get_available_slots", ctx, (input) => getAvailableSlots(ctx, input)),
   );
 
   server.registerTool(
     "create_booking",
-    {
+    withMcpToolDiscovery("create_booking", {
       description:
         "Book a meeting slot. startTime must be an ISO 8601 UTC instant matching a slot from get_available_slots. Sends confirmation emails, creates the calendar event, and triggers workflows exactly like a booking made through the booking page.",
       inputSchema: {
@@ -232,45 +233,45 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         timezone: z.string().describe("Guest's IANA timezone, e.g. Europe/Berlin"),
         notes: z.string().max(2000).optional().describe("Optional notes from the guest"),
       },
-    },
+    }),
     withToolErrors("create_booking", ctx, (input) => createBooking(ctx, input)),
   );
 
   server.registerTool(
     "cancel_booking",
-    {
+    withMcpToolDiscovery("cancel_booking", {
       description:
         "Cancel a booking. Deletes the calendar event, emails the guest, and triggers booking_cancelled workflows.",
       inputSchema: {
         bookingId: z.string().describe("Booking id"),
         reason: z.string().max(500).optional().describe("Optional cancellation reason shown to the guest"),
       },
-    },
+    }),
     withToolErrors("cancel_booking", ctx, (input) => cancelBooking(ctx, input)),
   );
 
   server.registerTool(
     "confirm_booking",
-    {
+    withMcpToolDiscovery("confirm_booking", {
       description:
         "Confirm a pending booking (event types that require confirmation). Creates the calendar event, emails the guest, and triggers booking_confirmed workflows.",
       inputSchema: {
         bookingId: z.string().describe("Booking id (must be pending)"),
       },
-    },
+    }),
     withToolErrors("confirm_booking", ctx, (input) => confirmBooking(ctx, input)),
   );
 
   server.registerTool(
     "decline_booking",
-    {
+    withMcpToolDiscovery("decline_booking", {
       description: "Decline a pending booking. Optionally emails the guest with a reason (notify defaults to true).",
       inputSchema: {
         bookingId: z.string().describe("Booking id (must be pending)"),
         reason: z.string().max(500).optional().describe("Optional reason shown to the guest"),
         notify: z.boolean().optional().describe("Send a decline email to the guest (default true)"),
       },
-    },
+    }),
     withToolErrors("decline_booking", ctx, (input) => declineBooking(ctx, input)),
   );
 }

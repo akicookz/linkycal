@@ -1,11 +1,15 @@
 import { z } from "zod";
+import { and, eq } from "drizzle-orm";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
+import * as dbSchema from "../../db/schema";
 import { EventTypeService } from "../../services/event-type-service";
+import { ScheduleService } from "../../services/schedule-service";
 import { mcpEntitlementError } from "../../lib/entitlement-errors";
 import { createWithResourceCapacity } from "../../lib/resource-creation";
 import { createEventTypeSchema, updateEventTypeSchema } from "../../validation";
 import type { ToolContext } from "../agent";
+import { withMcpToolDiscovery } from "../tool-discovery";
 import {
   ok,
   err,
@@ -28,11 +32,35 @@ export async function getEventType(
   ctx: ToolContext,
   input: { eventTypeId: string },
 ): Promise<ToolResult> {
-  const service = new EventTypeService(ctx.db());
+  const db = ctx.db();
+  const service = new EventTypeService(db);
   const existing = inProject(await service.getById(input.eventTypeId), ctx.projectId());
   if (!existing) return err("Not found");
 
-  return ok(await service.getByIdWithSchedule(input.eventTypeId));
+  if (!existing.scheduleId) {
+    return ok({ eventType: existing, schedule: null, rules: [], overrides: [] });
+  }
+
+  const [schedule] = await db
+    .select()
+    .from(dbSchema.schedules)
+    .where(
+      and(
+        eq(dbSchema.schedules.id, existing.scheduleId),
+        eq(dbSchema.schedules.projectId, ctx.projectId()),
+      ),
+    )
+    .limit(1);
+  if (!schedule) {
+    return ok({ eventType: existing, schedule: null, rules: [], overrides: [] });
+  }
+
+  const scheduleService = new ScheduleService(db);
+  const [rules, overrides] = await Promise.all([
+    scheduleService.getRules(schedule.id),
+    scheduleService.getOverrides(schedule.id),
+  ]);
+  return ok({ eventType: existing, schedule, rules, overrides });
 }
 
 export async function createEventType(
@@ -112,27 +140,27 @@ const updateShape = updateEventTypeSchema.shape;
 export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "list_event_types",
-    {
+    withMcpToolDiscovery("list_event_types", {
       description: "List all event types (bookable meeting types) in this project.",
       inputSchema: {},
-    },
+    }),
     withToolErrors("list_event_types", ctx, () => listEventTypes(ctx)),
   );
 
   server.registerTool(
     "get_event_type",
-    {
+    withMcpToolDiscovery("get_event_type", {
       description: "Get an event type by id, including its schedule, availability rules, and date overrides.",
       inputSchema: {
         eventTypeId: z.string().describe("Event type id"),
       },
-    },
+    }),
     withToolErrors("get_event_type", ctx, (input) => getEventType(ctx, input)),
   );
 
   server.registerTool(
     "create_event_type",
-    {
+    withMcpToolDiscovery("create_event_type", {
       description:
         "Create an event type. duration/buffers are in minutes. A default weekday 9am-5pm schedule is created with it.",
       inputSchema: {
@@ -152,13 +180,13 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
           "If true, new bookings are pending until confirmed (default false)",
         ),
       },
-    },
+    }),
     withToolErrors("create_event_type", ctx, (input) => createEventType(ctx, input)),
   );
 
   server.registerTool(
     "update_event_type",
-    {
+    withMcpToolDiscovery("update_event_type", {
       description: "Update an event type. Only provided fields change.",
       inputSchema: {
         eventTypeId: z.string().describe("Event type id"),
@@ -176,7 +204,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
         enabled: updateShape.enabled.describe("Enable/disable booking"),
         requiresConfirmation: updateShape.requiresConfirmation.describe("Require manual confirmation"),
       },
-    },
+    }),
     withToolErrors("update_event_type", ctx, (input) => updateEventType(ctx, input)),
   );
 }

@@ -154,12 +154,20 @@ describe("generated detailed analytics documentation", function () {
   test("the public catalogs compute forty MCP tools including all five analytics tools", async function () {
     expect(MCP_TOOL_COUNT).toBe(40);
     expect(
-      MCP_TOOL_GROUPS.find((group) => group.domain === "Analytics")?.tools,
+      MCP_TOOL_GROUPS.find((group) => group.scope === "read")?.tools.filter(
+        (tool) => tool.includes("analytics"),
+      ),
     ).toEqual([
       "get_analytics_overview",
       "get_booking_funnel_analytics",
       "get_form_funnel_analytics",
       "list_analytics_integrations",
+    ]);
+    expect(
+      MCP_TOOL_GROUPS.find((group) => group.scope === "write")?.tools.filter(
+        (tool) => tool.includes("analytics"),
+      ),
+    ).toEqual([
       "configure_analytics_integration",
     ]);
     expect(
@@ -178,6 +186,13 @@ describe("generated detailed analytics documentation", function () {
     const source = await Bun.file("worker/index.ts").text();
     const artifacts = generateApiArtifacts(source);
     expect(artifacts.llmsText).toContain("40 tools");
+    expect(artifacts.llmsText).toContain("### Read tools");
+    expect(artifacts.llmsText).toContain("### Write tools");
+    expect(artifacts.llmsText).toContain(
+      "list_event_types -> get_available_slots -> create_booking",
+    );
+    expect(artifacts.llmsText).toContain("https://linkycal.com/docs");
+    expect(artifacts.llmsText).toContain("https://linkycal.com/openapi.json");
     expect(artifacts.llmsText).toContain("get_booking_funnel_analytics");
     expect(artifacts.llmsText).toContain("configure_analytics_integration");
     expect(artifacts.llmsText).toContain(

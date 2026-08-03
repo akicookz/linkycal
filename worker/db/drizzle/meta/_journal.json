@@ -260,6 +260,13 @@
       "when": 1785702840594,
       "tag": "0036_mcp_oauth_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "6",
+      "when": 1785749300507,
+      "tag": "0037_backfill_event_type_schedules",
+      "breakpoints": true
     }
   ]
 }
