@@ -144,7 +144,7 @@ export function RestApiKeys({ projectId }: RestApiKeysProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>REST API keys</CardTitle>
+        <CardTitle>API keys</CardTitle>
         <CardDescription>
           These keys authenticate server-side REST API requests. MCP
           connections use OAuth.

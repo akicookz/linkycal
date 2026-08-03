@@ -12,7 +12,7 @@ export default function ApiKeys() {
     <div>
       <PageHeader
         title="MCP & APIs"
-        description="Connect AI clients with OAuth and manage server-side REST API keys."
+        description="Connect AI clients with OAuth and manage server-side API keys."
       />
       <div className="space-y-6">
         <ConnectedMcpClients projectId={projectId} />

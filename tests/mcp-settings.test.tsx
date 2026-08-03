@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { screen, waitFor, within } from "@testing-library/react";
+import {
+  screen,
+  waitFor,
+  waitForElementToBeRemoved,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import ApiKeys from "../src/pages/ApiKeys";
@@ -170,11 +175,10 @@ describe("MCP and REST API settings", function () {
     expect(
       screen.getByRole("button", { name: "Revoking..." }),
     ).toBeTruthy();
+    const connectedCardTitle = screen.getByText("Connected MCP clients");
     releaseRevoke();
 
-    expect(
-      await screen.findByText("No MCP clients connected"),
-    ).toBeTruthy();
+    await waitForElementToBeRemoved(connectedCardTitle);
     expect(
       capture.requestsFor(
         "DELETE",
@@ -197,14 +201,17 @@ describe("MCP and REST API settings", function () {
     expect(screen.getByText("Claude Desktop")).toBeTruthy();
   });
 
-  test("empty connections point users to the client instructions below", async function () {
+  test("projects without connections omit the client card but retain setup and API keys", async function () {
     installSettingsApi({ emptyConnections: true });
     renderSettings();
 
+    expect(await screen.findByText("Backend")).toBeTruthy();
+    expect(screen.queryByText("Connected MCP clients")).toBeNull();
     expect(
-      await screen.findByText("No MCP clients connected"),
+      screen.getByRole("region", { name: "Connect a client" }),
     ).toBeTruthy();
-    expect(screen.getByText(/Use the setup instructions below/)).toBeTruthy();
+    expect(screen.getByText("API keys")).toBeTruthy();
+    expect(screen.queryByText("REST API keys")).toBeNull();
   });
 
   test("all client tabs use OAuth-only setup at the canonical MCP URL", async function () {

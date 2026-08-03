@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader, PlugZap, Unplug } from "lucide-react";
+import { Loader, Unplug } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -95,6 +95,10 @@ export function ConnectedMcpClients({
 
   const connections = connectionsQuery.data ?? [];
 
+  if (!connectionsQuery.isError && connections.length === 0) {
+    return null;
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -105,25 +109,10 @@ export function ConnectedMcpClients({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        {connectionsQuery.isPending ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-            <Loader className="size-4 animate-spin" aria-hidden="true" />
-            Loading connected clients...
-          </div>
-        ) : connectionsQuery.isError ? (
+        {connectionsQuery.isError ? (
           <p role="alert" className="rounded-[16px] bg-destructive/10 p-4 text-sm text-destructive">
             {connectionsQuery.error.message}
           </p>
-        ) : connections.length === 0 ? (
-          <div className="rounded-[16px] bg-muted/50 px-5 py-8 text-center">
-            <PlugZap className="mx-auto size-8 text-muted-foreground" aria-hidden="true" />
-            <p className="mt-3 text-sm font-medium text-foreground">
-              No MCP clients connected
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Use the setup instructions below to connect your first client.
-            </p>
-          </div>
         ) : (
           <div className="space-y-3">
             {connections.map(function connectionRow(connection) {
