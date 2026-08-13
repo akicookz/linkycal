@@ -29,7 +29,7 @@ function parsedResult(result: {
 }
 
 describe("project-scoped analytics MCP tools", () => {
-  test("all five tools share aggregate actions, ownership, entitlement, and strict provider validation", async () => {
+  test("analytics tools share aggregate actions, ownership, entitlement, and strict provider validation", async () => {
     const testDatabase = createTestDb();
     await testDatabase.db.insert(dbSchema.schema.users).values([
       {
@@ -291,7 +291,7 @@ describe("project-scoped analytics MCP tools", () => {
     }
   });
 
-  test("registration exposes exactly the five analytics tools without projectId inputs", () => {
+  test("registration exposes every analytics tool without projectId inputs", () => {
     const registrations: Array<{
       name: string;
       inputSchema: Record<string, unknown>;
@@ -311,6 +311,7 @@ describe("project-scoped analytics MCP tools", () => {
     expect(registrations.map(function tool(registration) {
       return registration.name;
     })).toEqual([
+      "get_analytics_filters",
       "get_analytics_overview",
       "get_booking_funnel_analytics",
       "get_form_funnel_analytics",

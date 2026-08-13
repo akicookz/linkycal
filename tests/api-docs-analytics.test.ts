@@ -151,13 +151,14 @@ describe("generated detailed analytics documentation", function () {
     }
   });
 
-  test("the public catalogs compute forty MCP tools including all five analytics tools", async function () {
-    expect(MCP_TOOL_COUNT).toBe(40);
+  test("the public catalogs compute the complete MCP inventory including all analytics tools", async function () {
+    expect(MCP_TOOL_COUNT).toBe(92);
     expect(
       MCP_TOOL_GROUPS.find((group) => group.scope === "read")?.tools.filter(
         (tool) => tool.includes("analytics"),
       ),
     ).toEqual([
+      "get_analytics_filters",
       "get_analytics_overview",
       "get_booking_funnel_analytics",
       "get_form_funnel_analytics",
@@ -185,7 +186,7 @@ describe("generated detailed analytics documentation", function () {
 
     const source = await Bun.file("worker/index.ts").text();
     const artifacts = generateApiArtifacts(source);
-    expect(artifacts.llmsText).toContain("40 tools");
+    expect(artifacts.llmsText).toContain("92 tools");
     expect(artifacts.llmsText).toContain("### Read tools");
     expect(artifacts.llmsText).toContain("### Write tools");
     expect(artifacts.llmsText).toContain(

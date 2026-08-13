@@ -11,6 +11,26 @@ import {
   type CapacityFailure,
 } from "./resource-creation";
 import { recordEntitlementOutcome } from "./metered-entitlements";
+import { reserveProjectUsage } from "./metered-entitlements";
+import { WorkflowExecutionService } from "../services/workflow-execution-service";
+import { EntitlementService } from "../services/entitlement-service";
+import {
+  createContactSchema,
+  importContactsSchema,
+  listContactsQuerySchema,
+  setNextActionSchema,
+  setStageSchema,
+  updateContactSchema,
+} from "../validation";
+import type { ProjectActionDeps, ActionResult } from "./action-result";
+import { actionCreated, actionError, actionNotFound, actionOk } from "./action-result";
+import { ContactActivityService, parseContactActivityListOptions } from "../services/contact-activity-service";
+
+type ContactActionDeps = ProjectActionDeps;
+
+function invalidRequest<T = never>(): ActionResult<T> {
+  return actionError(400, "Invalid request");
+}
 
 // ─── Contact creation + new_contact_created dispatch ─────────────────────────
 // Called from HTTP/MCP request handlers (like booking-actions). It dedupes +
@@ -155,4 +175,280 @@ export async function importContactsWithCapacity(
     skipped,
     contacts: creation.value,
   };
+}
+
+// ─── Project-scoped contact actions ─────────────────────────────────────────
+
+export async function listContactsAction(
+  deps: ContactActionDeps,
+  rawQuery: unknown,
+): Promise<ActionResult<{ contacts: unknown[]; total: number }>> {
+  const parsed = listContactsQuerySchema.safeParse(rawQuery);
+  if (!parsed.success) return invalidRequest();
+  const { limit, offset, ...options } = parsed.data;
+  const page = await new ContactService(deps.db).listPage(
+    deps.projectId,
+    options,
+    { limit, offset },
+  );
+  return actionOk(page);
+}
+
+export async function getContactAction(
+  deps: ContactActionDeps,
+  contactId: string,
+): Promise<ActionResult<{ contact: unknown }>> {
+  const contact = await new ContactService(deps.db).getWithDetails(
+    contactId,
+    deps.projectId,
+  );
+  return contact ? actionOk({ contact }) : actionNotFound("Contact");
+}
+
+export async function createContactAction(
+  deps: ContactActionDeps,
+  body: unknown,
+): Promise<ActionResult<{ contact: dbSchema.ContactRow; created: boolean }>> {
+  const parsed = createContactSchema.safeParse(body);
+  if (!parsed.success) return invalidRequest();
+  const service = new ContactService(deps.db);
+  const duplicate = await service.findDuplicate(deps.projectId, parsed.data);
+  if (duplicate) {
+    return actionOk({ contact: duplicate, created: false });
+  }
+  const creation = await createWithResourceCapacity({
+    db: deps.db,
+    projectId: deps.projectId,
+    key: "contacts",
+    env: deps.env,
+    channel: deps.channel,
+    create: async function createContact(transaction) {
+      return new ContactService(transaction).create(deps.projectId, parsed.data);
+    },
+  });
+  if (!creation.ok) {
+    return actionError(creation.status, creation.body.error, {
+      code: creation.body.code,
+      details: creation.body as unknown as Record<string, unknown>,
+    });
+  }
+  await dispatchWorkflowTrigger(
+    deps.db,
+    deps.env,
+    deps.projectId,
+    "new_contact_created",
+    {
+      projectId: deps.projectId,
+      contactId: creation.value.id,
+      contactEmail: creation.value.email ?? undefined,
+      contactName: creation.value.name,
+      metadata: { source: deps.channel === "rest" ? "manual" : "mcp" },
+    },
+  );
+  return actionCreated({ contact: creation.value, created: true });
+}
+
+export async function updateContactAction(
+  deps: ContactActionDeps,
+  contactId: string,
+  body: unknown,
+): Promise<ActionResult<{ contact: dbSchema.ContactRow }>> {
+  const parsed = updateContactSchema.safeParse(body);
+  if (!parsed.success) return invalidRequest();
+  const service = new ContactService(deps.db);
+  if (!(await service.contactInProject(deps.projectId, contactId))) {
+    return actionNotFound("Contact");
+  }
+  const contact = await service.update(contactId, parsed.data);
+  return contact ? actionOk({ contact }) : actionNotFound("Contact");
+}
+
+export async function deleteContactAction(
+  deps: ContactActionDeps,
+  contactId: string,
+): Promise<ActionResult<{ success: true }>> {
+  const service = new ContactService(deps.db);
+  if (!(await service.contactInProject(deps.projectId, contactId))) {
+    return actionNotFound("Contact");
+  }
+  await service.delete(contactId);
+  return actionOk({ success: true });
+}
+
+export async function setContactNextActionAction(
+  deps: ContactActionDeps,
+  contactId: string,
+  body: unknown,
+): Promise<ActionResult<{ contact: dbSchema.ContactRow | null }>> {
+  const parsed = setNextActionSchema.safeParse(body);
+  if (!parsed.success) return invalidRequest();
+  const service = new ContactService(deps.db);
+  if (!(await service.contactInProject(deps.projectId, contactId))) {
+    return actionNotFound("Contact");
+  }
+  const contact = await service.setNextAction(
+    contactId,
+    parsed.data.text === null
+      ? null
+      : {
+          text: parsed.data.text,
+          deadline: parsed.data.deadline ? new Date(parsed.data.deadline) : null,
+        },
+  );
+  return actionOk({ contact });
+}
+
+export async function getContactActivityAction(
+  deps: ContactActionDeps,
+  contactId: string,
+  query: { category?: string; limit?: string | number; cursor?: string },
+): Promise<ActionResult<unknown>> {
+  let options;
+  try {
+    options = parseContactActivityListOptions({
+      category: query.category,
+      limit: query.limit === undefined ? undefined : String(query.limit),
+      cursor: query.cursor,
+    });
+  } catch (error) {
+    return actionError(400, error instanceof Error ? error.message : "Invalid request");
+  }
+  const page = await new ContactActivityService(deps.db).list(
+    deps.projectId,
+    contactId,
+    options,
+  );
+  return page ? actionOk(page) : actionNotFound("Contact");
+}
+
+export async function setContactStageAction(
+  deps: ContactActionDeps,
+  contactId: string,
+  body: unknown,
+): Promise<ActionResult<{ success: true }>> {
+  const parsed = setStageSchema.safeParse(body);
+  if (!parsed.success) return invalidRequest();
+  const service = new ContactService(deps.db);
+  if (!(await service.contactInProject(deps.projectId, contactId))) {
+    return actionNotFound("Contact");
+  }
+  const status = await service.setStage(deps.projectId, contactId, parsed.data.tagId);
+  return status === "invalid_stage"
+    ? actionError(400, "Invalid pipeline stage")
+    : actionOk({ success: true });
+}
+
+export async function enrichContactAction(
+  deps: ContactActionDeps,
+  contactId: string,
+): Promise<ActionResult<{ success: true; contact: dbSchema.ContactRow | null }>> {
+  const service = new ContactService(deps.db);
+  if (!(await service.contactInProject(deps.projectId, contactId))) {
+    return actionNotFound("Contact");
+  }
+  const reservation = await reserveProjectUsage({
+    db: deps.db,
+    projectId: deps.projectId,
+    key: "enrichments",
+    operationId: crypto.randomUUID(),
+    channel: "contact_enrichment",
+    env: deps.env,
+  });
+  if (!reservation.decision.allowed) {
+    const failure = reservation.httpError("enrich this contact");
+    return actionError(failure.status, failure.body.error, {
+      code: failure.body.code,
+      details: failure.body as unknown as Record<string, unknown>,
+      headers: failure.headers,
+    });
+  }
+  try {
+    await new WorkflowExecutionService(deps.db).enrichContact(
+      deps.projectId,
+      contactId,
+      deps.env,
+    );
+    await reservation.consume();
+  } catch (error) {
+    await reservation.release();
+    if (error instanceof Error && error.name.startsWith("AI_")) {
+      return actionError(502, "Enrichment provider unavailable. Please try again later.");
+    }
+    throw error;
+  }
+  return actionOk({ success: true, contact: await service.getById(contactId) });
+}
+
+interface ContactImportError {
+  row: number;
+  reason: string;
+}
+
+function importCell(row: Record<string, string>, column: string | undefined): string {
+  return column ? (row[column] ?? "").trim() : "";
+}
+
+function importText(value: string, maxLength: number): string | undefined {
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, maxLength) : undefined;
+}
+
+function addImportError(errors: ContactImportError[], row: number, reason: string): void {
+  if (errors.length < 20) errors.push({ row, reason });
+}
+
+export async function importContactsAction(
+  deps: ContactActionDeps,
+  body: unknown,
+): Promise<ActionResult<unknown>> {
+  const parsed = importContactsSchema.safeParse(body);
+  if (!parsed.success) return invalidRequest();
+  const errors: ContactImportError[] = [];
+  const rows: CreateContactInput[] = [];
+  let skipped = 0;
+  let failed = 0;
+  const existing = await new ContactService(deps.db).list(deps.projectId);
+  const knownEmails = new Set(existing.map((contact) => normalizeEmail(contact.email)).filter(Boolean));
+  const pendingEmails = new Set<string>();
+  for (const [index, row] of parsed.data.rows.entries()) {
+    const rowNumber = index + 2;
+    const email = normalizeEmail(importCell(row, parsed.data.mapping.email));
+    const name = importText(importCell(row, parsed.data.mapping.name), 200) ??
+      (email ? email.split("@")[0]?.slice(0, 200) : undefined);
+    const contact = {
+      name,
+      email,
+      phone: importText(importCell(row, parsed.data.mapping.phone), 30),
+      notes: importText(importCell(row, parsed.data.mapping.notes), 5000),
+    };
+    const valid = createContactSchema.safeParse(contact);
+    if (!valid.success) {
+      failed += 1;
+      addImportError(errors, rowNumber, !name ? "Name or email is required" : email ? "Invalid email address" : "Invalid contact data");
+      continue;
+    }
+    if (email && (knownEmails.has(email) || pendingEmails.has(email))) {
+      skipped += 1;
+      addImportError(errors, rowNumber, "Email already exists");
+      continue;
+    }
+    if (email) pendingEmails.add(email);
+    rows.push(valid.data);
+  }
+  const created = await importContactsWithCapacity(deps.db, deps.projectId, rows, deps.env);
+  if (!created.ok) {
+    return actionError(created.status, created.body.error, {
+      code: created.body.code,
+      details: created.body as unknown as Record<string, unknown>,
+    });
+  }
+  const capacity = await new EntitlementService(deps.db).resource(deps.projectId, "contacts", 0);
+  return actionOk({
+    total: parsed.data.rows.length,
+    imported: created.created,
+    skipped: skipped + created.skipped,
+    failed,
+    remainingCapacity: capacity.limit === null ? null : Math.max(0, capacity.limit - (capacity.used ?? 0)),
+    errors,
+  });
 }

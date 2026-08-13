@@ -68,6 +68,7 @@ export const updateProjectSchema = z.object({
     .optional(),
   timezone: z.string().optional(),
   onboarded: z.boolean().optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const customCssSchema = z.object({
@@ -196,6 +197,40 @@ export const updateAvailabilityRulesSchema = z.object({
   }
 });
 
+export const createScheduleOverrideSchema = z
+  .object({
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Must be YYYY-MM-DD format"),
+    startTime: z
+      .string()
+      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "Must be HH:mm format")
+      .nullable()
+      .optional(),
+    endTime: z
+      .string()
+      .regex(/^(?:(?:[01]\d|2[0-3]):[0-5]\d|24:00)$/, "Must be HH:mm format")
+      .nullable()
+      .optional(),
+    isBlocked: z.boolean().default(false),
+  })
+  .superRefine(function validateOverride(value, ctx) {
+    if (value.isBlocked) return;
+    if (!value.startTime || !value.endTime) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Available overrides require startTime and endTime",
+        path: ["startTime"],
+      });
+      return;
+    }
+    if (timeToMinutes(value.startTime) >= timeToMinutes(value.endTime)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "End time must be after start time",
+        path: ["endTime"],
+      });
+    }
+  });
+
 // ─── Bookings ────────────────────────────────────────────────────────────────
 
 export const publicAnalyticsCorrelationSchema = z
@@ -259,6 +294,10 @@ export const declineBookingSchema = z.object({
 export const reorderFieldsSchema = z.object({
   stepId: z.string().min(1),
   fieldIds: z.array(z.string().min(1)),
+});
+
+export const reorderFormStepsSchema = z.object({
+  stepIds: z.array(z.string().min(1)).max(200),
 });
 
 // ─── Conditions (shared by forms and workflows) ──────────────────────────────
@@ -495,6 +534,33 @@ export const updateContactSchema = z.object({
   linkedinUrl: z.string().max(500).nullable().optional(),
 });
 
+export const listContactsQuerySchema = z.object({
+  search: z.string().max(200).optional(),
+  tagId: z.string().optional(),
+  tagIds: z.array(z.string()).optional(),
+  matchAllTags: z.boolean().optional(),
+  stageTagId: z.string().optional(),
+  excludeStageTagIds: z.array(z.string()).optional(),
+  activityType: z
+    .enum([
+      "form_submitted",
+      "booked",
+      "cancelled",
+      "tag_added",
+      "tag_removed",
+      "workflow_researched",
+    ])
+    .optional(),
+  activitySinceDays: z.number().int().min(0).max(3650).optional(),
+  noActivitySinceDays: z.number().int().min(0).max(3650).optional(),
+  bookingStatus: z
+    .enum(["confirmed", "cancelled", "rescheduled", "pending", "declined"])
+    .optional(),
+  sort: z.enum(["nextActionDeadline"]).optional(),
+  limit: z.number().int().min(1).max(100).default(50),
+  offset: z.number().int().min(0).default(0),
+});
+
 const nextActionValueSchema = z.object({
   text: z.string().trim().min(1).max(500),
   deadline: z.string().datetime({ offset: true }).nullable(),
@@ -665,6 +731,38 @@ export const updateWorkflowStepSchema = z.object({
   type: workflowStepTypeEnum.optional(),
   config: z.record(z.string(), z.unknown()).nullable().optional(),
   condition: workflowConditionSchema.nullable().optional(),
+});
+
+export const reorderWorkflowStepsSchema = z.object({
+  stepIds: z.array(z.string().min(1)).max(200),
+});
+
+export const triggerWorkflowSchema = z.object({
+  contactId: z.string().min(1).optional(),
+});
+
+export const testWorkflowSchema = z.object({
+  contactId: z.string().min(1),
+  tagId: z.string().min(1).optional(),
+});
+
+export const listBookingsQuerySchema = z.object({
+  status: z
+    .enum(["pending", "confirmed", "cancelled", "declined", "rescheduled"])
+    .optional(),
+  limit: z.number().int().min(1).max(200).default(50),
+  offset: z.number().int().min(0).default(0),
+});
+
+export const listFormResponsesQuerySchema = z.object({
+  limit: z.number().int().min(1).max(200).default(50),
+  offset: z.number().int().min(0).default(0),
+});
+
+export const projectAssetSchema = z.object({
+  filename: z.string().trim().min(1).max(255),
+  contentType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+  dataBase64: z.string().min(1),
 });
 
 // ─── API Keys ────────────────────────────────────────────────────────────────

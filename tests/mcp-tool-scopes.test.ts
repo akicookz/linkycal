@@ -34,8 +34,8 @@ describe("MCP tool authorization scopes", function () {
     }).sort();
     const classified = Object.keys(MCP_TOOL_SCOPES).sort();
 
-    expect(classified).toHaveLength(40);
-    expect(new Set(classified).size).toBe(40);
+    expect(classified).toHaveLength(92);
+    expect(new Set(classified).size).toBe(92);
     expect(classified).toEqual(documented);
   });
 

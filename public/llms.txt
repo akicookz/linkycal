@@ -77,29 +77,38 @@ Auth: OAuth 2.1 browser sign-in
 
 Connect to https://linkycal.com/api/mcp and complete OAuth in the browser, then select one eligible project. Each grant is hard-scoped to that project, so no tool accepts projectId. OAuth scopes are read, write, and offline_access; the MCP boundary rejects LinkyCal API keys.
 
-The server exposes 40 tools:
+The server exposes 92 tools:
 ### Read tools
 
 Discover IDs and inspect project state. Read tools never mutate LinkyCal data.
 
-- Bookings: list_bookings, get_booking, get_available_slots
+- Project: get_project, get_project_entitlements, get_custom_css
+- Bookings: list_bookings, get_booking, get_available_slots, get_booking_form_response
 - Event types: list_event_types, get_event_type
+- Calendars: list_project_calendars, get_event_type_calendars
 - Schedules: list_schedules, get_schedule
 - Contacts: list_contacts, get_contact, get_contact_activity
+- CRM: list_contact_views
 - Tags: list_contact_tags, get_contact_tag
-- Forms: list_forms, get_form, list_form_responses
-- Workflows: list_workflows, get_workflow
-- Analytics: get_analytics_overview, get_booking_funnel_analytics, get_form_funnel_analytics, list_analytics_integrations
+- Forms: list_forms, get_form, list_form_responses, get_form_response, get_form_response_file
+- Workflows: list_workflows, get_workflow, list_workflow_runs, get_workflow_run
+- Activity: list_recent_activity
+- Analytics: get_analytics_filters, get_analytics_overview, get_booking_funnel_analytics, get_form_funnel_analytics, list_analytics_integrations
 
 ### Write tools
 
 Create or change project data. Read the current resource first; destructive and externally visible operations are identified by MCP annotations.
 
+- Project: update_project, set_custom_css, delete_custom_css, upload_project_asset, delete_project_asset
 - Bookings: create_booking, cancel_booking, confirm_booking, decline_booking
-- Event types: create_event_type, update_event_type
+- Event types: create_event_type, update_event_type, delete_event_type
+- Calendars: update_event_type_calendars
+- Schedules: create_schedule, update_schedule, delete_schedule, set_schedule_rules, add_schedule_override, delete_schedule_override
 - Contacts: create_contact, update_contact, set_contact_next_action, complete_contact_next_action, delete_contact
 - Tags: create_contact_tag, update_contact_tag, delete_contact_tag, add_tag_to_contact, remove_tag_from_contact
-- Forms: create_form, update_form
+- CRM: create_contact_view, update_contact_view, delete_contact_view, import_contacts, set_contact_stage, enrich_contact, seed_contact_pipeline
+- Forms: create_form, update_form, delete_form, create_form_step, update_form_step, delete_form_step, reorder_form_steps, create_form_field, update_form_field, delete_form_field, reorder_form_fields, delete_form_response
+- Workflows: create_workflow, update_workflow, delete_workflow, create_workflow_step, update_workflow_step, delete_workflow_step, reorder_workflow_steps, trigger_workflow, test_workflow
 - Analytics: configure_analytics_integration
 
 Recommended tool flow:

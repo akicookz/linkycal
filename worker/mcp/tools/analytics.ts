@@ -5,6 +5,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as dbSchema from "../../db/schema";
 import {
   configureAnalyticsIntegrationAction,
+  getAnalyticsFiltersAction,
   getAnalyticsOverviewAction,
   getBookingAnalyticsAction,
   getFormAnalyticsAction,
@@ -16,14 +17,9 @@ import {
 } from "../../validation";
 import type { ToolContext } from "../agent";
 import { withMcpToolDiscovery } from "../tool-discovery";
-import {
-  err,
-  getPlanLimitsForProject,
-  ok,
-  withToolErrors,
-} from "../helpers";
+import { err, getPlanLimitsForProject, withToolErrors } from "../helpers";
 import type { ToolResult } from "../helpers";
-import type { EntitlementErrorBody } from "../../lib/entitlement-errors";
+import { actionToMcpResult } from "../action-result";
 
 interface CommonAnalyticsInput {
   period?: "7d" | "30d" | "90d" | "custom";
@@ -67,24 +63,6 @@ function parseCommonQuery(input: CommonAnalyticsInput) {
   });
 }
 
-function actionResult(
-  result:
-    | { ok: true; body: unknown }
-    | { ok: false; body: { error: string; code?: string } },
-): ToolResult {
-  if (result.ok) return ok(result.body);
-  if (result.body.code?.startsWith("plan_")) {
-    return {
-      content: [{ type: "text", text: result.body.error }],
-      isError: true,
-      structuredContent: {
-        entitlementError: result.body as EntitlementErrorBody,
-      },
-    };
-  }
-  return err(result.body.error);
-}
-
 async function actionInput(ctx: ToolContext) {
   const db = ctx.db();
   const projectId = ctx.projectId();
@@ -100,7 +78,7 @@ export async function getAnalyticsOverview(
   ctx: ToolContext,
   input: CommonAnalyticsInput,
 ): Promise<ToolResult> {
-  return actionResult(await getAnalyticsOverviewAction({
+  return actionToMcpResult(await getAnalyticsOverviewAction({
     ...(await actionInput(ctx)),
     query: parseCommonQuery(input),
   }));
@@ -126,7 +104,7 @@ export async function getBookingFunnelAnalytics(
     if (!eventType) return err("Not found");
     resourceSlug = eventType.slug;
   }
-  return actionResult(await getBookingAnalyticsAction({
+  return actionToMcpResult(await getBookingAnalyticsAction({
     ...common,
     query: bookingAnalyticsQuerySchema.parse({
       ...parseCommonQuery(input),
@@ -156,7 +134,7 @@ export async function getFormFunnelAnalytics(
     if (!form) return err("Not found");
     resourceSlug = form.slug;
   }
-  return actionResult(await getFormAnalyticsAction({
+  return actionToMcpResult(await getFormAnalyticsAction({
     ...common,
     query: {
       ...parseCommonQuery(input),
@@ -168,7 +146,7 @@ export async function getFormFunnelAnalytics(
 export async function listAnalyticsIntegrations(
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  return actionResult(
+  return actionToMcpResult(
     await listAnalyticsIntegrationsAction(await actionInput(ctx)),
   );
 }
@@ -178,11 +156,15 @@ export async function configureAnalyticsIntegration(
   input: ConfigureIntegrationInput,
 ): Promise<ToolResult> {
   const { provider, ...body } = input;
-  return actionResult(await configureAnalyticsIntegrationAction({
+  return actionToMcpResult(await configureAnalyticsIntegrationAction({
     ...(await actionInput(ctx)),
     provider,
     body,
   }));
+}
+
+export async function getAnalyticsFilters(ctx: ToolContext): Promise<ToolResult> {
+  return actionToMcpResult(await getAnalyticsFiltersAction(await actionInput(ctx)));
 }
 
 const commonInputShape = {
@@ -211,6 +193,15 @@ export function registerAnalyticsTools(
   server: McpServer,
   ctx: ToolContext,
 ): void {
+  server.registerTool(
+    "get_analytics_filters",
+    withMcpToolDiscovery("get_analytics_filters", {
+      description: "Get available analytics filter values for this project. Requires Pro or Business.",
+      inputSchema: {},
+    }),
+    withToolErrors("get_analytics_filters", ctx, () => getAnalyticsFilters(ctx)),
+  );
+
   server.registerTool(
     "get_analytics_overview",
     withMcpToolDiscovery("get_analytics_overview", {

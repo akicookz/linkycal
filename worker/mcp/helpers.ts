@@ -1,5 +1,6 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import { eq, and } from "drizzle-orm";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 import {
   MCP_TOOL_SCOPES,
@@ -15,11 +16,7 @@ type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
 // ─── Tool Results ────────────────────────────────────────────────────────────
 
-export interface ToolResult {
-  [key: string]: unknown;
-  content: Array<{ type: "text"; text: string }>;
-  isError?: boolean;
-}
+export type ToolResult = CallToolResult;
 
 export function ok(data: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };

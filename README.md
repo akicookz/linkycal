@@ -89,7 +89,7 @@ PUT /api/projects/:projectId/analytics/integrations/:provider
 ```
 
 All six routes accept a dashboard session or a project-scoped API key and are
-Pro/Business-gated by the Worker. The MCP server exposes 40 tools, including
+Pro/Business-gated by the Worker. The MCP server exposes 92 tools, including
 five analytics tools that call the same reporting and integration actions.
 Public booking pages, forms, and widgets receive only enabled public provider
 identifiers; raw scripts, arbitrary URLs, and provider secrets are not stored.

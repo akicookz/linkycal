@@ -1,5 +1,5 @@
 import type { DrizzleD1Database } from "drizzle-orm/d1";
-import { eq, and, gte, lte, desc } from "drizzle-orm";
+import { eq, and, or, gte, lte, desc } from "drizzle-orm";
 import * as dbSchema from "../db/schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +25,16 @@ interface CreateBookingInput {
 
 interface BookingWithEventType extends dbSchema.BookingRow {
   eventTypeName: string;
+}
+
+export function normalizePendingBookingForRead<
+  T extends { status: string; startTime: Date; expiresAt: Date | null },
+>(booking: T, now = new Date()): T {
+  const expired = booking.expiresAt !== null && booking.expiresAt <= now;
+  if (booking.status !== "pending" || (!expired && booking.startTime > now)) {
+    return booking;
+  }
+  return { ...booking, status: "declined", expiresAt: null };
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
@@ -70,7 +80,10 @@ export class BookingService {
       .where(eq(dbSchema.eventTypes.projectId, projectId))
       .orderBy(desc(dbSchema.bookings.startTime));
 
-    return rows;
+    const now = new Date();
+    return rows.map(function normalizePending(booking) {
+      return normalizePendingBookingForRead(booking, now);
+    });
   }
 
   // ─── Get By ID ────────────────────────────────────────────────────────────
@@ -184,21 +197,6 @@ export class BookingService {
     return (await this.getByIdForProject(projectId, id))!;
   }
 
-  // ─── Expire Past Pending Bookings ─────────────────────────────────────────
-
-  async expirePastPendingBookings(): Promise<void> {
-    const now = new Date();
-    await this.db
-      .update(dbSchema.bookings)
-      .set({ status: "declined", expiresAt: null })
-      .where(
-        and(
-          eq(dbSchema.bookings.status, "pending"),
-          lte(dbSchema.bookings.startTime, now),
-        ),
-      );
-  }
-
   // ─── Expire Pending Bookings ──────────────────────────────────────────────
 
   async expirePendingBookings(): Promise<dbSchema.BookingRow[]> {
@@ -210,7 +208,10 @@ export class BookingService {
       .where(
         and(
           eq(dbSchema.bookings.status, "pending"),
-          lte(dbSchema.bookings.expiresAt, now),
+          or(
+            lte(dbSchema.bookings.expiresAt, now),
+            lte(dbSchema.bookings.startTime, now),
+          ),
         ),
       );
 

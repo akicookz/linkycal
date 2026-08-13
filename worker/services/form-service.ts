@@ -721,12 +721,18 @@ export class FormService {
 
   // ─── Responses ───────────────────────────────────────────────────────────
 
-  async listResponses(formId: string) {
-    const rows = await this.db
+  async listResponses(
+    formId: string,
+    page?: { limit: number; offset: number },
+  ) {
+    const query = this.db
       .select()
       .from(dbSchema.formResponses)
       .where(eq(dbSchema.formResponses.formId, formId))
       .orderBy(desc(dbSchema.formResponses.createdAt));
+    const rows = page
+      ? await query.limit(page.limit).offset(page.offset)
+      : await query;
 
     return rows.map(normalizeResponseRow);
   }
@@ -857,8 +863,11 @@ export class FormService {
     return { ...response, values: enrichedValues };
   }
 
-  async listResponsesWithValues(formId: string) {
-    const responses = await this.listResponses(formId);
+  async listResponsesWithValues(
+    formId: string,
+    page?: { limit: number; offset: number },
+  ) {
+    const responses = await this.listResponses(formId, page);
     const responseIds = responses.map((r) => r.id);
     if (responseIds.length === 0) return responses.map((r) => ({ ...r, values: [] }));
 

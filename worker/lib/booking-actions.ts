@@ -16,7 +16,8 @@ import {
   getUtcRangeForLocalDate,
   getWeekRangeForLocalDate,
 } from "./timezone";
-import { parseInviteConnectionIds } from "./calendar-refs";
+import { parseBusyCalendars, parseInviteConnectionIds } from "./calendar-refs";
+import { resolveProjectWorkspace } from "./entitlements";
 import {
   CONFIRMATION_LEAD_TIME_MS,
   getBookingWindowStart,
@@ -29,6 +30,12 @@ import {
   createMeteredEmailDependency,
 } from "./metered-entitlements";
 import { recordPersistedBookingUsage } from "./conversion-usage";
+import {
+  actionError,
+  actionOk,
+  type ActionResult,
+  type ProjectActionDeps,
+} from "./action-result";
 
 export { recordPersistedBookingUsage } from "./conversion-usage";
 
@@ -53,6 +60,137 @@ export type BookingActionResult =
 export type CreateBookingActionResult =
   | { ok: true; booking: dbSchema.BookingRow; projectId: string }
   | { ok: false; status: 400 | 404 | 409; error: string };
+
+type ProjectBookingActionDeps = Pick<
+  ProjectActionDeps,
+  "db" | "env" | "projectId" | "channel" | "waitUntil"
+>;
+
+interface AvailableSlotsInput {
+  date: string;
+  timezone: string;
+}
+
+interface ResolvedAvailableSlotsInput extends AvailableSlotsInput {
+  projectId: string;
+  projectSlug: string;
+  eventType: dbSchema.EventTypeRow;
+}
+
+async function getExternalBusySlots(
+  deps: BookingActionDeps,
+  input: ResolvedAvailableSlotsInput,
+): Promise<Array<{ start: string; end: string }>> {
+  const busyCalendars = parseBusyCalendars(input.eventType.busyCalendars);
+  if (busyCalendars.length === 0) return [];
+
+  const workspace = await resolveProjectWorkspace(deps.db, input.projectId);
+  if (!workspace) return [];
+  const connectionIds = Array.from(
+    new Set(
+      busyCalendars.map(function connectionId(calendar) {
+        return calendar.connectionId;
+      }),
+    ),
+  );
+  const connections = workspace.teamId
+    ? await deps.db
+        .select({
+          id: dbSchema.calendarConnections.id,
+          refreshToken: dbSchema.calendarConnections.refreshToken,
+        })
+        .from(dbSchema.teamCalendarConnections)
+        .innerJoin(
+          dbSchema.calendarConnections,
+          eq(
+            dbSchema.teamCalendarConnections.connectionId,
+            dbSchema.calendarConnections.id,
+          ),
+        )
+        .where(
+          and(
+            eq(dbSchema.teamCalendarConnections.teamId, workspace.teamId),
+            inArray(dbSchema.calendarConnections.id, connectionIds),
+          ),
+        )
+    : await deps.db
+        .select({
+          id: dbSchema.calendarConnections.id,
+          refreshToken: dbSchema.calendarConnections.refreshToken,
+        })
+        .from(dbSchema.calendarConnections)
+        .where(
+          and(
+            eq(dbSchema.calendarConnections.userId, workspace.ownerUserId),
+            inArray(dbSchema.calendarConnections.id, connectionIds),
+          ),
+        );
+  if (connections.length === 0) return [];
+
+  const calendarsByConnection = new Map<string, string[]>();
+  const allowedConnectionIds = new Set(
+    connections.map(function connectionId(connection) {
+      return connection.id;
+    }),
+  );
+  for (const calendar of busyCalendars) {
+    if (!allowedConnectionIds.has(calendar.connectionId)) continue;
+    const calendarIds = calendarsByConnection.get(calendar.connectionId) ?? [];
+    calendarIds.push(calendar.calendarId);
+    calendarsByConnection.set(calendar.connectionId, calendarIds);
+  }
+
+  const viewerDayRange = getUtcRangeForLocalDate(input.date, input.timezone);
+  const rangeStart = new Date(
+    viewerDayRange.start.getTime() - input.eventType.bufferBefore * 60 * 1000,
+  ).toISOString();
+  const rangeEnd = new Date(
+    viewerDayRange.end.getTime() +
+      (input.eventType.duration + input.eventType.bufferAfter) * 60 * 1000,
+  ).toISOString();
+  const service = new CalendarService(deps.db, {
+    GOOGLE_CALENDAR_CLIENT_ID: deps.env.GOOGLE_CALENDAR_CLIENT_ID,
+    GOOGLE_CALENDAR_CLIENT_SECRET: deps.env.GOOGLE_CALENDAR_CLIENT_SECRET,
+  });
+  const externalBusySlots: Array<{ start: string; end: string }> = [];
+  for (const connection of connections) {
+    const calendarIds = calendarsByConnection.get(connection.id);
+    if (!calendarIds?.length) continue;
+    try {
+      const accessToken = await service.refreshAccessToken(connection.refreshToken);
+      externalBusySlots.push(
+        ...(await service.getFreeBusy(
+          accessToken,
+          calendarIds,
+          rangeStart,
+          rangeEnd,
+        )),
+      );
+    } catch (error) {
+      console.error(
+        `FreeBusy check failed for connection ${connection.id}:`,
+        error,
+      );
+    }
+  }
+  return externalBusySlots;
+}
+
+async function getAvailableSlotsForEvent(
+  deps: BookingActionDeps,
+  input: ResolvedAvailableSlotsInput,
+): Promise<Awaited<ReturnType<AvailabilityService["getAvailableSlots"]>>> {
+  const externalBusySlots = input.eventType.enabled
+    ? await getExternalBusySlots(deps, input)
+    : [];
+  return new AvailabilityService(deps.db).getAvailableSlots({
+    projectSlug: input.projectSlug,
+    eventTypeSlug: input.eventType.slug,
+    date: input.date,
+    timezone: input.timezone,
+    externalBusySlots,
+  });
+}
 
 // ─── Theme Helper ────────────────────────────────────────────────────────────
 
@@ -319,9 +457,10 @@ export async function createBookingAction(
 
   // 4. Check availability — verify the slot is still open
   const dateStr = formatDateInTimezone(startTime, input.timezone);
-  const slots = await availabilityService.getAvailableSlots({
-    projectSlug: input.projectSlug,
-    eventTypeSlug: input.eventTypeSlug,
+  const slots = await getAvailableSlotsForEvent(deps, {
+    projectId: project.id,
+    projectSlug: project.slug,
+    eventType,
     date: dateStr,
     timezone: input.timezone,
   });
@@ -359,6 +498,10 @@ export async function createBookingAction(
   let formResponseId: string | undefined;
   if (eventType.bookingFormId && input.formFields && Object.keys(input.formFields).length > 0) {
     const formService = new FormService(db);
+    const bookingForm = await formService.getById(eventType.bookingFormId);
+    if (!bookingForm || bookingForm.projectId !== project.id) {
+      return { ok: false, status: 404, error: "Booking form not found" };
+    }
     const formResponse = await formService.createResponse(eventType.bookingFormId);
     if (formResponse) {
       formResponseId = formResponse.id;
@@ -1114,4 +1257,208 @@ export async function declineBookingAction(
   }
 
   return { ok: true, booking };
+}
+
+// ─── Project-Scoped Booking Reads ───────────────────────────────────────────
+
+export interface ListBookingsInput {
+  status?: dbSchema.BookingRow["status"];
+  limit?: number;
+  offset?: number;
+}
+
+export interface BookingFormField {
+  label: string;
+  type: string;
+  value: string;
+}
+
+function projectNotFound<T = never>(): ActionResult<T> {
+  return actionError(404, "Not found");
+}
+
+function bookingFileDisplayValue(
+  value: string | null,
+  fileUrl: string | null,
+): string {
+  if (value?.trim()) return value;
+  return fileUrl?.startsWith("form-responses/") ? "Uploaded file" : (fileUrl ?? "");
+}
+
+async function getBookingFormFields(
+  db: AppDatabase,
+  formResponseId: string | null,
+): Promise<BookingFormField[]> {
+  if (!formResponseId) return [];
+
+  const values = await db
+    .select({
+      fieldId: dbSchema.formFieldValues.fieldId,
+      value: dbSchema.formFieldValues.value,
+      fileUrl: dbSchema.formFieldValues.fileUrl,
+      label: dbSchema.formFields.label,
+      type: dbSchema.formFields.type,
+    })
+    .from(dbSchema.formFieldValues)
+    .innerJoin(
+      dbSchema.formFields,
+      and(
+        eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
+        eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
+      ),
+    )
+    .where(eq(dbSchema.formFieldValues.responseId, formResponseId));
+
+  return values.map((field) => ({
+    label: field.label,
+    type: field.type,
+    value:
+      field.type === "file"
+        ? bookingFileDisplayValue(field.value, field.fileUrl)
+        : (field.value ?? ""),
+  }));
+}
+
+export async function listBookingsAction(
+  deps: ProjectBookingActionDeps,
+  input: ListBookingsInput = {},
+): Promise<ActionResult<Awaited<ReturnType<BookingService["listByProject"]>>>> {
+  const service = new BookingService(deps.db);
+  let bookings = await service.listByProject(deps.projectId);
+  if (input.status) bookings = bookings.filter((booking) => booking.status === input.status);
+
+  const offset = input.offset ?? 0;
+  const limit = input.limit ?? 50;
+  return actionOk(bookings.slice(offset, offset + limit));
+}
+
+export async function getBookingAction(
+  deps: ProjectBookingActionDeps,
+  bookingId: string,
+): Promise<
+  ActionResult<{
+    booking: dbSchema.BookingRow;
+    eventTypeName: string;
+    formFields: BookingFormField[];
+  }>
+> {
+  const [row] = await deps.db
+    .select({ booking: dbSchema.bookings, eventTypeName: dbSchema.eventTypes.name })
+    .from(dbSchema.bookings)
+    .innerJoin(
+      dbSchema.eventTypes,
+      eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id),
+    )
+    .where(
+      and(
+        eq(dbSchema.bookings.id, bookingId),
+        eq(dbSchema.eventTypes.projectId, deps.projectId),
+      ),
+    )
+    .limit(1);
+  if (!row) return projectNotFound();
+
+  return actionOk({
+    booking: row.booking,
+    eventTypeName: row.eventTypeName,
+    formFields: await getBookingFormFields(deps.db, row.booking.formResponseId),
+  });
+}
+
+export async function getAvailableSlotsAction(
+  deps: ProjectBookingActionDeps,
+  input: { eventTypeId: string; date: string; timezone: string },
+): Promise<ActionResult<Awaited<ReturnType<AvailabilityService["getAvailableSlots"]>>>> {
+  const [eventType] = await deps.db
+    .select()
+    .from(dbSchema.eventTypes)
+    .where(
+      and(
+        eq(dbSchema.eventTypes.id, input.eventTypeId),
+        eq(dbSchema.eventTypes.projectId, deps.projectId),
+      ),
+    )
+    .limit(1);
+  if (!eventType) return projectNotFound();
+
+  const [project] = await deps.db
+    .select({ slug: dbSchema.projects.slug })
+    .from(dbSchema.projects)
+    .where(eq(dbSchema.projects.id, deps.projectId))
+    .limit(1);
+  if (!project) return projectNotFound();
+
+  const slots = await getAvailableSlotsForEvent(deps, {
+    projectId: deps.projectId,
+    projectSlug: project.slug,
+    eventType,
+    date: input.date,
+    timezone: input.timezone,
+  });
+  return actionOk(slots);
+}
+
+export async function getPublicAvailableSlotsAction(
+  deps: BookingActionDeps,
+  input: AvailableSlotsInput & {
+    projectSlug: string;
+    eventTypeSlug: string;
+  },
+): Promise<
+  ActionResult<{
+    slots: Awaited<ReturnType<AvailabilityService["getAvailableSlots"]>>;
+    date: string;
+    timezone: string;
+    projectSlug: string;
+    eventTypeSlug: string;
+  }>
+> {
+  const [project] = await deps.db
+    .select({ id: dbSchema.projects.id, slug: dbSchema.projects.slug })
+    .from(dbSchema.projects)
+    .where(eq(dbSchema.projects.slug, input.projectSlug))
+    .limit(1);
+  const [eventType] = project
+    ? await deps.db
+        .select()
+        .from(dbSchema.eventTypes)
+        .where(
+          and(
+            eq(dbSchema.eventTypes.projectId, project.id),
+            eq(dbSchema.eventTypes.slug, input.eventTypeSlug),
+          ),
+        )
+        .limit(1)
+    : [];
+  const slots = project && eventType
+    ? await getAvailableSlotsForEvent(deps, {
+        projectId: project.id,
+        projectSlug: project.slug,
+        eventType,
+        date: input.date,
+        timezone: input.timezone,
+      })
+    : [];
+  return actionOk({
+    slots,
+    date: input.date,
+    timezone: input.timezone,
+    projectSlug: input.projectSlug,
+    eventTypeSlug: input.eventTypeSlug,
+  });
+}
+
+export async function getBookingFormResponseAction(
+  deps: ProjectBookingActionDeps,
+  bookingId: string,
+): Promise<ActionResult<{ fields: BookingFormField[] }>> {
+  const booking = await new BookingService(deps.db).getByIdForProject(
+    deps.projectId,
+    bookingId,
+  );
+  if (!booking) return projectNotFound();
+
+  return actionOk({
+    fields: await getBookingFormFields(deps.db, booking.formResponseId),
+  });
 }

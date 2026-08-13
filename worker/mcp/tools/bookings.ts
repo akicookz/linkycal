@@ -3,17 +3,20 @@ import { eq } from "drizzle-orm";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import * as dbSchema from "../../db/schema";
-import { BookingService } from "../../services/booking-service";
-import { AvailabilityService } from "../../services/availability-service";
 import {
   createBookingAction,
   cancelBookingAction,
   confirmBookingAction,
   declineBookingAction,
+  getAvailableSlotsAction,
+  getBookingAction,
+  getBookingFormResponseAction,
+  listBookingsAction,
 } from "../../lib/booking-actions";
+import { actionToMcpResult } from "../action-result";
 import type { ToolContext } from "../agent";
 import { withMcpToolDiscovery } from "../tool-discovery";
-import { ok, err, withToolErrors, bookingInProject, inProject } from "../helpers";
+import { ok, err, withToolErrors, inProject } from "../helpers";
 import type { ToolResult } from "../helpers";
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
@@ -22,54 +25,33 @@ const BOOKING_STATUSES = ["pending", "confirmed", "cancelled", "declined", "resc
 
 export async function listBookings(
   ctx: ToolContext,
-  input: { status?: (typeof BOOKING_STATUSES)[number]; limit?: number },
+  input: {
+    status?: (typeof BOOKING_STATUSES)[number];
+    limit?: number;
+    offset?: number;
+  },
 ): Promise<ToolResult> {
-  const service = new BookingService(ctx.db());
-  let bookings = await service.listByProject(ctx.projectId());
-  if (input.status) {
-    bookings = bookings.filter((b) => b.status === input.status);
-  }
-  return ok(bookings.slice(0, input.limit ?? 50));
+  return actionToMcpResult(
+    await listBookingsAction(mcpBookingDeps(ctx), input),
+  );
 }
 
 export async function getBooking(
   ctx: ToolContext,
   input: { bookingId: string },
 ): Promise<ToolResult> {
-  const booking = await bookingInProject(ctx.db(), input.bookingId, ctx.projectId());
-  if (!booking) return err("Not found");
-  return ok(booking);
+  return actionToMcpResult(
+    await getBookingAction(mcpBookingDeps(ctx), input.bookingId),
+  );
 }
 
 export async function getAvailableSlots(
   ctx: ToolContext,
   input: { eventTypeId: string; date: string; timezone: string },
 ): Promise<ToolResult> {
-  const db = ctx.db();
-  const projectId = ctx.projectId();
-
-  const [eventType] = await db
-    .select()
-    .from(dbSchema.eventTypes)
-    .where(eq(dbSchema.eventTypes.id, input.eventTypeId))
-    .limit(1);
-  if (!inProject(eventType ?? null, projectId)) return err("Not found");
-
-  const [project] = await db
-    .select({ slug: dbSchema.projects.slug })
-    .from(dbSchema.projects)
-    .where(eq(dbSchema.projects.id, projectId))
-    .limit(1);
-  if (!project) return err("Not found");
-
-  const service = new AvailabilityService(db);
-  const slots = await service.getAvailableSlots({
-    projectSlug: project.slug,
-    eventTypeSlug: eventType.slug,
-    date: input.date,
-    timezone: input.timezone,
-  });
-  return ok(slots);
+  return actionToMcpResult(
+    await getAvailableSlotsAction(mcpBookingDeps(ctx), input),
+  );
 }
 
 export async function createBooking(
@@ -81,6 +63,8 @@ export async function createBooking(
     startTime: string;
     timezone: string;
     notes?: string;
+    metadata?: Record<string, unknown>;
+    formFields?: Record<string, string>;
   },
 ): Promise<ToolResult> {
   const db = ctx.db();
@@ -110,11 +94,32 @@ export async function createBooking(
       notes: input.notes,
       startTime: input.startTime,
       timezone: input.timezone,
+      metadata: input.metadata,
+      formFields: input.formFields,
     },
   );
 
   if (!result.ok) return err(result.error);
   return ok(result.booking);
+}
+
+export async function getBookingFormResponse(
+  ctx: ToolContext,
+  input: { bookingId: string },
+): Promise<ToolResult> {
+  return actionToMcpResult(
+    await getBookingFormResponseAction(mcpBookingDeps(ctx), input.bookingId),
+  );
+}
+
+function mcpBookingDeps(ctx: ToolContext) {
+  return {
+    db: ctx.db(),
+    env: ctx.env(),
+    projectId: ctx.projectId(),
+    channel: "mcp" as const,
+    waitUntil: ctx.waitUntil,
+  };
 }
 
 export async function cancelBooking(
@@ -123,9 +128,6 @@ export async function cancelBooking(
 ): Promise<ToolResult> {
   const db = ctx.db();
   const projectId = ctx.projectId();
-
-  const booking = await bookingInProject(db, input.bookingId, projectId);
-  if (!booking) return err("Not found");
 
   const result = await cancelBookingAction(
     { db, env: ctx.env(), waitUntil: ctx.waitUntil },
@@ -145,9 +147,6 @@ export async function confirmBooking(
   const db = ctx.db();
   const projectId = ctx.projectId();
 
-  const booking = await bookingInProject(db, input.bookingId, projectId);
-  if (!booking) return err("Not found");
-
   const result = await confirmBookingAction(
     { db, env: ctx.env(), waitUntil: ctx.waitUntil },
     projectId,
@@ -164,9 +163,6 @@ export async function declineBooking(
 ): Promise<ToolResult> {
   const db = ctx.db();
   const projectId = ctx.projectId();
-
-  const booking = await bookingInProject(db, input.bookingId, projectId);
-  if (!booking) return err("Not found");
 
   const result = await declineBookingAction(
     { db, env: ctx.env(), waitUntil: ctx.waitUntil },
@@ -190,6 +186,7 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
       inputSchema: {
         status: z.enum(BOOKING_STATUSES).optional().describe("Filter by booking status"),
         limit: z.number().int().min(1).max(200).optional().describe("Max bookings to return (default 50)"),
+        offset: z.number().int().min(0).optional().describe("Number of bookings to skip (default 0)"),
       },
     }),
     withToolErrors("list_bookings", ctx, (input) => listBookings(ctx, input)),
@@ -232,6 +229,8 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
         startTime: z.string().describe("ISO 8601 UTC instant matching a slot from get_available_slots"),
         timezone: z.string().describe("Guest's IANA timezone, e.g. Europe/Berlin"),
         notes: z.string().max(2000).optional().describe("Optional notes from the guest"),
+        metadata: z.record(z.string(), z.unknown()).optional().describe("Optional booking metadata"),
+        formFields: z.record(z.string(), z.string()).optional().describe("Booking form field values keyed by field id"),
       },
     }),
     withToolErrors("create_booking", ctx, (input) => createBooking(ctx, input)),
@@ -273,5 +272,18 @@ export function registerBookingTools(server: McpServer, ctx: ToolContext) {
       },
     }),
     withToolErrors("decline_booking", ctx, (input) => declineBooking(ctx, input)),
+  );
+
+  server.registerTool(
+    "get_booking_form_response",
+    withMcpToolDiscovery("get_booking_form_response", {
+      description: "Get the submitted custom booking form fields for a booking.",
+      inputSchema: {
+        bookingId: z.string().describe("Booking id"),
+      },
+    }),
+    withToolErrors("get_booking_form_response", ctx, (input) =>
+      getBookingFormResponse(ctx, input),
+    ),
   );
 }

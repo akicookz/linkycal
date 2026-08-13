@@ -9,10 +9,6 @@ import {
   ne,
   and,
   or,
-  desc,
-  like,
-  sql,
-  gte,
   inArray,
   isNull,
 } from "drizzle-orm";
@@ -26,45 +22,47 @@ import type {
   Plan,
   ProjectAccessContext,
 } from "./types";
+import type { ActionResult, ProjectActionDeps } from "./lib/action-result";
 
 const { schema } = dbSchema;
 type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
+type ActionFailure = Extract<ActionResult<unknown>, { ok: false }>;
+
+function projectActionDeps(c: Context<HonoAppContext>): ProjectActionDeps {
+  const requestAuth = c.get("requestAuth");
+  return {
+    db: c.get("db"),
+    env: c.env,
+    projectId: c.req.param("projectId")!,
+    channel: "rest",
+    projectScope: c.get("projectScope"),
+    actorUserId:
+      requestAuth?.kind === "session" ? requestAuth.user.id : undefined,
+    waitUntil: function waitUntil(promise) {
+      c.executionCtx.waitUntil(promise);
+    },
+  };
+}
+
+function actionFailureResponse(
+  c: Context<HonoAppContext>,
+  result: ActionFailure,
+) {
+  for (const [name, value] of Object.entries(result.headers ?? {})) {
+    c.header(name, value);
+  }
+  return c.json(result.body, result.status);
+}
+
 import {
   createProjectSchema,
-  createEventTypeSchema,
-  updateEventTypeSchema,
-  createScheduleSchema,
-  updateAvailabilityRulesSchema,
   createBookingSchema,
   cancelBookingSchema,
   declineBookingSchema,
-  createFormSchema,
-  updateFormSchema,
-  createFormStepSchema,
-  updateFormStepSchema,
-  createFormFieldSchema,
-  updateFormFieldSchema,
-  createContactSchema,
-  importContactsSchema,
-  updateContactSchema,
-  setNextActionSchema,
-  createTagSchema,
-  updateTagSchema,
-  listTagsQuerySchema,
-  assignTagSchema,
-  setStageSchema,
-  createContactViewSchema,
-  updateContactViewSchema,
-  createWorkflowSchema,
-  updateWorkflowSchema,
-  createWorkflowStepSchema,
-  updateWorkflowStepSchema,
   createApiKeySchema,
   mcpOAuthDecisionSchema,
   checkAvailabilitySchema,
-  updateEventTypeCalendarsSchema,
-  reorderFieldsSchema,
   checkoutSchema,
   trackEventRequestSchema,
   analyticsQuerySchema,
@@ -74,7 +72,6 @@ import {
   updateTeamMemberSchema,
   upsertProjectMemberSchema,
   updateProjectMemberSchema,
-  customCssSchema,
   validate,
 } from "./validation";
 
@@ -99,7 +96,67 @@ import {
   cancelBookingAction,
   confirmBookingAction,
   declineBookingAction,
+  getBookingAction,
+  getBookingFormResponseAction,
+  getPublicAvailableSlotsAction,
+  listBookingsAction,
 } from "./lib/booking-actions";
+import {
+  deleteCustomCssAction,
+  getCustomCssAction,
+  getProjectAction,
+  getProjectEntitlementsAction,
+  setCustomCssAction,
+  updateProjectAction,
+} from "./lib/project-actions";
+import {
+  deleteProjectAssetAction,
+  uploadProjectAssetAction,
+} from "./lib/project-asset-actions";
+import {
+  createEventTypeAction,
+  deleteEventTypeAction,
+  getEventTypeAction,
+  listEventTypesAction,
+  updateEventTypeAction,
+} from "./lib/event-type-actions";
+import {
+  addScheduleOverrideAction,
+  createScheduleAction,
+  deleteScheduleAction,
+  deleteScheduleOverrideAction,
+  getScheduleAction,
+  listSchedulesAction,
+  setScheduleRulesAction,
+  updateScheduleAction,
+} from "./lib/schedule-actions";
+import {
+  getEventTypeCalendarsAction,
+  listProjectCalendarsAction,
+  updateEventTypeCalendarsAction,
+} from "./lib/calendar-actions";
+import { listRecentActivityAction } from "./lib/activity-actions";
+import {
+  createFormAction,
+  createFormFieldAction,
+  createFormStepAction,
+  deleteFormAction,
+  deleteFormFieldAction,
+  deleteFormResponseAction,
+  deleteFormStepAction,
+  getFormAction,
+  getFormResponseAction,
+  getFormResponseFileAction,
+  listFormFieldsAction,
+  listFormResponsesAction,
+  listFormsAction,
+  listFormStepsAction,
+  reorderFormFieldsAction,
+  reorderFormStepsAction,
+  updateFormAction,
+  updateFormFieldAction,
+  updateFormStepAction,
+} from "./lib/form-actions";
 import {
   loadPublicFormAction,
   startPublicFormResponseAction,
@@ -121,9 +178,6 @@ import {
   listAnalyticsIntegrationsAction,
   writeAnonymousAnalyticsEvents,
 } from "./lib/analytics-actions";
-import {
-  mergeProjectSettingsPreservingAnalyticsIntegrations,
-} from "./services/analytics-integration-service";
 import { dispatchWorkflowTrigger } from "./lib/workflow-dispatch";
 import { LinkyCalMcp } from "./mcp/agent";
 import {
@@ -139,40 +193,64 @@ export { LinkyCalMcp };
 import { EventTypeService } from "./services/event-type-service";
 import { ScheduleService } from "./services/schedule-service";
 import { BookingService } from "./services/booking-service";
-import { AvailabilityService } from "./services/availability-service";
 import { CalendarService } from "./services/calendar-service";
-import {
-  getUtcRangeForLocalDate,
-} from "./lib/timezone";
 import {
   parseBusyCalendars,
   parseInviteConnectionIds,
-  serializeBusyCalendars,
-  serializeInviteConnectionIds,
 } from "./lib/calendar-refs";
 import { FormService } from "./services/form-service";
 import { ContactService } from "./services/contact-service";
 import {
-  TagNameConflictError,
-  TagService,
-} from "./services/tag-service";
-import {
-  ContactActivityService,
-  parseContactActivityListOptions,
-} from "./services/contact-activity-service";
-import {
+  createContactAction,
+  deleteContactAction,
+  enrichContactAction,
+  getContactAction,
+  getContactActivityAction,
+  importContactsAction,
+  listContactsAction,
+  setContactNextActionAction,
+  setContactStageAction,
+  updateContactAction,
   ensureContact,
-  importContactsWithCapacity,
 } from "./lib/contact-actions";
+import {
+  addTagToContactAction,
+  createTagAction,
+  deleteTagAction,
+  getTagAction,
+  listTagsAction,
+  removeTagFromContactAction,
+  updateTagAction,
+} from "./lib/tag-actions";
+import {
+  createContactViewAction,
+  deleteContactViewAction,
+  listContactViewsAction,
+  seedContactPipelineAction,
+  updateContactViewAction,
+} from "./lib/contact-view-actions";
 import {
   notifyFormResponseCompleted,
   uploadedFileDisplayValue,
 } from "./lib/form-response-notification";
-import { WorkflowService } from "./services/workflow-service";
 import { WorkflowExecutionService } from "./services/workflow-execution-service";
+import {
+  createWorkflowAction,
+  createWorkflowStepAction,
+  deleteWorkflowAction,
+  deleteWorkflowStepAction,
+  getWorkflowAction,
+  getWorkflowRunAction,
+  listWorkflowRunsAction,
+  listWorkflowStepsAction,
+  listWorkflowsAction,
+  reorderWorkflowStepsAction,
+  testWorkflowAction,
+  triggerWorkflowAction,
+  updateWorkflowAction,
+  updateWorkflowStepAction,
+} from "./lib/workflow-actions";
 import { EntitlementService } from "./services/entitlement-service";
-import type { TriggerContext } from "./services/workflow-execution-service";
-import { parseWorkflowTriggerConfig } from "./lib/workflow-schedule";
 import { ApiKeyService } from "./services/api-key-service";
 import {
   ensureOwnerMembership,
@@ -186,7 +264,6 @@ import {
 import { resolveRequestAuth } from "./lib/request-auth";
 import { projectRouteAccess } from "./lib/api-route-policy";
 import { authorizeApiKeyProjectRequest } from "./lib/project-api-access";
-import { projectCanUseCalendarConnections } from "./lib/calendar-connection-scope";
 import { isTrustedOrigin, sessionOriginAllowed } from "./lib/cors-policy";
 import {
   createWithResourceCapacity,
@@ -205,10 +282,6 @@ import {
   reconcileProjectStorage,
 } from "./lib/storage-reconciliation";
 import { reconcileConversionUsage } from "./lib/conversion-usage";
-import {
-  CustomCssEntitlementError,
-  CustomCssService,
-} from "./services/custom-css-service";
 
 // ─── Team Helpers ───────────────────────────────────────────────────────────
 
@@ -573,74 +646,6 @@ async function storePrivateFormUpload(
     filename,
     contentType,
     size: file.size,
-  };
-}
-
-async function getPrivateFormFileObject(
-  db: DrizzleD1Database<Record<string, unknown>>,
-  env: AppEnv,
-  input: {
-    projectId: string;
-    formId: string;
-    responseId: string;
-    valueId: string;
-  },
-): Promise<
-  | { ok: true; object: R2ObjectBody; filename: string }
-  | { ok: false; status: 404 | 400; error: string }
-> {
-  const [row] = await db
-    .select({
-      valueId: dbSchema.formFieldValues.id,
-      value: dbSchema.formFieldValues.value,
-      fileUrl: dbSchema.formFieldValues.fileUrl,
-      fieldType: dbSchema.formFields.type,
-    })
-    .from(dbSchema.formFieldValues)
-    .innerJoin(
-      dbSchema.formFields,
-      and(
-        eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
-        eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
-      ),
-    )
-    .innerJoin(
-      dbSchema.formResponses,
-      eq(dbSchema.formFieldValues.responseId, dbSchema.formResponses.id),
-    )
-    .innerJoin(
-      dbSchema.forms,
-      eq(dbSchema.formFieldValues.formId, dbSchema.forms.id),
-    )
-    .where(
-      and(
-        eq(dbSchema.formFieldValues.id, input.valueId),
-        eq(dbSchema.formFieldValues.responseId, input.responseId),
-        eq(dbSchema.formFieldValues.formId, input.formId),
-        eq(dbSchema.forms.projectId, input.projectId),
-      ),
-    )
-    .limit(1);
-
-  if (!row || row.fieldType !== "file" || !row.fileUrl) {
-    return { ok: false, status: 404, error: "File not found" };
-  }
-
-  if (!isPrivateFormUploadKey(row.fileUrl)) {
-    return { ok: false, status: 400, error: "File is not a private upload" };
-  }
-
-  const object = await env.UPLOADS.get(row.fileUrl);
-  if (!object) {
-    return { ok: false, status: 404, error: "File not found" };
-  }
-
-  return {
-    ok: true,
-    object,
-    filename: sanitizeUploadFilename(
-      row.value ?? object.customMetadata?.filename ?? "upload",
-    ),
   };
 }
 
@@ -1215,105 +1220,17 @@ app.get("/api/v1/availability/:slug", async (c) => {
 
   try {
     const db = drizzle(c.env.DB, { schema });
-    const availabilityService = new AvailabilityService(db);
-
-    // Fetch Google Calendar busy times if configured for this event type
-    const externalBusySlots: Array<{ start: string; end: string }> = [];
-    try {
-      // Look up event type to check for busy calendar config
-      const [project] = await db
-        .select()
-        .from(dbSchema.projects)
-        .where(eq(dbSchema.projects.slug, slug))
-        .limit(1);
-
-      if (project) {
-        const [eventType] = await db
-          .select()
-          .from(dbSchema.eventTypes)
-          .where(
-            and(
-              eq(dbSchema.eventTypes.projectId, project.id),
-              eq(dbSchema.eventTypes.slug, eventTypeSlug),
-            ),
-          )
-          .limit(1);
-
-        if (eventType) {
-          const busyCalendars = parseBusyCalendars(eventType.busyCalendars);
-
-          if (busyCalendars.length > 0) {
-            const viewerDayRange = getUtcRangeForLocalDate(date!, timezone);
-            const busyRangeStart = new Date(
-              viewerDayRange.start.getTime() -
-                eventType.bufferBefore * 60 * 1000,
-            );
-            const busyRangeEnd = new Date(
-              viewerDayRange.end.getTime() +
-                (eventType.duration + eventType.bufferAfter) * 60 * 1000,
-            );
-            const calendarService = new CalendarService(db, {
-              GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-              GOOGLE_CALENDAR_CLIENT_SECRET:
-                c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-            });
-
-            // Group by connectionId
-            const byConnection = new Map<string, string[]>();
-            for (const bc of busyCalendars) {
-              const existing = byConnection.get(bc.connectionId) ?? [];
-              existing.push(bc.calendarId);
-              byConnection.set(bc.connectionId, existing);
-            }
-
-            const dayStart = busyRangeStart.toISOString();
-            const dayEnd = busyRangeEnd.toISOString();
-
-            for (const [connectionId, calendarIds] of byConnection) {
-              try {
-                const [conn] = await db
-                  .select()
-                  .from(dbSchema.calendarConnections)
-                  .where(eq(dbSchema.calendarConnections.id, connectionId))
-                  .limit(1);
-
-                if (conn) {
-                  const accessToken = await calendarService.refreshAccessToken(
-                    conn.refreshToken,
-                  );
-                  const busySlots = await calendarService.getFreeBusy(
-                    accessToken,
-                    calendarIds,
-                    dayStart,
-                    dayEnd,
-                  );
-                  externalBusySlots.push(...busySlots);
-                }
-              } catch (err) {
-                console.error(
-                  `FreeBusy check failed for connection ${connectionId}:`,
-                  err,
-                );
-                // Don't block availability if calendar check fails
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error("FreeBusy lookup failed:", err);
-      // Continue without external busy slots
-    }
-
-    const slots = await availabilityService.getAvailableSlots({
-      projectSlug: slug,
-      eventTypeSlug,
-      date: date!,
-      timezone,
-      externalBusySlots,
-    });
-
-    return c.json({ slots, date, timezone, projectSlug: slug, eventTypeSlug });
+    const result = await getPublicAvailableSlotsAction(
+      { db, env: c.env, waitUntil: (promise) => c.executionCtx.waitUntil(promise) },
+      {
+        projectSlug: slug,
+        eventTypeSlug,
+        date: date!,
+        timezone,
+      },
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   } catch (err) {
     console.error("Availability error:", err);
     return c.json({ error: "Failed to fetch availability" }, 500);
@@ -1646,18 +1563,25 @@ app.get(
         return c.json({ error: "Form not found" }, 404);
       }
 
-      const result = await getPrivateFormFileObject(db, c.env, {
+      const result = await getFormResponseFileAction({
+        db,
+        env: c.env,
         projectId: project.id,
+        channel: "rest",
+        waitUntil: function waitUntil(promise) {
+          c.executionCtx.waitUntil(promise);
+        },
+      }, {
         formId: form.id,
         responseId,
         valueId,
       });
 
       if (!result.ok) {
-        return c.json({ error: result.error }, result.status);
+        return c.json(result.body, result.status);
       }
 
-      return createPrivateFileResponse(result.object, result.filename);
+      return createPrivateFileResponse(result.value.object, result.value.filename);
     } catch (err) {
       console.error("API form file download error:", err);
       return c.json({ error: "Failed to download file" }, 500);
@@ -2698,24 +2622,6 @@ app.use("/api/*", async (c, next) => {
 // ─── Project Access Middleware ───────────────────────────────────────────────
 // Resolves team/project RBAC for :projectId and swaps project routes to the
 // owning team's plan limits. Legacy rows without team_id fall back to user_id.
-
-async function scheduleBelongsToProject(
-  db: AppDatabase,
-  scheduleId: string,
-  projectId: string,
-): Promise<boolean> {
-  const [schedule] = await db
-    .select({ id: dbSchema.schedules.id })
-    .from(dbSchema.schedules)
-    .where(
-      and(
-        eq(dbSchema.schedules.id, scheduleId),
-        eq(dbSchema.schedules.projectId, projectId),
-      ),
-    )
-    .limit(1);
-  return !!schedule;
-}
 
 const projectAccessMiddleware = async (
   c: Context<HonoAppContext>,
@@ -3871,195 +3777,46 @@ app.post("/api/projects", async (c) => {
 
 // Get single project
 app.get("/api/projects/:projectId", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-
-  const [project] = await db
-    .select()
-    .from(dbSchema.projects)
-    .where(eq(dbSchema.projects.id, projectId))
-    .limit(1);
-
-  if (!project) {
-    return c.json({ error: "Project not found" }, 404);
-  }
-
-  const parsed = {
-    ...project,
-    settings: project.settings ? JSON.parse(project.settings as string) : {},
-  };
-  return c.json({ project: parsed });
+  const result = await getProjectAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ project: result.value });
 });
 
 app.get("/api/projects/:projectId/entitlements", async (c) => {
-  const projectId = c.req.param("projectId");
-  const requestAuth = c.get("requestAuth");
-  const actorUserId =
-    requestAuth?.kind === "session" ? requestAuth.user.id : undefined;
-  const snapshot = await new EntitlementService(c.get("db")).snapshot(
-    projectId,
-    actorUserId,
-  );
-  return snapshot
-    ? c.json(snapshot)
-    : c.json({ error: "Project not found" }, 404);
+  const result = await getProjectEntitlementsAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.get("/api/projects/:projectId/custom-css", async (c) => {
-  const css = await new CustomCssService(c.get("db")).getForSettings(
-    c.req.param("projectId"),
-  );
-  return c.json({
-    customCss: css
-      ? {
-          sourceCss: css.sourceCss,
-          sourceBytes: css.sourceBytes,
-          updatedAt: css.updatedAt,
-        }
-      : null,
-  });
+  const result = await getCustomCssAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.put("/api/projects/:projectId/custom-css", async (c) => {
-  try {
-    const data = validate(customCssSchema, await c.req.json());
-    const actorUserId =
-      c.get("effectiveUserId") ?? c.get("projectScope")?.ownerUserId;
-    const saved = await new CustomCssService(c.get("db")).save(
-      c.req.param("projectId"),
-      data.css,
-      actorUserId,
-      c.env,
-    );
-    return c.json({
-      customCss: {
-        sourceCss: saved.sourceCss,
-        sourceBytes: saved.sourceBytes,
-        updatedAt: saved.updatedAt,
-      },
-    });
-  } catch (error) {
-    if (error instanceof CustomCssEntitlementError) {
-      const failure = entitlementError(error.decision, "save Custom CSS");
-      return c.json(failure.body, failure.status);
-    }
-    if (error instanceof Error && error.name === "ZodError") {
-      return c.json({ error: "Custom CSS must be 20 KB or less" }, 400);
-    }
-    if (error instanceof Error) {
-      return c.json({ error: error.message }, 400);
-    }
-    return c.json({ error: "Failed to save Custom CSS" }, 500);
-  }
+  const result = await setCustomCssAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.delete("/api/projects/:projectId/custom-css", async (c) => {
-  await new CustomCssService(c.get("db")).remove(c.req.param("projectId"));
-  return c.json({ success: true });
+  const result = await deleteCustomCssAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // Update project
 app.put("/api/projects/:projectId", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const db = c.get("db");
-
-    const values: Record<string, unknown> = {};
-    let renamedFromSlug: string | null = null;
-    if (body.name !== undefined) values.name = body.name;
-    if (body.slug !== undefined) {
-      const slug = String(body.slug).trim();
-      if (slug.length < 1 || slug.length > 80 || !/^[a-z0-9-]+$/.test(slug)) {
-        return c.json(
-          { error: "Slug must be lowercase alphanumeric with hyphens" },
-          400,
-        );
-      }
-      // Slugs are globally unique; reject if another project already owns it.
-      const [clash] = await db
-        .select()
-        .from(dbSchema.projects)
-        .where(
-          and(
-            eq(dbSchema.projects.slug, slug),
-            ne(dbSchema.projects.id, projectId),
-          ),
-        )
-        .limit(1);
-      if (clash) {
-        return c.json({ error: "Slug is already taken" }, 409);
-      }
-      const [current] = await db
-        .select({ slug: dbSchema.projects.slug })
-        .from(dbSchema.projects)
-        .where(eq(dbSchema.projects.id, projectId))
-        .limit(1);
-      if (current && current.slug !== slug) renamedFromSlug = current.slug;
-      values.slug = slug;
-    }
-    if (body.timezone !== undefined) values.timezone = body.timezone;
-    if (body.settings !== undefined) {
-      const [current] = await db
-        .select({ settings: dbSchema.projects.settings })
-        .from(dbSchema.projects)
-        .where(eq(dbSchema.projects.id, projectId))
-        .limit(1);
-      values.settings = JSON.stringify(
-        mergeProjectSettingsPreservingAnalyticsIntegrations(
-          current?.settings,
-          body.settings,
-        ),
-      );
-    }
-
-    if (Object.keys(values).length === 0) {
-      return c.json({ error: "No fields to update" }, 400);
-    }
-
-    await db
-      .update(dbSchema.projects)
-      .set(values)
-      .where(eq(dbSchema.projects.id, projectId));
-
-    // On rename, record the old slug for redirects and retire any history row
-    // for the new slug. Best-effort: never block a rename.
-    if (renamedFromSlug) {
-      try {
-        await db
-          .insert(dbSchema.projectSlugHistory)
-          .values({
-            id: crypto.randomUUID(),
-            projectId,
-            slug: renamedFromSlug,
-          })
-          .onConflictDoUpdate({
-            target: dbSchema.projectSlugHistory.slug,
-            set: { projectId, createdAt: new Date() },
-          });
-        await db
-          .delete(dbSchema.projectSlugHistory)
-          .where(eq(dbSchema.projectSlugHistory.slug, values.slug as string));
-      } catch (err) {
-        console.error("Project slug history recording failed:", err);
-      }
-    }
-
-    const [updated] = await db
-      .select()
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, projectId))
-      .limit(1);
-
-    const parsed = {
-      ...updated,
-      settings: updated.settings ? JSON.parse(updated.settings as string) : {},
-    };
-    return c.json({ project: parsed });
-  } catch (err) {
-    console.error("Project update error:", err);
-    return c.json({ error: "Failed to update project" }, 500);
-  }
+  const result = await updateProjectAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ project: result.value });
 });
 
 const projectRoutes = teamRoutes.delete(
@@ -4172,112 +3929,32 @@ app.post("/api/account/uploads", async (c) => {
 });
 
 app.post("/api/projects/:projectId/uploads", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const formData = await c.req.formData();
-    const file = formData.get("file");
-
-    if (!file || !(file instanceof File)) {
-      return c.json({ error: "No file provided" }, 400);
-    }
-
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      return c.json(
-        { error: "Invalid file type. Allowed: JPEG, PNG, WebP, GIF" },
-        400,
-      );
-    }
-
-    if (file.size > MAX_IMAGE_SIZE) {
-      return c.json({ error: "File too large. Maximum 5MB" }, 400);
-    }
-
-    const ext = file.name.split(".").pop() ?? "jpg";
-    const key = `projects/${projectId}/${crypto.randomUUID()}.${ext}`;
-    const entitlements = await new EntitlementService(c.get("db")).resolveProject(
-      projectId,
-    );
-    if (!entitlements) return c.json({ error: "Project not found" }, 404);
-    const [projectState] = await c.get("db")
-      .select({ deletingAt: dbSchema.projects.deletingAt })
-      .from(dbSchema.projects)
-      .where(eq(dbSchema.projects.id, projectId))
-      .limit(1);
-    if (!projectState || projectState.deletingAt) {
-      return c.json({ error: "Project deletion is in progress" }, 409);
-    }
-    const storage = new StorageUsageService(c.get("db"));
-    const decision = await storage.reserve({
-      workspace: entitlements.workspace,
-      plan: entitlements.subscription.plan,
-      objectKey: key,
-      sizeBytes: file.size,
-      env: c.env,
-      projectId,
-      channel: "project_upload",
-    });
-    if (!decision.allowed) {
-      const failure = entitlementError(decision, "upload this file");
-      for (const [name, value] of Object.entries(failure.headers)) {
-        c.header(name, value);
-      }
-      return c.json(failure.body, failure.status);
-    }
-
-    try {
-      await c.env.UPLOADS.put(key, file.stream(), {
-        httpMetadata: { contentType: file.type },
-      });
-      await storage.commit({
-        workspace: entitlements.workspace,
-        projectId,
-        objectKey: key,
-        category: "project_asset",
-        sizeBytes: file.size,
-      });
-    } catch (error) {
-      try {
-        await c.env.UPLOADS.delete(key);
-      } catch (cleanupError) {
-        console.error("Failed to clean up rejected project upload:", cleanupError);
-      } finally {
-        await storage.releaseFailed(entitlements.workspace, key);
-      }
-      throw error;
-    }
-
-    return c.json({ key, url: `/api/uploads/${key}` }, 201);
-  } catch (err) {
-    if (err instanceof ProjectStorageUnavailableError) {
-      return c.json({ error: err.message }, 409);
-    }
-    console.error("Upload error:", err);
-    return c.json({ error: "Failed to upload file" }, 500);
+  const formData = await c.req.formData();
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return c.json({ error: "No file provided" }, 400);
   }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const result = await uploadProjectAssetAction(
+    projectActionDeps(c),
+    {
+      filename: file.name,
+      contentType: file.type as "image/jpeg",
+      sizeBytes: file.size,
+      bytes,
+    },
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 app.delete("/api/projects/:projectId/uploads/:key{.+}", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const key = c.req.param("key");
-    if (!key.startsWith(`projects/${projectId}/`)) {
-      return c.json({ error: "Upload not found" }, 404);
-    }
-    await c.env.UPLOADS.delete(key);
-    const entitlements = await new EntitlementService(c.get("db")).resolveProject(
-      projectId,
-    );
-    if (entitlements) {
-      await new StorageUsageService(c.get("db")).remove(
-        entitlements.workspace,
-        key,
-      );
-    }
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Delete upload error:", err);
-    return c.json({ error: "Failed to delete file" }, 500);
-  }
+  const result = await deleteProjectAssetAction(
+    projectActionDeps(c),
+    c.req.param("key"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // Serve uploaded files (public, no auth needed — handled outside auth middleware)
@@ -4311,397 +3988,152 @@ app.get("/api/uploads/:key{.+}", async (c) => {
 // ─── Event Types ─────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/event-types", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-  const service = new EventTypeService(db);
-  const eventTypes = await service.list(projectId);
-  return c.json({ eventTypes });
+  const result = await listEventTypesAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ eventTypes: result.value });
 });
 
 app.get("/api/projects/:projectId/event-types/:id", async (c) => {
-  const projectId = c.req.param("projectId");
-  const id = c.req.param("id");
-  const db = c.get("db");
-  const service = new EventTypeService(db);
-  const result = await service.getByIdWithSchedule(id);
-  if (!result || result.eventType.projectId !== projectId) {
-    return c.json({ error: "Event type not found" }, 404);
-  }
-  return c.json(result);
+  const result = await getEventTypeAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/event-types", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createEventTypeSchema, body);
-
-    const db = c.get("db");
-    const creation = await createWithResourceCapacity({
-      db,
-      projectId,
-      key: "eventTypes",
-      env: c.env,
-      channel: "rest",
-      create: async (transaction) =>
-        new EventTypeService(transaction).create(projectId, {
-          name: data.name,
-          slug: data.slug,
-          duration: data.duration,
-          description: data.description ?? undefined,
-          location: data.location ?? undefined,
-          color: data.color ?? undefined,
-          bufferBefore: data.bufferBefore,
-          bufferAfter: data.bufferAfter,
-          maxPerDay: data.maxPerDay ?? undefined,
-          maxPerWeek: data.maxPerWeek ?? undefined,
-          weekStart: data.weekStart,
-          enabled: data.enabled,
-          requiresConfirmation: data.requiresConfirmation,
-          bookingFormId: data.bookingFormId ?? undefined,
-          settings: data.settings ?? undefined,
-          copyFromEventTypeId: data.copyFromEventTypeId ?? undefined,
-        }),
-    });
-    if (!creation.ok) return c.json(creation.body, creation.status);
-    return c.json({ eventType: creation.value }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Event type creation error:", err);
-    return c.json({ error: "Failed to create event type" }, 500);
-  }
+  const result = await createEventTypeAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ eventType: result.value }, 201);
 });
 
 app.put("/api/projects/:projectId/event-types/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateEventTypeSchema, body);
-
-    const db = c.get("db");
-    const service = new EventTypeService(db);
-    const existing = await service.getById(id);
-    if (!existing || existing.projectId !== projectId) {
-      return c.json({ error: "Event type not found" }, 404);
-    }
-    const updateData: Record<string, unknown> = {};
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.slug !== undefined) updateData.slug = data.slug;
-    if (data.duration !== undefined) updateData.duration = data.duration;
-    if (data.description !== undefined)
-      updateData.description = data.description ?? undefined;
-    if (data.location !== undefined)
-      updateData.location = data.location ?? undefined;
-    if (data.color !== undefined) updateData.color = data.color;
-    if (data.bufferBefore !== undefined)
-      updateData.bufferBefore = data.bufferBefore;
-    if (data.bufferAfter !== undefined)
-      updateData.bufferAfter = data.bufferAfter;
-    if (data.maxPerDay !== undefined) updateData.maxPerDay = data.maxPerDay;
-    if (data.maxPerWeek !== undefined) updateData.maxPerWeek = data.maxPerWeek;
-    if (data.weekStart !== undefined) updateData.weekStart = data.weekStart;
-    if (data.enabled !== undefined) updateData.enabled = data.enabled;
-    if (data.requiresConfirmation !== undefined)
-      updateData.requiresConfirmation = data.requiresConfirmation;
-    if (data.bookingFormId !== undefined)
-      updateData.bookingFormId = data.bookingFormId;
-    if (data.settings !== undefined)
-      updateData.settings = data.settings ?? undefined;
-
-    const eventType = await service.update(
-      id,
-      updateData as Parameters<typeof service.update>[1],
-    );
-
-    if (!eventType) {
-      return c.json({ error: "Event type not found" }, 404);
-    }
-
-    return c.json({ eventType });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Event type update error:", err);
-    return c.json({ error: "Failed to update event type" }, 500);
-  }
+  const result = await updateEventTypeAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ eventType: result.value });
 });
 
 app.delete("/api/projects/:projectId/event-types/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new EventTypeService(db);
-
-    const existing = await service.getById(id);
-    if (!existing || existing.projectId !== projectId) {
-      return c.json({ error: "Event type not found" }, 404);
-    }
-
-    await service.delete(id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Event type deletion error:", err);
-    return c.json({ error: "Failed to delete event type" }, 500);
-  }
+  const result = await deleteEventTypeAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Schedules ───────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/schedules", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-  const service = new ScheduleService(db);
-  const schedules = await service.list(projectId);
-  return c.json({ schedules });
+  const result = await listSchedulesAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ schedules: result.value });
 });
 
 app.post("/api/projects/:projectId/schedules", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createScheduleSchema, body);
-
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    const schedule = await service.create(projectId, data);
-
-    return c.json({ schedule }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Schedule creation error:", err);
-    return c.json({ error: "Failed to create schedule" }, 500);
-  }
+  const result = await createScheduleAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ schedule: result.value }, 201);
 });
 
 app.put("/api/projects/:projectId/schedules/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(createScheduleSchema, body);
-
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    if (!(await scheduleBelongsToProject(db, id, projectId))) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-    const schedule = await service.update(id, data);
-
-    if (!schedule) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-
-    return c.json({ schedule });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Schedule update error:", err);
-    return c.json({ error: "Failed to update schedule" }, 500);
-  }
+  const result = await updateScheduleAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ schedule: result.value });
 });
 
 app.delete("/api/projects/:projectId/schedules/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    if (!(await scheduleBelongsToProject(db, id, projectId))) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-    await service.delete(id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Schedule deletion error:", err);
-    return c.json({ error: "Failed to delete schedule" }, 500);
-  }
+  const result = await deleteScheduleAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.put("/api/projects/:projectId/schedules/:id/rules", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateAvailabilityRulesSchema, body);
-
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    if (!(await scheduleBelongsToProject(db, id, projectId))) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-
-    // Also update timezone if provided
-    if (body.timezone) {
-      await service.update(id, { timezone: body.timezone });
-    }
-
-    const rules = await service.setRules(id, data.rules);
-
-    return c.json({ rules });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Schedule rules update error:", err);
-    return c.json({ error: "Failed to update schedule rules" }, 500);
-  }
+  const body = await c.req.json();
+  const result = await setScheduleRulesAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    body,
+    typeof body.timezone === "string" ? body.timezone : undefined,
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ rules: result.value });
 });
 
 app.get("/api/projects/:projectId/schedules/:id/rules", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    if (!(await scheduleBelongsToProject(db, id, projectId))) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-    const rules = await service.getRules(id);
-    return c.json({ rules });
-  } catch (err) {
-    console.error("Schedule rules fetch error:", err);
-    return c.json({ error: "Failed to fetch schedule rules" }, 500);
-  }
+  const result = await getScheduleAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ rules: result.value.rules });
 });
 
 app.get("/api/projects/:projectId/schedules/:id/overrides", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    if (!(await scheduleBelongsToProject(db, id, projectId))) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-    const overrides = await service.getOverrides(id);
-    return c.json({ overrides });
-  } catch (err) {
-    console.error("Schedule overrides fetch error:", err);
-    return c.json({ error: "Failed to fetch schedule overrides" }, 500);
-  }
+  const result = await getScheduleAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ overrides: result.value.overrides });
 });
 
 app.post("/api/projects/:projectId/schedules/:id/overrides", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const db = c.get("db");
-    const service = new ScheduleService(db);
-    if (!(await scheduleBelongsToProject(db, id, projectId))) {
-      return c.json({ error: "Schedule not found" }, 404);
-    }
-    const override = await service.addOverride(id, body);
-    return c.json({ override }, 201);
-  } catch (err) {
-    console.error("Schedule override creation error:", err);
-    return c.json({ error: "Failed to add override" }, 500);
-  }
+  const result = await addScheduleOverrideAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ override: result.value }, 201);
 });
 
 app.delete(
   "/api/projects/:projectId/schedules/:id/overrides/:overrideId",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const id = c.req.param("id");
-      const overrideId = c.req.param("overrideId");
-      const db = c.get("db");
-      const service = new ScheduleService(db);
-      if (!(await scheduleBelongsToProject(db, id, projectId))) {
-        return c.json({ error: "Schedule not found" }, 404);
-      }
-      const overrides = await service.getOverrides(id);
-      if (!overrides.some((override) => override.id === overrideId)) {
-        return c.json({ error: "Override not found" }, 404);
-      }
-      await service.deleteOverride(overrideId);
-      return c.json({ success: true });
-    } catch (err) {
-      console.error("Schedule override deletion error:", err);
-      return c.json({ error: "Failed to delete override" }, 500);
-    }
+    const result = await deleteScheduleOverrideAction(
+      projectActionDeps(c),
+      c.req.param("id"),
+      c.req.param("overrideId"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 // ─── Bookings ────────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/bookings", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const db = c.get("db");
-    const service = new BookingService(db);
-    await service.expirePastPendingBookings();
-    const bookings = await service.listByProject(projectId);
-    return c.json({ bookings });
-  } catch (err) {
-    console.error("Bookings list error:", err);
-    return c.json({ error: "Failed to fetch bookings" }, 500);
-  }
+  const result = await listBookingsAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ bookings: result.value });
 });
 
 app.get("/api/projects/:projectId/bookings/:id", async (c) => {
-  try {
-    const bookingId = c.req.param("id");
-    const db = c.get("db");
-
-    const [booking] = await db
-      .select()
-      .from(dbSchema.bookings)
-      .where(eq(dbSchema.bookings.id, bookingId))
-      .limit(1);
-    if (!booking) return c.json({ error: "Booking not found" }, 404);
-
-    // Get event type name
-    const [eventType] = await db
-      .select()
-      .from(dbSchema.eventTypes)
-      .where(eq(dbSchema.eventTypes.id, booking.eventTypeId))
-      .limit(1);
-
-    // Get form response fields if exists
-    const formFields: Array<{ label: string; type: string; value: string }> = [];
-    if (booking.formResponseId) {
-      const fieldValues = await db
-        .select()
-        .from(dbSchema.formFieldValues)
-        .where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
-      for (const fv of fieldValues) {
-        const [field] = await db
-          .select()
-          .from(dbSchema.formFields)
-          .where(
-            and(
-              eq(dbSchema.formFields.formId, fv.formId),
-              eq(dbSchema.formFields.id, fv.fieldId),
-            ),
-          )
-          .limit(1);
-        formFields.push({
-          label: field?.label ?? "Unknown",
-          type: field?.type ?? "text",
-          value: fv.value ?? "",
-        });
-      }
-    }
-
-    return c.json({
-      booking,
-      eventTypeName: eventType?.name ?? "Event",
-      formFields,
-    });
-  } catch (err) {
-    console.error("Booking detail error:", err);
-    return c.json({ error: "Failed to fetch booking" }, 500);
-  }
+  const result = await getBookingAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
@@ -4737,65 +4169,12 @@ app.patch("/api/projects/:projectId/bookings/:id/cancel", async (c) => {
 // ─── Booking Form Response ───────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/bookings/:id/form-response", async (c) => {
-  try {
-    const bookingId = c.req.param("id");
-    const db = c.get("db");
-
-    const [booking] = await db
-      .select()
-      .from(dbSchema.bookings)
-      .where(eq(dbSchema.bookings.id, bookingId))
-      .limit(1);
-
-    if (!booking || !booking.formResponseId) {
-      return c.json({ fields: [] });
-    }
-
-    // Get field values
-    const fieldValues = await db
-      .select()
-      .from(dbSchema.formFieldValues)
-      .where(eq(dbSchema.formFieldValues.responseId, booking.formResponseId));
-
-    // Fetch field definitions for labels
-    const allFieldDefs: Array<{ id: string; label: string; type: string }> = [];
-    for (const fv of fieldValues) {
-      const [field] = await db
-        .select()
-        .from(dbSchema.formFields)
-        .where(
-          and(
-            eq(dbSchema.formFields.formId, fv.formId),
-            eq(dbSchema.formFields.id, fv.fieldId),
-          ),
-        )
-        .limit(1);
-      if (field) {
-        allFieldDefs.push({
-          id: field.id,
-          label: field.label,
-          type: field.type,
-        });
-      }
-    }
-
-    const fields = fieldValues.map((fv) => {
-      const def = allFieldDefs.find((d) => d.id === fv.fieldId);
-      return {
-        label: def?.label ?? "Unknown",
-        type: def?.type ?? "text",
-        value:
-          def?.type === "file"
-            ? uploadedFileDisplayValue(fv.value, fv.fileUrl)
-            : (fv.value ?? ""),
-      };
-    });
-
-    return c.json({ fields });
-  } catch (err) {
-    console.error("Form response fetch error:", err);
-    return c.json({ error: "Failed to fetch form response" }, 500);
-  }
+  const result = await getBookingFormResponseAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Confirm Booking ─────────────────────────────────────────────────────────
@@ -4855,1039 +4234,404 @@ app.patch("/api/projects/:projectId/bookings/:id/decline", async (c) => {
 // ─── Forms ───────────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/forms", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-  const service = new FormService(db);
-  const forms = await service.list(projectId);
-  return c.json({ forms });
+  const result = await listFormsAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ forms: result.value });
 });
 
 app.get("/api/projects/:projectId/forms/:formId", async (c) => {
-  const formId = c.req.param("formId");
-  const db = c.get("db");
-  const service = new FormService(db);
-  const form = await service.getFullForm(formId);
-  if (!form) {
-    return c.json({ error: "Form not found" }, 404);
-  }
-  return c.json({ form });
+  const result = await getFormAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ form: result.value });
 });
 
 app.post("/api/projects/:projectId/forms", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createFormSchema, body);
-
-    const db = c.get("db");
-    const service = new FormService(db);
-
-    // Check slug uniqueness within the project
-    const existingSlug = await service.getBySlug(projectId, data.slug);
-    if (existingSlug) {
-      return c.json(
-        {
-          error:
-            "This form slug is already taken. Please choose a different one.",
-        },
-        409,
-      );
-    }
-
-    const creation = await createWithResourceCapacity({
-      db,
-      projectId,
-      key: "forms",
-      env: c.env,
-      channel: "rest",
-      create: async (transaction) =>
-        new FormService(transaction).create(projectId, data),
-    });
-    if (!creation.ok) return c.json(creation.body, creation.status);
-    return c.json({ form: creation.value }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Form creation error:", err);
-    return c.json({ error: "Failed to create form" }, 500);
-  }
+  const result = await createFormAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ form: result.value }, 201);
 });
 
 app.put("/api/projects/:projectId/forms/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(updateFormSchema, body);
-
-    const db = c.get("db");
-    const service = new FormService(db);
-
-    // Check slug uniqueness within the project if slug is being changed
-    if (data.slug) {
-      const existing = await service.getBySlug(projectId, data.slug);
-      if (existing && existing.id !== id) {
-        return c.json(
-          {
-            error:
-              "This form slug is already taken. Please choose a different one.",
-          },
-          409,
-        );
-      }
-    }
-
-    const form = await service.update(id, data);
-
-    if (!form) {
-      return c.json({ error: "Form not found" }, 404);
-    }
-
-    return c.json({ form });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Form update error:", err);
-    return c.json({ error: "Failed to update form" }, 500);
-  }
+  const result = await updateFormAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ form: result.value });
 });
 
 app.delete("/api/projects/:projectId/forms/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new FormService(db);
-    await service.delete(id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Form deletion error:", err);
-    return c.json({ error: "Failed to delete form" }, 500);
-  }
+  const result = await deleteFormAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Form Steps ──────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/forms/:formId/steps", async (c) => {
-  const formId = c.req.param("formId");
-  const db = c.get("db");
-  const service = new FormService(db);
-  const steps = await service.listSteps(formId);
-  return c.json({ steps });
+  const result = await listFormStepsAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ steps: result.value });
 });
 
 app.post("/api/projects/:projectId/forms/:formId/steps", async (c) => {
-  try {
-    const formId = c.req.param("formId");
-    const body = await c.req.json();
-    const data = validate(createFormStepSchema, body);
-
-    const db = c.get("db");
-    const service = new FormService(db);
-    const step = await service.createStep(formId, data);
-
-    return c.json({ step }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Form step creation error:", err);
-    return c.json({ error: "Failed to create form step" }, 500);
-  }
+  const result = await createFormStepAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ step: result.value }, 201);
 });
 
 app.put("/api/projects/:projectId/forms/:formId/steps/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateFormStepSchema, body);
-
-    const db = c.get("db");
-    const service = new FormService(db);
-    const step = await service.updateStep(id, data);
-
-    if (!step) {
-      return c.json({ error: "Step not found" }, 404);
-    }
-
-    return c.json({ step });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Form step update error:", err);
-    return c.json({ error: "Failed to update form step" }, 500);
-  }
+  const result = await updateFormStepAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ step: result.value });
 });
 
 app.delete("/api/projects/:projectId/forms/:formId/steps/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new FormService(db);
-    await service.deleteStep(id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Form step deletion error:", err);
-    return c.json({ error: "Failed to delete form step" }, 500);
-  }
+  const result = await deleteFormStepAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.put("/api/projects/:projectId/forms/:formId/steps/reorder", async (c) => {
-  try {
-    const formId = c.req.param("formId");
-    const body = await c.req.json();
-    const { stepIds } = body as { stepIds: string[] };
-
-    const db = c.get("db");
-    const service = new FormService(db);
-    const steps = await service.reorderSteps(formId, stepIds);
-
-    return c.json({ steps });
-  } catch (err) {
-    console.error("Form step reorder error:", err);
-    return c.json({ error: "Failed to reorder steps" }, 500);
-  }
+  const result = await reorderFormStepsAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ steps: result.value });
 });
 
 // ─── Form Fields ─────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/forms/:formId/fields", async (c) => {
-  const formId = c.req.param("formId");
-  const db = c.get("db");
-  const service = new FormService(db);
-  const fields = await service.listFields(formId);
-  return c.json({ fields });
+  const result = await listFormFieldsAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ fields: result.value });
 });
 
 app.post("/api/projects/:projectId/forms/:formId/fields", async (c) => {
-  try {
-    const body = await c.req.json();
-    const data = validate(createFormFieldSchema, body);
-
-    const db = c.get("db");
-    const service = new FormService(db);
-    const field = await service.createField(data);
-
-    if (!field) {
-      return c.json({ error: "Step not found" }, 404);
-    }
-
-    return c.json({ field }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Form field creation error:", err);
-    return c.json({ error: "Failed to create form field" }, 500);
-  }
+  const result = await createFormFieldAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ field: result.value }, 201);
 });
 
 app.put("/api/projects/:projectId/forms/:formId/fields/reorder", async (c) => {
-  try {
-    const formId = c.req.param("formId");
-    const body = await c.req.json();
-    const data = validate(reorderFieldsSchema, body);
-    const db = c.get("db");
-    const service = new FormService(db);
-    await service.reorderFields(formId, data.stepId, data.fieldIds);
-    return c.json({ success: true });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Field reorder error:", err);
-    return c.json({ error: "Failed to reorder fields" }, 500);
-  }
+  const result = await reorderFormFieldsAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.put("/api/projects/:projectId/forms/:formId/fields/:id", async (c) => {
-  try {
-    const formId = c.req.param("formId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateFormFieldSchema, body);
-
-    const db = c.get("db");
-    const service = new FormService(db);
-    const field = await service.updateField(formId, id, data);
-
-    if (!field) {
-      return c.json({ error: "Field not found" }, 404);
-    }
-
-    return c.json({ field });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Form field update error:", err);
-    return c.json({ error: "Failed to update form field" }, 500);
-  }
+  const result = await updateFormFieldAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ field: result.value });
 });
 
 app.delete("/api/projects/:projectId/forms/:formId/fields/:id", async (c) => {
-  try {
-    const formId = c.req.param("formId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new FormService(db);
-    await service.deleteField(formId, id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Form field deletion error:", err);
-    return c.json({ error: "Failed to delete form field" }, 500);
-  }
+  const result = await deleteFormFieldAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Form Responses ──────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/forms/:formId/responses", async (c) => {
-  const formId = c.req.param("formId");
-  const db = c.get("db");
-  const service = new FormService(db);
-  const responses = await service.listResponsesWithValues(formId);
-  return c.json({ responses });
+  const result = await listFormResponsesAction(
+    projectActionDeps(c),
+    c.req.param("formId"),
+    {
+      limit: Number(c.req.query("limit")) || undefined,
+      offset: Number(c.req.query("offset")) || undefined,
+    },
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ responses: result.value });
 });
 
 app.get(
   "/api/projects/:projectId/forms/:formId/responses/:responseId/files/:valueId",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const formId = c.req.param("formId");
-      const responseId = c.req.param("responseId");
-      const valueId = c.req.param("valueId");
-      const db = c.get("db");
-
-      const result = await getPrivateFormFileObject(db, c.env, {
-        projectId,
-        formId,
-        responseId,
-        valueId,
-      });
-
-      if (!result.ok) {
-        return c.json({ error: result.error }, result.status);
-      }
-
-      return createPrivateFileResponse(result.object, result.filename);
-    } catch (err) {
-      console.error("Form file download error:", err);
-      return c.json({ error: "Failed to download file" }, 500);
-    }
+    const result = await getFormResponseFileAction(projectActionDeps(c), {
+      formId: c.req.param("formId"),
+      responseId: c.req.param("responseId"),
+      valueId: c.req.param("valueId"),
+    });
+    if (!result.ok) return actionFailureResponse(c, result);
+    return createPrivateFileResponse(result.value.object, result.value.filename);
   },
 );
 
 app.get(
   "/api/projects/:projectId/forms/:formId/responses/:responseId",
   async (c) => {
-    const responseId = c.req.param("responseId");
-    const db = c.get("db");
-    const service = new FormService(db);
-    const response = await service.getResponseWithValues(responseId);
-    if (!response) {
-      return c.json({ error: "Response not found" }, 404);
-    }
-    return c.json({ response });
+    const result = await getFormResponseAction(
+      projectActionDeps(c),
+      c.req.param("formId"),
+      c.req.param("responseId"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json({ response: result.value });
   },
 );
 
 app.delete("/api/projects/:projectId/form-responses/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const db = c.get("db");
-
-    const existing = await db
-      .select({ id: dbSchema.formResponses.id })
-      .from(dbSchema.formResponses)
-      .where(eq(dbSchema.formResponses.id, id))
-      .get();
-
-    if (!existing) {
-      return c.json({ error: "Form response not found" }, 404);
-    }
-
-    // Delete field values first, then the response
-    await db
-      .delete(dbSchema.formFieldValues)
-      .where(eq(dbSchema.formFieldValues.responseId, id));
-    await db
-      .delete(dbSchema.formResponses)
-      .where(eq(dbSchema.formResponses.id, id));
-
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Delete form response error:", err);
-    return c.json({ error: "Failed to delete form response" }, 500);
-  }
+  const result = await deleteFormResponseAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Contacts ────────────────────────────────────────────────────────────────
 
-const CONTACT_IMPORT_ERROR_LIMIT = 20;
-
-interface ContactImportError {
-  row: number;
-  reason: string;
-}
-
-function getContactImportCell(
-  row: Record<string, string>,
-  column: string | undefined,
-): string {
-  if (!column) return "";
-  return (row[column] ?? "").trim();
-}
-
-function normalizeContactImportText(
-  value: string,
-  maxLength: number,
-): string | undefined {
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  return trimmed.slice(0, maxLength);
-}
-
-function normalizeContactImportEmail(value: string): string | undefined {
-  const trimmed = value.trim().toLowerCase();
-  return trimmed || undefined;
-}
-
-function getContactImportName(
-  mappedName: string,
-  email: string | undefined,
-): string | undefined {
-  const name = normalizeContactImportText(mappedName, 200);
-  if (name) return name;
-  if (!email) return undefined;
-  return email.split("@")[0]?.slice(0, 200) || undefined;
-}
-
-function addContactImportError(
-  errors: ContactImportError[],
-  row: number,
-  reason: string,
-) {
-  if (errors.length >= CONTACT_IMPORT_ERROR_LIMIT) return;
-  errors.push({ row, reason });
-}
-
-function getContactImportValidationErrorReason(data: {
-  name: string | undefined;
-  email: string | undefined;
-}): string {
-  if (!data.name) return "Name or email is required";
-  if (data.email) return "Invalid email address";
-  return "Invalid contact data";
-}
-
 app.get("/api/projects/:projectId/contacts", async (c) => {
-  const projectId = c.req.param("projectId");
   const url = new URL(c.req.url);
-  const search = url.searchParams.get("search") ?? undefined;
-  const tagId = url.searchParams.get("tagId") ?? undefined;
-  const tagIds = url.searchParams.getAll("tagIds");
-  const matchAllTags = url.searchParams.get("matchAllTags") === "true";
-  const stageTagId = url.searchParams.get("stageTagId") ?? undefined;
-  const excludeStageTagIds = url.searchParams.getAll("excludeStageTagIds");
-  const activityType = url.searchParams.get("activityType") ?? undefined;
-  const activitySinceDays = url.searchParams.get("activitySinceDays");
-  const noActivitySinceDays = url.searchParams.get("noActivitySinceDays");
-  const bookingStatus = url.searchParams.get("bookingStatus") ?? undefined;
-  const sort = url.searchParams.get("sort");
-
-  const validActivity = [
-    "form_submitted",
-    "booked",
-    "cancelled",
-    "tag_added",
-    "tag_removed",
-    "workflow_researched",
-  ] as const;
-  const validBooking = [
-    "confirmed",
-    "cancelled",
-    "rescheduled",
-    "pending",
-    "declined",
-  ] as const;
-
-  const parsedActivitySince = activitySinceDays
-    ? Number(activitySinceDays)
-    : NaN;
-  const parsedNoActivitySince = noActivitySinceDays
-    ? Number(noActivitySinceDays)
-    : NaN;
-
-  // Pagination: default 50/page, clamped so the page-decoration queries stay
-  // well under D1's 100-bound-param cap. Missing params ⇒ first page of 50.
-  const parsedLimit = Number(url.searchParams.get("limit"));
-  const limit =
-    Number.isFinite(parsedLimit) && parsedLimit > 0
-      ? Math.min(parsedLimit, 100)
-      : 50;
-  const parsedOffset = Number(url.searchParams.get("offset"));
-  const offset =
-    Number.isFinite(parsedOffset) && parsedOffset > 0 ? parsedOffset : 0;
-
-  const db = c.get("db");
-  const service = new ContactService(db);
-  const { contacts, total } = await service.listPage(
-    projectId,
-    {
-      search,
-      tagId,
-      tagIds: tagIds.length > 0 ? tagIds : undefined,
-      matchAllTags,
-      stageTagId,
-      excludeStageTagIds:
-        excludeStageTagIds.length > 0 ? excludeStageTagIds : undefined,
-      activityType:
-        activityType &&
-        (validActivity as readonly string[]).includes(activityType)
-          ? (activityType as (typeof validActivity)[number])
-          : undefined,
-      activitySinceDays:
-        Number.isFinite(parsedActivitySince) && parsedActivitySince >= 0
-          ? parsedActivitySince
-          : undefined,
-      noActivitySinceDays:
-        Number.isFinite(parsedNoActivitySince) && parsedNoActivitySince >= 0
-          ? parsedNoActivitySince
-          : undefined,
-      bookingStatus:
-        bookingStatus &&
-        (validBooking as readonly string[]).includes(bookingStatus)
-          ? (bookingStatus as (typeof validBooking)[number])
-          : undefined,
-      sort:
-        sort === "nextActionDeadline"
-          ? "nextActionDeadline"
-          : undefined,
-    },
-    { limit, offset },
-  );
-  return c.json({ contacts, total });
+  function optionalNumber(name: string): number | undefined {
+    const raw = url.searchParams.get(name);
+    return raw === null ? undefined : Number(raw);
+  }
+  const result = await listContactsAction(projectActionDeps(c), {
+    search: url.searchParams.get("search") ?? undefined,
+    tagId: url.searchParams.get("tagId") ?? undefined,
+    tagIds: url.searchParams.getAll("tagIds"),
+    matchAllTags: url.searchParams.get("matchAllTags") === "true",
+    stageTagId: url.searchParams.get("stageTagId") ?? undefined,
+    excludeStageTagIds: url.searchParams.getAll("excludeStageTagIds"),
+    activityType: url.searchParams.get("activityType") ?? undefined,
+    activitySinceDays: optionalNumber("activitySinceDays"),
+    noActivitySinceDays: optionalNumber("noActivitySinceDays"),
+    bookingStatus: url.searchParams.get("bookingStatus") ?? undefined,
+    sort: url.searchParams.get("sort") ?? undefined,
+    limit: optionalNumber("limit") ?? 50,
+    offset: optionalNumber("offset") ?? 0,
+  });
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Contact Views (saved filters / kanban configs) ──────────────────────────
 
 app.get("/api/projects/:projectId/contact-views", async (c) => {
-  const projectId = c.req.param("projectId");
-  const db = c.get("db");
-  const service = new ContactService(db);
-  const views = await service.listViews(projectId);
-  return c.json({ views });
+  const result = await listContactViewsAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/contact-views", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createContactViewSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-    const view = await service.createView(projectId, data);
-    return c.json({ view }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Contact view creation error:", err);
-    return c.json({ error: "Failed to create view" }, 500);
-  }
+  const result = await createContactViewAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 app.put("/api/projects/:projectId/contact-views/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateContactViewSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-    const view = await service.updateView(projectId, id, data);
-
-    if (!view) return c.json({ error: "View not found" }, 404);
-    if (view.projectId !== projectId) {
-      return c.json({ error: "View not found" }, 404);
-    }
-    return c.json({ view });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Contact view update error:", err);
-    return c.json({ error: "Failed to update view" }, 500);
-  }
+  const result = await updateContactViewAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.delete("/api/projects/:projectId/contact-views/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new ContactService(db);
-    await service.deleteView(projectId, id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Contact view deletion error:", err);
-    return c.json({ error: "Failed to delete view" }, 500);
-  }
+  const result = await deleteContactViewAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/contacts", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createContactSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-
-    // Dedupe first: a matching contact returns the existing row (no duplicate,
-    // no trigger, and it doesn't count against the plan limit).
-    const duplicate = await service.findDuplicate(projectId, data);
-    if (duplicate) {
-      return c.json({ contact: duplicate }, 200);
-    }
-
-    const creation = await createWithResourceCapacity({
-      db,
-      projectId,
-      key: "contacts",
-      env: c.env,
-      channel: "rest",
-      create: async (transaction) =>
-        new ContactService(transaction).create(projectId, data),
-    });
-    if (!creation.ok) return c.json(creation.body, creation.status);
-
-    await dispatchWorkflowTrigger(db, c.env, projectId, "new_contact_created", {
-      projectId,
-      contactId: creation.value.id,
-      contactEmail: creation.value.email ?? undefined,
-      contactName: creation.value.name,
-      metadata: { source: "manual" },
-    });
-    return c.json({ contact: creation.value }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Contact creation error:", err);
-    return c.json({ error: "Failed to create contact" }, 500);
-  }
+  const result = await createContactAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json({ contact: result.value.contact }, result.status);
 });
 
 app.post("/api/projects/:projectId/contacts/import", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(importContactsSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-    const existing = await service.list(projectId);
-    const existingEmails = new Set(
-      existing
-        .map((contact) => contact.email?.toLowerCase())
-        .filter((email): email is string => !!email),
-    );
-
-    let skipped = 0;
-    let failed = 0;
-    const errors: ContactImportError[] = [];
-    const contactsToImport: Array<Parameters<ContactService["create"]>[1]> = [];
-    const pendingEmails = new Set<string>();
-
-    for (const [index, row] of data.rows.entries()) {
-      const rowNumber = index + 2;
-      const email = normalizeContactImportEmail(
-        getContactImportCell(row, data.mapping.email),
-      );
-      const contactData = {
-        name: getContactImportName(
-          getContactImportCell(row, data.mapping.name),
-          email,
-        ),
-        email,
-        phone: normalizeContactImportText(
-          getContactImportCell(row, data.mapping.phone),
-          30,
-        ),
-        notes: normalizeContactImportText(
-          getContactImportCell(row, data.mapping.notes),
-          5000,
-        ),
-      };
-
-      const parsedContact = createContactSchema.safeParse(contactData);
-      if (!parsedContact.success) {
-        failed += 1;
-        addContactImportError(
-          errors,
-          rowNumber,
-          getContactImportValidationErrorReason(contactData),
-        );
-        continue;
-      }
-
-      if (email && (existingEmails.has(email) || pendingEmails.has(email))) {
-        skipped += 1;
-        addContactImportError(errors, rowNumber, "Email already exists");
-        continue;
-      }
-      if (email) pendingEmails.add(email);
-      contactsToImport.push(parsedContact.data);
-    }
-
-    const result = await importContactsWithCapacity(
-      db,
-      projectId,
-      contactsToImport,
-      c.env,
-    );
-    if (!result.ok) return c.json(result.body, result.status);
-    skipped += result.skipped;
-
-    const snapshot = await new EntitlementService(db).resource(
-      projectId,
-      "contacts",
-      0,
-    );
-    const remainingCapacity =
-      snapshot.limit === null
-        ? null
-        : Math.max(0, snapshot.limit - (snapshot.used ?? 0));
-
-    return c.json({
-      total: data.rows.length,
-      imported: result.created,
-      skipped,
-      failed,
-      remainingCapacity,
-      errors,
-    });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Contact import error:", err);
-    return c.json({ error: "Failed to import contacts" }, 500);
-  }
+  const result = await importContactsAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.get("/api/projects/:projectId/contacts/:id", async (c) => {
-  const projectId = c.req.param("projectId");
-  const id = c.req.param("id");
-  const db = c.get("db");
-  const service = new ContactService(db);
-  const contact = await service.getWithDetails(id, projectId);
-  if (!contact) {
-    return c.json({ error: "Contact not found" }, 404);
-  }
-  return c.json({ contact });
+  const result = await getContactAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.get(
   "/api/projects/:projectId/contacts/:contactId/activities",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const contactId = c.req.param("contactId");
-      const options = parseContactActivityListOptions({
+    const result = await getContactActivityAction(
+      projectActionDeps(c),
+      c.req.param("contactId"),
+      {
         category: c.req.query("category"),
         limit: c.req.query("limit"),
         cursor: c.req.query("cursor"),
-      });
-      const service = new ContactActivityService(c.get("db"));
-      const page = await service.list(projectId, contactId, options);
-      if (!page) return c.json({ error: "Contact not found" }, 404);
-      return c.json(page);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith("Invalid")) {
-        return c.json({ error: error.message }, 400);
-      }
-      if (
-        error instanceof Error &&
-        error.message === "Activity limit must be an integer from 1 to 100"
-      ) {
-        return c.json({ error: error.message }, 400);
-      }
-      console.error("Contact activity list error:", error);
-      return c.json({ error: "Failed to fetch contact activity" }, 500);
-    }
+      },
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 app.put("/api/projects/:projectId/contacts/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateContactSchema, body);
-
-    const db = c.get("db");
-    const service = new ContactService(db);
-
-    if (!(await service.contactInProject(projectId, id))) {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-    const contact = await service.update(id, data);
-
-    if (!contact) {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-
-    return c.json({ contact });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Contact update error:", err);
-    return c.json({ error: "Failed to update contact" }, 500);
-  }
+  const result = await updateContactAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.put(
   "/api/projects/:projectId/contacts/:contactId/next-action",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const contactId = c.req.param("contactId");
-      const data = validate(setNextActionSchema, await c.req.json());
-      const service = new ContactService(c.get("db"));
-
-      if (!(await service.contactInProject(projectId, contactId))) {
-        return c.json({ error: "Contact not found" }, 404);
-      }
-
-      const contact = await service.setNextAction(
-        contactId,
-        data.text === null
-          ? null
-          : {
-              text: data.text,
-              deadline: data.deadline ? new Date(data.deadline) : null,
-            },
-      );
-      return c.json({ contact });
-    } catch (err) {
-      if (err instanceof Error && err.name === "ZodError") {
-        return c.json({ error: "Invalid request" }, 400);
-      }
-      console.error("Next action update error:", err);
-      return c.json({ error: "Failed to update next action" }, 500);
-    }
+    const result = await setContactNextActionAction(
+      projectActionDeps(c),
+      c.req.param("contactId"),
+      await c.req.json(),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 app.delete("/api/projects/:projectId/contacts/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new ContactService(db);
-    if (!(await service.contactInProject(projectId, id))) {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-    await service.delete(id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Contact deletion error:", err);
-    return c.json({ error: "Failed to delete contact" }, 500);
-  }
+  const result = await deleteContactAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Tags ────────────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/tags", async (c) => {
-  try {
-    const data = validate(listTagsQuerySchema, {
-      ...(c.req.query("search") ? { search: c.req.query("search") } : {}),
-      ...(c.req.query("limit") ? { limit: c.req.query("limit") } : {}),
-      ...(c.req.query("cursor") ? { cursor: c.req.query("cursor") } : {}),
-    });
-    const service = new TagService(c.get("db"));
-    return c.json(await service.list(c.req.param("projectId"), data));
-  } catch (err) {
-    if (
-      (err instanceof Error && err.name === "ZodError") ||
-      (err instanceof Error && err.message === "Invalid tag cursor")
-    ) {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Tag list error:", err);
-    return c.json({ error: "Failed to fetch tags" }, 500);
-  }
+  const result = await listTagsAction(projectActionDeps(c), {
+    search: c.req.query("search"),
+    limit: c.req.query("limit"),
+    cursor: c.req.query("cursor"),
+  });
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.get("/api/projects/:projectId/tags/:id", async (c) => {
-  try {
-    const service = new TagService(c.get("db"));
-    const tag = await service.get(c.req.param("projectId"), c.req.param("id"));
-    if (!tag) return c.json({ error: "Tag not found" }, 404);
-    return c.json({ tag });
-  } catch (err) {
-    console.error("Tag fetch error:", err);
-    return c.json({ error: "Failed to fetch tag" }, 500);
-  }
+  const result = await getTagAction(projectActionDeps(c), c.req.param("id"));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/tags", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const data = validate(createTagSchema, await c.req.json());
-    const tag = await new TagService(c.get("db")).create(projectId, data);
-
-    return c.json({ tag }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    if (err instanceof TagNameConflictError) {
-      return c.json(
-        { error: err.message, code: "TAG_NAME_CONFLICT" },
-        409,
-      );
-    }
-    console.error("Tag creation error:", err);
-    return c.json({ error: "Failed to create tag" }, 500);
-  }
+  const result = await createTagAction(projectActionDeps(c), await c.req.json());
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 app.delete("/api/projects/:projectId/tags/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const result = await new TagService(c.get("db")).delete(projectId, id);
-    if (result.status === "not_found") {
-      return c.json({ error: "Tag not found" }, 404);
-    }
-    if (result.status === "in_use") {
-      return c.json(
-        {
-          error: "Tag is referenced by one or more workflows",
-          code: "TAG_IN_USE",
-          workflows: result.workflows,
-        },
-        409,
-      );
-    }
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Tag deletion error:", err);
-    return c.json({ error: "Failed to delete tag" }, 500);
-  }
+  const result = await deleteTagAction(projectActionDeps(c), c.req.param("id"));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.patch("/api/projects/:projectId/tags/:id", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const id = c.req.param("id");
-    const data = validate(updateTagSchema, await c.req.json());
-    const tag = await new TagService(c.get("db")).update(projectId, id, data);
-    if (!tag) return c.json({ error: "Tag not found" }, 404);
-
-    return c.json({ tag });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    if (err instanceof TagNameConflictError) {
-      return c.json(
-        { error: err.message, code: "TAG_NAME_CONFLICT" },
-        409,
-      );
-    }
-    console.error("Tag update error:", err);
-    return c.json({ error: "Failed to update tag" }, 500);
-  }
+  const result = await updateTagAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // Assign tag to contact
 app.post("/api/projects/:projectId/contacts/:contactId/tags", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const contactId = c.req.param("contactId");
-    const { tagId } = validate(assignTagSchema, await c.req.json());
-
-    const db = c.get("db");
-    const result = await new TagService(db).assignToContact(
-      projectId,
-      contactId,
-      tagId,
-    );
-    if (result.status === "contact_not_found") {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-    if (result.status === "tag_not_found") {
-      return c.json({ error: "Tag not found" }, 404);
-    }
-
-    if (result.changed) {
-      c.executionCtx.waitUntil(
-        dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
-          projectId,
-          contactId,
-          tagId,
-        }),
-      );
-    }
-
-    return c.json(
-      { success: true, tag: result.tag, assigned: result.changed },
-      201,
-    );
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Tag assignment error:", err);
-    return c.json({ error: "Failed to assign tag" }, 500);
-  }
+  const body = await c.req.json();
+  const result = await addTagToContactAction(
+    projectActionDeps(c),
+    c.req.param("contactId"),
+    typeof body.tagId === "string" ? body.tagId : "",
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 // Canonical idempotent tag assignment endpoint for REST clients.
 app.put(
   "/api/projects/:projectId/contacts/:contactId/tags/:tagId",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const contactId = c.req.param("contactId");
-      const tagId = c.req.param("tagId");
-      const db = c.get("db");
-      const result = await new TagService(db).assignToContact(
-        projectId,
-        contactId,
-        tagId,
-      );
-      if (result.status === "contact_not_found") {
-        return c.json({ error: "Contact not found" }, 404);
-      }
-      if (result.status === "tag_not_found") {
-        return c.json({ error: "Tag not found" }, 404);
-      }
-
-      if (result.changed) {
-        c.executionCtx.waitUntil(
-          dispatchWorkflowTrigger(db, c.env as AppEnv, projectId, "tag_added", {
-            projectId,
-            contactId,
-            tagId,
-          }),
-        );
-      }
-      return c.json({ tag: result.tag, assigned: result.changed });
-    } catch (err) {
-      console.error("Tag assignment error:", err);
-      return c.json({ error: "Failed to assign tag" }, 500);
-    }
+    const result = await addTagToContactAction(
+      projectActionDeps(c),
+      c.req.param("contactId"),
+      c.req.param("tagId"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
@@ -5895,360 +4639,169 @@ app.put(
 app.delete(
   "/api/projects/:projectId/contacts/:contactId/tags/:tagId",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const contactId = c.req.param("contactId");
-      const tagId = c.req.param("tagId");
-
-      const result = await new TagService(c.get("db")).removeFromContact(
-        projectId,
-        contactId,
-        tagId,
-      );
-      if (result.status === "contact_not_found") {
-        return c.json({ error: "Contact not found" }, 404);
-      }
-      if (result.status === "tag_not_found") {
-        return c.json({ error: "Tag not found" }, 404);
-      }
-
-      return c.json({
-        success: true,
-        tag: result.tag,
-        removed: result.changed,
-      });
-    } catch (err) {
-      console.error("Tag removal error:", err);
-      return c.json({ error: "Failed to remove tag" }, 500);
-    }
+    const result = await removeTagFromContactAction(
+      projectActionDeps(c),
+      c.req.param("contactId"),
+      c.req.param("tagId"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 app.post("/api/projects/:projectId/contacts/:contactId/stage", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const contactId = c.req.param("contactId");
-    const body = await c.req.json();
-    const data = validate(setStageSchema, body);
-    const db = c.get("db");
-    const service = new ContactService(db);
-
-    if (!(await service.contactInProject(projectId, contactId))) {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-    const result = await service.setStage(projectId, contactId, data.tagId);
-    if (result === "invalid_stage") {
-      return c.json({ error: "Invalid pipeline stage" }, 400);
-    }
-    return c.json({ success: true });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Set stage error:", err);
-    return c.json({ error: "Failed to set stage" }, 500);
-  }
+  const result = await setContactStageAction(
+    projectActionDeps(c),
+    c.req.param("contactId"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/contacts/:contactId/enrich", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const contactId = c.req.param("contactId");
-    const db = c.get("db");
-    const service = new ContactService(db);
-    if (!(await service.contactInProject(projectId, contactId))) {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-    const reservation = await reserveProjectUsage({
-      db,
-      projectId,
-      key: "enrichments",
-      operationId: crypto.randomUUID(),
-      channel: "contact_enrichment",
-      env: c.env,
-    });
-    if (!reservation.decision.allowed) {
-      const failure = reservation.httpError("enrich this contact");
-      for (const [name, value] of Object.entries(failure.headers)) {
-        c.header(name, value);
-      }
-      return c.json(failure.body, failure.status);
-    }
-    // Run the research inline and return the enriched contact so the client can
-    // show the new fields immediately — no queue, no polling. Usage is only
-    // counted once the enrichment actually succeeds.
-    const execution = new WorkflowExecutionService(db);
-    try {
-      await execution.enrichContact(projectId, contactId, c.env);
-      await reservation.consume();
-    } catch (error) {
-      await reservation.release();
-      throw error;
-    }
-    const contact = await service.getById(contactId);
-    return c.json({
-      success: true,
-      contact,
-    });
-  } catch (err) {
-    console.error("Enrich error:", err);
-    // AI SDK errors surface as `AI_*` names (e.g. AI_APICallError for a bad key,
-    // AI_RetryError for exhausted quota). Report these as an upstream-provider
-    // failure so it's diagnosable instead of an opaque 500.
-    if (err instanceof Error && err.name.startsWith("AI_")) {
-      return c.json(
-        { error: "Enrichment provider unavailable. Please try again later." },
-        502,
-      );
-    }
-    return c.json({ error: "Failed to enrich contact" }, 500);
-  }
+  const result = await enrichContactAction(
+    projectActionDeps(c),
+    c.req.param("contactId"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/pipeline/seed", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const db = c.get("db");
-    const service = new ContactService(db);
-    const { view } = await service.seedPipeline(projectId);
-    return c.json({ view }, 201);
-  } catch (err) {
-    console.error("Seed pipeline error:", err);
-    return c.json({ error: "Failed to seed pipeline" }, 500);
-  }
+  const result = await seedContactPipelineAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 // ─── Workflows ───────────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/workflows", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const workflows = await service.list(projectId);
-    return c.json({ workflows });
-  } catch (err) {
-    console.error("Workflows list error:", err);
-    return c.json({ error: "Failed to fetch workflows" }, 500);
-  }
+  const result = await listWorkflowsAction(projectActionDeps(c));
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/workflows", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const body = await c.req.json();
-    const data = validate(createWorkflowSchema, body);
-
-    const db = c.get("db");
-    const creation = await createWithResourceCapacity({
-      db,
-      projectId,
-      key: "workflows",
-      env: c.env,
-      channel: "rest",
-      create: async (transaction) =>
-        new WorkflowService(transaction).create(projectId, data),
-    });
-    if (!creation.ok) return c.json(creation.body, creation.status);
-    return c.json({ workflow: creation.value }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Workflow creation error:", err);
-    return c.json({ error: "Failed to create workflow" }, 500);
-  }
+  const result = await createWorkflowAction(
+    projectActionDeps(c),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 app.put("/api/projects/:projectId/workflows/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const body = await c.req.json();
-    const data = validate(updateWorkflowSchema, body);
-
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const workflow = await service.update(id, data);
-
-    if (!workflow) {
-      return c.json({ error: "Workflow not found" }, 404);
-    }
-
-    return c.json({ workflow });
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Workflow update error:", err);
-    return c.json({ error: "Failed to update workflow" }, 500);
-  }
+  const result = await updateWorkflowAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.delete("/api/projects/:projectId/workflows/:id", async (c) => {
-  try {
-    const id = c.req.param("id");
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-
-    const existing = await service.getById(id);
-    if (!existing) {
-      return c.json({ error: "Workflow not found" }, 404);
-    }
-
-    await service.delete(id);
-    return c.json({ success: true });
-  } catch (err) {
-    console.error("Workflow deletion error:", err);
-    return c.json({ error: "Failed to delete workflow" }, 500);
-  }
+  const result = await deleteWorkflowAction(
+    projectActionDeps(c),
+    c.req.param("id"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // Full workflow with steps
 app.get("/api/projects/:projectId/workflows/:workflowId", async (c) => {
-  try {
-    const workflowId = c.req.param("workflowId");
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const workflow = await service.getFullWorkflow(workflowId);
-
-    if (!workflow) {
-      return c.json({ error: "Workflow not found" }, 404);
-    }
-
-    return c.json({ workflow });
-  } catch (err) {
-    console.error("Workflow fetch error:", err);
-    return c.json({ error: "Failed to fetch workflow" }, 500);
-  }
+  const result = await getWorkflowAction(
+    projectActionDeps(c),
+    c.req.param("workflowId"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // Workflow steps
 app.get("/api/projects/:projectId/workflows/:workflowId/steps", async (c) => {
-  try {
-    const workflowId = c.req.param("workflowId");
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const steps = await service.listSteps(workflowId);
-    return c.json({ steps });
-  } catch (err) {
-    console.error("Workflow steps list error:", err);
-    return c.json({ error: "Failed to fetch workflow steps" }, 500);
-  }
+  const result = await listWorkflowStepsAction(
+    projectActionDeps(c),
+    c.req.param("workflowId"),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.post("/api/projects/:projectId/workflows/:workflowId/steps", async (c) => {
-  try {
-    const workflowId = c.req.param("workflowId");
-    const body = await c.req.json();
-    const data = validate(createWorkflowStepSchema, body);
-
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const step = await service.createStep(workflowId, data);
-
-    return c.json({ step }, 201);
-  } catch (err) {
-    if (err instanceof Error && err.name === "ZodError") {
-      return c.json({ error: "Invalid request" }, 400);
-    }
-    console.error("Workflow step creation error:", err);
-    return c.json({ error: "Failed to create workflow step" }, 500);
-  }
+  const result = await createWorkflowStepAction(
+    projectActionDeps(c),
+    c.req.param("workflowId"),
+    await c.req.json(),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 app.put(
   "/api/projects/:projectId/workflows/:workflowId/steps/reorder",
   async (c) => {
-    try {
-      const workflowId = c.req.param("workflowId");
-      const body = await c.req.json();
-      const { stepIds } = body as { stepIds: string[] };
-
-      const db = c.get("db");
-      const service = new WorkflowService(db);
-      const steps = await service.reorderSteps(workflowId, stepIds);
-
-      return c.json({ steps });
-    } catch (err) {
-      console.error("Workflow step reorder error:", err);
-      return c.json({ error: "Failed to reorder workflow steps" }, 500);
-    }
+    const result = await reorderWorkflowStepsAction(
+      projectActionDeps(c),
+      c.req.param("workflowId"),
+      await c.req.json(),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 app.put(
   "/api/projects/:projectId/workflows/:workflowId/steps/:id",
   async (c) => {
-    try {
-      const id = c.req.param("id");
-      const body = await c.req.json();
-      const data = validate(updateWorkflowStepSchema, body);
-
-      const db = c.get("db");
-      const service = new WorkflowService(db);
-      const step = await service.updateStep(id, data);
-
-      if (!step) {
-        return c.json({ error: "Step not found" }, 404);
-      }
-
-      return c.json({ step });
-    } catch (err) {
-      console.error("Workflow step update error:", err);
-      return c.json({ error: "Failed to update workflow step" }, 500);
-    }
+    const result = await updateWorkflowStepAction(
+      projectActionDeps(c),
+      c.req.param("workflowId"),
+      c.req.param("id"),
+      await c.req.json(),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 app.delete(
   "/api/projects/:projectId/workflows/:workflowId/steps/:id",
   async (c) => {
-    try {
-      const id = c.req.param("id");
-      const db = c.get("db");
-      const service = new WorkflowService(db);
-      await service.deleteStep(id);
-      return c.json({ success: true });
-    } catch (err) {
-      console.error("Workflow step deletion error:", err);
-      return c.json({ error: "Failed to delete workflow step" }, 500);
-    }
+    const result = await deleteWorkflowStepAction(
+      projectActionDeps(c),
+      c.req.param("workflowId"),
+      c.req.param("id"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 // Workflow runs
 app.get("/api/projects/:projectId/workflows/:workflowId/runs", async (c) => {
-  try {
-    const workflowId = c.req.param("workflowId");
-    const limitParam = c.req.query("limit");
-    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
-
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const runs = await service.listRuns(workflowId, limit);
-
-    return c.json({ runs });
-  } catch (err) {
-    console.error("Workflow runs list error:", err);
-    return c.json({ error: "Failed to fetch workflow runs" }, 500);
-  }
+  const limit = c.req.query("limit");
+  const result = await listWorkflowRunsAction(
+    projectActionDeps(c),
+    c.req.param("workflowId"),
+    limit ? Number(limit) : undefined,
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 app.get(
   "/api/projects/:projectId/workflows/:workflowId/runs/:runId",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const workflowId = c.req.param("workflowId");
-      const runId = c.req.param("runId");
-      const service = new WorkflowService(c.get("db"));
-      const run = await service.getRunInProject(projectId, workflowId, runId);
-      if (!run) return c.json({ error: "Workflow run not found" }, 404);
-      return c.json({ run });
-    } catch (error) {
-      console.error("Workflow run detail error:", error);
-      return c.json({ error: "Failed to fetch workflow run" }, 500);
-    }
+    const result = await getWorkflowRunAction(
+      projectActionDeps(c),
+      c.req.param("workflowId"),
+      c.req.param("runId"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
@@ -6256,202 +4809,26 @@ app.get(
 app.post(
   "/api/projects/:projectId/workflows/:workflowId/trigger",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const workflowId = c.req.param("workflowId");
-
-      const db = c.get("db");
-      const service = new WorkflowService(db);
-      const workflow = await service.getById(workflowId);
-
-      if (!workflow) {
-        return c.json({ error: "Workflow not found" }, 404);
-      }
-
-      if (workflow.trigger !== "manual" && workflow.trigger !== "scheduled") {
-        return c.json(
-          {
-            error:
-              "Only manual or scheduled workflows can be triggered via this endpoint",
-          },
-          400,
-        );
-      }
-
-      if (workflow.status !== "active") {
-        return c.json({ error: "Workflow must be active to trigger" }, 400);
-      }
-
-      // Optional body with contactId
-      let contactId: string | undefined;
-      try {
-        const body = await c.req.json();
-        contactId = body?.contactId;
-      } catch {
-        // No body is fine
-      }
-
-      const executionService = new WorkflowExecutionService(db);
-
-      // With an explicit contact, run once for it; otherwise fan out to the
-      // workflow's configured contact filter (null filter = one contactless run).
-      let started: number;
-      if (contactId) {
-        const contactService = new ContactService(db);
-        const contact = await contactService.getById(contactId);
-        if (!contact) {
-          return c.json({ error: "Contact not found" }, 404);
-        }
-        const context: TriggerContext = {
-          projectId,
-          contactId: contact.id,
-          contactEmail: contact.email ?? undefined,
-          contactName: contact.name ?? undefined,
-        };
-        const runId = await executionService.dispatchTestRun(
-          workflowId,
-          context,
-          c.env as AppEnv,
-        );
-        started = runId ? 1 : 0;
-      } else {
-        const config = parseWorkflowTriggerConfig(workflow.triggerConfig);
-        started = await executionService.dispatchToFilteredContacts(
-          workflowId,
-          projectId,
-          config?.contactFilter ?? null,
-          c.env as AppEnv,
-        );
-      }
-
-      if (started === 0) {
-        return c.json(
-          {
-            error:
-              "No runs started — the workflow has no steps or no contacts match the filter",
-          },
-          400,
-        );
-      }
-
-      return c.json({ success: true, started }, 201);
-    } catch (err) {
-      console.error("Manual workflow trigger error:", err);
-      return c.json({ error: "Failed to trigger workflow" }, 500);
-    }
+    const body = await c.req.json().catch(() => ({}));
+    const result = await triggerWorkflowAction(
+      projectActionDeps(c),
+      c.req.param("workflowId"),
+      body,
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value, 201);
   },
 );
 
 // Test-run any workflow (no trigger-type or status restrictions)
 app.post("/api/projects/:projectId/workflows/:workflowId/test", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const workflowId = c.req.param("workflowId");
-
-    const db = c.get("db");
-    const service = new WorkflowService(db);
-    const workflow = await service.getById(workflowId);
-
-    if (!workflow) {
-      return c.json({ error: "Workflow not found" }, 404);
-    }
-
-    const body = await c.req.json().catch(() => ({}));
-    const { contactId, tagId } = body as { contactId?: string; tagId?: string };
-
-    if (!contactId) {
-      return c.json({ error: "contactId is required" }, 400);
-    }
-
-    if (workflow.trigger === "tag_added" && !tagId) {
-      return c.json(
-        { error: "tagId is required for tag_added workflows" },
-        400,
-      );
-    }
-
-    // Look up contact details for context
-    const contactService = new ContactService(db);
-    const contact = await contactService.getById(contactId);
-    if (!contact) {
-      return c.json({ error: "Contact not found" }, 404);
-    }
-
-    const context: TriggerContext = {
-      projectId,
-      contactId: contact.id,
-      contactEmail: contact.email ?? undefined,
-      contactName: contact.name ?? undefined,
-      tagId,
-    };
-
-    // For form_submitted test runs, seed metadata.formFields from the
-    // contact's most recent form response so {{form.fields.*}} and any
-    // step inputs that reference form fields resolve during the test.
-    if (workflow.trigger === "form_submitted" && contact.email) {
-      const [latestResponse] = await db
-        .select({ id: dbSchema.formResponses.id })
-        .from(dbSchema.formResponses)
-        .innerJoin(
-          dbSchema.forms,
-          eq(dbSchema.formResponses.formId, dbSchema.forms.id),
-        )
-        .where(
-          and(
-            eq(dbSchema.forms.projectId, projectId),
-            eq(dbSchema.formResponses.respondentEmail, contact.email),
-          ),
-        )
-        .orderBy(desc(dbSchema.formResponses.createdAt))
-        .limit(1);
-
-      if (latestResponse) {
-        context.formResponseId = latestResponse.id;
-        const values = await db
-          .select({
-            fieldId: dbSchema.formFieldValues.fieldId,
-            label: dbSchema.formFields.label,
-            value: dbSchema.formFieldValues.value,
-          })
-          .from(dbSchema.formFieldValues)
-          .innerJoin(
-            dbSchema.formFields,
-            and(
-              eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
-              eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
-            ),
-          )
-          .where(eq(dbSchema.formFieldValues.responseId, latestResponse.id));
-
-        const formFields: Record<string, string> = {};
-        for (const row of values) {
-          if (!row.value) continue;
-          formFields[row.fieldId] = row.value;
-          const labelSlug = slugifyFormFieldKey(row.label);
-          if (labelSlug && !(labelSlug in formFields)) {
-            formFields[labelSlug] = row.value;
-          }
-        }
-        context.metadata = { ...(context.metadata ?? {}), formFields };
-      }
-    }
-
-    const executionService = new WorkflowExecutionService(db);
-    const runId = await executionService.dispatchTestRun(
-      workflowId,
-      context,
-      c.env as AppEnv,
-    );
-
-    if (!runId) {
-      return c.json({ error: "Workflow has no steps" }, 400);
-    }
-
-    return c.json({ success: true, runId }, 201);
-  } catch (err) {
-    console.error("Workflow test-run error:", err);
-    return c.json({ error: "Failed to test-run workflow" }, 500);
-  }
+  const result = await testWorkflowAction(
+    projectActionDeps(c),
+    c.req.param("workflowId"),
+    await c.req.json().catch(() => ({})),
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value, 201);
 });
 
 // ─── API Keys ────────────────────────────────────────────────────────────────
@@ -6855,73 +5232,9 @@ app.delete("/api/projects/:projectId/calendar/connections/:id", async (c) => {
 const calendarRoutes = projectRoutes.get(
   "/api/projects/:projectId/calendar/calendars",
   async (c) => {
-    try {
-      const scope = c.get("projectScope");
-      const db = c.get("db");
-
-      const connections = scope.teamId
-        ? await db
-            .select({
-              id: dbSchema.calendarConnections.id,
-              email: dbSchema.calendarConnections.email,
-              refreshToken: dbSchema.calendarConnections.refreshToken,
-            })
-            .from(dbSchema.teamCalendarConnections)
-            .innerJoin(
-              dbSchema.calendarConnections,
-              eq(
-                dbSchema.teamCalendarConnections.connectionId,
-                dbSchema.calendarConnections.id,
-              ),
-            )
-            .where(eq(dbSchema.teamCalendarConnections.teamId, scope.teamId))
-        : await db
-            .select({
-              id: dbSchema.calendarConnections.id,
-              email: dbSchema.calendarConnections.email,
-              refreshToken: dbSchema.calendarConnections.refreshToken,
-            })
-            .from(dbSchema.calendarConnections)
-            .where(
-              eq(dbSchema.calendarConnections.userId, scope.ownerUserId),
-            );
-
-      if (connections.length === 0) {
-        return c.json({ accounts: [] });
-      }
-
-      const calendarService = new CalendarService(db, {
-        GOOGLE_CALENDAR_CLIENT_ID: c.env.GOOGLE_CALENDAR_CLIENT_ID,
-        GOOGLE_CALENDAR_CLIENT_SECRET: c.env.GOOGLE_CALENDAR_CLIENT_SECRET,
-      });
-
-      const accounts = [];
-      for (const conn of connections) {
-        try {
-          const accessToken = await calendarService.refreshAccessToken(
-            conn.refreshToken,
-          );
-          const calendars = await calendarService.listCalendars(accessToken);
-          accounts.push({
-            connectionId: conn.id,
-            email: conn.email,
-            calendars,
-          });
-        } catch (err) {
-          console.error(`Failed to list calendars for ${conn.email}:`, err);
-          accounts.push({
-            connectionId: conn.id,
-            email: conn.email,
-            calendars: [],
-          });
-        }
-      }
-
-      return c.json({ accounts });
-    } catch (err) {
-      console.error("Project calendar list error:", err);
-      return c.json({ error: "Failed to list calendars" }, 500);
-    }
+    const result = await listProjectCalendarsAction(projectActionDeps(c));
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
@@ -6982,295 +5295,38 @@ app.get("/api/calendar/calendars", async (c) => {
 app.get(
   "/api/projects/:projectId/event-types/:eventTypeId/calendars",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const eventTypeId = c.req.param("eventTypeId");
-      const db = c.get("db");
-
-      const [eventType] = await db
-        .select()
-        .from(dbSchema.eventTypes)
-        .where(
-          and(
-            eq(dbSchema.eventTypes.id, eventTypeId),
-            eq(dbSchema.eventTypes.projectId, projectId),
-          ),
-        )
-        .limit(1);
-
-      if (!eventType) {
-        return c.json({ error: "Event type not found" }, 404);
-      }
-
-      return c.json({
-        destination:
-          eventType.destinationConnectionId && eventType.destinationCalendarId
-            ? {
-                connectionId: eventType.destinationConnectionId,
-                calendarId: eventType.destinationCalendarId,
-              }
-            : null,
-        busyCalendars: parseBusyCalendars(eventType.busyCalendars),
-        inviteConnectionIds: parseInviteConnectionIds(
-          eventType.inviteConnectionIds,
-        ),
-      });
-    } catch (err) {
-      console.error("Get event type calendars error:", err);
-      return c.json({ error: "Failed to get calendar config" }, 500);
-    }
+    const result = await getEventTypeCalendarsAction(
+      projectActionDeps(c),
+      c.req.param("eventTypeId"),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 app.put(
   "/api/projects/:projectId/event-types/:eventTypeId/calendars",
   async (c) => {
-    try {
-      const projectId = c.req.param("projectId");
-      const eventTypeId = c.req.param("eventTypeId");
-      const body = await c.req.json();
-      const data = validate(updateEventTypeCalendarsSchema, body);
-      const db = c.get("db");
-      const scope = c.get("projectScope");
-
-      const [eventType] = await db
-        .select({ id: dbSchema.eventTypes.id })
-        .from(dbSchema.eventTypes)
-        .where(
-          and(
-            eq(dbSchema.eventTypes.id, eventTypeId),
-            eq(dbSchema.eventTypes.projectId, projectId),
-          ),
-        )
-        .limit(1);
-
-      if (!eventType) {
-        return c.json({ error: "Event type not found" }, 404);
-      }
-
-      const connectionIds = [
-        data.destination?.connectionId,
-        ...data.busyCalendars.map((calendar) => calendar.connectionId),
-        ...data.inviteConnectionIds,
-      ].filter((id): id is string => Boolean(id));
-
-      const canUseConnections = await projectCanUseCalendarConnections(
-        db,
-        scope,
-        connectionIds,
-      );
-      if (!canUseConnections) {
-        return c.json(
-          { error: "Calendar connection is not available to this project" },
-          400,
-        );
-      }
-
-      await db
-        .update(dbSchema.eventTypes)
-        .set({
-          destinationConnectionId: data.destination?.connectionId ?? null,
-          destinationCalendarId: data.destination?.calendarId ?? null,
-          busyCalendars: serializeBusyCalendars(data.busyCalendars),
-          inviteConnectionIds: serializeInviteConnectionIds(
-            data.inviteConnectionIds,
-          ),
-        })
-        .where(
-          and(
-            eq(dbSchema.eventTypes.id, eventTypeId),
-            eq(dbSchema.eventTypes.projectId, projectId),
-          ),
-        );
-
-      return c.json({ success: true });
-    } catch (err) {
-      if (err instanceof Error && err.name === "ZodError") {
-        return c.json({ error: "Invalid request" }, 400);
-      }
-      console.error("Update event type calendars error:", err);
-      return c.json({ error: "Failed to update calendar config" }, 500);
-    }
+    const result = await updateEventTypeCalendarsAction(
+      projectActionDeps(c),
+      c.req.param("eventTypeId"),
+      await c.req.json(),
+    );
+    if (!result.ok) return actionFailureResponse(c, result);
+    return c.json(result.value);
   },
 );
 
 // ─── Activity Feed ───────────────────────────────────────────────────────────
 
 app.get("/api/projects/:projectId/activity/recent", async (c) => {
-  try {
-    const projectId = c.req.param("projectId");
-    const db = c.get("db");
-
-    const bookingService = new BookingService(db);
-    await bookingService.expirePastPendingBookings();
-
-    const bookings = await db
-      .select({
-        id: dbSchema.bookings.id,
-        name: dbSchema.bookings.name,
-        email: dbSchema.bookings.email,
-        status: dbSchema.bookings.status,
-        startTime: dbSchema.bookings.startTime,
-        endTime: dbSchema.bookings.endTime,
-        timezone: dbSchema.bookings.timezone,
-        country: dbSchema.bookings.country,
-        city: dbSchema.bookings.city,
-        expiresAt: dbSchema.bookings.expiresAt,
-        formResponseId: dbSchema.bookings.formResponseId,
-        eventTypeId: dbSchema.bookings.eventTypeId,
-        meetingUrl: dbSchema.bookings.meetingUrl,
-        createdAt: dbSchema.bookings.createdAt,
-        eventTypeName: dbSchema.eventTypes.name,
-      })
-      .from(dbSchema.bookings)
-      .innerJoin(
-        dbSchema.eventTypes,
-        eq(dbSchema.bookings.eventTypeId, dbSchema.eventTypes.id),
-      )
-      .where(
-        and(
-          eq(dbSchema.eventTypes.projectId, projectId),
-          gte(dbSchema.bookings.endTime, sql`(unixepoch() - 86400)`),
-        ),
-      )
-      .orderBy(desc(dbSchema.bookings.createdAt))
-      .limit(10);
-
-    const responses = await db
-      .select({
-        id: dbSchema.formResponses.id,
-        respondentEmail: dbSchema.formResponses.respondentEmail,
-        status: dbSchema.formResponses.status,
-        country: dbSchema.formResponses.country,
-        city: dbSchema.formResponses.city,
-        formId: dbSchema.formResponses.formId,
-        createdAt: dbSchema.formResponses.createdAt,
-        formName: dbSchema.forms.name,
-      })
-      .from(dbSchema.formResponses)
-      .innerJoin(
-        dbSchema.forms,
-        eq(dbSchema.formResponses.formId, dbSchema.forms.id),
-      )
-      .where(
-        and(
-          eq(dbSchema.forms.projectId, projectId),
-          gte(dbSchema.formResponses.createdAt, sql`(unixepoch() - 86400)`),
-        ),
-      )
-      .orderBy(desc(dbSchema.formResponses.createdAt))
-      .limit(10);
-
-    // Extract names from form field values for form responses
-    // Prefer fields explicitly mapped as contact name, fall back to label heuristic
-    const responseIds = responses.map((r) => r.id);
-    const nameValues = responseIds.length
-      ? await db
-          .select({
-            responseId: dbSchema.formFieldValues.responseId,
-            value: dbSchema.formFieldValues.value,
-            sortOrder: dbSchema.formFields.sortOrder,
-            contactMapping: dbSchema.formFields.contactMapping,
-          })
-          .from(dbSchema.formFieldValues)
-          .innerJoin(
-            dbSchema.formFields,
-            and(
-              eq(dbSchema.formFieldValues.formId, dbSchema.formFields.formId),
-              eq(dbSchema.formFieldValues.fieldId, dbSchema.formFields.id),
-            ),
-          )
-          .where(
-            and(
-              inArray(dbSchema.formFieldValues.responseId, responseIds),
-              or(
-                eq(dbSchema.formFields.contactMapping, "name"),
-                and(
-                  like(dbSchema.formFields.label, "%name%"),
-                  eq(dbSchema.formFields.type, "text"),
-                ),
-              ),
-            ),
-          )
-      : [];
-    const nameByResponseId = new Map<string, string>();
-    // contactMapping="name" rows take priority over label-heuristic rows
-    const mappedNameIds = new Set(
-      nameValues
-        .filter((r) => r.contactMapping === "name")
-        .map((r) => r.responseId),
-    );
-    for (const row of nameValues.sort((a, b) => a.sortOrder - b.sortOrder)) {
-      if (!row.value) continue;
-      if (mappedNameIds.has(row.responseId) && row.contactMapping !== "name")
-        continue;
-      const existing = nameByResponseId.get(row.responseId);
-      nameByResponseId.set(
-        row.responseId,
-        existing ? `${existing} ${row.value}` : row.value,
-      );
-    }
-
-    const items = [
-      ...bookings.map((b) => ({
-        type: "booking" as const,
-        ...b,
-        title: b.eventTypeName,
-      })),
-      ...responses.map((r) => ({
-        type: "form_response" as const,
-        ...r,
-        name: nameByResponseId.get(r.id) ?? r.respondentEmail ?? "Anonymous",
-        email: r.respondentEmail ?? "",
-        title: r.formName,
-      })),
-    ]
-      .sort((a, b) => {
-        const now = Date.now();
-
-        function parseTimestamp(value: Date | string | number): number {
-          if (value instanceof Date) return value.getTime();
-          if (typeof value === "string")
-            return new Date(
-              value.replace(" ", "T") +
-                (value.includes("T") ? "" : "Z"),
-            ).getTime();
-          return new Date(value).getTime();
-        }
-
-        // Priority: 0 = pending confirmation (future), 1 = upcoming (non-pending, future), 2 = past bookings, 3 = form responses
-        function priority(item: typeof a) {
-          if (item.type !== "booking") return 3;
-          const start = parseTimestamp(item.startTime);
-          if (item.status === "pending" && start >= now) return 0;
-          if (start >= now) return 1;
-          return 2;
-        }
-
-        const pa = priority(a);
-        const pb = priority(b);
-        if (pa !== pb) return pa - pb;
-
-        // Bookings sort by startTime ascending; form responses by createdAt descending
-        if (a.type === "booking" && b.type === "booking") {
-          return (
-            parseTimestamp(a.startTime) - parseTimestamp(b.startTime)
-          );
-        }
-        if (a.type === "form_response" && b.type === "form_response") {
-          return (
-            parseTimestamp(b.createdAt) - parseTimestamp(a.createdAt)
-          );
-        }
-        return 0;
-      })
-      .slice(0, 10);
-
-    return c.json({ items });
-  } catch (err) {
-    console.error("Activity feed error:", err);
-    return c.json({ error: "Failed to fetch activity" }, 500);
-  }
+  const limit = Number(c.req.query("limit"));
+  const result = await listRecentActivityAction(
+    projectActionDeps(c),
+    Number.isFinite(limit) && limit > 0 ? limit : 10,
+  );
+  if (!result.ok) return actionFailureResponse(c, result);
+  return c.json(result.value);
 });
 
 // ─── Billing ─────────────────────────────────────────────────────────────────

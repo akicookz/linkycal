@@ -25,6 +25,34 @@ interface CreateOverrideInput {
   isBlocked: boolean;
 }
 
+interface D1StatementLike {
+  bind(...values: unknown[]): D1StatementLike;
+}
+
+interface D1BatchClient {
+  prepare(query: string): D1StatementLike;
+  batch(statements: D1StatementLike[]): Promise<unknown[]>;
+}
+
+interface SyncStatementLike {
+  run(...values: unknown[]): unknown;
+}
+
+interface SyncSqliteClient {
+  query(query: string): SyncStatementLike;
+  transaction<T>(callback: () => T): () => T;
+}
+
+function hasFunctions(
+  value: unknown,
+  names: string[],
+): value is Record<string, (...args: never[]) => unknown> {
+  if (!value || typeof value !== "object") return false;
+  return names.every(function hasFunction(name) {
+    return typeof (value as Record<string, unknown>)[name] === "function";
+  });
+}
+
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export class ScheduleService {
@@ -147,22 +175,83 @@ export class ScheduleService {
   async setRules(
     scheduleId: string,
     rules: AvailabilityRuleInput[],
+    timezone?: string,
   ): Promise<dbSchema.AvailabilityRuleRow[]> {
-    // Delete all existing rules for this schedule
-    await this.db
-      .delete(dbSchema.availabilityRules)
-      .where(eq(dbSchema.availabilityRules.scheduleId, scheduleId));
-
-    // Batch insert new rules
-    if (rules.length > 0) {
-      const values = rules.map((rule) => ({
+    const client = (
+      this.db as typeof this.db & { $client?: unknown }
+    ).$client;
+    const values = rules.map(function ruleValue(rule) {
+      return {
         id: crypto.randomUUID(),
         scheduleId,
         dayOfWeek: rule.dayOfWeek,
         startTime: rule.startTime,
         endTime: rule.endTime,
-      }));
-      await this.db.insert(dbSchema.availabilityRules).values(values);
+      };
+    });
+
+    if (hasFunctions(client, ["prepare", "batch"])) {
+      const d1 = client as unknown as D1BatchClient;
+      const statements: D1StatementLike[] = [];
+      if (timezone !== undefined) {
+        statements.push(
+          d1
+            .prepare(
+              "UPDATE schedules SET timezone = ?, updated_at = unixepoch() WHERE id = ?",
+            )
+            .bind(timezone, scheduleId),
+        );
+      }
+      statements.push(
+        d1
+          .prepare("DELETE FROM availability_rules WHERE schedule_id = ?")
+          .bind(scheduleId),
+      );
+      for (const value of values) {
+        statements.push(
+          d1
+            .prepare(
+              "INSERT INTO availability_rules (id, schedule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, unixepoch())",
+            )
+            .bind(
+              value.id,
+              value.scheduleId,
+              value.dayOfWeek,
+              value.startTime,
+              value.endTime,
+            ),
+        );
+      }
+      await d1.batch(statements);
+    } else if (hasFunctions(client, ["query", "transaction"])) {
+      const sqlite = client as unknown as SyncSqliteClient;
+      const transaction = sqlite.transaction(function replaceScheduleRules() {
+        if (timezone !== undefined) {
+          sqlite
+            .query(
+              "UPDATE schedules SET timezone = ?, updated_at = unixepoch() WHERE id = ?",
+            )
+            .run(timezone, scheduleId);
+        }
+        sqlite
+          .query("DELETE FROM availability_rules WHERE schedule_id = ?")
+          .run(scheduleId);
+        const insert = sqlite.query(
+          "INSERT INTO availability_rules (id, schedule_id, day_of_week, start_time, end_time, created_at) VALUES (?, ?, ?, ?, ?, unixepoch())",
+        );
+        for (const value of values) {
+          insert.run(
+            value.id,
+            value.scheduleId,
+            value.dayOfWeek,
+            value.startTime,
+            value.endTime,
+          );
+        }
+      });
+      transaction();
+    } else {
+      throw new Error("Database client does not support atomic schedule updates");
     }
 
     return this.getRules(scheduleId);

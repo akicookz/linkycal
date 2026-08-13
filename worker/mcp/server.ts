@@ -8,10 +8,15 @@ import {
 } from "../../shared/mcp-tools";
 import type { ToolContext } from "./agent";
 import { registerAnalyticsTools } from "./tools/analytics";
+import { registerActivityTools } from "./tools/activity";
 import { registerBookingTools } from "./tools/bookings";
+import { registerCalendarTools } from "./tools/calendars";
 import { registerContactTools } from "./tools/contacts";
+import { registerContactViewTools } from "./tools/contact-views";
 import { registerEventTypeTools } from "./tools/event-types";
 import { registerFormTools } from "./tools/forms";
+import { registerProjectAssetTools } from "./tools/project-assets";
+import { registerProjectTools } from "./tools/projects";
 import { registerScheduleTools } from "./tools/schedules";
 import { registerWorkflowTools } from "./tools/workflows";
 
@@ -63,7 +68,11 @@ ${toolInventory("write")}
 
 - Book an available meeting: list_event_types → get_available_slots → create_booking. Pass create_booking an exact UTC slot returned by get_available_slots.
 - Find and tag a contact: list_contacts → list_contact_tags → add_tag_to_contact. Use the returned contact and tag IDs.
-- Inspect a form and its submissions: list_forms → get_form → list_form_responses.
+- Change working hours: list_schedules → get_schedule → set_schedule_rules, then add_schedule_override for date exceptions.
+- Build a form: create_form → create_form_step → create_form_field → update_form with status active.
+- Inspect submissions: list_forms → list_form_responses → get_form_response; use get_form_response_file for private uploads.
+- Route a meeting to calendars: list_project_calendars → get_event_type_calendars → update_event_type_calendars.
+- Run an automation: list_workflows → get_workflow → trigger_workflow, then list_workflow_runs → get_workflow_run.
 - Review a funnel: list_event_types or list_forms to resolve the resource ID, then call the matching analytics tool with the requested period and filters.
 
 ## Further documentation
@@ -84,12 +93,17 @@ export function createLinkyCalMcpServer(ctx: ToolContext): McpServer {
   );
 
   registerBookingTools(server, ctx);
+  registerProjectTools(server, ctx);
+  registerProjectAssetTools(server, ctx);
+  registerCalendarTools(server, ctx);
   registerContactTools(server, ctx);
+  registerContactViewTools(server, ctx);
   registerEventTypeTools(server, ctx);
   registerScheduleTools(server, ctx);
   registerFormTools(server, ctx);
   registerWorkflowTools(server, ctx);
   registerAnalyticsTools(server, ctx);
+  registerActivityTools(server, ctx);
 
   return server;
 }
