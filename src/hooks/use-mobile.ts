@@ -17,3 +17,24 @@ export function useIsMobile() {
 
   return !!isMobile
 }
+
+const DESKTOP_BREAKPOINT = 1024
+
+export function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return true
+    return window.innerWidth >= DESKTOP_BREAKPOINT
+  })
+
+  React.useEffect(() => {
+    const mql = window.matchMedia(`(min-width: ${DESKTOP_BREAKPOINT}px)`)
+    function onChange() {
+      setIsDesktop(mql.matches)
+    }
+    onChange()
+    mql.addEventListener("change", onChange)
+    return () => mql.removeEventListener("change", onChange)
+  }, [])
+
+  return isDesktop
+}

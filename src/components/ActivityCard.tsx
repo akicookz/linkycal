@@ -1,6 +1,6 @@
-import { CalendarCheck, CalendarClock, FileText, CheckCircle2, XCircle, Loader, Video, Calendar, Info, Trash2 } from "lucide-react";
+import { CalendarCheck, CalendarClock, FileText, CheckCircle2, XCircle, Video, Calendar, Info, Trash2 } from "lucide-react";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 interface ActivityCardProps {
@@ -196,150 +196,103 @@ export function ActivityCard({
       ? "text-amber-600"
       : "text-primary";
 
+  const actionItems = [
+    {
+      id: "details",
+      label: "Details",
+      icon: Info,
+      onClick,
+    },
+    ...(isBooking && isPendingBooking && onConfirm
+      ? [{
+          id: "confirm",
+          label: confirmLoading ? "Confirming..." : "Confirm",
+          icon: CheckCircle2,
+          onClick: onConfirm,
+          disabled: confirmLoading || declineLoading,
+        }]
+      : []),
+    ...(isBooking && isPendingBooking && onDecline
+      ? [{
+          id: "decline",
+          label: declineLoading ? "Declining..." : "Decline",
+          icon: XCircle,
+          onClick: onDecline,
+          variant: "destructive" as const,
+          disabled: confirmLoading || declineLoading,
+        }]
+      : []),
+    ...(isBooking && showJoinCall
+      ? [{
+          id: "join",
+          label: "Join meeting",
+          icon: Video,
+          onClick: () => {
+            if (meetingUrl) window.open(meetingUrl, "_blank");
+          },
+          disabled: !meetingUrl,
+        }]
+      : []),
+    ...(isBooking && showSeeOnCalendar
+      ? [{
+          id: "calendar",
+          label: "See on calendar",
+          icon: Calendar,
+          onClick: () => window.open(getGoogleCalendarDayUrl(startTime!), "_blank"),
+        }]
+      : []),
+    ...(!isBooking && onDelete
+      ? [{
+          id: "delete",
+          label: deleteLoading ? "Deleting..." : "Delete",
+          icon: Trash2,
+          onClick: onDelete,
+          variant: "destructive" as const,
+          disabled: deleteLoading,
+        }]
+      : []),
+  ];
+
   return (
     <Card
-      className="flex flex-col p-4 cursor-pointer hover:border-primary/25 transition-shadow"
+      className="flex cursor-pointer flex-col p-4 transition-shadow hover:border-primary/25"
       onClick={onClick}
     >
-      <div className="flex items-start gap-3 flex-1 min-h-0">
-        <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${iconWrapperClass}`}>
+      <div className="flex min-w-0 items-start gap-3">
+        <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${iconWrapperClass}`}>
           <Icon className={`h-4 w-4 ${iconClass}`} />
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{name}</p>
-          <p className="text-sm text-foreground truncate mt-0.5">{title}</p>
-          {email && email !== name && <p className="text-xs text-muted-foreground truncate mt-0.5">{email}</p>}
-          <p className="text-[11px] text-muted-foreground mt-1">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="text-sm font-semibold break-words text-foreground">{name}</p>
+            <div className="-mr-1.5 -mt-1 shrink-0">
+              <ActionsSheet items={actionItems} title="Activity" />
+            </div>
+          </div>
+          {(isConfirmed || isPendingBooking) && relTime ? (
+            <p
+              className={`mt-0.5 text-xs font-medium ${relTime.isHappening
+                ? "text-amber-600 animate-pulse"
+                : relTime.isUpcoming
+                  ? "text-emerald-600"
+                  : "text-muted-foreground"
+                }`}
+            >
+              {relTime.label}
+            </p>
+          ) : !isPendingBooking ? (
+            <Badge variant={statusVariant(status)} className="mt-1 text-[10px]">
+              {status}
+            </Badge>
+          ) : null}
+          <p className="mt-1 text-sm break-words text-foreground">{title}</p>
+          {email && email !== name && (
+            <p className="mt-0.5 text-xs break-all text-muted-foreground">{email}</p>
+          )}
+          <p className="mt-1 text-[11px] text-pretty text-muted-foreground">
             {hasTimeInfo ? formatVerboseDate(startTime!, timezone) : formatVerboseDate(date, timezone)}
           </p>
         </div>
-
-        {/* Status indicator */}
-        {(isConfirmed || isPendingBooking) && relTime ? (
-          <span
-            className={`shrink-0 text-[11px] font-medium ${relTime.isHappening
-              ? "text-amber-600 animate-pulse"
-              : relTime.isUpcoming
-                ? "text-emerald-600"
-                : "text-muted-foreground"
-              }`}
-          >
-            {relTime.label}
-          </span>
-        ) : !isPendingBooking ? (
-          <Badge variant={statusVariant(status)} className="shrink-0 text-[10px]">
-            {status}
-          </Badge>
-        ) : null}
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex items-center gap-1.5 pt-3 mt-auto ml-12" onClick={(e) => e.stopPropagation()}>
-        {/* Pending booking: Confirm + Decline */}
-        {isBooking && isPendingBooking && onConfirm && onDecline ? (
-          <>
-            <Button
-              variant="default"
-              size="sm"
-              className="h-7 px-2.5 text-xs flex-1"
-              onClick={onConfirm}
-              disabled={confirmLoading || declineLoading}
-            >
-              {confirmLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-              Confirm
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2.5 text-xs text-destructive hover:text-destructive"
-              onClick={onDecline}
-              disabled={confirmLoading || declineLoading}
-            >
-              {declineLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
-              Decline
-            </Button>
-          </>
-        ) : isBooking && showJoinCall ? (
-          <>
-            <Button
-              variant="default"
-              size="sm"
-              className="h-7 px-2.5 text-xs flex-1"
-              onClick={() => {
-                if (meetingUrl) window.open(meetingUrl, "_blank");
-              }}
-              disabled={!meetingUrl}
-            >
-              <Video className="h-3.5 w-3.5" />
-              Join meeting
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              onClick={onClick}
-            >
-              <Info className="h-3.5 w-3.5" />
-              Details
-            </Button>
-          </>
-        ) : isBooking && showSeeOnCalendar ? (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs flex-1"
-              onClick={() => window.open(getGoogleCalendarDayUrl(startTime!), "_blank")}
-            >
-              <Calendar className="h-3.5 w-3.5" />
-              See on calendar
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs flex-1"
-              onClick={onClick}
-            >
-              <Info className="h-3.5 w-3.5" />
-              Details
-            </Button>
-          </>
-        ) : isBooking ? (
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 px-2.5 text-xs w-full"
-            onClick={onClick}
-          >
-            <Info className="h-3.5 w-3.5" />
-            Details
-          </Button>
-        ) : (
-          /* Form response: Details + Delete */
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs flex-1"
-              onClick={onClick}
-            >
-              <Info className="h-3.5 w-3.5" />
-              Details
-            </Button>
-            {onDelete && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2.5 text-xs text-destructive hover:text-destructive"
-                onClick={onDelete}
-                disabled={deleteLoading}
-              >
-                {deleteLoading ? <Loader className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                Delete
-              </Button>
-            )}
-          </>
-        )}
       </div>
     </Card>
   );

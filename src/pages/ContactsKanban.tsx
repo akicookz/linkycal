@@ -4,7 +4,7 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   ChevronDown,
   GripVertical,
-  Sparkles,
+  Kanban,
   Loader,
   MoreHorizontal,
   Plus,
@@ -366,7 +366,7 @@ function StepMenu({
 
             {swappableTags.length > 0 && (
               <div className="border-t border-border/60 pt-1">
-                <p className="px-2 py-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+                <p className="px-2 py-1 text-xs font-medium text-muted-foreground">
                   Swap to tag
                 </p>
                 <div className="max-h-32 overflow-y-auto">
@@ -762,7 +762,7 @@ export default function ContactsKanban({
         </p>
         {onStartPipeline && (
           <Button size="sm" onClick={onStartPipeline} disabled={seedingPipeline}>
-            {seedingPipeline ? <Loader className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {seedingPipeline ? <Loader className="h-4 w-4 animate-spin" /> : <Kanban className="h-4 w-4" />}
             Start a sales pipeline
           </Button>
         )}

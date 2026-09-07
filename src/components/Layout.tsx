@@ -312,8 +312,8 @@ function LayoutInner() {
         </SidebarFooter>
       </Sidebar>
 
-      <SidebarInset className="overflow-x-hidden">
-        <div className="p-4 md:p-8">
+      <SidebarInset className="overflow-x-hidden overscroll-x-none">
+        <div className="min-w-0 overflow-x-hidden p-3 sm:p-4 md:p-8">
           <Outlet />
         </div>
       </SidebarInset>

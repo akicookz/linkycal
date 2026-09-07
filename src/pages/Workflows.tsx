@@ -259,13 +259,13 @@ export default function Workflows() {
   return (
     <div>
       <PageHeader title="Workflows" description="Automate actions based on triggers">
-        <Button onClick={() => setTemplateDialogOpen(true)} variant="outline" size="sm" className="flex-1 sm:flex-none">
-          <Zap className="h-4 w-4" />
-          Use Template
-        </Button>
-        <Button onClick={openCreateDialog} size="sm" className="flex-1 sm:flex-none">
+        <Button onClick={openCreateDialog} size="sm">
           <Plus className="h-4 w-4" />
-          New Workflow
+          New
+        </Button>
+        <Button onClick={() => setTemplateDialogOpen(true)} variant="outline" size="sm">
+          <Zap className="h-4 w-4" />
+          Template
         </Button>
       </PageHeader>
 
@@ -323,7 +323,7 @@ export default function Workflows() {
             </Button>
             <Button onClick={openCreateDialog} size="sm">
               <Plus className="h-4 w-4" />
-              New Workflow
+              New
             </Button>
           </div>
         </div>
@@ -345,7 +345,7 @@ export default function Workflows() {
                 <CardContent>
                   {/* Name + status toggle */}
                   <div className="flex items-start justify-between mb-3">
-                    <h3 className="text-sm font-semibold text-foreground truncate pr-2">
+                    <h3 className="min-w-0 pr-2 text-sm font-semibold break-words text-foreground">
                       {workflow.name}
                     </h3>
                     <Switch

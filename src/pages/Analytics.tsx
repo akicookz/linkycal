@@ -15,7 +15,7 @@ import {
   Route,
   Search,
   TrendingUp,
-  Sparkles,
+  CreditCard,
 } from "lucide-react";
 import {
   AreaChart,
@@ -175,7 +175,7 @@ function UpgradePrompt({ projectId }: { projectId: string }) {
           className="rounded-[16px] glow-surface"
           onClick={() => setShowUpgradeDialog(true)}
         >
-          <Sparkles className="w-4 h-4" />
+          <CreditCard className="w-4 h-4" />
           Upgrade to Pro
         </Button>
       </div>
@@ -841,7 +841,7 @@ export default function Analytics() {
               >
                 <SelectTrigger
                   aria-label="Event type"
-                  className="min-h-10 w-[180px]"
+                  className="min-h-10 w-full sm:w-[180px]"
                 >
                   <SelectValue placeholder="Event type" />
                 </SelectTrigger>
@@ -867,7 +867,7 @@ export default function Analytics() {
               >
                 <SelectTrigger
                   aria-label="Form"
-                  className="min-h-10 w-[180px]"
+                  className="min-h-10 w-full sm:w-[180px]"
                 >
                   <SelectValue placeholder="Form" />
                 </SelectTrigger>
@@ -888,7 +888,7 @@ export default function Analytics() {
               value={period}
               onValueChange={(value) => setPeriod(value as Period)}
             >
-              <SelectTrigger aria-label="Period" className="min-h-10 w-[155px]">
+              <SelectTrigger aria-label="Period" className="min-h-10 w-full sm:w-[155px]">
                 <span className="flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap">
                   <CalendarRange className="size-4 shrink-0 text-muted-foreground" />
                   <SelectValue className="truncate" />
@@ -936,7 +936,7 @@ export default function Analytics() {
               >
                 <SelectTrigger
                   aria-label="Traffic source"
-                  className="min-h-10 w-[160px]"
+                  className="min-h-10 w-full sm:w-[160px]"
                 >
                   <SelectValue placeholder="Traffic source" />
                 </SelectTrigger>
@@ -962,7 +962,7 @@ export default function Analytics() {
               >
                 <SelectTrigger
                   aria-label="Device type"
-                  className="min-h-10 w-[155px]"
+                  className="min-h-10 w-full sm:w-[155px]"
                 >
                   <SelectValue placeholder="Device type" />
                 </SelectTrigger>
@@ -981,7 +981,7 @@ export default function Analytics() {
 
             {filterOptions && filterOptions.utmSources.length > 0 && (
               <Select value={utmSource ?? "all"} onValueChange={(v) => setUtmSource(v === "all" ? undefined : v)}>
-                <SelectTrigger aria-label="UTM source" className="min-h-10 w-[160px]">
+                <SelectTrigger aria-label="UTM source" className="min-h-10 w-full sm:w-[160px]">
                   <SelectValue placeholder="UTM source" />
                 </SelectTrigger>
                 <SelectContent>
@@ -995,7 +995,7 @@ export default function Analytics() {
 
             {filterOptions && filterOptions.utmMediums.length > 0 && (
               <Select value={utmMedium ?? "all"} onValueChange={(v) => setUtmMedium(v === "all" ? undefined : v)}>
-                <SelectTrigger aria-label="UTM medium" className="min-h-10 w-[160px]">
+                <SelectTrigger aria-label="UTM medium" className="min-h-10 w-full sm:w-[160px]">
                   <SelectValue placeholder="UTM medium" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1009,7 +1009,7 @@ export default function Analytics() {
 
             {filterOptions && filterOptions.utmCampaigns.length > 0 && (
               <Select value={utmCampaign ?? "all"} onValueChange={(v) => setUtmCampaign(v === "all" ? undefined : v)}>
-                <SelectTrigger aria-label="UTM campaign" className="min-h-10 w-[160px]">
+                <SelectTrigger aria-label="UTM campaign" className="min-h-10 w-full sm:w-[160px]">
                   <SelectValue placeholder="UTM campaign" />
                 </SelectTrigger>
                 <SelectContent>

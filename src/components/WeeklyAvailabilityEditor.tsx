@@ -119,7 +119,7 @@ export function WeeklyAvailabilityEditor({
         return (
           <div
             key={dayLabel}
-            className="grid grid-cols-[auto_7rem_minmax(0,1fr)] items-start gap-4 py-2"
+            className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3 py-2 md:grid-cols-[auto_7rem_minmax(0,1fr)] md:gap-4"
           >
             <div className="flex h-10 items-center">
               <Switch
@@ -131,15 +131,15 @@ export function WeeklyAvailabilityEditor({
               />
             </div>
             <div
-              className={`flex h-10 items-center text-sm font-medium ${
+              className={`flex h-10 items-center text-sm font-medium md:contents ${
                 dayConfig.enabled ? "text-foreground" : "text-muted-foreground"
               }`}
             >
-              {dayLabel}
+              <span className="md:flex md:h-10 md:items-center">{dayLabel}</span>
             </div>
 
             {dayConfig.enabled ? (
-              <div className="flex-1 space-y-2">
+              <div className="col-span-2 min-w-0 space-y-2 md:col-span-1">
                 {dayConfig.blocks.map((block, blockIndex) => {
                   const normalizedStartValue = normalizeTimeValue(block.startTime);
                   const normalizedEndValue = normalizeTimeValue(block.endTime);
@@ -175,7 +175,7 @@ export function WeeklyAvailabilityEditor({
                   return (
                     <div
                       key={`${dayLabel}-${blockIndex}`}
-                      className="flex items-center gap-2"
+                      className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto] items-center gap-2"
                     >
                       <TimeSelect
                         value={normalizedStartValue}
@@ -185,7 +185,7 @@ export function WeeklyAvailabilityEditor({
                         }
                         disabled={disabled}
                       />
-                      <span className="text-sm text-muted-foreground">to</span>
+                      <span className="shrink-0 text-sm text-muted-foreground">to</span>
                       <TimeSelect
                         value={normalizedEndValue}
                         options={resolvedEndOptions}
@@ -194,38 +194,40 @@ export function WeeklyAvailabilityEditor({
                         }
                         disabled={disabled}
                       />
-                      {canAddAnotherBlock && (
+                      <div className="flex shrink-0 items-center">
+                        {canAddAnotherBlock && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 rounded-[12px]"
+                            onClick={() => handleAddBlock(dayIndex)}
+                            disabled={disabled}
+                            aria-label={`Add block for ${dayLabel}`}
+                            title={`Add block for ${dayLabel}`}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           className="h-9 w-9 rounded-[12px]"
-                          onClick={() => handleAddBlock(dayIndex)}
+                          onClick={() => handleDeleteBlock(dayIndex, blockIndex)}
                           disabled={disabled}
-                          aria-label={`Add block for ${dayLabel}`}
-                          title={`Add block for ${dayLabel}`}
+                          aria-label={`Delete block ${blockIndex + 1} for ${dayLabel}`}
+                          title={`Delete block ${blockIndex + 1} for ${dayLabel}`}
                         >
-                          <Plus className="h-4 w-4" />
+                          <X className="h-4 w-4" />
                         </Button>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 rounded-[12px]"
-                        onClick={() => handleDeleteBlock(dayIndex, blockIndex)}
-                        disabled={disabled}
-                        aria-label={`Delete block ${blockIndex + 1} for ${dayLabel}`}
-                        title={`Delete block ${blockIndex + 1} for ${dayLabel}`}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <span className="flex h-10 items-center text-sm text-muted-foreground">
+              <span className="col-span-2 flex h-10 items-center text-sm text-muted-foreground md:col-span-1">
                 Unavailable
               </span>
             )}
@@ -248,7 +250,7 @@ function TimeSelect(props: {
       onValueChange={props.onValueChange}
       disabled={props.disabled}
     >
-      <SelectTrigger className="w-[140px]">
+      <SelectTrigger className="h-9 min-w-0 w-full">
         <SelectValue />
       </SelectTrigger>
       <SelectContent className="max-h-80">

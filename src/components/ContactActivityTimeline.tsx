@@ -108,19 +108,19 @@ function TimelineRow({
         <ActivityIcon item={item} />
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium text-foreground">{item.title}</span>
-          {item.status && (
-            <Badge variant={statusVariant(item.status)} className="px-2 py-0 text-[10px] capitalize">
-              {item.status.replace(/_/g, " ")}
-            </Badge>
-          )}
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-sm font-medium break-words text-foreground">{item.title}</span>
+          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+            {relativeTime(item.occurredAt)}
+          </span>
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground text-pretty">{item.description}</p>
+        {item.status && (
+          <Badge variant={statusVariant(item.status)} className="mt-1 px-2 py-0 text-[10px] capitalize">
+            {item.status.replace(/_/g, " ")}
+          </Badge>
+        )}
+        <p className="mt-0.5 text-xs text-pretty text-muted-foreground">{item.description}</p>
       </div>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-        {relativeTime(item.occurredAt)}
-      </span>
     </>
   );
 
@@ -226,7 +226,7 @@ export function ContactActivityTimeline({
               <Clock className="h-4 w-4 text-muted-foreground" />
               Activity Timeline
             </CardTitle>
-            <TabsList className="ml-auto h-auto max-w-full flex-wrap justify-end gap-1">
+            <TabsList className="ml-0 w-full sm:ml-auto sm:w-auto">
               {categories.map((entry) => (
                 <TabsTrigger
                   key={entry.value}

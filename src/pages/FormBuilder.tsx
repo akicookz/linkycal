@@ -32,8 +32,9 @@ import {
   User,
   Link2,
   PartyPopper,
+  FileText,
 } from "lucide-react";
-import CopyPromptButton from "@/components/CopyPromptButton";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { RichTextEditor } from "@/components/RichTextEditor";
@@ -65,7 +66,14 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { FocusedFieldInput } from "@/components/FocusedFieldInput";
+import { useIsDesktop } from "@/hooks/use-mobile";
 import { useSession } from "@/lib/auth-client";
 import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
 import { readEntitlementError } from "@/lib/entitlement-errors";
@@ -513,6 +521,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const [editingName, setEditingName] = useState<string>("");
   const [editingSlug, setEditingSlug] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contentSheetOpen, setContentSheetOpen] = useState(false);
+  const [fieldSettingsSheetOpen, setFieldSettingsSheetOpen] = useState(false);
+  const isDesktop = useIsDesktop();
 
   // ─── Create mode (no formId) ─────────────────────────────────────────────
 
@@ -2172,7 +2183,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         <Button
           variant="outline"
           size="sm"
-          className="h-8 px-2.5"
+          className="px-2.5"
           disabled={contentSteps.length === 0}
         >
           <Plus className="h-3.5 w-3.5" />
@@ -2222,7 +2233,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     <Card className="h-fit">
       <CardContent className="space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <p className="text-sm font-medium">
             Content
           </p>
           {addContentPopover}
@@ -2309,7 +2320,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
         {/* Ending */}
         <div className="space-y-1.5">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <p className="text-sm font-medium">
             Ending
           </p>
           {completionField ? (
@@ -2670,8 +2681,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       <CardContent className="space-y-4">
         {selectedField && selectedField.type !== "completion" ? (
           <>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Question Settings
+            <p className="text-sm font-medium">
+              Question settings
             </p>
 
             {isTemplateMode && (
@@ -2893,8 +2904,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           </>
         ) : selectedField && selectedField.type === "completion" ? (
           <>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Ending Settings
+            <p className="text-sm font-medium">
+              Ending settings
             </p>
 
             {isTemplateMode && (
@@ -2966,8 +2977,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           </>
         ) : selectedStep ? (
           <>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-              Section Settings
+            <p className="text-sm font-medium">
+              Section settings
             </p>
 
             {isTemplateMode && (
@@ -3077,81 +3088,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     <div>
       {/* Top action bar */}
       {!isTemplateMode && (
-        <div className="flex items-center justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3 min-w-0">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0"
-              onClick={() => navigate(`/app/projects/${projectId}/forms`)}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
-            <span className="text-lg font-semibold truncate">{form.name}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0"
-              onClick={() => setSettingsOpen(true)}
-            >
-              <Settings className="h-4 w-4" />
-              Settings
-            </Button>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <CopyPromptButton
-              buttonVariant="outline"
-              buttonSize="sm"
-              items={[
-                {
-                  id: "api",
-                  label: "Copy API/Form Action Prompt",
-                  description: "API + native form action guidance for AI agents",
-                  onClick: handleCopyApiPrompt,
-                  copied: promptCopiedId === "api",
-                },
-                {
-                  id: "embedprompt",
-                  label: "Copy Embed Prompt",
-                  description: "Widget embed instructions with docs references",
-                  onClick: handleCopyEmbedPrompt,
-                  copied: promptCopiedId === "embedprompt",
-                },
-              ]}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (!currentProject) return;
-                const url = `${window.location.origin}/${currentProject.slug}/${form.slug}`;
-                navigator.clipboard.writeText(url);
-                setLinkCopied(true);
-                setTimeout(() => setLinkCopied(false), 2000);
-              }}
-            >
-              {linkCopied ? (
-                <Check className="h-3.5 w-3.5" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-              {linkCopied ? "Copied!" : "Copy Link"}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                if (!currentProject) return;
-                window.open(
-                  `${window.location.origin}/${currentProject.slug}/${form.slug}`,
-                  "_blank"
-                );
-              }}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Preview
-            </Button>
+        <div className="mb-3 flex min-w-0 items-center gap-2 lg:mb-6">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="shrink-0"
+            onClick={() => navigate(`/app/projects/${projectId}/forms`)}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
+            {form.name}
+          </h1>
+          <div className="flex shrink-0 items-center gap-1.5">
             <Button
               size="sm"
               onClick={() => updateFormMutation.mutate({ status: "active" })}
@@ -3164,6 +3114,53 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               )}
               Publish
             </Button>
+            <ActionsSheet
+              title="Form"
+              items={[
+                {
+                  id: "settings",
+                  label: "Settings",
+                  icon: Settings,
+                  onClick: () => setSettingsOpen(true),
+                },
+                {
+                  id: "copy-api",
+                  label: promptCopiedId === "api" ? "Copied" : "Copy API prompt",
+                  icon: FileText,
+                  onClick: handleCopyApiPrompt,
+                },
+                {
+                  id: "copy-embed",
+                  label: promptCopiedId === "embedprompt" ? "Copied" : "Copy embed prompt",
+                  icon: FileText,
+                  onClick: handleCopyEmbedPrompt,
+                },
+                {
+                  id: "copy-link",
+                  label: linkCopied ? "Copied" : "Copy link",
+                  icon: linkCopied ? Check : Copy,
+                  onClick: () => {
+                    if (!currentProject) return;
+                    const url = `${window.location.origin}/${currentProject.slug}/${form.slug}`;
+                    navigator.clipboard.writeText(url);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                  },
+                },
+                {
+                  id: "preview",
+                  label: "Preview",
+                  icon: ExternalLink,
+                  onClick: () => {
+                    if (!currentProject) return;
+                    window.open(
+                      `${window.location.origin}/${currentProject.slug}/${form.slug}`,
+                      "_blank",
+                    );
+                  },
+                },
+              ]}
+            />
           </div>
         </div>
       )}
@@ -3176,11 +3173,59 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           </div>
           {props.onboardingFooter}
         </div>
-      ) : (
-        <div className="grid gap-5 grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+      ) : isDesktop ? (
+        <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
           {contentPanel}
           {previewCanvas}
           {settingsPanel}
+        </div>
+      ) : (
+        <div>
+          <div className="mb-3 grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full bg-background shadow-sm"
+              onClick={() => setContentSheetOpen(true)}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              Content
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full bg-background shadow-sm"
+              onClick={() => setFieldSettingsSheetOpen(true)}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Settings
+            </Button>
+          </div>
+          {previewCanvas}
+          <Sheet open={contentSheetOpen} onOpenChange={setContentSheetOpen}>
+            <SheetContent
+              side="bottom"
+              hideCloseButton
+              className="rounded-t-[20px] px-4 pb-8 pt-1"
+            >
+              <SheetHeader className="mb-2">
+                <SheetTitle className="text-base">Content</SheetTitle>
+              </SheetHeader>
+              {contentPanel}
+            </SheetContent>
+          </Sheet>
+          <Sheet open={fieldSettingsSheetOpen} onOpenChange={setFieldSettingsSheetOpen}>
+            <SheetContent
+              side="bottom"
+              hideCloseButton
+              className="rounded-t-[20px] px-4 pb-8 pt-1"
+            >
+              <SheetHeader className="mb-2">
+                <SheetTitle className="text-base">Settings</SheetTitle>
+              </SheetHeader>
+              {settingsPanel}
+            </SheetContent>
+          </Sheet>
         </div>
       )}
 
@@ -3297,17 +3342,17 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               <div className="space-y-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs text-muted-foreground">HTML Action URL</Label>
-                  <div className="flex gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     <Input
                       readOnly
                       value={nativeActionUrl}
-                      className="h-9 text-xs"
+                      className="h-9 min-w-0 text-xs"
                     />
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      className="shrink-0"
+                      className="h-9 shrink-0"
                       onClick={() => {
                         navigator.clipboard.writeText(nativeActionUrl);
                         setActionUrlCopied(true);

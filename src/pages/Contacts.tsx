@@ -13,7 +13,7 @@ import {
   Trash2,
   Tags,
   Loader,
-  Sparkles,
+  Kanban,
   AlertCircle,
   X,
   Filter,
@@ -26,6 +26,7 @@ import {
   FileText,
   ArrowRight,
 } from "lucide-react";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 import { TagSearchCreate } from "@/components/tag-search-create";
@@ -33,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -1282,7 +1284,7 @@ export default function Contacts() {
         </p>
         <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
           <Plus className="h-4 w-4" />
-          Add Contact
+          New
         </Button>
       </div>
     );
@@ -1500,24 +1502,33 @@ export default function Contacts() {
   return (
     <div>
       <PageHeader title="Contacts" description={headerDescription}>
-        <Button variant="outline" onClick={() => setManageTagsOpen(true)}>
-          <Tags className="h-4 w-4" />
-          Manage Tags
-        </Button>
-        <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-          <Upload className="h-4 w-4" />
-          Import CSV
-        </Button>
-        <Button onClick={() => setCreateDialogOpen(true)}>
+        <Button size="sm" onClick={() => setCreateDialogOpen(true)}>
           <Plus className="h-4 w-4" />
-          Add Contact
+          New
         </Button>
+        <ActionsSheet
+          title="Contacts"
+          items={[
+            {
+              id: "tags",
+              label: "Manage Tags",
+              icon: Tags,
+              onClick: () => setManageTagsOpen(true),
+            },
+            {
+              id: "import",
+              label: "Import CSV",
+              icon: Upload,
+              onClick: () => setImportDialogOpen(true),
+            },
+          ]}
+        />
       </PageHeader>
 
       {/* Toolbar: search + filters left, view controls right */}
       <div className="flex items-center flex-wrap gap-2 mb-4">
         {/* Search */}
-        <div className="relative flex-1 min-w-[240px] max-w-xl">
+        <div className="relative min-w-0 flex-1 max-w-xl">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search contacts by name, email, or phone..."
@@ -1539,7 +1550,7 @@ export default function Contacts() {
         {/* Filters popover */}
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="h-9">
+            <Button variant="outline" size="sm">
               <Filter className="h-4 w-4" />
               Filters
               {filterCount > 0 && (
@@ -1553,9 +1564,7 @@ export default function Contacts() {
             <div className="space-y-4">
               {/* Activity */}
               <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Activity
-                </Label>
+                <Label>Activity</Label>
                 <Select
                   value={config.activityType ?? "any"}
                   onValueChange={(v) =>
@@ -1566,7 +1575,7 @@ export default function Contacts() {
                     }))
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue placeholder="Any activity type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1582,7 +1591,7 @@ export default function Contacts() {
                 </Select>
 
                 <div className="grid grid-cols-2 gap-2">
-                  <div>
+                  <div className="min-w-0 space-y-1">
                     <Label className="text-xs text-muted-foreground">
                       Active in last (days)
                     </Label>
@@ -1599,10 +1608,10 @@ export default function Contacts() {
                             : undefined,
                         }))
                       }
-                      className="h-9"
+                      className="h-8 text-xs"
                     />
                   </div>
-                  <div>
+                  <div className="min-w-0 space-y-1">
                     <Label className="text-xs text-muted-foreground">
                       Inactive for (days)
                     </Label>
@@ -1619,7 +1628,7 @@ export default function Contacts() {
                             : undefined,
                         }))
                       }
-                      className="h-9"
+                      className="h-8 text-xs"
                     />
                   </div>
                 </div>
@@ -1627,9 +1636,7 @@ export default function Contacts() {
 
               {/* Booking status */}
               <div className="space-y-2">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                  Has booking with status
-                </Label>
+                <Label>Has booking with status</Label>
                 <Select
                   value={config.bookingStatus ?? "any"}
                   onValueChange={(v) =>
@@ -1640,7 +1647,7 @@ export default function Contacts() {
                     }))
                   }
                 >
-                  <SelectTrigger className="w-full">
+                  <SelectTrigger className="h-8 w-full text-xs">
                     <SelectValue placeholder="Any" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1659,9 +1666,7 @@ export default function Contacts() {
               {/* Tags filter */}
               {tags.length > 0 && (
                 <div className="space-y-2">
-                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Tags
-                  </Label>
+                  <Label>Tags</Label>
                   <div className="flex flex-wrap gap-1.5">
                     {tags.map((tag) => {
                       const active = config.tagIds?.includes(tag.id) ?? false;
@@ -1697,11 +1702,9 @@ export default function Contacts() {
 
               {/* Kanban-only: pivot tags */}
               {viewType === "kanban" && tags.length > 0 && (
-                <div className="space-y-2 pt-3 border-t border-border">
-                  <Label className="text-xs uppercase tracking-wide text-muted-foreground">
-                    Kanban columns
-                  </Label>
-                  <p className="text-[11px] text-muted-foreground">
+                <div className="space-y-2">
+                  <Label>Kanban columns</Label>
+                  <p className="text-xs text-muted-foreground">
                     Pick which tags become columns. Default: all tags.
                   </p>
                   <div className="flex flex-wrap gap-1.5">
@@ -1731,29 +1734,33 @@ export default function Contacts() {
                       );
                     })}
                   </div>
-                  <label className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
-                    <input
-                      type="checkbox"
+                  <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Show Untagged column</p>
+                      <p className="text-xs text-muted-foreground">
+                        Include contacts with no tag
+                      </p>
+                    </div>
+                    <Switch
                       checked={!!config.showUntagged}
-                      onChange={(e) => {
+                      onCheckedChange={(checked) => {
                         const currentConfig = configRef.current;
                         applyPipelineConfig({
                           ...currentConfig,
-                          showUntagged: e.target.checked || undefined,
+                          showUntagged: checked || undefined,
                         });
                       }}
                     />
-                    Show "Untagged" column
-                  </label>
+                  </div>
                 </div>
               )}
 
               {filterCount > 0 && (
-                <div className="pt-2 border-t border-border">
+                <div>
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="w-full text-xs h-8"
+                    className="w-full"
                     onClick={() =>
                       setConfig((c) => ({
                         // keep kanban pivot config when clearing data filters
@@ -1770,14 +1777,14 @@ export default function Contacts() {
           </PopoverContent>
         </Popover>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex w-full min-w-0 items-center gap-2 sm:ml-auto sm:w-auto">
           {/* Saved views dropdown */}
           <Popover open={viewsMenuOpen} onOpenChange={setViewsMenuOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="h-9">
+              <Button variant="outline" className="h-9 min-w-0 max-w-full flex-1 sm:flex-none">
                 <Bookmark className="h-4 w-4" />
-                {activeView ? activeView.name : "All contacts"}
-                <ChevronDown className="h-4 w-4 opacity-60" />
+                <span className="truncate">{activeView ? activeView.name : "All contacts"}</span>
+                <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-72 p-2">
@@ -1863,7 +1870,7 @@ export default function Contacts() {
                       {seedPipelineMutation.isPending ? (
                         <Loader className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
                       ) : (
-                        <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
+                        <Kanban className="h-3.5 w-3.5 text-muted-foreground" />
                       )}
                       Start a sales pipeline
                     </button>

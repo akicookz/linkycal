@@ -7,7 +7,8 @@ import {
   Loader,
   CalendarDays,
   LockKeyhole,
-  Sparkles,
+  CreditCard,
+  Code2,
   Unplug,
   ExternalLink,
   Trash2,
@@ -757,7 +758,7 @@ export default function Settings() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-base">
               {hasCustomCssAccess ? (
-                <Sparkles className="size-4 text-muted-foreground" />
+                <Code2 className="size-4 text-muted-foreground" />
               ) : (
                 <LockKeyhole className="size-4 text-muted-foreground" />
               )}
@@ -842,7 +843,7 @@ export default function Settings() {
                     setShowUpgradeDialog(true);
                   }}
                 >
-                  <Sparkles className="size-4" />
+                  <CreditCard className="size-4" />
                   Upgrade to Pro
                 </Button>
               </div>
@@ -927,7 +928,7 @@ export default function Settings() {
                       setShowUpgradeDialog(true);
                     }}
                   >
-                    <Sparkles className="size-4" />
+                    <CreditCard className="size-4" />
                     Upgrade to Pro
                   </Button>
                 </div>

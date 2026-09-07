@@ -19,6 +19,8 @@ import {
 } from "@/components/ui/sheet";
 import { WorkflowResearchResult } from "@/components/WorkflowResearchResult";
 import { WorkflowStepLog } from "@/components/WorkflowStepLog";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 import type { ContactTimelineItem } from "@/lib/contact-activity";
 
 interface WorkflowStepLogEntry {
@@ -103,6 +105,7 @@ export function ContactActivityDetailsDrawer({
   projectId,
   item,
 }: ContactActivityDetailsDrawerProps) {
+  const isMobile = useIsMobile();
   const workflowItem = item?.kind === "workflow_run" ? item : null;
   const runQuery = useQuery<WorkflowRunDetail>({
     queryKey: [
@@ -132,7 +135,13 @@ export function ContactActivityDetailsDrawer({
 
   return (
     <Sheet open={open} onOpenChange={(value) => !value && onClose()}>
-      <SheetContent className="flex flex-col">
+      <SheetContent
+        side={isMobile ? "bottom" : "right"}
+        className={cn(
+          "flex min-w-0 max-w-full flex-col overflow-x-hidden overscroll-x-none",
+          isMobile && "max-h-[88vh] rounded-t-[20px]",
+        )}
+      >
         <SheetHeader>
           <div className="flex items-center gap-3 pr-8">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">

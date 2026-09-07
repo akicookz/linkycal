@@ -147,6 +147,7 @@ export default function Billing() {
         {canManageBilling && currentPlan !== "free" && (
           <Button
             variant="outline"
+            size="sm"
             onClick={() => portalMutation.mutate()}
             disabled={portalMutation.isPending}
           >

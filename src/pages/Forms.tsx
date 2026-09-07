@@ -10,9 +10,10 @@ import {
   AlertCircle,
   Check,
   BarChart3,
-  MoreHorizontal,
+  Code,
+  Pencil,
 } from "lucide-react";
-import CopyPromptButton from "@/components/CopyPromptButton";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,11 +22,6 @@ import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Select,
   SelectContent,
@@ -306,7 +302,7 @@ export default function Forms() {
       <PageHeader title="Forms" description="Build forms and collect responses">
         <Button onClick={openCreateDialog} size="sm">
           <Plus className="h-4 w-4" />
-          New Form
+          New
         </Button>
       </PageHeader>
 
@@ -359,7 +355,7 @@ export default function Forms() {
           </p>
           <Button onClick={openCreateDialog} size="sm">
             <Plus className="h-4 w-4" />
-            New Form
+            New
           </Button>
         </div>
       )}
@@ -375,114 +371,85 @@ export default function Forms() {
             >
               <CardContent>
                 {/* Name + status toggle */}
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-foreground truncate pr-2">
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <h3 className="min-w-0 pr-2 text-sm font-semibold break-words text-foreground">
                     {form.name}
                   </h3>
-                  <Switch
-                    checked={form.status === "active"}
-                    onCheckedChange={(checked) =>
-                      toggleStatusMutation.mutate({
-                        id: form.id,
-                        status: checked ? "active" : "draft",
-                      })
-                    }
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  <div className="-mr-1.5 flex shrink-0 items-center gap-1">
+                    <Switch
+                      checked={form.status === "active"}
+                      onCheckedChange={(checked) =>
+                        toggleStatusMutation.mutate({
+                          id: form.id,
+                          status: checked ? "active" : "draft",
+                        })
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <ActionsSheet
+                      title="Form"
+                      items={[
+                        {
+                          id: "copy-link",
+                          label: copiedId === `link-${form.id}` ? "Copied" : "Copy link",
+                          icon: copiedId === `link-${form.id}` ? Check : Copy,
+                          onClick: () => handleCopyLink(form),
+                        },
+                        {
+                          id: "copy-api",
+                          label: copiedId === `api-${form.id}` ? "Copied" : "Copy API prompt",
+                          icon: FileText,
+                          onClick: () => handleCopyApiPrompt(form),
+                        },
+                        {
+                          id: "copy-embed-prompt",
+                          label: copiedId === `embedprompt-${form.id}` ? "Copied" : "Copy embed prompt",
+                          icon: FileText,
+                          onClick: () => handleCopyEmbedPrompt(form),
+                        },
+                        {
+                          id: "embed",
+                          label: copiedId === `embed-${form.id}` ? "Copied" : "Copy embed script",
+                          icon: Code,
+                          onClick: () => handleCopyEmbed(form),
+                        },
+                        {
+                          id: "responses",
+                          label: "Responses",
+                          icon: BarChart3,
+                          onClick: () =>
+                            navigate(`/app/projects/${projectId}/forms/${form.id}/responses`),
+                        },
+                        {
+                          id: "edit",
+                          label: "Edit",
+                          icon: Pencil,
+                          onClick: () => navigate(`/app/projects/${projectId}/forms/${form.id}`),
+                        },
+                        {
+                          id: "delete",
+                          label: "Delete",
+                          icon: Trash2,
+                          variant: "destructive",
+                          onClick: () => openDeleteDialog(form.id),
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
 
-                {/* Badges */}
-                <div className="flex items-center gap-1.5 mb-3">
-                  <Badge variant={statusVariant(form.status)} className="text-[11px] px-2 py-0.5">
+                <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                  <Badge variant={statusVariant(form.status)} className="px-2 py-0.5 text-[11px]">
                     {form.status}
                   </Badge>
-                  <Badge variant="secondary" className="text-[11px] px-2 py-0.5">
+                  <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
                     {typeLabel(form.type)}
                   </Badge>
                 </div>
 
-                {/* Created date */}
-                <p className="text-xs text-muted-foreground mb-3">
+                <p className="text-xs text-muted-foreground">
                   Created {formatDate(form.createdAt)}
                 </p>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => handleCopyLink(form)}
-                  >
-                    {copiedId === `link-${form.id}` ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                    {copiedId === `link-${form.id}` ? "Copied" : "Copy link"}
-                  </Button>
-
-                  <CopyPromptButton
-                    items={[
-                      {
-                        id: `api-${form.id}`,
-                        label: "Copy API/Form Action Prompt",
-                        description: "API + native form action guidance for AI assistants",
-                        onClick: () => handleCopyApiPrompt(form),
-                        copied: copiedId === `api-${form.id}`,
-                      },
-                      {
-                        id: `embedprompt-${form.id}`,
-                        label: "Copy Embed Prompt",
-                        description: "Instructions for embedding on a website",
-                        onClick: () => handleCopyEmbedPrompt(form),
-                        copied: copiedId === `embedprompt-${form.id}`,
-                      },
-                      {
-                        id: `embed-${form.id}`,
-                        label: "Embed Script",
-                        description: "Copy the embed script tag to clipboard",
-                        onClick: () => handleCopyEmbed(form),
-                        copied: copiedId === `embed-${form.id}`,
-                      },
-                    ]}
-                  />
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}/responses`)}
-                  >
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    Responses
-                  </Button>
-
-                  <div className="flex-1" />
-
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 px-0">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-40 p-1.5">
-                      <button
-                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
-                        onClick={() => navigate(`/app/projects/${projectId}/forms/${form.id}`)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                        onClick={() => openDeleteDialog(form.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Delete
-                      </button>
-                    </PopoverContent>
-                  </Popover>
-                </div>
               </CardContent>
             </Card>
           ))}

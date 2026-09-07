@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { CalendarCheck, CalendarClock, FileText, Loader, XCircle, CheckCircle2, Video, Calendar, ClipboardCopy, Trash2, Check, ExternalLink } from "lucide-react";
 import {
   Sheet,
@@ -11,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CopyableField } from "@/components/CopyableField";
 import { getRelativeTime, formatVerboseDate, getGoogleCalendarDayUrl, isWithinOneHour } from "@/components/ActivityCard";
-import { copyToClipboard } from "@/lib/utils";
+import { cn, copyToClipboard } from "@/lib/utils";
 
 function countryFlag(code: string): string {
   try {
@@ -192,6 +193,7 @@ export function ActivityDrawer({
   cancelLoading,
   deleteLoading,
 }: ActivityDrawerProps) {
+  const isMobile = useIsMobile();
   const [detail, setDetail] = useState<BookingDetail | null>(null);
   const [formDetail, setFormDetail] = useState<FormResponseDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -269,9 +271,15 @@ export function ActivityDrawer({
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent className="flex flex-col">
-        <SheetHeader>
-          <div className="flex items-center gap-3">
+      <SheetContent
+        side={isMobile ? "bottom" : "right"}
+        className={cn(
+          "flex min-w-0 max-w-full flex-col overflow-x-hidden",
+          isMobile && "max-h-[88vh] rounded-t-[20px]",
+        )}
+      >
+        <SheetHeader className="min-w-0 pr-8">
+          <div className="flex min-w-0 items-center gap-3">
             <div className={`h-10 w-10 rounded-full flex items-center justify-center shrink-0 ${iconWrapperClass}`}>
               <Icon className={`h-5 w-5 ${iconClass}`} />
             </div>
@@ -289,7 +297,7 @@ export function ActivityDrawer({
             <Loader className="h-6 w-6 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto space-y-4">
+          <div className="min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto overscroll-x-none">
             {/* Location */}
             {(country || city) && (
               <p className="text-sm text-muted-foreground">
@@ -316,7 +324,7 @@ export function ActivityDrawer({
 
             {/* Details section */}
             <div>
-              <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Details</p>
+              <p className="text-[11px] font-semibold text-muted-foreground mb-2">Details</p>
               {isBooking && detail ? (
                 <>
                   <CopyableField label="Event" value={detail.eventTypeName} />
@@ -324,7 +332,7 @@ export function ActivityDrawer({
                   <CopyableField label="Time" value={`${formatDrawerTime(detail.booking.startTime)} – ${formatDrawerTime(detail.booking.endTime)}`} />
                   <CopyableField label="Timezone" value={detail.booking.timezone} />
                   <div className="py-1.5">
-                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                    <p className="text-[11px] font-medium text-muted-foreground mb-1">Status</p>
                     <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
                   </div>
                   {detail.booking.notes && <CopyableField label="Notes" value={detail.booking.notes} />}
@@ -334,7 +342,7 @@ export function ActivityDrawer({
                   <CopyableField label="Event" value={item.title} />
                   {item.startTime && <CopyableField label="Date" value={formatVerboseDate(item.startTime, item.timezone)} />}
                   <div className="py-1.5">
-                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                    <p className="text-[11px] font-medium text-muted-foreground mb-1">Status</p>
                     <Badge variant={statusVariant(bookingStatus)}>{bookingStatus}</Badge>
                   </div>
                 </>
@@ -346,7 +354,7 @@ export function ActivityDrawer({
                     value={formatDrawerDateTime(formDetail?.createdAt ?? item.date)}
                   />
                   <div className="py-1.5">
-                    <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">Status</p>
+                    <p className="text-[11px] font-medium text-muted-foreground mb-1">Status</p>
                     <Badge variant={statusVariant(formDetail?.status ?? item.status)}>
                       {formDetail ? formResponseStatusLabel(formDetail.status) : item.status}
                     </Badge>
@@ -358,7 +366,7 @@ export function ActivityDrawer({
             {/* Form Responses section (booking with form) */}
             {isBooking && detail?.formFields && detail.formFields.length > 0 && (
               <div>
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Form Responses</p>
+                <p className="text-[11px] font-semibold text-muted-foreground mb-2">Form Responses</p>
                 {detail.formFields.map((field, i) => (
                   <CopyableField key={i} label={field.label} value={field.value} />
                 ))}
@@ -368,7 +376,7 @@ export function ActivityDrawer({
             {/* Form response fields */}
             {!isBooking && formDetail?.values && formDetail.values.length > 0 && (
               <div>
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Responses</p>
+                <p className="text-[11px] font-semibold text-muted-foreground mb-2">Responses</p>
                 {formDetail.values.map((value) => {
                   if (value.fieldType === "file" && value.fileUrl) {
                     return (
@@ -403,7 +411,7 @@ export function ActivityDrawer({
               typeof formDetail.metadata === "object" &&
               Object.keys(formDetail.metadata as Record<string, unknown>).length > 0 && (
                 <div>
-                  <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Metadata</p>
+                  <p className="text-[11px] font-semibold text-muted-foreground mb-2">Metadata</p>
                   <pre className="text-xs text-muted-foreground bg-muted rounded-[12px] p-3 overflow-x-auto">
                     {JSON.stringify(formDetail.metadata, null, 2)}
                   </pre>
@@ -531,7 +539,7 @@ function FileResponseField({
 }) {
   return (
     <div className="py-1.5">
-      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+      <p className="text-[11px] font-medium text-muted-foreground mb-1">
         {label}
       </p>
       <div className="flex items-center justify-between gap-3">

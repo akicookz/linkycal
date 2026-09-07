@@ -10,21 +10,17 @@ import {
   Loader,
   AlertCircle,
   Check,
-  MoreHorizontal,
   Code,
+  FileText,
+  Pencil,
 } from "lucide-react";
-import CopyPromptButton from "@/components/CopyPromptButton";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Dialog,
   DialogContent,
@@ -225,7 +221,7 @@ export default function EventTypes() {
           size="sm"
         >
           <Plus className="h-4 w-4" />
-          New Event Type
+          New
         </Button>
       </PageHeader>
 
@@ -280,7 +276,7 @@ export default function EventTypes() {
             size="sm"
           >
             <Plus className="h-4 w-4" />
-            New Event Type
+            New
           </Button>
         </div>
       )}
@@ -296,120 +292,88 @@ export default function EventTypes() {
             >
               <CardContent>
                 {/* Color dot + name */}
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
                     <div
-                      className="h-3 w-3 rounded-full shrink-0"
+                      className="h-3 w-3 shrink-0 rounded-full"
                       style={{ backgroundColor: et.color }}
                     />
-                    <h3 className="text-sm font-semibold text-foreground truncate">
+                    <h3 className="text-sm font-semibold break-words text-foreground">
                       {et.name}
                     </h3>
                   </div>
-                  <Switch
-                    checked={et.enabled}
-                    onCheckedChange={(checked) =>
-                      toggleMutation.mutate({ id: et.id, enabled: checked })
-                    }
-                    onClick={(e) => e.stopPropagation()}
-                  />
+                  <div className="-mr-1.5 flex shrink-0 items-center gap-1">
+                    <Switch
+                      checked={et.enabled}
+                      onCheckedChange={(checked) =>
+                        toggleMutation.mutate({ id: et.id, enabled: checked })
+                      }
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <ActionsSheet
+                      title="Event type"
+                      items={[
+                        {
+                          id: "copy-link",
+                          label: copiedId === `link-${et.id}` ? "Copied" : "Copy link",
+                          icon: copiedId === `link-${et.id}` ? Check : Copy,
+                          onClick: () => handleCopyLink(et),
+                        },
+                        {
+                          id: "copy-api",
+                          label: copiedId === `api-${et.id}` ? "Copied" : "Copy API prompt",
+                          icon: FileText,
+                          onClick: () => handleCopyApiPrompt(et),
+                        },
+                        {
+                          id: "copy-embed-prompt",
+                          label: copiedId === `embedprompt-${et.id}` ? "Copied" : "Copy embed prompt",
+                          icon: FileText,
+                          onClick: () => handleCopyEmbedPrompt(et),
+                        },
+                        {
+                          id: "embed",
+                          label: copiedId === `embed-${et.id}` ? "Copied" : "Copy embed script",
+                          icon: Code,
+                          onClick: () => handleCopyEmbed(et),
+                        },
+                        {
+                          id: "edit",
+                          label: "Edit",
+                          icon: Pencil,
+                          onClick: () => navigate(`/app/projects/${projectId}/event-types/${et.id}`),
+                        },
+                        {
+                          id: "delete",
+                          label: "Delete",
+                          icon: Trash2,
+                          variant: "destructive",
+                          onClick: () => {
+                            setDeletingId(et.id);
+                            setDeleteDialogOpen(true);
+                          },
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
 
-                {/* Duration + Location */}
-                <div className="flex items-center gap-1.5 flex-wrap mb-3">
-                  <Badge variant="secondary" className="text-[11px] px-2 py-0.5">
+                <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                  <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
                     {et.duration} min
                   </Badge>
                   {et.location && (
-                    <Badge variant="secondary" className="text-[11px] px-2 py-0.5">
+                    <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
                       {et.location}
                     </Badge>
                   )}
                 </div>
 
                 {et.description && (
-                  <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
+                  <p className="text-xs text-pretty text-muted-foreground line-clamp-2">
                     {et.description}
                   </p>
                 )}
-
-                {/* Actions */}
-                <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => handleCopyLink(et)}
-                  >
-                    {copiedId === `link-${et.id}` ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <Copy className="h-3.5 w-3.5" />
-                    )}
-                    {copiedId === `link-${et.id}` ? "Copied" : "Copy link"}
-                  </Button>
-
-                  <CopyPromptButton
-                    items={[
-                      {
-                        id: `api-${et.id}`,
-                        label: "Copy API Prompt",
-                        description: "Full API documentation for AI assistants",
-                        onClick: () => handleCopyApiPrompt(et),
-                        copied: copiedId === `api-${et.id}`,
-                      },
-                      {
-                        id: `embedprompt-${et.id}`,
-                        label: "Copy Embed Prompt",
-                        description: "Instructions for embedding on a website",
-                        onClick: () => handleCopyEmbedPrompt(et),
-                        copied: copiedId === `embedprompt-${et.id}`,
-                      },
-                    ]}
-                  />
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2.5 text-xs"
-                    onClick={() => handleCopyEmbed(et)}
-                  >
-                    {copiedId === `embed-${et.id}` ? (
-                      <Check className="h-3.5 w-3.5 text-emerald-600" />
-                    ) : (
-                      <Code className="h-3.5 w-3.5" />
-                    )}
-                    {copiedId === `embed-${et.id}` ? "Copied" : "Embed"}
-                  </Button>
-
-                  <div className="flex-1" />
-
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 px-0">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent align="end" className="w-40 p-1.5">
-                      <button
-                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm hover:bg-muted/50 transition-colors"
-                        onClick={() => navigate(`/app/projects/${projectId}/event-types/${et.id}`)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="w-full flex items-center gap-2 text-left rounded-[10px] px-3 py-2 text-sm text-destructive hover:bg-destructive/10 transition-colors"
-                        onClick={() => {
-                          setDeletingId(et.id);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                        Delete
-                      </button>
-                    </PopoverContent>
-                  </Popover>
-                </div>
               </CardContent>
             </Card>
           ))}

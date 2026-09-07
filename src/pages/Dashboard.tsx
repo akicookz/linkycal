@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   CalendarCheck,
@@ -7,10 +7,12 @@ import {
   ClipboardList,
   Users,
   Plus,
+  FileText,
   ArrowRight,
   AlertCircle,
   Loader,
 } from "lucide-react";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -97,6 +99,7 @@ interface ActivityItem {
 
 export default function Dashboard() {
   const { projectId } = useParams<{ projectId: string }>();
+  const navigate = useNavigate();
 
   // Drawer state
   const [drawerItem, setDrawerItem] = useState<ActivityItem | null>(null);
@@ -297,20 +300,29 @@ export default function Dashboard() {
         title="Dashboard"
         description="Welcome back! Here's an overview of your project."
       >
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Button asChild variant="outline" size="sm" className="flex-1 sm:flex-none">
-            <Link to={`/app/projects/${projectId}/forms/new`}>
+        <ActionsSheet
+          title="Create"
+          items={[
+            {
+              id: "form",
+              label: "Create Form",
+              icon: FileText,
+              onClick: () => navigate(`/app/projects/${projectId}/forms/new`),
+            },
+            {
+              id: "event-type",
+              label: "Create Event Type",
+              icon: CalendarRange,
+              onClick: () => navigate(`/app/projects/${projectId}/event-types`),
+            },
+          ]}
+          trigger={
+            <Button size="sm">
               <Plus className="h-4 w-4" />
-              Create Form
-            </Link>
-          </Button>
-          <Button asChild size="sm" className="flex-1 sm:flex-none">
-            <Link to={`/app/projects/${projectId}/event-types`}>
-              <Plus className="h-4 w-4" />
-              Create Event Type
-            </Link>
-          </Button>
-        </div>
+              Create
+            </Button>
+          }
+        />
       </PageHeader>
 
       {/* Stat Cards */}
@@ -336,15 +348,15 @@ export default function Dashboard() {
 
       {/* Recent Activity */}
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="flex items-center gap-2">
-            <CalendarCheck className="h-4 w-4 text-muted-foreground" />
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
+          <CardTitle className="flex min-w-0 items-center gap-2">
+            <CalendarCheck className="h-4 w-4 shrink-0 text-muted-foreground" />
             Recent Activity
           </CardTitle>
           {activityItems && activityItems.length > 0 && (
             <Link
               to={`/app/projects/${projectId}/bookings`}
-              className="text-sm text-muted-foreground hover:text-foreground flex items-center gap-1 transition-colors"
+              className="flex shrink-0 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
             >
               View all
               <ArrowRight className="h-3 w-3" />

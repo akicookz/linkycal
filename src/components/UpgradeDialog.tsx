@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { CreditCard, Loader, Sparkles } from "lucide-react";
+import { CreditCard, Loader, LockKeyhole } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -61,7 +61,7 @@ export function UpgradeDialog({
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <div className="mx-auto w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center mb-2">
-            <Sparkles className="h-5 w-5 text-amber-600" />
+            <LockKeyhole className="h-5 w-5 text-amber-600" />
           </div>
           <DialogTitle className="text-center">{title}</DialogTitle>
           <DialogDescription className="text-center">
@@ -116,7 +116,7 @@ export function UpgradeDialog({
             ) : canManageBilling ? (
               <CreditCard className="h-4 w-4" />
             ) : (
-              <Sparkles className="h-4 w-4" />
+              <LockKeyhole className="h-4 w-4" />
             )}
             View plans
           </Button>

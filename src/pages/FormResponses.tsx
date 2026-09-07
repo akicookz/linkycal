@@ -229,35 +229,24 @@ export default function FormResponses() {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 mb-8">
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 shrink-0"
-            onClick={() =>
-              navigate(`/app/projects/${projectId}/forms/${formId}`)
-            }
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-              {form?.name ?? "Form"} — Responses
-            </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              View and manage submissions for this form.
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" disabled>
-            <Download className="h-4 w-4" />
-            Export CSV
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title={`${form?.name ?? "Form"} responses`}
+        description="View and manage submissions for this form."
+      >
+        <Button
+          variant="ghost"
+          size="sm"
+          className="hidden sm:inline-flex"
+          onClick={() => navigate(`/app/projects/${projectId}/forms/${formId}`)}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+        <Button variant="outline" size="sm" disabled>
+          <Download className="h-4 w-4" />
+          Export
+        </Button>
+      </PageHeader>
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -265,7 +254,7 @@ export default function FormResponses() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-1">
               <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <span className="text-xs font-medium text-muted-foreground ">
                 Total
               </span>
             </div>
@@ -278,7 +267,7 @@ export default function FormResponses() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-1">
               <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <span className="text-xs font-medium text-muted-foreground ">
                 Completed
               </span>
             </div>
@@ -291,7 +280,7 @@ export default function FormResponses() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-1">
               <Clock className="h-4 w-4 text-blue-500" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <span className="text-xs font-medium text-muted-foreground ">
                 In Progress
               </span>
             </div>
@@ -304,7 +293,7 @@ export default function FormResponses() {
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-2 mb-1">
               <XCircle className="h-4 w-4 text-amber-500" />
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+              <span className="text-xs font-medium text-muted-foreground ">
                 Abandoned
               </span>
             </div>

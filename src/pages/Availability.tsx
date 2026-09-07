@@ -404,14 +404,15 @@ export default function Availability() {
 
           {/* Schedule Overrides */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2">
-                <CalendarOff className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-start justify-between gap-2">
+              <CardTitle className="flex min-w-0 items-center gap-2">
+                <CalendarOff className="h-4 w-4 shrink-0 text-muted-foreground" />
                 Date Overrides
               </CardTitle>
               <Button
                 variant="outline"
                 size="sm"
+                className="shrink-0"
                 onClick={() => setOverrideDialogOpen(true)}
                 disabled={!defaultSchedule}
               >
@@ -435,9 +436,9 @@ export default function Availability() {
                   {overrides.map((override) => (
                     <div
                       key={override.id}
-                      className="flex items-center gap-4 py-2"
+                      className="flex flex-wrap items-center gap-2 py-2 sm:gap-4"
                     >
-                      <span className="text-sm font-medium text-foreground min-w-[160px]">
+                      <span className="min-w-0 text-sm font-medium text-foreground sm:min-w-[160px]">
                         {formatOverrideDate(override.date)}
                       </span>
                       {override.isBlocked ? (
@@ -451,7 +452,7 @@ export default function Availability() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
+                        className="text-destructive hover:text-destructive"
                         onClick={() => deleteOverrideMutation.mutate(override.id)}
                         disabled={deleteOverrideMutation.isPending}
                       >
@@ -510,12 +511,12 @@ export default function Availability() {
             {!overrideBlocked && (
               <div className="space-y-2">
                 <Label>Custom Hours</Label>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                   <Select
                     value={overrideStartTime}
                     onValueChange={setOverrideStartTime}
                   >
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="h-9 min-w-0 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-80">
@@ -526,12 +527,12 @@ export default function Availability() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="text-sm text-muted-foreground">to</span>
+                  <span className="shrink-0 text-sm text-muted-foreground">to</span>
                   <Select
                     value={overrideEndTime}
                     onValueChange={setOverrideEndTime}
                   >
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="h-9 min-w-0 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-80">

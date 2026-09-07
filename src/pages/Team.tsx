@@ -215,7 +215,7 @@ export default function Team() {
         {canInviteTeamMembers ? (
           <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button size="sm">
                 <UserPlus className="h-4 w-4" />
                 Invite
               </Button>
@@ -279,7 +279,7 @@ export default function Team() {
             </DialogContent>
           </Dialog>
         ) : (
-          <Button onClick={() => setShowTeamUpgrade(true)}>
+          <Button size="sm" onClick={() => setShowTeamUpgrade(true)}>
             <UserPlus className="h-4 w-4" />
             Invite
           </Button>

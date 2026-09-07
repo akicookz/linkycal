@@ -34,6 +34,7 @@ import {
   Circle,
   MinusCircle,
 } from "lucide-react";
+import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -847,57 +848,54 @@ export default function WorkflowBuilder() {
   return (
     <div>
       {/* Top action bar */}
-      <div className="flex items-center justify-between gap-4 mb-6">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="mb-6 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 px-2.5 shrink-0"
+            className="shrink-0"
             onClick={() => navigate(`/app/projects/${projectId}/workflows`)}
           >
             <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <Input
               value={editingName}
               onChange={(e) => setEditingName(e.target.value)}
               onBlur={handleNameBlur}
-              className="h-8 text-lg font-semibold border-transparent bg-transparent px-1 hover:border-border focus-visible:border-border"
-            />
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-xs text-muted-foreground">
-              {workflow.status === "active" ? "Active" : "Draft"}
-            </span>
-            <Switch
-              checked={workflow.status === "active"}
-              onCheckedChange={(checked) =>
-                updateWorkflowMutation.mutate({
-                  status: checked ? "active" : "draft",
-                })
-              }
+              className="h-8 border-transparent bg-transparent px-1 text-base font-semibold hover:border-border focus-visible:border-border md:text-lg"
             />
           </div>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setRunDialogOpen(true)}
-          >
-            <Play className="h-4 w-4" />
-            Test Run
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground hover:text-destructive"
-            onClick={() => setDeleteWorkflowDialogOpen(true)}
-          >
-            <Trash2 className="h-4 w-4" />
-            Delete
-          </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <Switch
+            checked={workflow.status === "active"}
+            onCheckedChange={(checked) =>
+              updateWorkflowMutation.mutate({
+                status: checked ? "active" : "draft",
+              })
+            }
+            aria-label={workflow.status === "active" ? "Active" : "Draft"}
+          />
+          <ActionsSheet
+            title="Workflow"
+            items={[
+              {
+                id: "test",
+                label: "Test run",
+                icon: Play,
+                onClick: () => setRunDialogOpen(true),
+              },
+              {
+                id: "delete",
+                label: "Delete",
+                icon: Trash2,
+                variant: "destructive",
+                onClick: () => setDeleteWorkflowDialogOpen(true),
+              },
+            ]}
+          />
         </div>
       </div>
 
@@ -992,7 +990,7 @@ export default function WorkflowBuilder() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 px-2.5 text-xs"
+                            className="px-2.5"
                             onClick={() => openEditStepDialog(step)}
                           >
                             <Settings2 className="h-3.5 w-3.5" />
@@ -1001,7 +999,7 @@ export default function WorkflowBuilder() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 px-2.5 text-xs text-destructive hover:text-destructive"
+                            className="text-destructive hover:text-destructive"
                             onClick={() => setDeleteStepId(step.id)}
                           >
                             <Trash2 className="h-3.5 w-3.5" />

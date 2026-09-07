@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { ChevronDown, Sparkles } from "lucide-react";
+import { ChevronDown, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -39,7 +39,7 @@ export default function CopyPromptButton({
           size={buttonSize}
           className={cn("h-8 px-2.5 text-xs", buttonClassName)}
         >
-          <Sparkles className="h-3.5 w-3.5" />
+          <FileText className="h-3.5 w-3.5" />
           Copy prompt
           <ChevronDown className="h-3 w-3" />
         </Button>

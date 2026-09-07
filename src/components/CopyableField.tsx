@@ -17,17 +17,17 @@ export function CopyableField({ label, value }: CopyableFieldProps) {
   }
 
   return (
-    <div className="py-1.5">
-      <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
+    <div className="min-w-0 py-1.5">
+      <p className="mb-1 text-xs font-medium text-muted-foreground">
         {label}
       </p>
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-foreground break-words min-w-0">{value || "—"}</p>
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <p className="min-w-0 break-words text-sm text-foreground">{value || "—"}</p>
         {value && (
           <button
             type="button"
             onClick={handleCopy}
-            className="shrink-0 -mr-1 -mt-0.5 p-1 rounded-md hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground"
+            className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
           >
             {copied ? (
               <Check className="h-3.5 w-3.5 text-emerald-600" />

@@ -774,9 +774,8 @@ export default function EventTypeForm() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() =>
-              navigate(`/app/projects/${projectId}/event-types`)
-            }
+            className="hidden sm:inline-flex"
+            onClick={() => navigate(`/app/projects/${projectId}/event-types`)}
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -831,9 +830,8 @@ export default function EventTypeForm() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() =>
-              navigate(`/app/projects/${projectId}/event-types`)
-            }
+            className="hidden sm:inline-flex"
+            onClick={() => navigate(`/app/projects/${projectId}/event-types`)}
           >
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -862,26 +860,23 @@ export default function EventTypeForm() {
             : "Create a new event type for people to book with you"
         }
       >
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() =>
-              navigate(`/app/projects/${projectId}/event-types`)
-            }
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-          <Button
-            size="sm"
-            onClick={handleSubmit}
-            disabled={isSaving || !formData.name || !formData.slug}
-          >
-            {isSaving ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-            {isEditing ? "Save Changes" : "Create Event Type"}
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="hidden sm:inline-flex"
+          onClick={() => navigate(`/app/projects/${projectId}/event-types`)}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+        <Button
+          size="sm"
+          onClick={handleSubmit}
+          disabled={isSaving || !formData.name || !formData.slug}
+        >
+          {isSaving ? <Loader className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          {isEditing ? "Save" : "Create"}
+        </Button>
       </PageHeader>
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -920,7 +915,7 @@ export default function EventTypeForm() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="slug">Slug</Label>
                   <Input
@@ -994,7 +989,7 @@ export default function EventTypeForm() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="bufferBefore">Buffer before (min)</Label>
                   <Input
@@ -1033,7 +1028,7 @@ export default function EventTypeForm() {
 
               <div className="space-y-3">
                 <p className="text-sm font-medium">Booking limits</p>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="maxPerDay">Max calls per day</Label>
                     <Input
@@ -1389,9 +1384,9 @@ export default function EventTypeForm() {
         <div className="space-y-6">
           {/* Available Times */}
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Clock className="h-4 w-4 text-muted-foreground" />
+            <CardHeader className="flex flex-row items-start justify-between gap-2">
+              <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 Available Times
               </CardTitle>
               {copyableEventTypes.length > 0 && (
@@ -1399,6 +1394,7 @@ export default function EventTypeForm() {
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="shrink-0"
                   onClick={() => setCopyAvailabilityOpen(true)}
                 >
                   <Copy className="h-4 w-4" />
@@ -1437,15 +1433,16 @@ export default function EventTypeForm() {
           {/* Date Overrides (only when editing — schedule must exist) */}
           {isEditing && eventTypeData?.eventType?.scheduleId && (
             <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <CalendarOff className="h-4 w-4 text-muted-foreground" />
+              <CardHeader className="flex flex-row items-start justify-between gap-2">
+                <CardTitle className="flex min-w-0 items-center gap-2 text-base">
+                  <CalendarOff className="h-4 w-4 shrink-0 text-muted-foreground" />
                   Date Overrides
                 </CardTitle>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="shrink-0"
                   onClick={() => setOverrideDialogOpen(true)}
                 >
                   <Plus className="h-4 w-4" />
@@ -1458,9 +1455,9 @@ export default function EventTypeForm() {
                     {overrides.map((override) => (
                       <div
                         key={override.id}
-                        className="flex items-center gap-4 py-2"
+                        className="flex flex-wrap items-center gap-2 py-2 sm:gap-4"
                       >
-                        <span className="text-sm font-medium text-foreground min-w-[160px]">
+                        <span className="min-w-0 text-sm font-medium text-foreground sm:min-w-[160px]">
                           {formatOverrideDate(override.date)}
                         </span>
                         {override.isBlocked ? (
@@ -1544,12 +1541,12 @@ export default function EventTypeForm() {
             {!overrideBlocked && (
               <div className="space-y-2">
                 <Label>Custom Hours</Label>
-                <div className="flex items-center gap-2">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
                   <Select
                     value={overrideStartTime}
                     onValueChange={setOverrideStartTime}
                   >
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="h-9 min-w-0 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-80">
@@ -1565,7 +1562,7 @@ export default function EventTypeForm() {
                     value={overrideEndTime}
                     onValueChange={setOverrideEndTime}
                   >
-                    <SelectTrigger className="w-[140px]">
+                    <SelectTrigger className="h-9 min-w-0 w-full">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent className="max-h-80">

@@ -26,16 +26,15 @@ function AccountLayout() {
         </div>
       </header>
 
-      <div className="flex px-6 gap-8">
-        {/* Sidebar nav */}
-        <nav className="w-48 shrink-0 pt-2">
-          <div className="space-y-1">
+      <div className="flex flex-col gap-6 px-4 md:flex-row md:gap-8 md:px-6">
+        <nav className="pt-2 md:w-48 md:shrink-0">
+          <div className="flex gap-1 overflow-x-auto md:flex-col md:space-y-1 md:overflow-visible">
             {tabs.map((tab) => (
               <Link
                 key={tab.href}
                 to={tab.href}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-[12px] px-3 py-2 text-sm font-medium transition-colors",
+                  "flex shrink-0 items-center gap-2.5 rounded-[12px] px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors",
                   location.pathname === tab.href
                     ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:text-foreground hover:bg-muted/50",

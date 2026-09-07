@@ -265,7 +265,7 @@ export default function Bookings() {
 
       {/* Loading */}
       {loadingBookings && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid max-w-3xl grid-cols-1 gap-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-[160px] rounded-[20px]" />
           ))}
@@ -291,7 +291,7 @@ export default function Bookings() {
           {filteredBookings.length === 0 ? (
             renderEmptyState()
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid max-w-3xl grid-cols-1 gap-3">
               {filteredBookings.map((booking) => (
                 <ActivityCard
                   key={booking.id}
