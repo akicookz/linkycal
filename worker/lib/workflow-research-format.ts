@@ -1,5 +1,6 @@
 import {
   WORKFLOW_RESEARCH_FIELD_DEFINITIONS,
+  type WorkflowResearchFieldDefinition,
 } from "../../shared/workflow-research-fields";
 
 export interface WorkflowResearchFormattedValues {
@@ -34,18 +35,8 @@ export function buildWorkflowResearchFormattedValues(
     insightsText,
     sourcesText,
     sourcesHtml,
-    reportText: formatReportText(
-      record,
-      recommendedTagsText,
-      insightsText,
-      sourcesText,
-    ),
-    reportHtml: formatReportHtml(
-      record,
-      recommendedTagsText,
-      insights,
-      sourcesHtml,
-    ),
+    reportText: formatReportText(record, sourcesText),
+    reportHtml: formatReportHtml(record, sourcesHtml),
   };
 }
 
@@ -81,32 +72,19 @@ function formatSourcesHtml(sources: ResearchSource[]): string {
 
 function formatReportText(
   record: Record<string, unknown>,
-  recommendedTagsText: string,
-  insightsText: string,
   sourcesText: string,
 ): string {
-  const sections = ["AI research"];
+  const sections: string[] = [];
 
   for (const field of WORKFLOW_RESEARCH_FIELD_DEFINITIONS) {
-    if (
-      field.kind === "string_list" ||
-      field.kind === "sources"
-    ) {
-      continue;
-    }
-    const value = asString(record[field.key]);
+    if (field.kind === "sources") continue;
+    const value = formatFieldPlainValue(field, record);
     if (!value) continue;
-    sections.push(`${reportLabel(field.key, field.label)}\n${value}`);
+    sections.push(`${reportLabel(field)}: ${value}`);
   }
 
-  if (recommendedTagsText) {
-    sections.push(`Recommended tags\n${recommendedTagsText}`);
-  }
-  if (insightsText) {
-    sections.push(`Insights\n${insightsText}`);
-  }
   if (sourcesText) {
-    sections.push(`Sources\n${sourcesText}`);
+    sections.push(`Sources:\n${sourcesText}`);
   }
 
   return sections.join("\n\n");
@@ -114,58 +92,58 @@ function formatReportText(
 
 function formatReportHtml(
   record: Record<string, unknown>,
-  recommendedTagsText: string,
-  insights: string[],
   sourcesHtml: string,
 ): string {
-  const sections = ["<section><h2>AI research</h2>"];
+  const sections: string[] = [];
 
   for (const field of WORKFLOW_RESEARCH_FIELD_DEFINITIONS) {
-    if (
-      field.kind === "string_list" ||
-      field.kind === "sources"
-    ) {
-      continue;
-    }
-    const value = asString(record[field.key]);
+    if (field.kind === "sources") continue;
+    const value = formatFieldPlainValue(field, record);
     if (!value) continue;
-    const safeUrl = field.kind === "url" ? safeHttpUrl(value) : null;
-    const content = safeUrl
-      ? `<a href="${escapeHtml(safeUrl)}">${escapeHtml(value)}</a>`
+    const label = escapeHtml(`${reportLabel(field)}:`);
+    const content = field.kind === "url"
+      ? formatUrlHtml(value)
       : escapeHtml(value);
-    sections.push(
-      `<h3>${escapeHtml(reportLabel(field.key, field.label))}</h3>` +
-      `<p>${content}</p>`,
-    );
+    sections.push(`<p><strong>${label}</strong> ${content}</p>`);
   }
 
-  if (recommendedTagsText) {
-    sections.push(
-      `<h3>Recommended tags</h3><p>${escapeHtml(recommendedTagsText)}</p>`,
-    );
-  }
-  if (insights.length > 0) {
-    sections.push(
-      "<h3>Insights</h3><ul>" +
-      insights.map((insight) => `<li>${escapeHtml(insight)}</li>`).join("") +
-      "</ul>",
-    );
-  }
   if (sourcesHtml) {
-    sections.push(`<h3>Sources</h3>${sourcesHtml}`);
+    sections.push(`<p><strong>Sources:</strong></p>${sourcesHtml}`);
   }
 
-  sections.push("</section>");
   return sections.join("");
 }
 
-function reportLabel(key: string, fallback: string): string {
-  if (key === "summary") return "Summary";
-  if (key === "company") return "Company";
-  if (key === "role") return "Role";
-  if (key === "website") return "Website";
-  if (key === "linkedinUrl") return "LinkedIn";
-  return fallback;
+function formatFieldPlainValue(
+  field: WorkflowResearchFieldDefinition,
+  record: Record<string, unknown>,
+): string | null {
+  if (field.kind === "text" || field.kind === "url") {
+    const value = asString(record[field.key]);
+    return value || null;
+  }
+  if (field.kind === "string_list") {
+    const items = asStringList(record[field.key]);
+    return items.length > 0 ? items.join(", ") : null;
+  }
+  return null;
+}
+
+function formatUrlHtml(value: string): string {
+  const safeUrl = safeHttpUrl(value);
+  const escaped = escapeHtml(value);
+  return safeUrl
+    ? `<a href="${escapeHtml(safeUrl)}">${escaped}</a>`
+    : escaped;
+}
+
+function reportLabel(field: WorkflowResearchFieldDefinition): string {
+  if (field.key === "summary") return "Summary";
+  if (field.key === "company") return "Company";
+  if (field.key === "role") return "Role";
+  if (field.key === "website") return "Website";
+  if (field.key === "linkedinUrl") return "LinkedIn";
+  return field.label;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

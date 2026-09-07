@@ -73,6 +73,30 @@ export const WORKFLOW_RESEARCH_FIELD_DEFINITIONS = [
     section: "facts",
   },
   {
+    key: "recentActivity",
+    label: "Recent activity",
+    kind: "text",
+    section: "signals",
+  },
+  {
+    key: "expansion",
+    label: "Expansion",
+    kind: "text",
+    section: "signals",
+  },
+  {
+    key: "recentPosts",
+    label: "Recent posts",
+    kind: "string_list",
+    section: "signals",
+  },
+  {
+    key: "teamMembers",
+    label: "Team members",
+    kind: "string_list",
+    section: "signals",
+  },
+  {
     key: "recommendedTags",
     label: "Recommended tags",
     kind: "string_list",

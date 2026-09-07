@@ -75,6 +75,20 @@ export const WORKFLOW_VARIABLES: WorkflowVariableGroup[] = [
       { key: "contact.email", label: "Contact email", example: "jane@example.com" },
       { key: "contact.phone", label: "Contact phone", example: "+1 555-0100" },
       { key: "contact.notes", label: "Contact notes" },
+      { key: "contact.company", label: "Company", example: "Acme Inc" },
+      { key: "contact.position", label: "Role", example: "Operations Lead" },
+      { key: "contact.website", label: "Website", example: "https://acme.example" },
+      { key: "contact.companySize", label: "Company size", example: "51-200" },
+      {
+        key: "contact.estimatedRevenue",
+        label: "Estimated revenue",
+        example: "€10M-€25M",
+      },
+      {
+        key: "contact.linkedinUrl",
+        label: "LinkedIn URL",
+        example: "https://linkedin.com/in/jane-smith",
+      },
     ],
   },
   {

@@ -148,6 +148,11 @@ export function writeAnalyticsEvent(
 
 // ─── Query ───────────────────────────────────────────────────────────────────
 
+function analyticsDateTimeLiteral(value: Date): string {
+  const utc = value.toISOString().slice(0, 19).replace("T", " ");
+  return `toDateTime('${utc}')`;
+}
+
 function buildDateFilter(params: AnalyticsQueryParams): string {
   if (params.period === "custom" && params.start && params.end) {
     if (params.timezone) {
@@ -156,15 +161,16 @@ function buildDateFilter(params: AnalyticsQueryParams): string {
         params.timezone,
       ).start;
       const end = getUtcRangeForLocalDate(params.end, params.timezone).end;
-      return `AND timestamp >= '${start.toISOString()}' AND timestamp < '${
-        end.toISOString()
-      }'`;
+      return `AND timestamp >= ${analyticsDateTimeLiteral(start)} AND timestamp < ${
+        analyticsDateTimeLiteral(end)
+      }`;
     }
+    const start = new Date(`${params.start}T00:00:00.000Z`);
     const endExclusive = new Date(`${params.end}T00:00:00.000Z`);
     endExclusive.setUTCDate(endExclusive.getUTCDate() + 1);
-    return `AND timestamp >= '${params.start}' AND timestamp < '${
-      endExclusive.toISOString().slice(0, 10)
-    }'`;
+    return `AND timestamp >= ${analyticsDateTimeLiteral(start)} AND timestamp < ${
+      analyticsDateTimeLiteral(endExclusive)
+    }`;
   }
 
   const days = params.period === "7d" ? 7 : params.period === "30d" ? 30 : 90;

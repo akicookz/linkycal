@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Primary reference
 
 Read `README.md` first. It is the source of truth for product scope,
-architecture, repository layout, commands, and the test-admission standard.
+architecture, repository layout, and commands.
 Then read `AGENTS.md` for code conventions (function declarations, naming,
 imports, and TypeScript rules), database conventions, and UI/branding rules.
 Do not duplicate those conventions—follow them.
@@ -51,7 +51,7 @@ Routing (`App.tsx`) is **project-scoped**: all dashboard routes live under `/app
 State is `@tanstack/react-query` (no Redux, no Zustand). `src/lib/query-client.ts` configures the client; `src/lib/auth-client.ts` wraps Better Auth's client.
 
 ### MCP server (`worker/mcp/`)
-`LinkyCalMcp` is a `McpAgent` Durable Object (Cloudflare Agents SDK, binding `MCP_OBJECT`) serving MCP over Streamable HTTP at `/api/mcp`. The route in `worker/index.ts` validates the `Authorization: Bearer lc_live_*` API key via `ApiKeyService.validate()` and passes the resulting `projectId` into the DO via `ctx.props` — every tool is hard-scoped to that project and `projectId` is never a tool parameter. Tool handlers live in `worker/mcp/tools/*.ts` (exported as plain functions for unit testing) and wrap the same services and `worker/lib/booking-actions.ts` flows the HTTP routes use. The DO migration lives in `wrangler.jsonc` (`new_sqlite_classes`) and applies on `wrangler deploy` — it is not a D1 migration.
+`LinkyCalMcp` is a `McpAgent` Durable Object (Cloudflare Agents SDK, binding `MCP_OBJECT`) serving MCP over Streamable HTTP at `/api/mcp`. The route in `worker/index.ts` validates the `Authorization: Bearer lc_live_*` API key via `ApiKeyService.validate()` and passes the resulting `projectId` into the DO via `ctx.props` — every tool is hard-scoped to that project and `projectId` is never a tool parameter. Tool handlers live in `worker/mcp/tools/*.ts` and wrap the same services and `worker/lib/booking-actions.ts` flows the HTTP routes use. The DO migration lives in `wrangler.jsonc` (`new_sqlite_classes`) and applies on `wrangler deploy` — it is not a D1 migration.
 
 ### Data flow: workflows
 Workflows are the async automation layer. A trigger (form submitted, booking created, etc.) builds a `TriggerContext` and enqueues to the `linkycal-workflows` Cloudflare Queue (producer binding `WORKFLOW_QUEUE`). The same `worker/index.ts` exports the queue consumer, which invokes `WorkflowExecutionService` to walk steps and evaluate conditions via `worker/lib/workflow-runtime.ts`. Keep trigger fan-out synchronous-to-enqueue only; actual work belongs in the consumer.

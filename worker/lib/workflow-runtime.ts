@@ -113,6 +113,10 @@ const workflowResearchResultShape = {
   description: z.string().nullable(),
   companySize: z.string().nullable(),
   estimatedRevenue: z.string().nullable(),
+  recentActivity: z.string().nullable(),
+  expansion: z.string().nullable(),
+  recentPosts: z.array(z.string()),
+  teamMembers: z.array(z.string()),
   recommendedTags: z.array(z.string()),
   insights: z.array(z.string()),
   sources: z.array(

@@ -21,6 +21,10 @@ import {
 } from "../lib/workflow-runtime";
 import { enrichContactFromResearch, appendResearchSummaryToNotes } from "../lib/contact-enrich";
 import {
+  buildResearchBrief,
+  constrainRecommendedTags,
+} from "../lib/workflow-research-brief";
+import {
   evaluateWorkflowCondition,
   parseWorkflowCondition,
 } from "../lib/workflow-conditions";
@@ -1234,7 +1238,30 @@ export class WorkflowExecutionService {
     const researchRequest = String(config.prompt ?? "");
     const userPrompt = this.interpolate(researchRequest, context);
     const contextBlock = buildInputContextBlock(context.stepInputs);
-    const finalPrompt = contextBlock ? `${contextBlock}\n\n${userPrompt}` : userPrompt;
+    const availableTags = (await this.tagService.listAll(context.projectId))
+      .map((tag) => tag.name);
+    const formFieldsValue = context.metadata?.formFields;
+    const formFields = isRecord(formFieldsValue) ? formFieldsValue : undefined;
+    const brief = buildResearchBrief({
+      contact: {
+        name: context.contactName,
+        email: context.contactEmail,
+        phone: context.contactPhone,
+        notes: context.contactNotes,
+        company: context.contactCompany,
+        website: context.contactWebsite,
+        position: context.contactPosition,
+        companySize: context.contactCompanySize,
+        estimatedRevenue: context.contactEstimatedRevenue,
+        linkedinUrl: context.contactLinkedinUrl,
+      },
+      availableTags,
+      formFields,
+    });
+    const promptParts = [brief];
+    if (contextBlock) promptParts.push(contextBlock);
+    if (userPrompt) promptParts.push(userPrompt);
+    const finalPrompt = promptParts.join("\n\n");
     const resultKey = typeof config.resultKey === "string" ? config.resultKey : undefined;
 
     snap.resolved = {
@@ -1259,10 +1286,13 @@ export class WorkflowExecutionService {
       });
     }
 
-    const record = await this.workflowAiResearchService.execute(
-      { provider, prompt: finalPrompt, resultKey },
-      env,
-      reportResearchPhase,
+    const record = this.constrainResearchTags(
+      await this.workflowAiResearchService.execute(
+        { provider, prompt: finalPrompt, resultKey },
+        env,
+        reportResearchPhase,
+      ),
+      availableTags,
     );
 
     if (progress) {
@@ -1276,7 +1306,10 @@ export class WorkflowExecutionService {
     }
     snap.researchApplication = { contactId, record };
 
-    context.metadata = mergeWorkflowResearchMetadata(context.metadata, record);
+    context.metadata = mergeWorkflowResearchMetadata(
+      context.metadata,
+      record,
+    );
 
     snap.output = {
       ...record.result,
@@ -1416,14 +1449,53 @@ export class WorkflowExecutionService {
   async enrichContact(projectId: string, contactId: string, env: AppEnv): Promise<void> {
     const contact = await this.contactService.getById(contactId);
     if (!contact || contact.projectId !== projectId) return;
+    const availableTags = (await this.tagService.listAll(projectId))
+      .map((tag) => tag.name);
+    const brief = buildResearchBrief({
+      contact: {
+        name: contact.name,
+        email: contact.email,
+        phone: contact.phone,
+        notes: contact.notes,
+        company: contact.company,
+        website: contact.companyWebsite,
+        position: contact.position,
+        companySize: contact.companySize,
+        estimatedRevenue: contact.estimatedRevenue,
+        linkedinUrl: contact.linkedinUrl,
+      },
+      availableTags,
+    });
     const prompt =
+      `${brief}\n\n` +
       `Research this contact and their company using public sources: ` +
       `${contact.name}${contact.email ? ` <${contact.email}>` : ""}. ` +
       `Return the company name, company website, the person's position/title, ` +
       `the company's size (employee range), an estimated annual revenue range, ` +
-      `their LinkedIn URL, and a concise executive summary for sales outreach.`;
-    const record = await this.researchForEnrichment(prompt, env);
+      `their LinkedIn URL, recent activity, expansion, recent posts from the ` +
+      `company or leadership, team members, and a concise executive summary ` +
+      `for sales outreach.`;
+    const record = this.constrainResearchTags(
+      await this.researchForEnrichment(prompt, env),
+      availableTags,
+    );
     await this.applyResearchToContact(contactId, record);
+  }
+
+  private constrainResearchTags(
+    record: WorkflowResearchRecord,
+    availableTags: readonly string[],
+  ): WorkflowResearchRecord {
+    return {
+      ...record,
+      result: {
+        ...record.result,
+        recommendedTags: constrainRecommendedTags(
+          record.result.recommendedTags,
+          availableTags,
+        ),
+      },
+    };
   }
 
   // Enrichment research with provider fallback: try ChatGPT, and if it fails and

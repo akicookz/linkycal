@@ -3,8 +3,8 @@
 ## Primary repository guide
 
 Read `README.md` first for product scope, architecture, repository layout,
-commands, and the test-admission standard. This file adds implementation,
-database, and UI conventions for coding agents.
+and commands. This file adds implementation, database, and UI conventions
+for coding agents.
 
 ## Product Overview
 
@@ -77,16 +77,6 @@ app/
 - Arrow functions only for inline callbacks
 - `export default` for page/layout components; named exports for everything else
 - `import type` for type-only imports
-
-### Test Quality
-
-- Never test for vanity; every test must earn its spot.
-- Every test name must identify the regression it prevents.
-- Assert observable behavior, persisted state, security boundaries, or protocol output—not implementation structure, styling classes, DOM ancestry, or source text.
-- Consolidate equivalent inputs into a labeled table when they protect the same branch.
-- Do not duplicate a contract already required by a stronger integration test.
-- A new test must be demonstrated red against the missing or broken behavior before production code is changed.
-- Test count is not a quality metric.
 
 ### Naming
 

@@ -19,6 +19,9 @@ interface ResearchSource {
 const FACT_FIELDS = WORKFLOW_RESEARCH_FIELD_DEFINITIONS.filter(
   (field) => field.section === "facts",
 );
+const SIGNAL_FIELDS = WORKFLOW_RESEARCH_FIELD_DEFINITIONS.filter(
+  (field) => field.section === "signals",
+);
 
 export function WorkflowResearchResult({
   value,
@@ -36,8 +39,6 @@ export function WorkflowResearchResult({
     const fieldValue = asString(result[field.key]);
     return fieldValue ? [{ ...field, value: fieldValue }] : [];
   });
-  const recommendedTags = asStringList(result.recommendedTags);
-  const insights = asStringList(result.insights);
   const sources = asSources(result.sources);
   const storedSourceCount =
     typeof record.sourceCount === "number" ? record.sourceCount : undefined;
@@ -66,33 +67,67 @@ export function WorkflowResearchResult({
         </ResearchSection>
       )}
 
-      {recommendedTags.length > 0 && (
-        <ResearchSection title="Recommended tags">
-          <div className="flex flex-wrap gap-1.5">
-            {recommendedTags.map((tag, index) => (
-              <span
-                key={`${tag}-${index}`}
-                className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-              >
-                {tag}
-              </span>
-            ))}
-          </div>
-        </ResearchSection>
-      )}
+      {SIGNAL_FIELDS.map((field) => {
+        if (field.kind === "text") {
+          const fieldValue = asString(result[field.key]);
+          if (!fieldValue) return null;
+          return (
+            <ResearchSection key={field.key} title={field.label}>
+              <p className="text-sm text-muted-foreground text-pretty">
+                {fieldValue}
+              </p>
+            </ResearchSection>
+          );
+        }
 
-      {insights.length > 0 && (
-        <ResearchSection title="Insights">
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            {insights.map((insight, index) => (
-              <li key={`${insight}-${index}`} className="flex gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-                <span className="text-pretty">{insight}</span>
-              </li>
-            ))}
-          </ul>
-        </ResearchSection>
-      )}
+        if (field.kind !== "string_list") return null;
+        const items = asStringList(result[field.key]);
+        if (items.length === 0) return null;
+
+        if (field.key === "recommendedTags") {
+          return (
+            <ResearchSection key={field.key} title={field.label}>
+              <div className="flex flex-wrap gap-1.5">
+                {items.map((tag, index) => (
+                  <span
+                    key={`${tag}-${index}`}
+                    className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </ResearchSection>
+          );
+        }
+
+        if (field.key === "insights") {
+          return (
+            <ResearchSection key={field.key} title={field.label}>
+              <ul className="space-y-2 text-sm text-muted-foreground">
+                {items.map((insight, index) => (
+                  <li key={`${insight}-${index}`} className="flex gap-2">
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    <span className="text-pretty">{insight}</span>
+                  </li>
+                ))}
+              </ul>
+            </ResearchSection>
+          );
+        }
+
+        return (
+          <ResearchSection key={field.key} title={field.label}>
+            <ul className="space-y-1 text-sm text-muted-foreground">
+              {items.map((item, index) => (
+                <li key={`${item}-${index}`} className="text-pretty">
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </ResearchSection>
+        );
+      })}
 
       {(sources.length > 0 || sourceCount > 0) && (
         <ResearchSection title="Public sources">

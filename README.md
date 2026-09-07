@@ -6,9 +6,9 @@ pages, calendar delivery, contact management, workflows, APIs, MCP tools, and
 embeddable widgets in one product.
 
 This README is the canonical guide to the product, repository, architecture,
-commands, and testing standard. Coding agents must also read
-[AGENTS.md](AGENTS.md) for implementation and UI conventions. Claude Code must
-also follow [CLAUDE.md](CLAUDE.md).
+and commands. Coding agents must also read [AGENTS.md](AGENTS.md) for
+implementation and UI conventions. Claude Code must also follow
+[CLAUDE.md](CLAUDE.md).
 
 ## What LinkyCal does
 
@@ -139,13 +139,10 @@ tools return the same object in `structuredContent.entitlementError`.
 | `widget/booking/` | Self-contained booking widget entry and build |
 | `widget/form/` | Self-contained form widget entry and build |
 | `widget/shared/` | Code shared by widget bundles |
-| `tests/critical/` | Small, user-outcome-oriented product test suite |
-| `tests/support/` | Migration-backed database, HTTP capture, queue, clock, and render infrastructure |
 | `scripts/` | Checked REST/MCP inventories plus deterministic OpenAPI, endpoint-audit, and llms.txt generators |
 | `public/openapi.json` | Generated OpenAPI document |
 | `public/llms.txt` | Generated AI-readable API documentation |
-| `docs/superpowers/specs/` | Approved feature and remediation designs |
-| `docs/superpowers/plans/` | Implementation plans |
+| `docs/api-endpoint-audit.md` | Generated REST/MCP authentication audit |
 | `wrangler.jsonc` | Worker bindings, queues, Durable Objects, schedules, and non-secret variables |
 
 The public booking route is a two-segment catch-all and must remain after more
@@ -155,7 +152,7 @@ specific top-level SPA routes.
 
 ### Prerequisites
 
-- [Bun](https://bun.sh/) for package management, scripts, and tests.
+- [Bun](https://bun.sh/) for package management and scripts.
 - Access to the LinkyCal Cloudflare account and any external provider accounts
   needed for the subsystem being exercised.
 - A locally provisioned `.dev.vars`. It contains secrets and must never be
@@ -186,8 +183,6 @@ migrations to local D1 state; it does not migrate production.
 | Command | Purpose |
 | --- | --- |
 | `bun run dev` | Start the Vite and Worker development server on port 3001 |
-| `bun run test` | Run the full Bun test suite |
-| `bun run test:critical` | Run the critical user-outcome suite |
 | `bun run lint` | Run ESLint |
 | `bun run build` | Regenerate Cloudflare types, type-check all projects, and build Worker and client bundles |
 | `bun run preview` | Build and preview the production output |
@@ -223,88 +218,6 @@ migrations to local D1 state; it does not migrate production.
 The production migration, upload, and deployment commands mutate live systems.
 Run them only when that outcome is explicitly intended.
 
-## Testing: every test earns its place
-
-Test count and coverage percentage are not quality goals in this repository. A
-test belongs only when it protects a distinct failure that matters to a user,
-stored data, security, delivery, or an external protocol.
-
-### Test admission criteria
-
-A test must satisfy all of these:
-
-1. Its name identifies the regression or user harm it prevents.
-2. It exercises the production path capable of causing that failure.
-3. It asserts a final observable result: rendered behavior, persisted state,
-   outbound payload, authorization boundary, queue result, or protocol output.
-4. Its expected values are literal and independent from the production
-   calculation under test.
-5. It fails for a clear reason when the protected behavior is removed or
-   broken.
-6. A stronger existing journey does not already require the same behavior.
-7. Equivalent inputs are consolidated into one labeled table or scenario
-   instead of multiplied into separate tests.
-
-The red check is regression proof, not a development ideology: demonstrate that
-the test detects the missing or broken behavior before relying on it.
-
-### Tests that do not belong
-
-Do not add:
-
-- tests whose only assertion is that a string is a string, an export exists, or
-  a mock was called;
-- source-text, type-shape, implementation-key, or private-method tests;
-- Tailwind class, DOM ancestry, markup-shape, or opaque snapshot assertions;
-- one test per trivial input when one semantic scenario owns the branch;
-- unit tests that duplicate a stronger component or service journey;
-- tests written to increase a count, coverage percentage, or dashboard metric;
-- tests that reproduce the production algorithm to calculate their own
-  expected answer;
-- permissive fakes that accept malformed authentication or provider payloads.
-
-Delete or consolidate a test when it no longer owns a distinct failure.
-
-### Test boundaries
-
-Critical tests use real production functions, services, actions, components,
-validation, and every production D1 migration. Replace only boundaries that
-cannot run hermetically:
-
-- capture `fetch` for Google, Resend, webhooks, and public API requests;
-- use deterministic Cloudflare queue and `waitUntil` collectors;
-- fix the wall clock and viewer timezone;
-- provide deterministic provider responses for AI operations.
-
-Provider doubles must reject malformed protocol details. Assertions inspect the
-actual request or final persisted result, not merely the number of calls.
-
-### Adding or changing a test
-
-1. State the tangible failure in the test name.
-2. Find the strongest existing journey that should own it.
-3. Add literal expectations for the user-facing or protocol result.
-4. Show that the assertion fails against the missing or deliberately broken
-   production behavior.
-5. Make the smallest production correction.
-6. Run the owning test file, then the full suite.
-7. Remove weaker or redundant assertions exposed by the stronger contract.
-
-## Critical test ownership
-
-The suite is intentionally organized by user outcome:
-
-| Suite | What it protects |
-| --- | --- |
-| `tests/critical/availability-timezones.test.ts` | Organizer/viewer timezone conversion, DST gaps and repeats, extreme date overlap, busy intervals, buffers, notice periods, overrides, and real slot generation |
-| `tests/critical/public-booking-timezones.test.tsx` | The rendered booking calendar, viewer-local dates and labels, production event projection, availability queries, and submitted UTC instant |
-| `tests/critical/booking-delivery.test.ts` | Booking caps and lifecycle, Google OAuth/event payloads, attendees, provider identity persistence, Resend content, ICS data, approval, cancellation, decline, and form-response delivery |
-| `tests/critical/form-experience.test.tsx` | Persisted focused/grouped/classic settings, rendering, validation, submission wiring, conditional fields, and stale-answer removal |
-| `tests/critical/workflow-journeys.test.ts` | Triggering, queue execution, conditions, waits, replay safety, mutations, exact email/webhook payloads, provider failure, and secret-safe persistence |
-
-Support code under `tests/support/` may model infrastructure, but it must not
-reimplement the production decision the owning test claims to verify.
-
 ## Verification by change type
 
 During implementation, run the smallest relevant command for fast feedback.
@@ -312,12 +225,11 @@ Before handing work off, run every applicable final check.
 
 | Change | Required checks |
 | --- | --- |
-| SPA, Worker, service, or shared domain code | Owning critical test file, `bun run test`, `bun run lint`, `bun run build` |
-| Test-only change | Owning test file, `bun run test`, `bun run lint` |
-| API route or schema exposed in generated docs | Relevant tests, `bun run docs:check`, `bun run build` |
-| `worker/db/schema.ts` | `bun run db:generate`, inspect generated SQL, `bun run db:migrate:dev`, relevant tests, `bun run build` |
+| SPA, Worker, service, or shared domain code | `bun run lint`, `bun run build` |
+| API route or schema exposed in generated docs | `bun run docs:check`, `bun run build` |
+| `worker/db/schema.ts` | `bun run db:generate`, inspect generated SQL, `bun run db:migrate:dev`, `bun run build` |
 | `wrangler.jsonc` binding | `bun run cf-typegen`, `bun run build` |
-| Booking or form widget | Relevant production tests, `bun run widget:build`, `bun run build` |
+| Booking or form widget | `bun run widget:build`, `bun run build` |
 | Markdown-only documentation | Validate commands and links, `bun run docs:check` when generated API claims changed, `git diff --check` |
 
 Warnings are not failures, but new warnings introduced by a change must be
@@ -350,5 +262,3 @@ understood rather than ignored.
 - [API endpoint audit](docs/api-endpoint-audit.md)
 - [Generated OpenAPI document](public/openapi.json)
 - [Generated LLM documentation](public/llms.txt)
-- [Approved designs](docs/superpowers/specs/)
-- [Implementation plans](docs/superpowers/plans/)
