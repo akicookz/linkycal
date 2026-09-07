@@ -464,7 +464,12 @@ export const createFormFieldObject = z.object({
   description: z.string().max(10000).nullable().optional(),
   placeholder: z.string().max(200).optional(),
   required: z.boolean().default(false),
-  hidden: z.boolean().optional(),
+  hidden: z
+    .boolean()
+    .optional()
+    .describe(
+      "Never shown to respondents. Still accepts prefill and conditions. Cannot be required, have visibility rules, or be type file or completion.",
+    ),
   validation: z.record(z.string(), z.unknown()).optional(),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
   visibility: formConditionSchema.nullable().optional(),
@@ -502,7 +507,12 @@ export const updateFormFieldObject = z.object({
     description: z.string().max(10000).nullable().optional(),
     placeholder: z.string().max(200).nullable().optional(),
     required: z.boolean().optional(),
-    hidden: z.boolean().optional(),
+    hidden: z
+      .boolean()
+      .optional()
+      .describe(
+        "Never shown to respondents. Still accepts prefill and conditions. Cannot be required, have visibility rules, or be type file or completion.",
+      ),
     validation: z.record(z.string(), z.unknown()).nullable().optional(),
     options: z
       .array(z.object({ label: z.string(), value: z.string() }))

@@ -866,13 +866,17 @@ function createOperation(
             metadata.successDescription ?? "Successful response",
         };
   }
-  return applySlugResourceContract(
+  return applyFormFieldContract(
     method,
     path,
-    applyContactApiContract(
+    applySlugResourceContract(
       method,
       path,
-      applyTagApiContract(method, path, operation),
+      applyContactApiContract(
+        method,
+        path,
+        applyTagApiContract(method, path, operation),
+      ),
     ),
   );
 }
@@ -915,6 +919,30 @@ function applySlugResourceContract(
 
   if (path === projectPath && (method === "get" || method === "put")) {
     setExplicitSuccess(operation, "200", "Project", "Project");
+  }
+
+  return operation;
+}
+
+function applyFormFieldContract(
+  method: OpenApiMethod,
+  path: string,
+  operation: OpenApiOperation,
+): OpenApiOperation {
+  const fieldsPath = "/api/projects/:projectId/forms/:formId/fields";
+  const fieldPath = "/api/projects/:projectId/forms/:formId/fields/:id";
+
+  if (path === fieldsPath && method === "get") {
+    setExplicitSuccess(operation, "200", "Form fields", "FormFieldList");
+  }
+  if (path === fieldsPath && method === "post") {
+    operation.requestBody = jsonRequestBody("CreateFormField");
+    setExplicitSuccess(operation, "201", "Form field created", "FormFieldResponse");
+  }
+  if (path === fieldPath && method === "put") {
+    operation.requestBody = jsonRequestBody("UpdateFormField");
+    setExplicitSuccess(operation, "200", "Form field", "FormFieldResponse");
+    addNotFound(operation);
   }
 
   return operation;
@@ -1785,6 +1813,69 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
         FormList: {
           type: "array",
           items: { $ref: "#/components/schemas/Form" },
+        },
+        FormField: {
+          type: "object",
+          additionalProperties: true,
+          required: ["id", "type", "label", "hidden"],
+          properties: {
+            id: { type: "string" },
+            type: { type: "string" },
+            label: { type: "string" },
+            hidden: {
+              type: "boolean",
+              description:
+                "Never shown to respondents. Still accepts prefill and conditions.",
+            },
+            required: { type: "boolean" },
+          },
+        },
+        FormFieldList: {
+          type: "object",
+          additionalProperties: false,
+          required: ["fields"],
+          properties: {
+            fields: {
+              type: "array",
+              items: { $ref: "#/components/schemas/FormField" },
+            },
+          },
+        },
+        FormFieldResponse: {
+          type: "object",
+          additionalProperties: false,
+          required: ["field"],
+          properties: {
+            field: { $ref: "#/components/schemas/FormField" },
+          },
+        },
+        CreateFormField: {
+          type: "object",
+          additionalProperties: true,
+          required: ["stepId", "type", "label"],
+          properties: {
+            stepId: { type: "string" },
+            type: { type: "string" },
+            label: { type: "string" },
+            hidden: {
+              type: "boolean",
+              description:
+                "Never shown to respondents. Cannot be required, have visibility rules, or be type file or completion.",
+            },
+            required: { type: "boolean" },
+          },
+        },
+        UpdateFormField: {
+          type: "object",
+          additionalProperties: true,
+          properties: {
+            hidden: {
+              type: "boolean",
+              description:
+                "Never shown to respondents. Cannot be required, have visibility rules, or be type file or completion.",
+            },
+            required: { type: "boolean" },
+          },
         },
         EventType: {
           type: "object",

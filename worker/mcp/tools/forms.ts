@@ -261,7 +261,8 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "get_form",
     withMcpToolDiscovery("get_form", {
-      description: "Get a form by id with all its steps and fields.",
+      description:
+        "Get a form by id with all its steps and fields. Each field includes hidden.",
       inputSchema: { formId: z.string().describe("Form id") },
       outputSchema: formSlugOutputSchema,
     }),
@@ -351,7 +352,8 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "create_form_field",
     withMcpToolDiscovery("create_form_field", {
-      description: "Add a field to a form step.",
+      description:
+        "Add a field to a form step. Set hidden true for a field that stays off the public screen but still accepts prefill and conditions.",
       inputSchema: {
         formId: z.string(), stepId: createFieldShape.stepId, sortOrder: createFieldShape.sortOrder,
         type: createFieldShape.type, label: createFieldShape.label, description: createFieldShape.description,
@@ -366,7 +368,8 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "update_form_field",
     withMcpToolDiscovery("update_form_field", {
-      description: "Update a form field or move it within this form.",
+      description:
+        "Update a form field or move it within this form. hidden marks a field as never shown.",
       inputSchema: {
         formId: z.string(), fieldId: z.string(), stepId: updateFieldShape.stepId,
         sortOrder: updateFieldShape.sortOrder, type: updateFieldShape.type, label: updateFieldShape.label,

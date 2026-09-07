@@ -125,6 +125,10 @@ Further documentation:
 - AI-oriented reference: https://linkycal.com/llms.txt
 - OpenAPI 3.1: https://linkycal.com/openapi.json
 
+Form MCP details:
+- create_form_field and update_form_field accept optional hidden. Hidden fields stay off the public screen, still accept prefill and conditions, and cannot be required, have visibility rules, or be type file or completion.
+- get_form and the REST field list return each field's hidden flag.
+
 Analytics MCP details:
 - get_analytics_overview: common period, custom dates, UTM, source, and device inputs; returns aggregate totals/time series.
 - get_booking_funnel_analytics: required IANA timezone plus an optional project-owned eventTypeId for UTC-backed date demand, persisted booking-request weekday/time distributions, and exact booking stages.

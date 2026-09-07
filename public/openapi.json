@@ -3199,6 +3199,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Form fields",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormFieldList"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3238,9 +3248,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -3274,16 +3281,26 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonObject"
+                "$ref": "#/components/schemas/CreateFormField"
               }
             }
           }
         },
         "responses": {
+          "201": {
+            "description": "Form field created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormFieldResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3323,9 +3340,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
@@ -3456,16 +3470,26 @@
           }
         ],
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/JsonObject"
+                "$ref": "#/components/schemas/UpdateFormField"
               }
             }
           }
         },
         "responses": {
+          "200": {
+            "description": "Form field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormFieldResponse"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -3496,6 +3520,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -3505,9 +3539,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -10821,6 +10852,101 @@
         "type": "array",
         "items": {
           "$ref": "#/components/schemas/Form"
+        }
+      },
+      "FormField": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "type",
+          "label",
+          "hidden"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Never shown to respondents. Still accepts prefill and conditions."
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FormFieldList": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "fields"
+        ],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FormField"
+            }
+          }
+        }
+      },
+      "FormFieldResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "field"
+        ],
+        "properties": {
+          "field": {
+            "$ref": "#/components/schemas/FormField"
+          }
+        }
+      },
+      "CreateFormField": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "stepId",
+          "type",
+          "label"
+        ],
+        "properties": {
+          "stepId": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Never shown to respondents. Cannot be required, have visibility rules, or be type file or completion."
+          },
+          "required": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateFormField": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "hidden": {
+            "type": "boolean",
+            "description": "Never shown to respondents. Cannot be required, have visibility rules, or be type file or completion."
+          },
+          "required": {
+            "type": "boolean"
+          }
         }
       },
       "EventType": {
