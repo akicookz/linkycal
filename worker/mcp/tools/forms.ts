@@ -33,13 +33,19 @@ import {
 import type { ToolContext } from "../agent";
 import { actionToMcpResult } from "../action-result";
 import { withMcpToolDiscovery } from "../tool-discovery";
-import { withToolErrors } from "../helpers";
+import { ok, withToolErrors } from "../helpers";
 import type { ToolResult } from "../helpers";
+import {
+  formListSlugOutputSchema,
+  formSlugOutputSchema,
+} from "../slug-schema";
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
 
 export async function listForms(ctx: ToolContext): Promise<ToolResult> {
-  return actionToMcpResult(await listFormsAction(mcpFormDeps(ctx)));
+  const result = await listFormsAction(mcpFormDeps(ctx));
+  if (!result.ok) return actionToMcpResult(result);
+  return ok({ forms: result.value });
 }
 
 export async function getForm(
@@ -245,8 +251,10 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "list_forms",
     withMcpToolDiscovery("list_forms", {
-      description: "List forms in this project with their status (draft/active/archived).",
+      description:
+        "List forms in this project with their status (draft/active/archived). Each form includes its public slug.",
       inputSchema: {},
+      outputSchema: formListSlugOutputSchema,
     }),
     withToolErrors("list_forms", ctx, () => listForms(ctx)),
   );
@@ -255,6 +263,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
     withMcpToolDiscovery("get_form", {
       description: "Get a form by id with all its steps and fields.",
       inputSchema: { formId: z.string().describe("Form id") },
+      outputSchema: formSlugOutputSchema,
     }),
     withToolErrors("get_form", ctx, (input) => getForm(ctx, input)),
   );
@@ -262,6 +271,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
     "create_form",
     withMcpToolDiscovery("create_form", {
       description: "Create a draft form with one empty initial step.",
+      outputSchema: formSlugOutputSchema,
       inputSchema: {
         name: createShape.name.describe("Form name"),
         slug: createShape.slug.describe("URL slug"),
@@ -275,6 +285,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
     "update_form",
     withMcpToolDiscovery("update_form", {
       description: "Update a form's configuration or publishing status.",
+      outputSchema: formSlugOutputSchema,
       inputSchema: {
         formId: z.string().describe("Form id"),
         name: updateShape.name,

@@ -14,6 +14,7 @@ import type { ToolContext } from "../agent";
 import { actionToMcpResult } from "../action-result";
 import { withMcpToolDiscovery } from "../tool-discovery";
 import { withToolErrors } from "../helpers";
+import { projectSlugOutputSchema } from "../slug-schema";
 import type { ProjectActionDeps } from "../../lib/action-result";
 
 function projectActionDeps(ctx: ToolContext): ProjectActionDeps {
@@ -69,6 +70,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext) {
     withMcpToolDiscovery("get_project", {
       description: "Get the project bound to this MCP connection.",
       inputSchema: {},
+      outputSchema: projectSlugOutputSchema,
     }),
     withToolErrors("get_project", ctx, () => getProject(ctx)),
   );
@@ -86,6 +88,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext) {
     "update_project",
     withMcpToolDiscovery("update_project", {
       description: "Update project details. Only provided fields change.",
+      outputSchema: projectSlugOutputSchema,
       inputSchema: {
         name: updateShape.name.describe("Project name"),
         slug: updateShape.slug.describe("Public URL slug"),

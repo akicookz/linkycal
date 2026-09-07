@@ -94,6 +94,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -133,9 +143,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -171,6 +178,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Project",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -210,9 +227,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
@@ -687,6 +701,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Event types",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventTypeList"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -726,9 +750,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -764,6 +785,16 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Event type created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventType"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -803,9 +834,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
@@ -841,6 +869,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Event type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventType"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -871,6 +909,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -880,9 +928,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -926,6 +971,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Event type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventType"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -956,6 +1011,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -965,9 +1030,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -2271,6 +2333,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Forms",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FormList"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2310,9 +2382,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -2348,6 +2417,16 @@
           }
         },
         "responses": {
+          "201": {
+            "description": "Form created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Form"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2387,9 +2466,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       }
@@ -2425,6 +2501,16 @@
           }
         ],
         "responses": {
+          "200": {
+            "description": "Form",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Form"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2455,6 +2541,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -2464,9 +2560,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -2510,6 +2603,16 @@
           }
         },
         "responses": {
+          "200": {
+            "description": "Form",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Form"
+                }
+              }
+            }
+          },
           "400": {
             "description": "Invalid request",
             "content": {
@@ -2540,6 +2643,16 @@
               }
             }
           },
+          "404": {
+            "description": "Resource not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limit exceeded",
             "content": {
@@ -2549,9 +2662,6 @@
                 }
               }
             }
-          },
-          "2XX": {
-            "description": "Successful response"
           }
         }
       },
@@ -10684,6 +10794,78 @@
         "properties": {
           "success": {
             "type": "boolean"
+          }
+        }
+      },
+      "Form": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "FormList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/Form"
+        }
+      },
+      "EventType": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "EventTypeList": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/EventType"
+        }
+      },
+      "Project": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
           }
         }
       },

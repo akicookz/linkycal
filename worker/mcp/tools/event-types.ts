@@ -12,8 +12,13 @@ import { createEventTypeSchema, updateEventTypeSchema } from "../../validation";
 import type { ProjectActionDeps } from "../../lib/action-result";
 import type { ToolContext } from "../agent";
 import { actionToMcpResult } from "../action-result";
-import { withToolErrors } from "../helpers";
+import { ok, withToolErrors } from "../helpers";
 import { withMcpToolDiscovery } from "../tool-discovery";
+import {
+  eventTypeDetailSlugOutputSchema,
+  eventTypeListSlugOutputSchema,
+  eventTypeSlugOutputSchema,
+} from "../slug-schema";
 
 function projectActionDeps(ctx: ToolContext): ProjectActionDeps {
   return {
@@ -28,7 +33,9 @@ function projectActionDeps(ctx: ToolContext): ProjectActionDeps {
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
 
 export async function listEventTypes(ctx: ToolContext) {
-  return actionToMcpResult(await listEventTypesAction(projectActionDeps(ctx)));
+  const result = await listEventTypesAction(projectActionDeps(ctx));
+  if (!result.ok) return actionToMcpResult(result);
+  return ok({ eventTypes: result.value });
 }
 
 export async function getEventType(
@@ -77,6 +84,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
     withMcpToolDiscovery("list_event_types", {
       description: "List all event types (bookable meeting types) in this project.",
       inputSchema: {},
+      outputSchema: eventTypeListSlugOutputSchema,
     }),
     withToolErrors("list_event_types", ctx, () => listEventTypes(ctx)),
   );
@@ -86,6 +94,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
     withMcpToolDiscovery("get_event_type", {
       description: "Get an event type by id, including its schedule, availability rules, and date overrides.",
       inputSchema: { eventTypeId: z.string().describe("Event type id") },
+      outputSchema: eventTypeDetailSlugOutputSchema,
     }),
     withToolErrors("get_event_type", ctx, (input) => getEventType(ctx, input)),
   );
@@ -94,6 +103,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
     "create_event_type",
     withMcpToolDiscovery("create_event_type", {
       description: "Create an event type. duration and buffers are in minutes.",
+      outputSchema: eventTypeSlugOutputSchema,
       inputSchema: {
         name: createShape.name.describe("Display name, e.g. 'Intro Call'"),
         slug: createShape.slug.describe("URL slug, lowercase letters/numbers/hyphens"),
@@ -120,6 +130,7 @@ export function registerEventTypeTools(server: McpServer, ctx: ToolContext) {
     "update_event_type",
     withMcpToolDiscovery("update_event_type", {
       description: "Update an event type. Only provided fields change.",
+      outputSchema: eventTypeSlugOutputSchema,
       inputSchema: {
         eventTypeId: z.string().describe("Event type id"),
         name: updateShape.name.describe("New name"),

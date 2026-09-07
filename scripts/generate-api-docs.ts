@@ -866,11 +866,58 @@ function createOperation(
             metadata.successDescription ?? "Successful response",
         };
   }
-  return applyContactApiContract(
+  return applySlugResourceContract(
     method,
     path,
-    applyTagApiContract(method, path, operation),
+    applyContactApiContract(
+      method,
+      path,
+      applyTagApiContract(method, path, operation),
+    ),
   );
+}
+
+function applySlugResourceContract(
+  method: OpenApiMethod,
+  path: string,
+  operation: OpenApiOperation,
+): OpenApiOperation {
+  const formsPath = "/api/projects/:projectId/forms";
+  const formPaths = new Set([
+    "/api/projects/:projectId/forms/:formId",
+    "/api/projects/:projectId/forms/:id",
+  ]);
+  const eventTypesPath = "/api/projects/:projectId/event-types";
+  const eventTypePath = "/api/projects/:projectId/event-types/:id";
+  const projectPath = "/api/projects/:projectId";
+
+  if (path === formsPath && method === "get") {
+    setExplicitSuccess(operation, "200", "Forms", "FormList");
+  }
+  if (path === formsPath && method === "post") {
+    setExplicitSuccess(operation, "201", "Form created", "Form");
+  }
+  if (formPaths.has(path) && (method === "get" || method === "put")) {
+    setExplicitSuccess(operation, "200", "Form", "Form");
+    addNotFound(operation);
+  }
+
+  if (path === eventTypesPath && method === "get") {
+    setExplicitSuccess(operation, "200", "Event types", "EventTypeList");
+  }
+  if (path === eventTypesPath && method === "post") {
+    setExplicitSuccess(operation, "201", "Event type created", "EventType");
+  }
+  if (path === eventTypePath && (method === "get" || method === "put")) {
+    setExplicitSuccess(operation, "200", "Event type", "EventType");
+    addNotFound(operation);
+  }
+
+  if (path === projectPath && (method === "get" || method === "put")) {
+    setExplicitSuccess(operation, "200", "Project", "Project");
+  }
+
+  return operation;
 }
 
 function addOperation(
@@ -1723,6 +1770,44 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
           required: ["success"],
           properties: {
             success: { type: "boolean" },
+          },
+        },
+        Form: {
+          type: "object",
+          additionalProperties: true,
+          required: ["id", "slug", "name"],
+          properties: {
+            id: { type: "string" },
+            slug: { type: "string" },
+            name: { type: "string" },
+          },
+        },
+        FormList: {
+          type: "array",
+          items: { $ref: "#/components/schemas/Form" },
+        },
+        EventType: {
+          type: "object",
+          additionalProperties: true,
+          required: ["id", "slug", "name"],
+          properties: {
+            id: { type: "string" },
+            slug: { type: "string" },
+            name: { type: "string" },
+          },
+        },
+        EventTypeList: {
+          type: "array",
+          items: { $ref: "#/components/schemas/EventType" },
+        },
+        Project: {
+          type: "object",
+          additionalProperties: true,
+          required: ["id", "slug", "name"],
+          properties: {
+            id: { type: "string" },
+            slug: { type: "string" },
+            name: { type: "string" },
           },
         },
         JsonObject: {

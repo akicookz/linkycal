@@ -19,7 +19,11 @@ type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 export type ToolResult = CallToolResult;
 
 export function ok(data: unknown): ToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  const text = JSON.stringify(data, null, 2);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: JSON.parse(text) as Record<string, unknown>,
+  };
 }
 
 export function err(message: string): ToolResult {
