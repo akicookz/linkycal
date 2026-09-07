@@ -21,6 +21,7 @@ interface FormFieldForPrompt {
   label: string;
   type: string;
   required: boolean;
+  hidden?: boolean;
   placeholder: string | null;
   options: Array<{ label: string; value: string }> | null;
 }
@@ -132,6 +133,9 @@ curl -X PATCH "${origin}/api/v1/forms/${projectSlug}/${formSlug}/responses/RESPO
 
 function renderHtmlField(field: FormFieldForPrompt): string {
   const id = escapeHtml(field.id);
+  if (field.hidden) {
+    return `<input type="hidden" name="${id}" />`;
+  }
   const label = escapeHtml(field.label);
   const placeholder = field.placeholder
     ? ` placeholder="${escapeHtml(field.placeholder)}"`

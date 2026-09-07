@@ -528,6 +528,7 @@ export const formFields = sqliteTable(
     description: text("description"),
     placeholder: text("placeholder"),
     required: integer("required", { mode: "boolean" }).notNull().default(false),
+    hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
     validation: text("validation", { mode: "json" }),
     options: text("options", { mode: "json" }),
     visibility: text("visibility", { mode: "json" }),

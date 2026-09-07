@@ -15,6 +15,7 @@ export interface FormExperienceField {
   description: string | null;
   placeholder: string | null;
   required: boolean;
+  hidden?: boolean;
   validation: Record<string, unknown> | null;
   options: Array<{ label: string; value: string }> | null;
   visibility?: FormCondition | null;
@@ -99,6 +100,7 @@ export interface CreateFormExperienceCheckpointInput {
   formType: FormExperienceForm["type"];
   surface: "standalone" | "booking";
   steps: VisibleFormExperienceStep[];
+  hiddenFields?: FormExperienceField[];
   stepIndex: number;
   isFinal: boolean;
 }
@@ -183,7 +185,7 @@ export function getCompletionField(
 export function createFormExperienceCheckpoint(
   input: CreateFormExperienceCheckpointInput,
 ): FormExperienceCheckpoint | null {
-  const { formType, surface, steps, stepIndex, isFinal } = input;
+  const { formType, surface, steps, hiddenFields = [], stepIndex, isFinal } = input;
   const current = steps[stepIndex];
   if (!current) {
     const supportsEmptyCheckpoint =
@@ -197,14 +199,14 @@ export function createFormExperienceCheckpoint(
       stepIndex,
       totalSteps: 0,
       isFinal,
-      fields: [],
+      fields: hiddenFields,
     };
   }
   return {
     stepIndex,
     totalSteps: steps.length,
     isFinal,
-    fields: current.fields,
+    fields: [...current.fields, ...hiddenFields],
   };
 }
 
@@ -377,6 +379,7 @@ export function buildFormExperienceModel(
         .filter(
           (currentField) =>
             currentField.type !== "completion" &&
+            !currentField.hidden &&
             isFieldVisible(
               {
                 id: currentField.id,
@@ -401,6 +404,7 @@ export function buildFormExperienceModel(
     .filter(
       (currentField) =>
         currentField.type !== "completion" &&
+        !currentField.hidden &&
         values[currentField.id] !== undefined &&
         !(surface === "booking" && excludedFieldIds.has(currentField.id)) &&
         (!conditionallyVisibleStepIds.has(currentField.stepId) ||

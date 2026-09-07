@@ -405,7 +405,41 @@ export const updateFormStepSchema = z.object({
   visibility: formConditionSchema.nullable().optional(),
 });
 
-export const createFormFieldSchema = z.object({
+export function hiddenFieldConflict(data: {
+  hidden?: boolean;
+  required?: boolean;
+  visibility?: unknown;
+  type?: string;
+}): string | null {
+  if (!data.hidden) return null;
+  if (data.required) return "Hidden fields cannot be required";
+  if (data.visibility != null) return "Hidden fields cannot have visibility rules";
+  if (data.type === "completion" || data.type === "file") {
+    return "This field type cannot be hidden";
+  }
+  return null;
+}
+
+function rejectHiddenFieldConflicts<
+  Schema extends z.ZodType<{
+    hidden?: boolean;
+    required?: boolean;
+    visibility?: unknown;
+    type?: string;
+  }>,
+>(schema: Schema) {
+  return schema.superRefine(function refineHiddenField(data, ctx) {
+    const conflict = hiddenFieldConflict(data);
+    if (!conflict) return;
+    ctx.addIssue({
+      code: "custom",
+      message: conflict,
+      path: ["hidden"],
+    });
+  });
+}
+
+export const createFormFieldObject = z.object({
   stepId: z.string().min(1),
   sortOrder: z.number().int().min(0).optional(),
   type: z.enum([
@@ -430,47 +464,57 @@ export const createFormFieldSchema = z.object({
   description: z.string().max(10000).nullable().optional(),
   placeholder: z.string().max(200).optional(),
   required: z.boolean().default(false),
+  hidden: z.boolean().optional(),
   validation: z.record(z.string(), z.unknown()).optional(),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
   visibility: formConditionSchema.nullable().optional(),
   contactMapping: z.enum(["name", "email"]).nullable().optional(),
 });
 
-export const updateFormFieldSchema = z.object({
-  stepId: z.string().min(1).optional(),
-  sortOrder: z.number().int().min(0).optional(),
-  type: z
-    .enum([
-      "name",
-      "text",
-      "textarea",
-      "email",
-      "phone",
-      "url",
-      "number",
-      "select",
-      "multi_select",
-      "checkbox",
-      "radio",
-      "date",
-      "time",
-      "file",
-      "rating",
-      "completion",
-    ])
-    .optional(),
-  label: z.string().min(1).max(200).optional(),
-  description: z.string().max(10000).nullable().optional(),
-  placeholder: z.string().max(200).nullable().optional(),
-  required: z.boolean().optional(),
-  validation: z.record(z.string(), z.unknown()).nullable().optional(),
-  options: z
-    .array(z.object({ label: z.string(), value: z.string() }))
-    .nullable()
-    .optional(),
-  contactMapping: z.enum(["name", "email"]).nullable().optional(),
-  visibility: formConditionSchema.nullable().optional(),
+export const createFormFieldSchema = rejectHiddenFieldConflicts(
+  createFormFieldObject,
+);
+
+export const updateFormFieldObject = z.object({
+    stepId: z.string().min(1).optional(),
+    sortOrder: z.number().int().min(0).optional(),
+    type: z
+      .enum([
+        "name",
+        "text",
+        "textarea",
+        "email",
+        "phone",
+        "url",
+        "number",
+        "select",
+        "multi_select",
+        "checkbox",
+        "radio",
+        "date",
+        "time",
+        "file",
+        "rating",
+        "completion",
+      ])
+      .optional(),
+    label: z.string().min(1).max(200).optional(),
+    description: z.string().max(10000).nullable().optional(),
+    placeholder: z.string().max(200).nullable().optional(),
+    required: z.boolean().optional(),
+    hidden: z.boolean().optional(),
+    validation: z.record(z.string(), z.unknown()).nullable().optional(),
+    options: z
+      .array(z.object({ label: z.string(), value: z.string() }))
+      .nullable()
+      .optional(),
+    contactMapping: z.enum(["name", "email"]).nullable().optional(),
+    visibility: formConditionSchema.nullable().optional(),
 });
+
+export const updateFormFieldSchema = rejectHiddenFieldConflicts(
+  updateFormFieldObject,
+);
 
 export const submitFormStepSchema = z.object({
   fields: z.array(

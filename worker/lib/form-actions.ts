@@ -5,6 +5,7 @@ import { FormService } from "../services/form-service";
 import { StorageUsageService } from "../services/storage-usage-service";
 import {
   createFormFieldSchema,
+  hiddenFieldConflict,
   createFormSchema,
   createFormStepSchema,
   listFormResponsesQuerySchema,
@@ -323,12 +324,26 @@ export async function updateFormFieldAction(
   if (!parsed.success) return invalidRequest();
   if (!(await formInProject(deps, formId))) return notFound();
   const service = new FormService(deps.db);
-  if (!(await service.getFieldById(formId, fieldId))) return notFound();
+  const existing = await service.getFieldById(formId, fieldId);
+  if (!existing) return notFound();
   if (
     parsed.data.stepId &&
     !(await stepInForm(service, formId, parsed.data.stepId))
   ) {
     return notFound();
+  }
+  if (
+    hiddenFieldConflict({
+      hidden: parsed.data.hidden ?? existing.hidden,
+      required: parsed.data.required ?? existing.required,
+      visibility:
+        parsed.data.visibility !== undefined
+          ? parsed.data.visibility
+          : existing.visibility,
+      type: parsed.data.type ?? existing.type,
+    })
+  ) {
+    return invalidRequest();
   }
   const field = await service.updateField(formId, fieldId, parsed.data);
   return field ? actionOk(field) : notFound();

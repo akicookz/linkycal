@@ -3,6 +3,7 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as dbSchema from "../db/schema";
 import { getUniqueFieldId } from "../lib/field-ids";
 import { plainTextToRichTextHtml } from "../lib/rich-text";
+import { hiddenFieldConflict } from "../validation";
 
 // ─── Field Helpers ───────────────────────────────────────────────────────────
 
@@ -500,6 +501,7 @@ export class FormService {
     description?: string | null;
     placeholder?: string;
     required?: boolean;
+    hidden?: boolean;
     validation?: Record<string, unknown>;
     options?: Array<{ label: string; value: string }>;
     visibility?: Record<string, unknown> | null;
@@ -524,6 +526,17 @@ export class FormService {
     const placeholder =
       data.placeholder ?? FIELD_TYPE_PLACEHOLDERS[data.type] ?? null;
 
+    const hidden = data.hidden ?? false;
+    if (
+      hiddenFieldConflict({
+        hidden,
+        required: data.required,
+        visibility: data.visibility,
+        type: data.type,
+      })
+    ) {
+      return null;
+    }
     await this.db.insert(dbSchema.formFields).values({
       id,
       formId: step.formId,
@@ -533,10 +546,11 @@ export class FormService {
       label: data.label,
       description: data.description ?? null,
       placeholder,
-      required: data.required ?? false,
+      required: hidden ? false : (data.required ?? false),
+      hidden,
       validation: data.validation ? JSON.stringify(data.validation) : null,
       options: data.options ? JSON.stringify(data.options) : null,
-      visibility: data.visibility ? JSON.stringify(data.visibility) : null,
+      visibility: hidden ? null : (data.visibility ? JSON.stringify(data.visibility) : null),
       contactMapping: data.contactMapping ?? null,
     });
 
@@ -554,6 +568,7 @@ export class FormService {
       description?: string | null;
       placeholder?: string | null;
       required?: boolean;
+      hidden?: boolean;
       validation?: Record<string, unknown> | null;
       options?: Array<{ label: string; value: string }> | null;
       contactMapping?: string | null;
@@ -582,7 +597,28 @@ export class FormService {
     if (data.label !== undefined) values.label = data.label;
     if (data.description !== undefined) values.description = data.description;
     if (data.placeholder !== undefined) values.placeholder = data.placeholder;
-    if (data.required !== undefined) values.required = data.required;
+    if (data.hidden !== undefined) values.hidden = data.hidden;
+    const nextHidden = data.hidden ?? currentField.hidden;
+    if (
+      hiddenFieldConflict({
+        hidden: nextHidden,
+        required: nextHidden ? false : (data.required ?? currentField.required),
+        visibility: nextHidden
+          ? null
+          : data.visibility !== undefined
+            ? data.visibility
+            : currentField.visibility,
+        type: data.type ?? currentField.type,
+      })
+    ) {
+      return null;
+    }
+    if (nextHidden) {
+      values.required = false;
+      values.visibility = null;
+    } else if (data.required !== undefined) {
+      values.required = data.required;
+    }
     if (data.validation !== undefined)
       values.validation = data.validation
         ? JSON.stringify(data.validation)
@@ -591,7 +627,7 @@ export class FormService {
       values.options = data.options ? JSON.stringify(data.options) : null;
     if (data.contactMapping !== undefined)
       values.contactMapping = data.contactMapping;
-    if (data.visibility !== undefined)
+    if (!nextHidden && data.visibility !== undefined)
       values.visibility = data.visibility
         ? JSON.stringify(data.visibility)
         : null;

@@ -259,6 +259,7 @@ export function FormExperience(props: FormExperienceProps) {
       formType: form.type,
       surface,
       steps,
+      hiddenFields: model.allFields.filter((field) => field.hidden),
       stepIndex,
       isFinal,
     });
@@ -999,6 +1000,17 @@ export function FormExperience(props: FormExperienceProps) {
           className="space-y-5 sm:space-y-6"
         >
           {honeypot}
+
+          {model.allFields
+            .filter((field) => field.hidden)
+            .map((field) => (
+              <input
+                key={field.id}
+                type="hidden"
+                name={field.id}
+                value={values[field.id] ?? ""}
+              />
+            ))}
 
           {currentFields.map((field) => (
             <FormFieldRenderer

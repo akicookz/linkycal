@@ -120,6 +120,7 @@ interface FormField {
   description: string | null;
   placeholder: string | null;
   required: boolean;
+  hidden?: boolean;
   validation: unknown;
   options: Array<{ label: string; value: string }> | null;
   contactMapping: string | null;
@@ -701,7 +702,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     let n = 0;
     for (const step of sortedSteps) {
       for (const field of sortFields(step.fields ?? [])) {
-        if (field.type === "completion") continue;
+        if (field.type === "completion" || field.hidden) continue;
         n += 1;
         map[field.id] = n;
       }
@@ -710,7 +711,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   }, [sortedSteps]);
   const totalQuestions = Object.keys(questionNumberByFieldId).length;
   const orderedQuestionFields = sortedSteps.flatMap((step) =>
-    sortFields(step.fields ?? []).filter((f) => f.type !== "completion"),
+    sortFields(step.fields ?? []).filter((f) => f.type !== "completion" && !f.hidden),
   );
 
   // ─── Condition source lookups ────────────────────────────────────────────
@@ -1276,6 +1277,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         description: string | null;
         placeholder: string | null;
         required: boolean;
+        hidden: boolean;
         type: string;
         options: FieldOption[] | null;
         validation: Record<string, unknown> | null;
@@ -1897,6 +1899,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       updateData.options = toPersistedFieldOptions(seedOptions);
       setFieldOptions(field.id, seedOptions);
     }
+    if (val === "file" || val === "completion") {
+      updateData.hidden = false;
+    }
     if (wasOptionType && isOptionType && val === "multi_select") {
       const currentOpts = getFieldOptions(field);
       if (currentOpts.length < 2) {
@@ -2457,7 +2462,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                       ) : (
                         <>
                           <p className="text-xl sm:text-2xl font-semibold leading-snug">
-                            {questionNumberByFieldId[field.id]}.{" "}
+                            {field.hidden
+                              ? "Hidden. "
+                              : `${questionNumberByFieldId[field.id]}. `}
                             {field.label || "Untitled question"}
                             {field.required && (
                               <span className="text-destructive ml-1">*</span>
@@ -2715,10 +2722,35 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               </Select>
             </div>
 
+            {selectedField.type !== "completion" && selectedField.type !== "file" && (
+              <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium">Hidden</p>
+                  <p className="text-xs text-muted-foreground">
+                    Prefill and conditions only. Never shown to respondents.
+                  </p>
+                </div>
+                <Switch
+                  checked={!!selectedField.hidden}
+                  onCheckedChange={(checked) =>
+                    updateFieldMutation.mutate({
+                      fieldId: selectedField.id,
+                      data: {
+                        hidden: checked,
+                        required: false,
+                        visibility: checked ? null : selectedField.visibility,
+                      },
+                    })
+                  }
+                />
+              </div>
+            )}
+
             <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
               <p className="text-sm font-medium">Required</p>
               <Switch
                 checked={selectedField.required}
+                disabled={!!selectedField.hidden}
                 onCheckedChange={(checked) =>
                   updateFieldMutation.mutate({
                     fieldId: selectedField.id,
@@ -2824,7 +2856,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               );
             })()}
 
-            {(sourcesByFieldId[selectedField.id] ?? []).length > 0 && (
+            {!selectedField.hidden && (sourcesByFieldId[selectedField.id] ?? []).length > 0 && (
               <FormConditionEditor
                 title="Show this question when"
                 condition={selectedField.visibility ?? null}

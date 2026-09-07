@@ -23,10 +23,10 @@ import {
   updateFormStepAction,
 } from "../../lib/form-actions";
 import {
-  createFormFieldSchema,
+  createFormFieldObject,
   createFormSchema,
   createFormStepSchema,
-  updateFormFieldSchema,
+  updateFormFieldObject,
   updateFormSchema,
   updateFormStepSchema,
 } from "../../validation";
@@ -244,8 +244,8 @@ const createShape = createFormSchema.shape;
 const updateShape = updateFormSchema.shape;
 const createStepShape = createFormStepSchema.shape;
 const updateStepShape = updateFormStepSchema.shape;
-const createFieldShape = createFormFieldSchema.shape;
-const updateFieldShape = updateFormFieldSchema.shape;
+const createFieldShape = createFormFieldObject.shape;
+const updateFieldShape = updateFormFieldObject.shape;
 
 export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -356,6 +356,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         formId: z.string(), stepId: createFieldShape.stepId, sortOrder: createFieldShape.sortOrder,
         type: createFieldShape.type, label: createFieldShape.label, description: createFieldShape.description,
         placeholder: createFieldShape.placeholder, required: createFieldShape.required,
+        hidden: createFieldShape.hidden,
         validation: createFieldShape.validation, options: createFieldShape.options,
         visibility: createFieldShape.visibility, contactMapping: createFieldShape.contactMapping,
       },
@@ -370,7 +371,8 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         formId: z.string(), fieldId: z.string(), stepId: updateFieldShape.stepId,
         sortOrder: updateFieldShape.sortOrder, type: updateFieldShape.type, label: updateFieldShape.label,
         description: updateFieldShape.description, placeholder: updateFieldShape.placeholder,
-        required: updateFieldShape.required, validation: updateFieldShape.validation,
+        required: updateFieldShape.required, hidden: updateFieldShape.hidden,
+        validation: updateFieldShape.validation,
         options: updateFieldShape.options, visibility: updateFieldShape.visibility,
         contactMapping: updateFieldShape.contactMapping,
       },
