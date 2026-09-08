@@ -80,6 +80,25 @@ function coerceForField(
   }
 }
 
+export function hiddenFieldDefaults(
+  fields: Array<{
+    id: string;
+    type: string;
+    hidden?: boolean;
+    options?: Array<{ label: string; value: string }> | null;
+    validation?: Record<string, unknown> | null;
+  }>,
+): Record<string, string> {
+  const query: FormPrefillQuery = {};
+  for (const field of fields) {
+    if (!field.hidden || !field.validation) continue;
+    const raw = field.validation.defaultValue;
+    if (typeof raw !== "string" || raw.length === 0) continue;
+    query[field.id] = raw;
+  }
+  return prefillFromQuery(fields, query);
+}
+
 export function prefillFromQuery(
   fields: FormPrefillField[],
   query: FormPrefillQuery,

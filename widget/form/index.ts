@@ -1,6 +1,9 @@
 import {
   addWidgetAnalyticsParams,
+  appendHiddenParams,
+  appendHostPageParams,
   getApiBase,
+  type WidgetHiddenValues,
   type WidgetTheme,
 } from "@widget/api";
 
@@ -10,6 +13,7 @@ interface FormWidgetOptions {
   container: string | HTMLElement;
   theme?: WidgetTheme;
   utms?: Record<string, string>;
+  hidden?: WidgetHiddenValues;
 }
 
 function getUtmsFromUrl(): Record<string, string> {
@@ -24,28 +28,8 @@ function getUtmsFromUrl(): Record<string, string> {
   return out;
 }
 
-// Forward all host-page query params (except iframe-internal ones) so that
-// ?field_id=value on the embedding page flows through to the form prefill.
-const WIDGET_RESERVED_PARAMS = new Set([
-  "embed",
-  "theme",
-  "lc_source",
-  "lc_journey",
-]);
-function getHostPageParams(): Array<[string, string]> {
-  const pairs: Array<[string, string]> = [];
-  try {
-    const params = new URLSearchParams(window.location.search);
-    for (const [k, v] of params) {
-      if (WIDGET_RESERVED_PARAMS.has(k)) continue;
-      pairs.push([k, v]);
-    }
-  } catch { /* ignore */ }
-  return pairs;
-}
-
 function initFormWidget(options: FormWidgetOptions): void {
-  const { projectSlug, formSlug, theme, utms } = options;
+  const { projectSlug, formSlug, theme, utms, hidden } = options;
   const root =
     typeof options.container === "string"
       ? document.querySelector<HTMLElement>(options.container)
@@ -58,11 +42,7 @@ function initFormWidget(options: FormWidgetOptions): void {
 
   const base = getApiBase();
   const url = new URL(`${base}/${projectSlug}/${formSlug}`);
-  // Forward host-page query params first so prefill inside the iframe can use
-  // them. UTMs + explicit options below take precedence on conflict.
-  for (const [k, v] of getHostPageParams()) {
-    url.searchParams.append(k, v);
-  }
+  appendHostPageParams(url);
   url.searchParams.set("embed", "1");
   if (theme) {
     try {
@@ -73,6 +53,7 @@ function initFormWidget(options: FormWidgetOptions): void {
   for (const [k, v] of Object.entries(allUtms)) {
     url.searchParams.set(k, v);
   }
+  appendHiddenParams(url, hidden);
   addWidgetAnalyticsParams(url, {
     projectSlug,
     resourceSlug: formSlug,

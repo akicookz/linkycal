@@ -27,7 +27,11 @@ import {
   createFunnelAnalyticsDispatcher,
   type FunnelAnalyticsDispatcher,
 } from "@/lib/funnel-analytics";
-import { prefillFromQuery, parseQueryString } from "@/lib/form-prefill";
+import {
+  hiddenFieldDefaults,
+  parseQueryString,
+  prefillFromQuery,
+} from "@/lib/form-prefill";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -268,14 +272,17 @@ export default function PublicForm() {
     didPrefill.current = true;
 
     const query = parseQueryString(window.location.search);
-    const prefilled = prefillFromQuery(
-      allFields.map((field) => ({
-        id: field.id,
-        type: field.type,
-        options: field.options,
-      })),
-      query,
-    );
+    const prefillFields = allFields.map((field) => ({
+      id: field.id,
+      type: field.type,
+      options: field.options,
+      hidden: field.hidden,
+      validation: field.validation,
+    }));
+    const prefilled = {
+      ...hiddenFieldDefaults(prefillFields),
+      ...prefillFromQuery(prefillFields, query),
+    };
     if (Object.keys(prefilled).length > 0) {
       setValues((previous) => ({ ...prefilled, ...previous }));
     }

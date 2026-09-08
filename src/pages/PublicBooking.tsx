@@ -49,7 +49,11 @@ import {
   createFunnelAnalyticsDispatcher,
   type FunnelAnalyticsDispatcher,
 } from "@/lib/funnel-analytics";
-import { buildBookingPrefill, parseQueryString } from "@/lib/form-prefill";
+import {
+  buildBookingPrefill,
+  hiddenFieldDefaults,
+  parseQueryString,
+} from "@/lib/form-prefill";
 import { cn } from "@/lib/utils";
 import type { AnalyticsIntegrationConfig } from "../../shared/funnel-analytics";
 
@@ -387,19 +391,26 @@ export default function PublicBooking({
     didPrefill.current = true;
 
     const fields = bookingForm ? getAllFormFields(bookingForm) : [];
+    const prefillFields = fields.map((field) => ({
+      id: field.id,
+      type: field.type,
+      options: field.options,
+      hidden: field.hidden,
+      validation: field.validation,
+    }));
     const prefill = buildBookingPrefill({
-      fields: fields.map((field) => ({
-        id: field.id,
-        type: field.type,
-        options: field.options,
-      })),
+      fields: prefillFields,
       query: parseQueryString(window.location.search),
       nameFieldId: mappedFields.nameFieldId,
       emailFieldId: mappedFields.emailFieldId,
     });
+    const seededValues = {
+      ...hiddenFieldDefaults(prefillFields),
+      ...prefill.formValues,
+    };
 
-    if (Object.keys(prefill.formValues).length > 0) {
-      setFormValues((previous) => ({ ...prefill.formValues, ...previous }));
+    if (Object.keys(seededValues).length > 0) {
+      setFormValues((previous) => ({ ...seededValues, ...previous }));
     }
     const { guestName: seededName, guestEmail: seededEmail, guestNotes: seededNotes } = prefill;
     if (seededName) setGuestName((previous) => previous || seededName);

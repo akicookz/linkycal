@@ -13,7 +13,8 @@ implementation and UI conventions. Claude Code must also follow
 ## What LinkyCal does
 
 - Builds multi-step forms with focused, grouped, and classic presentation
-  modes, conditional steps and fields, prefilling, contact mapping, and themed
+  modes, conditional steps and fields, prefilling (query params, widget
+  hidden maps, and hidden-field defaults), contact mapping, and themed
   public experiences.
 - Publishes booking pages backed by organizer-local schedules, overrides,
   buffers, booking limits, notice periods, confirmation flows, and Google

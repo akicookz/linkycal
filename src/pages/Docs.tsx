@@ -109,6 +109,7 @@ const sidebarSections: SidebarSection[] = [
     children: [
       { id: "booking-widget", title: "Booking Widget" },
       { id: "form-widget", title: "Form Widget" },
+      { id: "prefill", title: "Prefill & hidden fields" },
       { id: "widget-customization", title: "Customization" },
     ],
   },
@@ -1540,6 +1541,13 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   required: false,
                   description: "Override brand color",
                 },
+                {
+                  name: "hidden",
+                  type: "Record<string, string | string[]>",
+                  required: false,
+                  description:
+                    "Prefill hidden (or visible) fields by field id. Wins over host-page query params.",
+                },
               ]}
             />
 
@@ -1592,8 +1600,50 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   required: false,
                   description: "Override brand color",
                 },
+                {
+                  name: "hidden",
+                  type: "Record<string, string | string[]>",
+                  required: false,
+                  description:
+                    "Prefill hidden (or visible) fields by field id. Wins over host-page query params.",
+                },
               ]}
             />
+
+            <SectionHeading id="prefill" level="h2">
+              Prefill & hidden fields
+            </SectionHeading>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Hidden fields stay off the public screen but still accept values. Keys are
+              field ids (not labels). Query values win over a field&apos;s default.
+              Widget <IC>hidden</IC> wins over the host page query string.
+            </p>
+            <CodeBlock title="Share link" language="text">
+{`https://linkycal.com/acme/contact?utm_source=newsletter&plan=pro`}
+            </CodeBlock>
+            <CodeBlock title="Embed with JS values" language="html">
+{`<div id="form-widget"></div>
+<script src="https://cdn.linkycal.com/widgets/form.js"></script>
+<script>
+  LinkyCal.form({
+    projectSlug: "acme",
+    formSlug: "contact",
+    container: "#form-widget",
+    hidden: {
+      user_id: "usr_123",
+      plan: "pro"
+    }
+  });
+</script>`}
+            </CodeBlock>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Form and booking widgets also forward the host page query string into the
+              iframe (except <IC>embed</IC>, <IC>theme</IC>, <IC>lc_source</IC>, and{" "}
+              <IC>lc_journey</IC>). So <IC>?plan=pro</IC> on your site fills a{" "}
+              <IC>plan</IC> field. Booking links also accept reserved{" "}
+              <IC>name</IC>, <IC>email</IC>, and <IC>notes</IC> when those ids are free.
+              File fields cannot be prefilled.
+            </p>
 
             <SectionHeading id="widget-customization" level="h2">
               Customization

@@ -1,6 +1,9 @@
 import {
   addWidgetAnalyticsParams,
+  appendHiddenParams,
+  appendHostPageParams,
   getApiBase,
+  type WidgetHiddenValues,
   type WidgetTheme,
 } from "@widget/api";
 
@@ -10,6 +13,7 @@ interface BookingWidgetOptions {
   container: string | HTMLElement;
   theme?: WidgetTheme;
   utms?: Record<string, string>;
+  hidden?: WidgetHiddenValues;
 }
 
 function getUtmsFromUrl(): Record<string, string> {
@@ -25,7 +29,7 @@ function getUtmsFromUrl(): Record<string, string> {
 }
 
 function initBookingWidget(options: BookingWidgetOptions): void {
-  const { projectSlug, eventTypeSlug, theme, utms } = options;
+  const { projectSlug, eventTypeSlug, theme, utms, hidden } = options;
   const root =
     typeof options.container === "string"
       ? document.querySelector<HTMLElement>(options.container)
@@ -38,6 +42,7 @@ function initBookingWidget(options: BookingWidgetOptions): void {
 
   const base = getApiBase();
   const url = new URL(`${base}/${projectSlug}/${eventTypeSlug}`);
+  appendHostPageParams(url);
   url.searchParams.set("embed", "1");
   if (theme) {
     try {
@@ -48,6 +53,7 @@ function initBookingWidget(options: BookingWidgetOptions): void {
   for (const [k, v] of Object.entries(allUtms)) {
     url.searchParams.set(k, v);
   }
+  appendHiddenParams(url, hidden);
   addWidgetAnalyticsParams(url, {
     projectSlug,
     resourceSlug: eventTypeSlug,

@@ -123,7 +123,7 @@ Further documentation:
 - OpenAPI 3.1: https://linkycal.com/openapi.json
 
 Form MCP details:
-- create_form_field and update_form_field accept optional hidden. Hidden fields stay off the public screen, still accept prefill and conditions, and cannot be required, have visibility rules, or be type file or completion.
+- create_form_field and update_form_field accept optional hidden. Hidden fields stay off the public screen, still accept prefill and conditions, and cannot be required, have visibility rules, or be type file or completion. Store a static fallback in validation.defaultValue. Public links prefill with ?field_id=value. Widgets accept hidden: { field_id: value } and forward the host page query string.
 - get_form and the REST field list return each field's hidden flag.
 
 Analytics MCP details:
@@ -174,7 +174,7 @@ Booking and form widgets are zero-dependency IIFE bundles:
     <script src="https://cdn.linkycal.com/widgets/booking.js"></script>
     <script src="https://cdn.linkycal.com/widgets/form.js"></script>
 
-Initialize LinkyCal.booking with projectSlug, container, and optional eventTypeSlug. Initialize LinkyCal.form with projectSlug, formSlug, and container. Widget journeys are attributed as source=widget and share one resource-scoped anonymous journey with their iframe.
+Initialize LinkyCal.booking with projectSlug, container, and optional eventTypeSlug. Initialize LinkyCal.form with projectSlug, formSlug, and container. Both accept optional hidden field-id maps and forward host-page query params into the iframe for prefill. Widget journeys are attributed as source=widget and share one resource-scoped anonymous journey with their iframe.
 
 Standard widgets and theme overrides are included on every plan. Safely scoped Custom CSS and LinkyCal branding removal are available on Pro and Business.
 

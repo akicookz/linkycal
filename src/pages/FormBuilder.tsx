@@ -676,10 +676,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     () =>
       form
         ? buildFormExperienceModel({
-            form: toFormExperienceForm(form),
-            values: {},
-            surface: "standalone",
-          })
+          form: toFormExperienceForm(form),
+          values: {},
+          surface: "standalone",
+        })
         : null,
     [form],
   );
@@ -2439,27 +2439,27 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const previewProgress = previewExperienceModel
     ? form.type === "multi_step"
       ? getFocusedQuestionProgressForScreenField(
-          previewExperienceModel.screens,
-          selectedField?.id ?? null,
-          { completed: selectedField?.type === "completion" },
-        )
+        previewExperienceModel.screens,
+        selectedField?.id ?? null,
+        { completed: selectedField?.type === "completion" },
+      )
       : {
-          current:
-            selectedField?.type === "completion"
-              ? previewExperienceModel.steps.length - 1
-              : selectedField
+        current:
+          selectedField?.type === "completion"
+            ? previewExperienceModel.steps.length - 1
+            : selectedField
+              ? previewExperienceModel.steps.findIndex(
+                (step) =>
+                  step.id === selectedField.stepId ||
+                  step.fields.some((field) => field.id === selectedField.id),
+              )
+              : selectedStep
                 ? previewExperienceModel.steps.findIndex(
-                    (step) =>
-                      step.id === selectedField.stepId ||
-                      step.fields.some((field) => field.id === selectedField.id),
-                  )
-                : selectedStep
-                  ? previewExperienceModel.steps.findIndex(
-                      (step) => step.id === selectedStep.id,
-                    )
-                  : -1,
-          total: previewExperienceModel.steps.length,
-        }
+                  (step) => step.id === selectedStep.id,
+                )
+                : -1,
+        total: previewExperienceModel.steps.length,
+      }
     : { current: -1, total: 0 };
 
   const previewCanvas = (
@@ -2848,7 +2848,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 <div>
                   <p className="text-sm font-medium">Hidden field</p>
                   <p className="text-xs text-muted-foreground">
-                    Available to prefill and conditions.
+                    Prefill via ?{selectedField.id}= on links and embeds, or set
+                    a default below.
                   </p>
                 </div>
                 <Switch
@@ -2863,6 +2864,52 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                       },
                     })
                   }
+                />
+              </div>
+            )}
+
+            {selectedField.hidden && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Default value</Label>
+                <Input
+                  key={`default-${selectedField.id}`}
+                  defaultValue={
+                    selectedField.validation &&
+                    typeof selectedField.validation === "object" &&
+                    typeof (selectedField.validation as Record<string, unknown>)
+                      .defaultValue === "string"
+                      ? String(
+                          (selectedField.validation as Record<string, unknown>)
+                            .defaultValue,
+                        )
+                      : ""
+                  }
+                  placeholder="Used when the URL or embed does not pass this field"
+                  className="h-9 text-sm"
+                  onBlur={(event) => {
+                    const next = event.target.value.trim();
+                    const current =
+                      selectedField.validation &&
+                      typeof selectedField.validation === "object"
+                        ? {
+                            ...(selectedField.validation as Record<string, unknown>),
+                          }
+                        : {};
+                    const previous =
+                      typeof current.defaultValue === "string"
+                        ? current.defaultValue
+                        : "";
+                    if (next === previous) return;
+                    if (next) current.defaultValue = next;
+                    else delete current.defaultValue;
+                    updateFieldMutation.mutate({
+                      fieldId: selectedField.id,
+                      data: {
+                        validation:
+                          Object.keys(current).length > 0 ? current : null,
+                      },
+                    });
+                  }}
                 />
               </div>
             )}

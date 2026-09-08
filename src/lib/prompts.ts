@@ -407,6 +407,23 @@ ${et.requiresConfirmation ? "- Bookings require host confirmation before being f
 - Google Meet links auto-generated for each booking
 - Timezone auto-detected from the visitor's browser
 
+## Prefill and hidden fields
+Host-page query params (except embed, theme, lc_source, lc_journey) are forwarded into the widget. Pass values from your app with \`hidden\`:
+
+\`\`\`javascript
+LinkyCal.booking({
+  projectSlug: "${projectSlug}",
+  eventTypeSlug: "${et.slug}",
+  container: "#linkycal-booking",
+  hidden: {
+    user_id: "usr_123",
+    plan: "pro"
+  }
+});
+\`\`\`
+
+Keys are form field ids. \`hidden\` wins over the host page query string. Booking links also accept reserved \`name\`, \`email\`, and \`notes\` when those ids are free.
+
 ## Integration Notes
 - Place the \`<div>\` container wherever you want the widget to appear on your page
 - The script loads asynchronously and won't block your page rendering
@@ -553,6 +570,23 @@ ${form.type === "multi_step" ? "- Multi-step navigation with progress indicator"
 - Supports all field types: text, email, phone, select, radio, checkbox, rating, date, time, file upload
 - Built-in validation for required fields and email format
 - Automatic submission handling
+
+## Prefill and hidden fields
+Host-page query params (except embed, theme, lc_source, lc_journey) are forwarded into the widget. A share link can also use \`?field_id=value\`. Pass values from your app with \`hidden\`:
+
+\`\`\`javascript
+LinkyCal.form({
+  projectSlug: "${projectSlug}",
+  formSlug: "${form.slug}",
+  container: "#linkycal-form",
+  hidden: {
+    user_id: "usr_123",
+    plan: "pro"
+  }
+});
+\`\`\`
+
+Keys are field ids. \`hidden\` wins over the host page query string. Hidden fields may also set \`validation.defaultValue\` in the builder.
 
 ## Integration Notes
 - Place the \`<div>\` container wherever you want the form to appear on your page
