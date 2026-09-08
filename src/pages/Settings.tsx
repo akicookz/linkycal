@@ -809,7 +809,7 @@ export default function Settings() {
                   aria-label="Custom CSS"
                   value={customCss}
                   onChange={(event) => setCustomCss(event.target.value)}
-                  placeholder=".booking-card { box-shadow: none; }"
+                  placeholder="[data-lc-title] { letter-spacing: -0.02em; }"
                   spellCheck={false}
                   className="min-h-48 w-full resize-y rounded-[12px] bg-muted/45 px-4 py-3 font-mono text-sm outline-none transition-[box-shadow,background-color] focus:bg-background focus:ring-2 focus:ring-ring"
                 />

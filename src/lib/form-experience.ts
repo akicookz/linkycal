@@ -38,6 +38,7 @@ export interface FormExperienceForm {
   name: string;
   type: "multi_step" | "single";
   status?: string;
+  settings?: unknown;
   steps: FormExperienceStep[];
 }
 

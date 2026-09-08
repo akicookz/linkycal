@@ -50,6 +50,12 @@ import {
   type SectionImageLayout,
 } from "@/lib/form-sections";
 import { cn } from "@/lib/utils";
+import {
+  chromeMarkerProps,
+  EMPTY_CHROME,
+  isChromeHidden,
+  type PublicChrome,
+} from "../../shared/public-chrome";
 
 export interface FormExperienceTheme {
   primaryBg?: string;
@@ -74,7 +80,7 @@ export interface FormExperienceProps {
   submitting: boolean;
   error: string | null;
   theme?: FormExperienceTheme;
-  canHideBranding?: boolean;
+  chrome?: PublicChrome;
   head?: ReactNode;
   honeypot?: ReactNode;
   onValueChange: (fieldId: string, value: string) => void;
@@ -141,7 +147,7 @@ export function FormExperience(props: FormExperienceProps) {
     submitting,
     error,
     theme,
-    canHideBranding,
+    chrome = EMPTY_CHROME,
     head,
     honeypot,
     onValueChange,
@@ -576,11 +582,12 @@ export function FormExperience(props: FormExperienceProps) {
       ? "compact"
       : "comfortable";
     const questionProgress = getFocusedQuestionProgress(screens, screenIndex);
-    const currentSectionImage = currentScreen
-      ? getSectionImage(
-        steps.find((step) => step.id === currentScreen.stepId)?.settings,
-      )
-      : null;
+    const currentSectionImage =
+      currentScreen && !isChromeHidden(chrome, "media")
+        ? getSectionImage(
+          steps.find((step) => step.id === currentScreen.stepId)?.settings,
+        )
+        : null;
     const animatedScreen = currentScreen ? (
       <div
         key={currentScreen.key}
@@ -594,27 +601,31 @@ export function FormExperience(props: FormExperienceProps) {
       >
         {currentScreen.kind === "statement" ? (
           <div className={isCompact ? "space-y-4" : "space-y-6"}>
-            {currentScreen.title && (
-              <h1
-                className={cn(
-                  isCompact
-                    ? "text-xl sm:text-2xl"
-                    : "text-2xl sm:text-3xl",
-                  "font-medium leading-[1.2] tracking-[-0.02em] text-balance",
+            {!isChromeHidden(chrome, "intro") ? (
+              <div {...chromeMarkerProps("intro")}>
+                {currentScreen.title && (
+                  <h1
+                    className={cn(
+                      isCompact
+                        ? "text-xl sm:text-2xl"
+                        : "text-2xl sm:text-3xl",
+                      "font-medium leading-[1.2] tracking-[-0.02em] text-balance",
+                    )}
+                  >
+                    {currentScreen.title}
+                  </h1>
                 )}
-              >
-                {currentScreen.title}
-              </h1>
-            )}
-            <RichTextContent
-              value={currentScreen.richDescription}
-              fallbackPlainText={currentScreen.description}
-              className={cn(
-                isCompact
-                  ? "text-sm sm:text-base text-muted-foreground text-pretty"
-                  : "text-base sm:text-lg text-muted-foreground text-pretty",
-              )}
-            />
+                <RichTextContent
+                  value={currentScreen.richDescription}
+                  fallbackPlainText={currentScreen.description}
+                  className={cn(
+                    isCompact
+                      ? "text-sm sm:text-base text-muted-foreground text-pretty"
+                      : "text-base sm:text-lg text-muted-foreground text-pretty",
+                  )}
+                />
+              </div>
+            ) : null}
             {surface === "standalone" && (
               <div className="flex items-center gap-3 pt-1">
                 <Button
@@ -791,7 +802,7 @@ export function FormExperience(props: FormExperienceProps) {
       return (
         <FocusedFormExperienceShell
           theme={theme}
-          canHideBranding={canHideBranding}
+          chrome={chrome}
           progressCurrent={questionProgress.current}
           progressTotal={questionProgress.total}
           showNav
@@ -867,14 +878,18 @@ export function FormExperience(props: FormExperienceProps) {
         <div>
           {head}
           {honeypot}
-          {currentStep?.title && (
-            <h2 className="text-base font-semibold mb-1">{currentStep.title}</h2>
-          )}
-          <RichTextContent
-            value={currentStep?.richDescription}
-            fallbackPlainText={currentStep?.description}
-            className="mb-5 text-[13px]"
-          />
+          {!isChromeHidden(chrome, "intro") ? (
+            <div {...chromeMarkerProps("intro")}>
+              {currentStep?.title && (
+                <h2 className="text-base font-semibold mb-1">{currentStep.title}</h2>
+              )}
+              <RichTextContent
+                value={currentStep?.richDescription}
+                fallbackPlainText={currentStep?.description}
+                className="mb-5 text-[13px]"
+              />
+            </div>
+          ) : null}
 
           <div className="space-y-4">
             {currentFields.map((field) => (
@@ -939,12 +954,14 @@ export function FormExperience(props: FormExperienceProps) {
       );
     }
 
-    const classicSectionImage = getSectionImage(currentStep?.settings);
+    const classicSectionImage = isChromeHidden(chrome, "media")
+      ? null
+      : getSectionImage(currentStep?.settings);
 
     return (
       <FormExperiencePageShell
         theme={theme}
-        canHideBranding={canHideBranding}
+        chrome={chrome}
         media={
           classicSectionImage ? (
             <SectionMedia image={classicSectionImage} />
@@ -955,21 +972,32 @@ export function FormExperience(props: FormExperienceProps) {
         {head}
         <div className="mb-7">
           <div className="flex flex-col-reverse gap-4 md:flex-row md:items-center md:justify-between md:gap-4">
-            <h1 className="min-w-0 text-lg font-semibold">{form.name}</h1>
+            {!isChromeHidden(chrome, "title") ? (
+              <h1
+                className="min-w-0 text-lg font-semibold"
+                {...chromeMarkerProps("title")}
+              >
+                {form.name}
+              </h1>
+            ) : null}
             <FocusedStepProgress
               current={currentStepIndex}
               total={steps.length}
               className="-mx-4 -mt-4 w-[calc(100%+2rem)] sm:-mx-8 sm:-mt-5 sm:w-[calc(100%+4rem)] md:mx-0 md:mt-0 md:w-[40%] md:max-w-[40%] md:shrink-0 lg:w-32 lg:max-w-32"
             />
           </div>
-          {steps.length > 1 && currentStep?.title && (
-            <p className="mt-1.5 text-sm text-muted-foreground">{currentStep.title}</p>
-          )}
-          <RichTextContent
-            value={currentStep?.richDescription}
-            fallbackPlainText={currentStep?.description}
-            className="mt-1.5"
-          />
+          {!isChromeHidden(chrome, "intro") ? (
+            <div {...chromeMarkerProps("intro")}>
+              {steps.length > 1 && currentStep?.title && (
+                <p className="mt-1.5 text-sm text-muted-foreground">{currentStep.title}</p>
+              )}
+              <RichTextContent
+                value={currentStep?.richDescription}
+                fallbackPlainText={currentStep?.description}
+                className="mt-1.5"
+              />
+            </div>
+          ) : null}
         </div>
 
         <form
@@ -1080,7 +1108,7 @@ function SectionMedia({ image }: { image: SectionImage }) {
 export interface FocusedFormExperienceShellProps {
   children: ReactNode;
   theme?: FormExperienceTheme;
-  canHideBranding?: boolean;
+  chrome?: PublicChrome;
   progressCurrent: number;
   progressTotal: number;
   showNav: boolean;
@@ -1118,7 +1146,7 @@ export function FocusedFormExperienceShell(
   const {
     children,
     theme,
-    canHideBranding,
+    chrome = EMPTY_CHROME,
     progressCurrent,
     progressTotal,
     showNav,
@@ -1131,8 +1159,7 @@ export function FocusedFormExperienceShell(
   } = props;
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
-  const hideBrandingRequested = searchParams.get("hide_branding") === "1";
-  const showBranding = !(hideBrandingRequested && canHideBranding);
+  const showBranding = !isChromeHidden(chrome, "branding");
 
   const themeVars = theme?.primaryBg
     ? ({
@@ -1181,7 +1208,10 @@ export function FocusedFormExperienceShell(
     >
       {media && mediaLayout === "top" ? (
         <div className="flex-1 flex flex-col min-h-0">
-          <div className="relative w-full h-44 shrink-0 overflow-hidden sm:h-60">
+          <div
+            className="relative w-full h-44 shrink-0 overflow-hidden sm:h-60"
+            {...chromeMarkerProps("media")}
+          >
             {media}
           </div>
           <FocusedFormPane className="py-12" progress={stepProgress}>
@@ -1195,7 +1225,10 @@ export function FocusedFormExperienceShell(
             mediaLayout === "right" && "flex-row-reverse",
           )}
         >
-          <div className="relative hidden md:block md:w-[44%] shrink-0 overflow-hidden">
+          <div
+            className="relative hidden md:block md:w-[44%] shrink-0 overflow-hidden"
+            {...chromeMarkerProps("media")}
+          >
             {media}
           </div>
           <FocusedFormPane progress={stepProgress}>
@@ -1211,6 +1244,7 @@ export function FocusedFormExperienceShell(
           <Link
             to="/"
             className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            {...chromeMarkerProps("branding")}
           >
             Powered by <Logo size="xs" />
           </Link>
@@ -1252,7 +1286,7 @@ export function FocusedFormExperienceShell(
 export interface FormExperiencePageShellProps {
   children: ReactNode;
   theme?: FormExperienceTheme;
-  canHideBranding?: boolean;
+  chrome?: PublicChrome;
   media?: ReactNode;
   mediaLayout?: SectionImageLayout;
 }
@@ -1263,18 +1297,15 @@ export function FormExperiencePageShell(
   const {
     children,
     theme,
-    canHideBranding,
+    chrome = EMPTY_CHROME,
     media,
     mediaLayout = "left",
   } = props;
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
-  const hideBanner = searchParams.get("hide_banner") === "1";
-  // A section image takes over the card layout; suppress the theme banner so we
-  // don't stack two images.
-  const showBanner = !!theme?.bannerImage && !hideBanner && !media;
-  const hideBrandingRequested = searchParams.get("hide_branding") === "1";
-  const showBranding = !(hideBrandingRequested && canHideBranding);
+  const showBanner =
+    !!theme?.bannerImage && !isChromeHidden(chrome, "banner") && !media;
+  const showBranding = !isChromeHidden(chrome, "branding");
 
   const themeVars = theme?.primaryBg
     ? ({
@@ -1300,12 +1331,18 @@ export function FormExperiencePageShell(
         style={radiusStyle}
       >
         {mediaLayout === "top" && (
-          <div className="relative h-44 w-full shrink-0 overflow-hidden sm:h-60">
+          <div
+            className="relative h-44 w-full shrink-0 overflow-hidden sm:h-60"
+            {...chromeMarkerProps("media")}
+          >
             {media}
           </div>
         )}
         {(mediaLayout === "left" || mediaLayout === "right") && (
-          <div className="relative hidden shrink-0 overflow-hidden sm:block sm:w-[42%]">
+          <div
+            className="relative hidden shrink-0 overflow-hidden sm:block sm:w-[42%]"
+            {...chromeMarkerProps("media")}
+          >
             {media}
           </div>
         )}
@@ -1320,6 +1357,7 @@ export function FormExperiencePageShell(
         <div
           className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"
           style={{ backgroundImage: `url(${theme!.bannerImage})` }}
+          {...chromeMarkerProps("banner")}
         />
       )}
       <div
@@ -1342,7 +1380,7 @@ export function FormExperiencePageShell(
   );
 
   const footer = showBranding ? (
-    <footer className="py-4 text-center">
+    <footer className="py-4 text-center" {...chromeMarkerProps("branding")}>
       <Link
         to="/"
         className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"

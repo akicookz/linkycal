@@ -1,8 +1,10 @@
 import {
   addWidgetAnalyticsParams,
+  appendChromeParams,
   appendHiddenParams,
   appendHostPageParams,
   getApiBase,
+  type ChromeFlags,
   type WidgetHiddenValues,
   type WidgetTheme,
 } from "@widget/api";
@@ -12,6 +14,7 @@ interface BookingWidgetOptions {
   eventTypeSlug: string;
   container: string | HTMLElement;
   theme?: WidgetTheme;
+  ui?: ChromeFlags;
   utms?: Record<string, string>;
   hidden?: WidgetHiddenValues;
 }
@@ -29,7 +32,7 @@ function getUtmsFromUrl(): Record<string, string> {
 }
 
 function initBookingWidget(options: BookingWidgetOptions): void {
-  const { projectSlug, eventTypeSlug, theme, utms, hidden } = options;
+  const { projectSlug, eventTypeSlug, theme, ui, utms, hidden } = options;
   const root =
     typeof options.container === "string"
       ? document.querySelector<HTMLElement>(options.container)
@@ -54,6 +57,7 @@ function initBookingWidget(options: BookingWidgetOptions): void {
     url.searchParams.set(k, v);
   }
   appendHiddenParams(url, hidden);
+  appendChromeParams(url, ui);
   addWidgetAnalyticsParams(url, {
     projectSlug,
     resourceSlug: eventTypeSlug,

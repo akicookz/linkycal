@@ -33,6 +33,10 @@ import {
   prefillFromQuery,
 } from "@/lib/form-prefill";
 import { cn } from "@/lib/utils";
+import {
+  publicRootProps,
+  resolvePublicChromeFromPage,
+} from "../../shared/public-chrome";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -110,8 +114,13 @@ export default function PublicForm() {
 
   const form = formData?.form;
   const project = formData?.project;
-  const canHideBranding = formData?.canHideBranding;
+  const canHideBranding = formData?.canHideBranding === true;
   const compiledCss = formData?.compiledCss;
+  const chrome = resolvePublicChromeFromPage({
+    settings: form?.settings,
+    search: searchParams,
+    canHideBranding,
+  });
   const analyticsIntegrations = formData?.analyticsIntegrations;
   const themeFromProject = project?.settings?.theme;
   const theme = useMemo<FormExperienceTheme | undefined>(() => {
@@ -509,7 +518,7 @@ export default function PublicForm() {
     return (
       <FormExperiencePageShell
         theme={theme}
-        canHideBranding={canHideBranding}
+        chrome={chrome}
       >
         <div className="flex flex-col items-center justify-center py-20 text-center">
           <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
@@ -595,11 +604,11 @@ export default function PublicForm() {
         completionScreens.length - 1,
       );
       return (
-        <div data-linkycal-public>
+        <div {...publicRootProps(chrome)}>
           {compiledCss ? <style>{compiledCss}</style> : null}
           <FocusedFormExperienceShell
             theme={theme}
-            canHideBranding={canHideBranding}
+            chrome={chrome}
             progressCurrent={completionProgress.current}
             progressTotal={completionProgress.total}
             showNav={false}
@@ -612,11 +621,11 @@ export default function PublicForm() {
     }
 
     return (
-      <div data-linkycal-public>
+      <div {...publicRootProps(chrome)}>
         {compiledCss ? <style>{compiledCss}</style> : null}
         <FormExperiencePageShell
           theme={theme}
-          canHideBranding={canHideBranding}
+          chrome={chrome}
         >
           {seoHead}
           <div className="py-16">{completionContent}</div>
@@ -626,7 +635,7 @@ export default function PublicForm() {
   }
 
   return (
-    <div data-linkycal-public>
+    <div {...publicRootProps(chrome)}>
       {compiledCss ? <style>{compiledCss}</style> : null}
       <FormExperience
         form={form}
@@ -636,7 +645,7 @@ export default function PublicForm() {
         submitting={submitting}
         error={error}
         theme={theme}
-        canHideBranding={canHideBranding}
+        chrome={chrome}
         head={seoHead}
         honeypot={
           <div className="sr-only" aria-hidden="true">

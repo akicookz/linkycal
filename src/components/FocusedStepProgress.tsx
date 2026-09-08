@@ -51,6 +51,7 @@ export function FocusedStepProgress(props: FocusedStepProgressProps) {
   return (
     <div
       data-focused-progress={surface}
+      data-lc-progress=""
       role="progressbar"
       aria-valuemin={1}
       aria-valuemax={total}

@@ -177,7 +177,7 @@ Booking and form widgets are zero-dependency IIFE bundles:
     <script src="https://cdn.linkycal.com/widgets/booking.js"></script>
     <script src="https://cdn.linkycal.com/widgets/form.js"></script>
 
-Initialize LinkyCal.booking with projectSlug, container, and optional eventTypeSlug. Initialize LinkyCal.form with projectSlug, formSlug, and container. Both accept optional hidden field-id maps and forward host-page query params into the iframe for prefill. Widget journeys are attributed as source=widget and share one resource-scoped anonymous journey with their iframe.
+Initialize LinkyCal.booking with projectSlug, container, and optional eventTypeSlug. Initialize LinkyCal.form with projectSlug, formSlug, and container. Both accept optional hidden field-id maps, optional ui chrome flags (hideBanner, hideBranding, hideTitle, hideIntro, hideAvatar, hideMedia), and forward host-page query params into the iframe for prefill. hide_* query aliases match those flags. Form and event settings.chrome store the same defaults. A URL or widget flag can only hide more. hideBranding needs Pro or Business. Widget journeys are attributed as source=widget and share one resource-scoped anonymous journey with their iframe.
 
 Standard widgets and theme overrides are included on every plan. Safely scoped Custom CSS and LinkyCal branding removal are available on Pro and Business.
 

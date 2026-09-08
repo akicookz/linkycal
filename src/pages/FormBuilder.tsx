@@ -89,6 +89,13 @@ import {
   type SectionImage,
 } from "@/lib/form-sections";
 import { SectionImageField } from "@/components/SectionImageField";
+import { ChromeHideToggles } from "@/components/ChromeHideToggles";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import {
+  compactChromeFlags,
+  parseChromeFlags,
+  type ChromeFlags,
+} from "../../shared/public-chrome";
 import {
   buildFormExperienceModel,
   getFocusedQuestionProgressForScreenField,
@@ -185,6 +192,7 @@ interface NativeActionSettings {
 interface FormSettings {
   nativeAction?: NativeActionSettings;
   responseNotificationEmail?: string;
+  chrome?: ChromeFlags;
 }
 
 interface CalendarConnectionAccount {
@@ -521,6 +529,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const navigate = useNavigate();
   const { data: session } = useSession();
   const planLimitDialog = usePlanLimitDialog();
+  const { data: entitlements } = useEntitlements(projectId ?? "");
+  const canHideBranding = entitlements?.planLimits.removeBranding === true;
+  const [chromeUpgradeOpen, setChromeUpgradeOpen] = useState(false);
 
   // What's selected in the content panel (drives preview + settings panel)
   const [selection, setSelection] = useState<BuilderSelection>(null);
@@ -1508,6 +1519,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     if (!nextSettings.responseNotificationEmail) {
       delete nextSettings.responseNotificationEmail;
     }
+
+    const chrome = compactChromeFlags(nextSettings.chrome ?? {});
+    if (chrome) nextSettings.chrome = chrome;
+    else delete nextSettings.chrome;
 
     return nextSettings;
   }
@@ -3347,6 +3362,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                       </p>
                     )}
                   </div>
+                  <div className="space-y-2">
+                    <p className="text-xs text-muted-foreground">Public page</p>
+                    <ChromeHideToggles
+                      variant="form"
+                      flags={parseChromeFlags(formSettings.chrome)}
+                      canHideBranding={canHideBranding}
+                      onBrandingLocked={() => setChromeUpgradeOpen(true)}
+                      onChange={(chrome) =>
+                        updateFormMutation.mutate({
+                          settings: buildUpdatedFormSettings({ chrome }),
+                        })
+                      }
+                    />
+                  </div>
                   <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
                     <div>
                       <p className="text-sm font-medium">Status</p>
@@ -3515,16 +3544,25 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       )}
 
       {projectId && (
-        <UpgradeDialog
-          open={planLimitDialog.open}
-          onClose={planLimitDialog.closePlanLimitDialog}
-          projectId={projectId}
-          entitlement="storageBytes"
-          actionLabel={
-            planLimitDialog.state?.actionLabel ?? "upload this section image"
-          }
-          decision={planLimitDialog.state?.decision}
-        />
+        <>
+          <UpgradeDialog
+            open={planLimitDialog.open}
+            onClose={planLimitDialog.closePlanLimitDialog}
+            projectId={projectId}
+            entitlement="storageBytes"
+            actionLabel={
+              planLimitDialog.state?.actionLabel ?? "upload this section image"
+            }
+            decision={planLimitDialog.state?.decision}
+          />
+          <UpgradeDialog
+            open={chromeUpgradeOpen}
+            onClose={() => setChromeUpgradeOpen(false)}
+            projectId={projectId}
+            entitlement="removeBranding"
+            actionLabel="hide LinkyCal branding"
+          />
+        </>
       )}
 
     </div>

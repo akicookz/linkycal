@@ -111,6 +111,7 @@ const sidebarSections: SidebarSection[] = [
       { id: "form-widget", title: "Form Widget" },
       { id: "prefill", title: "Prefill & hidden fields" },
       { id: "widget-customization", title: "Customization" },
+      { id: "page-chrome", title: "Hide page chrome" },
     ],
   },
   {
@@ -1548,6 +1549,13 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   description:
                     "Prefill hidden (or visible) fields by field id. Wins over host-page query params.",
                 },
+                {
+                  name: "ui",
+                  type: "{ hideBanner?, hideBranding?, hideTitle?, hideIntro?, hideAvatar? }",
+                  required: false,
+                  description:
+                    "Hide booking chrome for this embed. hideBranding needs Pro or Business. URL hide_* flags also work.",
+                },
               ]}
             />
 
@@ -1607,6 +1615,13 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   description:
                     "Prefill hidden (or visible) fields by field id. Wins over host-page query params.",
                 },
+                {
+                  name: "ui",
+                  type: "{ hideBanner?, hideBranding?, hideTitle?, hideIntro?, hideMedia? }",
+                  required: false,
+                  description:
+                    "Hide form chrome for this embed. hideBranding needs Pro or Business.",
+                },
               ]}
             />
 
@@ -1643,6 +1658,35 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <IC>plan</IC> field. Booking links also accept reserved{" "}
               <IC>name</IC>, <IC>email</IC>, and <IC>notes</IC> when those ids are free.
               File fields cannot be prefilled.
+            </p>
+
+            <SectionHeading id="page-chrome" level="h2">
+              Hide page chrome
+            </SectionHeading>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Form and event settings can hide banner, title, intro, section image,
+              avatar, and LinkyCal branding. A share link or embed can hide more with
+              query flags. A flag cannot unhide something the resource already hid.
+              Hiding branding needs Pro or Business.
+            </p>
+            <CodeBlock title="Share link" language="text">
+{`https://linkycal.com/acme/contact?hide_banner=1&hide_title=1`}
+            </CodeBlock>
+            <CodeBlock title="Widget" language="javascript">
+{`LinkyCal.form({
+  projectSlug: "acme",
+  formSlug: "contact",
+  container: "#form-widget",
+  ui: { hideBanner: true, hideTitle: true }
+});`}
+            </CodeBlock>
+            <p className="text-muted-foreground text-sm leading-relaxed mb-4">
+              Flags are <IC>hide_banner</IC>, <IC>hide_branding</IC>, <IC>hide_title</IC>,{" "}
+              <IC>hide_intro</IC>, <IC>hide_avatar</IC>, and <IC>hide_media</IC>.
+              Focused forms have no form title or theme banner, so those two flags do
+              nothing there. Custom CSS can target <IC>[data-lc-banner]</IC>,{" "}
+              <IC>[data-lc-title]</IC>, <IC>[data-lc-intro]</IC>, <IC>[data-lc-avatar]</IC>,{" "}
+              <IC>[data-lc-media]</IC>, and <IC>[data-lc-branding]</IC>.
             </p>
 
             <SectionHeading id="widget-customization" level="h2">

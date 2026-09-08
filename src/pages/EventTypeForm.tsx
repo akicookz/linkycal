@@ -48,6 +48,13 @@ import {
 } from "@/lib/availability";
 import { queryClient } from "@/lib/query-client";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
+import { ChromeHideToggles } from "@/components/ChromeHideToggles";
+import { useEntitlements } from "@/hooks/use-entitlements";
+import {
+  compactChromeFlags,
+  parseChromeFromSettings,
+  type ChromeFlags,
+} from "../../shared/public-chrome";
 import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
 import { readEntitlementError } from "@/lib/entitlement-errors";
 import {
@@ -114,6 +121,7 @@ interface EventTypeFormData {
   requiresConfirmation: boolean;
   bookingFormId: string | null;
   collectDetailsWithForm: boolean;
+  chrome: ChromeFlags;
 }
 
 interface CalendarConnectionCalendar {
@@ -197,6 +205,7 @@ const defaultFormData: EventTypeFormData = {
   requiresConfirmation: false,
   bookingFormId: null as string | null,
   collectDetailsWithForm: false,
+  chrome: {},
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -238,6 +247,9 @@ export default function EventTypeForm() {
   const [inviteConnectionIds, setInviteConnectionIds] = useState<string[]>([]);
   const [calendarConnectError, setCalendarConnectError] = useState<string | null>(null);
   const planLimitDialog = usePlanLimitDialog();
+  const { data: entitlements } = useEntitlements(projectId ?? "");
+  const canHideBranding = entitlements?.planLimits.removeBranding === true;
+  const [chromeUpgradeOpen, setChromeUpgradeOpen] = useState(false);
 
   // Fetch existing event types (for copy-from selector)
   const { data: existingEventTypes } = useQuery<EventType[]>({
@@ -442,6 +454,7 @@ export default function EventTypeForm() {
       requiresConfirmation: et.requiresConfirmation ?? false,
       bookingFormId: et.bookingFormId ?? null,
       collectDetailsWithForm: et.settings?.collectDetailsWithForm === true,
+      chrome: parseChromeFromSettings(et.settings),
     });
     setSlugManuallyEdited(true);
 
@@ -493,7 +506,7 @@ export default function EventTypeForm() {
     setCopyAvailabilitySourceId("");
   }
 
-  type EventTypeSavePayload = Omit<EventTypeFormData, "collectDetailsWithForm"> & {
+  type EventTypeSavePayload = Omit<EventTypeFormData, "collectDetailsWithForm" | "chrome"> & {
     settings: Record<string, unknown>;
   };
 
@@ -727,7 +740,7 @@ export default function EventTypeForm() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const { collectDetailsWithForm, ...rest } = formData;
+    const { collectDetailsWithForm, chrome, ...rest } = formData;
     const existingSettings = eventTypeData?.eventType?.settings ?? {};
     // Only force the flag off once the form definition has loaded and lacks a
     // name or email mapping; before that, preserve the stored value.
@@ -735,9 +748,16 @@ export default function EventTypeForm() {
       collectDetailsWithForm &&
       !!formData.bookingFormId &&
       (selectedForm ? canCollectDetailsWithForm : true);
+    const nextSettings: Record<string, unknown> = {
+      ...existingSettings,
+      collectDetailsWithForm: keepFlag,
+    };
+    const compactChrome = compactChromeFlags(chrome);
+    if (compactChrome) nextSettings.chrome = compactChrome;
+    else delete nextSettings.chrome;
     const payload: EventTypeSavePayload = {
       ...rest,
-      settings: { ...existingSettings, collectDetailsWithForm: keepFlag },
+      settings: nextSettings,
     };
     if (isEditing) {
       updateMutation.mutate(payload);
@@ -1161,6 +1181,23 @@ export default function EventTypeForm() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Public page</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ChromeHideToggles
+                variant="booking"
+                flags={formData.chrome}
+                canHideBranding={canHideBranding}
+                onBrandingLocked={() => setChromeUpgradeOpen(true)}
+                onChange={(chrome) =>
+                  setFormData((prev) => ({ ...prev, chrome }))
+                }
+              />
+            </CardContent>
+          </Card>
+
           {/* Calendar */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -1505,6 +1542,13 @@ export default function EventTypeForm() {
         entitlement={planLimitDialog.state?.decision.key ?? "calendarConnections"}
         actionLabel={planLimitDialog.state?.actionLabel ?? "connect another calendar"}
         decision={planLimitDialog.state?.decision}
+      />
+      <UpgradeDialog
+        open={chromeUpgradeOpen}
+        onClose={() => setChromeUpgradeOpen(false)}
+        projectId={projectId!}
+        entitlement="removeBranding"
+        actionLabel="hide LinkyCal branding"
       />
 
       {/* Add Override Dialog */}

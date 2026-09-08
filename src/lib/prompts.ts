@@ -407,6 +407,18 @@ ${et.requiresConfirmation ? "- Bookings require host confirmation before being f
 - Google Meet links auto-generated for each booking
 - Timezone auto-detected from the visitor's browser
 
+## Page chrome
+Hide banner, title, intro, avatar, or branding with \`ui\` or \`?hide_banner=1&hide_title=1\`. Event settings can hide the same pieces. A link cannot unhide a setting. \`hideBranding\` needs Pro or Business.
+
+\`\`\`javascript
+LinkyCal.booking({
+  projectSlug: "${projectSlug}",
+  eventTypeSlug: "${et.slug}",
+  container: "#linkycal-booking",
+  ui: { hideBanner: true, hideTitle: true }
+});
+\`\`\`
+
 ## Prefill and hidden fields
 Host-page query params (except embed, theme, lc_source, lc_journey) are forwarded into the widget. Pass values from your app with \`hidden\`:
 
@@ -570,6 +582,18 @@ ${form.type === "multi_step" ? "- Multi-step navigation with progress indicator"
 - Supports all field types: text, email, phone, select, radio, checkbox, rating, date, time, file upload
 - Built-in validation for required fields and email format
 - Automatic submission handling
+
+## Page chrome
+Hide banner, title, intro, section image, or branding with \`ui\` or \`?hide_banner=1&hide_title=1\`. Resource settings can hide the same pieces. A link cannot unhide a setting. \`hideBranding\` needs Pro or Business.
+
+\`\`\`javascript
+LinkyCal.form({
+  projectSlug: "${projectSlug}",
+  formSlug: "${form.slug}",
+  container: "#linkycal-form",
+  ui: { hideBanner: true, hideTitle: true }
+});
+\`\`\`
 
 ## Prefill and hidden fields
 Host-page query params (except embed, theme, lc_source, lc_journey) are forwarded into the widget. A share link can also use \`?field_id=value\`. Pass values from your app with \`hidden\`:

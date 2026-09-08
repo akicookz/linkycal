@@ -5,17 +5,30 @@ import {
   analyticsJourneyStorageKey,
   isAnalyticsJourneyId,
 } from "../../shared/funnel-analytics";
+import {
+  appendChromeParams,
+  CHROME_RESERVED_PARAMS,
+  type ChromeFlags,
+} from "../../shared/public-chrome";
 
 export function getApiBase(): string {
   return __LINKYCAL_API_BASE__;
 }
 
-const WIDGET_RESERVED_PARAMS = new Set([
+const WIDGET_HOST_RESERVED_PARAMS = new Set([
   "embed",
   "theme",
   "lc_source",
   "lc_journey",
 ]);
+
+const WIDGET_HIDDEN_RESERVED_PARAMS = new Set([
+  ...WIDGET_HOST_RESERVED_PARAMS,
+  ...CHROME_RESERVED_PARAMS,
+]);
+
+export type { ChromeFlags };
+export { appendChromeParams };
 
 export type WidgetHiddenValues = Record<
   string,
@@ -26,7 +39,7 @@ export function appendHostPageParams(url: URL): void {
   try {
     const params = new URLSearchParams(window.location.search);
     for (const [key, value] of params) {
-      if (WIDGET_RESERVED_PARAMS.has(key)) continue;
+      if (WIDGET_HOST_RESERVED_PARAMS.has(key)) continue;
       url.searchParams.append(key, value);
     }
   } catch {
@@ -40,6 +53,7 @@ export function appendHiddenParams(
 ): void {
   if (!hidden) return;
   for (const [key, value] of Object.entries(hidden)) {
+    if (WIDGET_HIDDEN_RESERVED_PARAMS.has(key)) continue;
     if (value == null) continue;
     if (Array.isArray(value)) {
       url.searchParams.delete(key);

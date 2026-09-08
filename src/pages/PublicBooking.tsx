@@ -34,6 +34,12 @@ import {
   type FormExperienceCheckpoint,
 } from "@/components/FormExperience";
 import { Logo } from "@/components/Logo";
+import {
+  chromeMarkerProps,
+  isChromeHidden,
+  publicRootProps,
+  resolvePublicChromeFromPage,
+} from "../../shared/public-chrome";
 import { SEOHead } from "@/components/SEOHead";
 import {
   buildFormExperienceModel,
@@ -78,7 +84,7 @@ interface EventType {
   description: string | null;
   location: string | null;
   color: string;
-  settings?: { collectDetailsWithForm?: boolean } | null;
+  settings?: { collectDetailsWithForm?: boolean; chrome?: unknown } | null;
 }
 
 interface ProjectInfo {
@@ -353,10 +359,22 @@ export default function PublicBooking({
     return { ...(themeFromProject ?? {}), ...(themeOverride ?? {}) };
   }, [themeFromProject, themeOverride]);
   const isEmbedded = searchParams.get("embed") === "1";
-  const hideBanner = searchParams.get("hide_banner") === "1";
-  const showBanner = !!theme?.bannerImage && !hideBanner;
-  const hideBrandingRequested = searchParams.get("hide_branding") === "1";
-  const showBranding = !(hideBrandingRequested && data?.canHideBranding);
+  const chrome = resolvePublicChromeFromPage({
+    settings: eventType?.settings,
+    search: searchParams,
+    canHideBranding: data?.canHideBranding === true,
+  });
+  const formChrome = resolvePublicChromeFromPage({
+    settings: data?.bookingForm?.settings,
+    search: searchParams,
+    canHideBranding: data?.canHideBranding === true,
+  });
+  const showBanner =
+    !!theme?.bannerImage && !isChromeHidden(chrome, "banner");
+  const showBranding = !isChromeHidden(chrome, "branding");
+  const showTitle = !isChromeHidden(chrome, "title");
+  const showIntro = !isChromeHidden(chrome, "intro");
+  const showAvatar = !isChromeHidden(chrome, "avatar");
   const bookingForm = data?.bookingForm;
   const availableDays = useMemo(
     () => data?.availableDays ?? [],
@@ -945,7 +963,7 @@ export default function PublicBooking({
 
   return (
     <div
-      data-linkycal-public
+      {...publicRootProps(chrome)}
       ref={containerRef}
       className={isEmbedded
         ? "w-full flex justify-center"
@@ -998,6 +1016,7 @@ export default function PublicBooking({
           <div
             className="w-full h-36 sm:h-44 rounded-t-[16px] bg-cover bg-center mb-0"
             style={{ backgroundImage: `url(${theme!.bannerImage})` }}
+            {...chromeMarkerProps("banner")}
           />
         )}
 
@@ -1010,13 +1029,13 @@ export default function PublicBooking({
           style={{ borderRadius: showBanner ? undefined : theme?.borderRadius ? `${theme.borderRadius}px` : undefined }}
         >
 
-          {/* ─── Owner Avatar (always visible) ─── */}
-          {owner && (
+          {showAvatar && owner && (
             <div
               className={cn(
                 "relative z-10",
                 showBanner ? "-mt-14 mb-4" : "mb-4",
               )}
+              {...chromeMarkerProps("avatar")}
             >
               {owner.image ? (
                 <img
@@ -1043,10 +1062,17 @@ export default function PublicBooking({
           {/* ─── Event Header (step 1 only) ─── */}
           {step === 1 && (
             <div className="mb-6">
-              <h1 className="text-xl font-semibold tracking-tight">{eventType.name}</h1>
+              {showTitle ? (
+                <h1
+                  className="text-xl font-semibold tracking-tight"
+                  {...chromeMarkerProps("title")}
+                >
+                  {eventType.name}
+                </h1>
+              ) : null}
 
-              {desc && (
-                <div className="mt-1.5">
+              {showIntro && desc && (
+                <div className="mt-1.5" {...chromeMarkerProps("intro")}>
                   <p
                     ref={descRef}
                     className={cn(
@@ -1401,6 +1427,7 @@ export default function PublicBooking({
               submitting={submitting}
               error={bookingError}
               theme={theme}
+              chrome={formChrome}
               honeypot={honeypotInput}
               onValueChange={setBookingFormValue}
               onClearFields={clearBookingFormFields}
@@ -1470,7 +1497,10 @@ export default function PublicBooking({
 
         {/* ─── Footer: Powered by LinkyCal ─── */}
         {showBranding && (
-          <div className="flex justify-center px-6 py-4 sm:px-8">
+          <div
+            className="flex justify-center px-6 py-4 sm:px-8"
+            {...chromeMarkerProps("branding")}
+          >
             <Link
               to="/"
               className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
