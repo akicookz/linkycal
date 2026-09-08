@@ -888,19 +888,38 @@ const pricingPlans: PricingPlan[] = customerPlans.map(function pricingPlan(plan)
   };
 });
 
-export function PricingSection({ onGetStarted }: MarketingCtaProps) {
+interface PricingSectionProps extends MarketingCtaProps {
+  showHeading?: boolean;
+  className?: string;
+}
+
+export function PricingSection({
+  onGetStarted,
+  showHeading = true,
+  className,
+}: PricingSectionProps) {
   const [annual, setAnnual] = useState(false);
 
   return (
-    <section id="pricing" className="relative scroll-mt-24 py-24 sm:py-28 px-6">
+    <section
+      id="pricing"
+      className={cn("relative scroll-mt-24 py-24 sm:py-28 px-6", className)}
+    >
       <div className="max-w-7xl mx-auto">
-        <SectionHeading
-          title="Flexible pricing plans"
-          subtitle="Choose a plan that grows with you. Start for free and upgrade anytime for more capacity and support."
-        />
+        {showHeading ? (
+          <SectionHeading
+            title="Flexible pricing plans"
+            subtitle="Choose a plan that grows with you. Start for free and upgrade anytime for more capacity and support."
+          />
+        ) : null}
 
         {/* Billing toggle */}
-        <div className="flex items-center justify-center gap-3 mt-10">
+        <div
+          className={cn(
+            "flex items-center justify-center gap-3",
+            showHeading && "mt-10",
+          )}
+        >
           <span
             className={cn(
               "text-sm font-medium transition-colors",

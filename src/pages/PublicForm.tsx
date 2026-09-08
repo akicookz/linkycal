@@ -13,8 +13,10 @@ import {
 } from "@/components/FormExperience";
 import { SEOHead } from "@/components/SEOHead";
 import {
+  buildFormExperienceModel,
   getAllFormFields,
   getCompletionField,
+  getFocusedQuestionProgress,
   getSortedFormSteps,
   type FormExperienceAnalyticsEvent,
   type FormExperienceAnalyticsStage,
@@ -576,13 +578,23 @@ export default function PublicForm() {
     );
 
     if (isFocusedExperience) {
+      const completionScreens = buildFormExperienceModel({
+        form,
+        values: {},
+        surface: "standalone",
+      }).screens;
+      const completionProgress = getFocusedQuestionProgress(
+        completionScreens,
+        completionScreens.length - 1,
+      );
       return (
         <div data-linkycal-public>
           {compiledCss ? <style>{compiledCss}</style> : null}
           <FocusedFormExperienceShell
             theme={theme}
             canHideBranding={canHideBranding}
-            progressPct={100}
+            progressCurrent={completionProgress.current}
+            progressTotal={completionProgress.total}
             showNav={false}
           >
             {seoHead}

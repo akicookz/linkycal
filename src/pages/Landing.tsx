@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Link, useNavigate, useSearchParams, useLocation } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowRight, Link2, Code2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
@@ -117,7 +117,6 @@ const HERO_CODE: [string, SynToken][][] = [
 
 export default function Landing() {
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: session, isPending: isSessionPending } = useSession();
   const posthog = usePostHog();
@@ -146,14 +145,6 @@ export default function Landing() {
 
     setAuthOpen(showAuth);
   }, [authRedirect, isSessionPending, navigate, session, showAuth]);
-
-  // Scroll to #features / #pricing / #faq when arriving from another page
-  // (BrowserRouter doesn't handle hash scrolling itself).
-  useEffect(() => {
-    if (!location.hash) return;
-    const el = document.getElementById(location.hash.slice(1));
-    el?.scrollIntoView({ behavior: "smooth" });
-  }, [location.hash]);
 
   const handleClose = useCallback(() => {
     setAuthOpen(false);

@@ -73,6 +73,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FocusedFieldInput } from "@/components/FocusedFieldInput";
+import { FocusedStepProgress } from "@/components/FocusedStepProgress";
 import { useIsDesktop } from "@/hooks/use-mobile";
 import { useSession } from "@/lib/auth-client";
 import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
@@ -88,6 +89,11 @@ import {
   type SectionImage,
 } from "@/lib/form-sections";
 import { SectionImageField } from "@/components/SectionImageField";
+import {
+  buildFormExperienceModel,
+  getFocusedQuestionProgressForScreenField,
+  type FormExperienceForm,
+} from "@/lib/form-experience";
 import { getRenderableRichTextHtml, richTextToPlainText } from "@/lib/rich-text";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { normalizeToFieldId } from "@/lib/constants";
@@ -205,6 +211,49 @@ const GROUP_DROPPABLE_ID_PREFIX = "group:";
 
 function isValidEmailAddress(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function toFormExperienceForm(form: FullForm): FormExperienceForm {
+  return {
+    id: form.id,
+    name: form.name,
+    type: form.type,
+    status: form.status,
+    steps: [...form.steps]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((step) => ({
+        id: step.id,
+        sortOrder: step.sortOrder,
+        title: step.title,
+        description: step.description,
+        richDescription: step.richDescription,
+        settings: step.settings,
+        visibility: step.visibility ?? null,
+        fields: [...(step.fields ?? [])]
+          .sort((a, b) => a.sortOrder - b.sortOrder)
+          .map((field) => ({
+            id: field.id,
+            stepId: field.stepId,
+            sortOrder: field.sortOrder,
+            type: field.type,
+            label: field.label,
+            description: field.description,
+            placeholder: field.placeholder,
+            required: field.required,
+            hidden: field.hidden,
+            validation:
+              field.validation && typeof field.validation === "object"
+                ? (field.validation as Record<string, unknown>)
+                : null,
+            options: field.options,
+            visibility: field.visibility ?? null,
+            contactMapping:
+              field.contactMapping === "name" || field.contactMapping === "email"
+                ? field.contactMapping
+                : null,
+          })),
+      })),
+  };
 }
 
 // ─── Field Type Definitions ──────────────────────────────────────────────────
@@ -448,6 +497,9 @@ function generateSlug(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
+const BUILDER_VIEWPORT_CLASS =
+  "-m-3 flex h-svh min-h-0 flex-col overflow-hidden p-3 sm:-m-4 sm:p-4 md:-m-8 md:p-8";
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 interface FormBuilderProps {
@@ -620,6 +672,17 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   const form = formData;
   const currentProject = projects?.find((project) => project.id === projectId);
+  const previewExperienceModel = useMemo(
+    () =>
+      form
+        ? buildFormExperienceModel({
+            form: toFormExperienceForm(form),
+            values: {},
+            surface: "standalone",
+          })
+        : null,
+    [form],
+  );
 
   const steps = form?.steps ?? [];
   const sortedSteps = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -720,7 +783,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     }
     return map;
   }, [sortedSteps]);
-  const totalQuestions = Object.keys(questionNumberByFieldId).length;
   const orderedQuestionFields = sortedSteps.flatMap((step) =>
     sortFields(step.fields ?? []).filter((f) => f.type !== "completion" && !f.hidden),
   );
@@ -2128,20 +2190,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       );
     }
     return (
-      <div>
-        <div className="flex items-center gap-3 mb-8">
+      <div className={BUILDER_VIEWPORT_CLASS}>
+        <div className="mb-3 flex shrink-0 items-center gap-3 lg:mb-6">
           <Skeleton className="h-8 w-8" />
           <Skeleton className="h-7 w-48" />
         </div>
-        <div className="grid grid-cols-[280px_1fr] gap-6">
-          <Card>
+        <div className="grid min-h-0 flex-1 gap-6 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)]">
+          <Card className="min-h-0 overflow-hidden">
             <CardContent className="space-y-2 pt-4">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
             </CardContent>
           </Card>
-          <Skeleton className="h-[540px] w-full rounded-[24px]" />
+          <Skeleton className="h-full min-h-0 w-full rounded-[24px]" />
         </div>
       </div>
     );
@@ -2374,25 +2436,42 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     selectedSectionIsGrouped && selectedStep
       ? sortFields(selectedStep.fields ?? []).filter((f) => f.type !== "completion")
       : [];
-  const progressPct =
-    selectedQuestionNumber && totalQuestions > 0
-      ? Math.round(((selectedQuestionNumber - 1) / totalQuestions) * 100)
-      : selectedField?.type === "completion"
-        ? 100
-        : 0;
+  const previewProgress = previewExperienceModel
+    ? form.type === "multi_step"
+      ? getFocusedQuestionProgressForScreenField(
+          previewExperienceModel.screens,
+          selectedField?.id ?? null,
+          { completed: selectedField?.type === "completion" },
+        )
+      : {
+          current:
+            selectedField?.type === "completion"
+              ? previewExperienceModel.steps.length - 1
+              : selectedField
+                ? previewExperienceModel.steps.findIndex(
+                    (step) =>
+                      step.id === selectedField.stepId ||
+                      step.fields.some((field) => field.id === selectedField.id),
+                  )
+                : selectedStep
+                  ? previewExperienceModel.steps.findIndex(
+                      (step) => step.id === selectedStep.id,
+                    )
+                  : -1,
+          total: previewExperienceModel.steps.length,
+        }
+    : { current: -1, total: 0 };
 
   const previewCanvas = (
-    <div className="rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] relative overflow-hidden min-h-[540px] flex flex-col">
-      {/* Progress bar */}
-      <div className="absolute top-0 left-0 right-0 h-1 bg-primary/10">
-        <div
-          className="h-full bg-primary transition-all duration-500 ease-out"
-          style={{ width: `${progressPct}%` }}
-        />
-      </div>
-
-      <div className="flex-1 flex items-center justify-center px-6 py-12 sm:px-12">
+    <div className="relative flex h-full min-h-0 max-h-full flex-col overflow-hidden rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] max-lg:min-h-[min(540px,100%)]">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-12 sm:px-12">
         <div className="w-full max-w-xl mx-auto">
+          <FocusedStepProgress
+            current={previewProgress.current}
+            total={previewProgress.total}
+            surface="preview"
+            className="mb-8"
+          />
           {selectedField && selectedField.type === "completion" ? (
             <div key={selectedField.id} className="animate-focused-screen space-y-4 text-center flex flex-col items-center">
               <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
@@ -3085,23 +3164,175 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   // ─── Render: Builder ─────────────────────────────────────────────────────
 
   return (
-    <div>
+    <div
+      className={
+        isTemplateMode
+          ? undefined
+          : BUILDER_VIEWPORT_CLASS
+      }
+    >
       {/* Top action bar */}
       {!isTemplateMode && (
-        <div className="mb-3 flex min-w-0 items-center gap-2 lg:mb-6">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="shrink-0"
-            onClick={() => navigate(`/app/projects/${projectId}/forms`)}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Button>
-          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold tracking-tight">
-            {form.name}
-          </h1>
-          <div className="flex shrink-0 items-center gap-1.5">
+        <div className="mb-3 flex min-w-0 shrink-0 items-center gap-2 lg:mb-6">
+          <div className="flex min-w-0 items-center gap-1">
+            <h1
+              className="min-w-0 max-w-[10rem] truncate text-lg font-semibold tracking-tight sm:max-w-[16rem] md:max-w-[22rem]"
+              title={form.name}
+            >
+              {form.name}
+            </h1>
+            <Popover open={settingsOpen} onOpenChange={setSettingsOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 shrink-0 px-0"
+                  aria-label="Form settings"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  <span className="sr-only">Settings</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="w-96 max-h-[min(70vh,36rem)] overflow-y-auto"
+              >
+                <div className="space-y-5">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Form Name</Label>
+                    <Input
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onBlur={handleNameBlur}
+                      className="h-9"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Form Slug</Label>
+                    <Input
+                      value={editingSlug}
+                      onChange={(e) => setEditingSlug(e.target.value)}
+                      onBlur={handleSlugBlur}
+                      className="h-9"
+                    />
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      Changing the slug changes the form&apos;s public link. On Pro and
+                      Business plans, old links automatically redirect to the new one.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">Experience</Label>
+                    <Select
+                      value={form.type}
+                      onValueChange={(val) =>
+                        updateFormMutation.mutate({ type: val as "multi_step" | "single" })
+                      }
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="multi_step">
+                          Focused — one question at a time
+                        </SelectItem>
+                        <SelectItem value="single">
+                          Classic — all questions on one page
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground">
+                      Send new response emails to
+                    </Label>
+                    <Select
+                      value={responseNotificationDestinationValue}
+                      onValueChange={handleResponseNotificationDestinationChange}
+                    >
+                      <SelectTrigger className="h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {responseNotificationOptions.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">HTML Action URL</Label>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <Input
+                          readOnly
+                          value={nativeActionUrl}
+                          className="h-9 min-w-0 text-xs"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 shrink-0"
+                          onClick={() => {
+                            navigator.clipboard.writeText(nativeActionUrl);
+                            setActionUrlCopied(true);
+                            setTimeout(() => setActionUrlCopied(false), 2000);
+                          }}
+                        >
+                          {actionUrlCopied ? (
+                            <Check className="h-3.5 w-3.5" />
+                          ) : (
+                            <Copy className="h-3.5 w-3.5" />
+                          )}
+                          {actionUrlCopied ? "Copied" : "Copy"}
+                        </Button>
+                      </div>
+                    </div>
+                    {hasFileFields && (
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        File fields work with native HTML forms when your form uses multipart encoding.
+                        Add enctype=&quot;multipart/form-data&quot; to your form tag.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium">Status</p>
+                      <p className="text-xs text-muted-foreground">
+                        {form.status === "active"
+                          ? "Form is live and accepting responses"
+                          : "Form is hidden from respondents"}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={form.status === "active"}
+                      onCheckedChange={(checked) =>
+                        updateFormMutation.mutate({
+                          status: checked ? "active" : "draft",
+                        })
+                      }
+                    />
+                  </div>
+
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden lg:inline-flex xl:hidden"
+              onClick={() => setFieldSettingsSheetOpen(true)}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              Settings
+            </Button>
             <Button
               size="sm"
               onClick={() => updateFormMutation.mutate({ status: "active" })}
@@ -3117,12 +3348,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             <ActionsSheet
               title="Form"
               items={[
-                {
-                  id: "settings",
-                  label: "Settings",
-                  icon: Settings,
-                  onClick: () => setSettingsOpen(true),
-                },
                 {
                   id: "copy-api",
                   label: promptCopiedId === "api" ? "Copied" : "Copy API prompt",
@@ -3174,14 +3399,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           {props.onboardingFooter}
         </div>
       ) : isDesktop ? (
-        <div className="grid gap-5 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-          {contentPanel}
-          {previewCanvas}
-          {settingsPanel}
+        <div className="grid min-h-0 flex-1 gap-5 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+          <div className="min-h-0 overflow-y-auto overscroll-contain">
+            {contentPanel}
+          </div>
+          <div className="flex h-full min-h-0 flex-col">
+            {previewCanvas}
+          </div>
+          <div className="hidden min-h-0 overflow-y-auto overscroll-contain xl:block">
+            {settingsPanel}
+          </div>
         </div>
       ) : (
-        <div>
-          <div className="mb-3 grid grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-[12px] bg-muted p-1">
             <Button
               variant="ghost"
               size="sm"
@@ -3201,7 +3432,14 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               Settings
             </Button>
           </div>
-          {previewCanvas}
+          <div className="flex min-h-0 flex-1 flex-col">
+            {previewCanvas}
+          </div>
+        </div>
+      )}
+
+      {!isTemplateMode && (
+        <>
           <Sheet open={contentSheetOpen} onOpenChange={setContentSheetOpen}>
             <SheetContent
               side="bottom"
@@ -3226,161 +3464,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               {settingsPanel}
             </SheetContent>
           </Sheet>
-        </div>
-      )}
-
-      {/* ─── Settings Dialog ────────────────────────────────────────── */}
-      {!isTemplateMode && (
-        <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>Form Settings</DialogTitle>
-              <DialogDescription>
-                Configure your form name, slug, status, notifications, and HTML action settings.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-5 py-2">
-              {/* Form Name */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Form Name</Label>
-                <Input
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onBlur={handleNameBlur}
-                  className="h-9"
-                />
-              </div>
-
-              {/* Form Slug */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Form Slug</Label>
-                <Input
-                  value={editingSlug}
-                  onChange={(e) => setEditingSlug(e.target.value)}
-                  onBlur={handleSlugBlur}
-                  className="h-9"
-                />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Changing the slug changes the form&apos;s public link. On Pro and
-                  Business plans, old links automatically redirect to the new one.
-                </p>
-              </div>
-
-              {/* Experience */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Experience</Label>
-                <Select
-                  value={form.type}
-                  onValueChange={(val) =>
-                    updateFormMutation.mutate({ type: val as "multi_step" | "single" })
-                  }
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="multi_step">
-                      Focused — one question at a time
-                    </SelectItem>
-                    <SelectItem value="single">
-                      Classic — all questions on one page
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Focused presents questions one at a time, Typeform-style, with
-                  keyboard navigation and smooth transitions.
-                </p>
-              </div>
-
-              {/* Status */}
-              <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Status</p>
-                  <p className="text-xs text-muted-foreground">
-                    {form.status === "active"
-                      ? "Form is live and accepting responses"
-                      : "Form is hidden from respondents"}
-                  </p>
-                </div>
-                <Switch
-                  checked={form.status === "active"}
-                  onCheckedChange={(checked) =>
-                    updateFormMutation.mutate({
-                      status: checked ? "active" : "draft",
-                    })
-                  }
-                />
-              </div>
-
-              {/* Notifications */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">
-                  Send new response emails to
-                </Label>
-                <Select
-                  value={responseNotificationDestinationValue}
-                  onValueChange={handleResponseNotificationDestinationChange}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {responseNotificationOptions.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  New inquiry emails for this form will be sent to the selected address.
-                </p>
-              </div>
-
-              {/* HTML Action */}
-              <div className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">HTML Action URL</Label>
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Input
-                      readOnly
-                      value={nativeActionUrl}
-                      className="h-9 min-w-0 text-xs"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9 shrink-0"
-                      onClick={() => {
-                        navigator.clipboard.writeText(nativeActionUrl);
-                        setActionUrlCopied(true);
-                        setTimeout(() => setActionUrlCopied(false), 2000);
-                      }}
-                    >
-                      {actionUrlCopied ? (
-                        <Check className="h-3.5 w-3.5" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                      {actionUrlCopied ? "Copied" : "Copy"}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Use form field IDs as your HTML input names when posting directly to LinkyCal.
-                  </p>
-                </div>
-                {hasFileFields && (
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    File fields work with native HTML forms when your form uses multipart encoding.
-                    Add enctype=&quot;multipart/form-data&quot; to your form tag.
-                  </p>
-                )}
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        </>
       )}
 
       {projectId && (

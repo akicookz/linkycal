@@ -25,6 +25,7 @@ import {
   isChoiceFieldType,
   type FocusedFieldDensity,
 } from "@/components/FocusedFieldInput";
+import { FocusedStepProgress } from "@/components/FocusedStepProgress";
 import { FormFieldRenderer } from "@/components/FormFieldRenderer";
 import { Logo } from "@/components/Logo";
 import { RichTextContent } from "@/components/RichTextContent";
@@ -33,6 +34,7 @@ import {
   createFormExperienceCheckpoint,
   createFormTransitionLock,
   buildFormExperienceAnalyticsStages,
+  getFocusedQuestionProgress,
   validateFormExperienceField,
   type FormExperienceAnalyticsEvent,
   type FormExperienceAnalyticsStage,
@@ -202,17 +204,17 @@ export function FormExperience(props: FormExperienceProps) {
   const primaryStyle: CSSProperties | undefined =
     theme?.primaryBg || theme?.borderRadius != null
       ? {
-          ...(theme?.primaryBg
-            ? {
-                backgroundColor: theme.primaryBg,
-                color: theme.primaryText || "#fff",
-                borderColor: theme.primaryBg,
-              }
-            : {}),
-          ...(theme?.borderRadius != null
-            ? { borderRadius: `${theme.borderRadius}px` }
-            : {}),
-        }
+        ...(theme?.primaryBg
+          ? {
+            backgroundColor: theme.primaryBg,
+            color: theme.primaryText || "#fff",
+            borderColor: theme.primaryBg,
+          }
+          : {}),
+        ...(theme?.borderRadius != null
+          ? { borderRadius: `${theme.borderRadius}px` }
+          : {}),
+      }
       : undefined;
   const outlineStyle: CSSProperties | undefined =
     theme?.borderRadius != null
@@ -573,22 +575,11 @@ export function FormExperience(props: FormExperienceProps) {
     const focusedDensity: FocusedFieldDensity = isCompact
       ? "compact"
       : "comfortable";
-    const firstQuestionScreenIndex = screens.findIndex(
-      (screen) => screen.kind !== "statement",
-    );
-    const progressStarted =
-      firstQuestionScreenIndex >= 0 && screenIndex >= firstQuestionScreenIndex;
-    const progressPct = progressStarted
-      ? Math.round(
-          ((screenIndex - firstQuestionScreenIndex + 1) /
-            (screens.length - firstQuestionScreenIndex)) *
-            100,
-        )
-      : 0;
+    const questionProgress = getFocusedQuestionProgress(screens, screenIndex);
     const currentSectionImage = currentScreen
       ? getSectionImage(
-          steps.find((step) => step.id === currentScreen.stepId)?.settings,
-        )
+        steps.find((step) => step.id === currentScreen.stepId)?.settings,
+      )
       : null;
     const animatedScreen = currentScreen ? (
       <div
@@ -801,7 +792,8 @@ export function FormExperience(props: FormExperienceProps) {
         <FocusedFormExperienceShell
           theme={theme}
           canHideBranding={canHideBranding}
-          progressPct={progressPct}
+          progressCurrent={questionProgress.current}
+          progressTotal={questionProgress.total}
           showNav
           canPrev={screenIndex > 0 && !submitting}
           canNext={!isLastScreen && !submitting}
@@ -825,17 +817,12 @@ export function FormExperience(props: FormExperienceProps) {
       <>
         {head}
         {honeypot}
-        {progressStarted && (
-          <div
-            data-focused-progress="booking"
-            className="pointer-events-none absolute top-2 right-0 left-14 sm:left-16 z-0 h-1 overflow-hidden bg-primary/10"
-          >
-            <div
-              className="h-full rounded-r-full bg-primary transition-all duration-500 ease-out"
-              style={{ width: `${progressPct}%` }}
-            />
-          </div>
-        )}
+        <FocusedStepProgress
+          current={questionProgress.current}
+          total={questionProgress.total}
+          surface="booking"
+          className="mb-1"
+        />
         <div className="py-4 sm:py-6">{animatedScreen}</div>
         <div className="mt-8 flex items-center justify-between">
           <button
@@ -966,31 +953,24 @@ export function FormExperience(props: FormExperienceProps) {
         mediaLayout={classicSectionImage?.layout}
       >
         {head}
-        <div className="space-y-1.5 mb-7">
-          <h1 className="text-lg font-semibold">{form.name}</h1>
+        <div className="mb-7">
+          <div className="flex flex-col-reverse gap-4 md:flex-row md:items-center md:justify-between md:gap-4">
+            <h1 className="min-w-0 text-lg font-semibold">{form.name}</h1>
+            <FocusedStepProgress
+              current={currentStepIndex}
+              total={steps.length}
+              className="-mx-4 -mt-4 w-[calc(100%+2rem)] sm:-mx-8 sm:-mt-5 sm:w-[calc(100%+4rem)] md:mx-0 md:mt-0 md:w-[40%] md:max-w-[40%] md:shrink-0 lg:w-32 lg:max-w-32"
+            />
+          </div>
           {steps.length > 1 && currentStep?.title && (
-            <p className="text-sm text-muted-foreground">{currentStep.title}</p>
+            <p className="mt-1.5 text-sm text-muted-foreground">{currentStep.title}</p>
           )}
           <RichTextContent
             value={currentStep?.richDescription}
             fallbackPlainText={currentStep?.description}
+            className="mt-1.5"
           />
         </div>
-
-        {/* Step progress indicator */}
-        {steps.length > 1 && (
-          <div className="flex gap-1.5 mb-7">
-            {steps.map((_, index) => (
-              <div
-                key={index}
-                className={cn(
-                  "h-1 flex-1 rounded-full transition-colors",
-                  index <= currentStepIndex ? "bg-primary" : "bg-muted",
-                )}
-              />
-            ))}
-          </div>
-        )}
 
         <form
           onSubmit={(event) => {
@@ -1078,10 +1058,10 @@ export function FormExperience(props: FormExperienceProps) {
 
 // ─── Focused Shell ───────────────────────────────────────────────────────────
 //
-// Full-bleed Typeform-style canvas: thin progress bar pinned to the top,
-// vertically centered question area, navigation chevrons + branding at the
-// bottom. Inside an embed it keeps a stable min-height instead of filling
-// the viewport so the host iframe doesn't jump between questions.
+// Full-bleed Typeform-style canvas: question dashes at the top left of the
+// form pane, vertically centered question area, navigation chevrons + branding
+// at the bottom. Inside an embed it keeps a stable min-height instead of
+// filling the viewport so the host iframe doesn't jump between questions.
 
 // Fills its (relative, overflow-hidden) container while honoring the stored
 // focal point + zoom. Shared by the focused split and the classic card.
@@ -1101,7 +1081,8 @@ export interface FocusedFormExperienceShellProps {
   children: ReactNode;
   theme?: FormExperienceTheme;
   canHideBranding?: boolean;
-  progressPct: number;
+  progressCurrent: number;
+  progressTotal: number;
   showNav: boolean;
   canPrev?: boolean;
   canNext?: boolean;
@@ -1111,6 +1092,26 @@ export interface FocusedFormExperienceShellProps {
   mediaLayout?: SectionImageLayout;
 }
 
+function FocusedFormPane(props: {
+  children: ReactNode;
+  progress: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex-1 flex items-center justify-center px-6 py-14 sm:px-10 min-w-0",
+        props.className,
+      )}
+    >
+      <div className="w-full max-w-3xl mx-auto">
+        {props.progress}
+        {props.children}
+      </div>
+    </div>
+  );
+}
+
 export function FocusedFormExperienceShell(
   props: FocusedFormExperienceShellProps,
 ): ReactNode {
@@ -1118,7 +1119,8 @@ export function FocusedFormExperienceShell(
     children,
     theme,
     canHideBranding,
-    progressPct,
+    progressCurrent,
+    progressTotal,
     showNav,
     canPrev = false,
     canNext = false,
@@ -1134,15 +1136,23 @@ export function FocusedFormExperienceShell(
 
   const themeVars = theme?.primaryBg
     ? ({
-        ["--primary" as string]: theme.primaryBg,
-        ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
-        ["--ring" as string]: theme.primaryBg,
-      } as CSSProperties)
+      ["--primary" as string]: theme.primaryBg,
+      ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
+      ["--ring" as string]: theme.primaryBg,
+    } as CSSProperties)
     : undefined;
 
   const navButtonStyle: CSSProperties | undefined = theme?.primaryBg
     ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff" }
     : undefined;
+
+  const stepProgress = (
+    <FocusedStepProgress
+      current={progressCurrent}
+      total={progressTotal}
+      className="mb-8"
+    />
+  );
 
   return (
     <div
@@ -1161,35 +1171,22 @@ export function FocusedFormExperienceShell(
           : undefined,
         ...(!isEmbedded && theme?.backgroundImage
           ? {
-              backgroundImage: `url(${theme.backgroundImage})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }
+            backgroundImage: `url(${theme.backgroundImage})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }
           : {}),
       }}
     >
-      {/* Progress bar */}
-      {progressPct > 0 && (
-        <div
-          data-focused-progress="standalone"
-          className="absolute top-0 left-0 right-0 h-1 bg-primary/10 z-10"
-        >
-          <div
-            className="h-full bg-primary transition-all duration-500 ease-out"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-      )}
-
       {media && mediaLayout === "top" ? (
         <div className="flex-1 flex flex-col min-h-0">
           <div className="relative w-full h-44 shrink-0 overflow-hidden sm:h-60">
             {media}
           </div>
-          <div className="flex-1 flex items-center justify-center px-6 py-12 sm:px-10">
-            <div className="w-full max-w-3xl mx-auto">{children}</div>
-          </div>
+          <FocusedFormPane className="py-12" progress={stepProgress}>
+            {children}
+          </FocusedFormPane>
         </div>
       ) : media ? (
         <div
@@ -1201,14 +1198,12 @@ export function FocusedFormExperienceShell(
           <div className="relative hidden md:block md:w-[44%] shrink-0 overflow-hidden">
             {media}
           </div>
-          <div className="flex-1 flex items-center justify-center px-6 py-14 sm:px-10 min-w-0">
-            <div className="w-full max-w-3xl mx-auto">{children}</div>
-          </div>
+          <FocusedFormPane progress={stepProgress}>
+            {children}
+          </FocusedFormPane>
         </div>
       ) : (
-        <div className="flex-1 flex items-center justify-center px-6 py-14 sm:px-10">
-          <div className="w-full max-w-3xl mx-auto">{children}</div>
-        </div>
+        <FocusedFormPane progress={stepProgress}>{children}</FocusedFormPane>
       )}
 
       <div className="flex items-center justify-between px-5 pb-4 sm:px-8 sm:pb-5">
@@ -1283,10 +1278,10 @@ export function FormExperiencePageShell(
 
   const themeVars = theme?.primaryBg
     ? ({
-        ["--primary" as string]: theme.primaryBg,
-        ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
-        ["--ring" as string]: theme.primaryBg,
-      } as CSSProperties)
+      ["--primary" as string]: theme.primaryBg,
+      ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
+      ["--ring" as string]: theme.primaryBg,
+    } as CSSProperties)
     : undefined;
 
   const radiusStyle =
@@ -1314,7 +1309,7 @@ export function FormExperiencePageShell(
             {media}
           </div>
         )}
-        <div className="min-w-0 flex-1 px-6 py-7 sm:px-10 sm:py-9">
+        <div className="min-w-0 flex-1 px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5">
           {children}
         </div>
       </div>
@@ -1329,7 +1324,7 @@ export function FormExperiencePageShell(
       )}
       <div
         className={cn(
-          "bg-card px-6 py-7 sm:px-10 sm:py-9",
+          "bg-card px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5",
           showBanner ? "rounded-b-[20px]" : "rounded-[20px]",
         )}
         style={{
@@ -1352,7 +1347,7 @@ export function FormExperiencePageShell(
         to="/"
         className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
-        Powered by <Logo size="sm" />
+        Powered by <Logo size="xs" />
       </Link>
     </footer>
   ) : null;
@@ -1384,11 +1379,11 @@ export function FormExperiencePageShell(
           : undefined,
         ...(theme?.backgroundImage
           ? {
-              backgroundImage: `url(${theme.backgroundImage})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }
+            backgroundImage: `url(${theme.backgroundImage})`,
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+            backgroundRepeat: "no-repeat",
+          }
           : {}),
       }}
     >

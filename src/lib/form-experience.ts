@@ -270,6 +270,38 @@ function buildFocusedScreens(
   return screens;
 }
 
+export function getFocusedQuestionProgress(
+  screens: FormExperienceScreen[],
+  screenIndex: number,
+): { current: number; total: number } {
+  let total = 0;
+  let current = -1;
+  for (let index = 0; index < screens.length; index += 1) {
+    if (screens[index].kind === "statement") continue;
+    if (index <= screenIndex) current = total;
+    total += 1;
+  }
+  return { current, total };
+}
+
+export function getFocusedQuestionProgressForScreenField(
+  screens: FormExperienceScreen[],
+  fieldId: string | null,
+  options?: { completed?: boolean },
+): { current: number; total: number } {
+  if (options?.completed) {
+    return getFocusedQuestionProgress(screens, screens.length - 1);
+  }
+  const screenIndex = screens.findIndex((screen) => {
+    if (screen.kind === "question") return screen.field.id === fieldId;
+    if (screen.kind === "group") {
+      return screen.fields.some((field) => field.id === fieldId);
+    }
+    return false;
+  });
+  return getFocusedQuestionProgress(screens, screenIndex);
+}
+
 function boundedAnalyticsLabel(value: string, fallback: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return (normalized || fallback).slice(0, 160);

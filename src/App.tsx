@@ -6,6 +6,7 @@ import AccountLayout from "./components/AccountLayout";
 import AuthGuard from "./components/AuthGuard";
 import OnboardingGuard from "./components/OnboardingGuard";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { ScrollToTop } from "./components/ScrollToTop";
 import Landing from "./pages/Landing";
 import Pricing from "./pages/Pricing";
 
@@ -61,7 +62,9 @@ function DashboardRedirect() {
 
 function App() {
   return (
-    <Routes>
+    <>
+      <ScrollToTop />
+      <Routes>
       <Route path="/" element={<Landing />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/docs" element={<Docs />} />
@@ -156,6 +159,7 @@ function App() {
       {/* Public resource — resolves to either a form or a booking. Must stay last. */}
       <Route path="/:projectSlug/:slug" element={<PublicResolver />} />
     </Routes>
+    </>
   );
 }
 
