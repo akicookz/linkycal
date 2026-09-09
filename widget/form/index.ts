@@ -69,7 +69,7 @@ function initFormWidget(options: FormWidgetOptions): void {
   iframe.title = "Form";
   iframe.setAttribute("allow", "clipboard-write");
   iframe.style.cssText =
-    "width:100%;border:0;display:block;background:transparent;color-scheme:light;min-height:420px;";
+    "width:100%;border:0;display:block;background:transparent;min-height:420px;";
   root.appendChild(iframe);
 
   const expectedOrigin = new URL(base).origin;

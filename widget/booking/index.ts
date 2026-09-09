@@ -69,7 +69,7 @@ function initBookingWidget(options: BookingWidgetOptions): void {
   iframe.title = "Book a meeting";
   iframe.setAttribute("allow", "clipboard-write; fullscreen");
   iframe.style.cssText =
-    "width:100%;border:0;display:block;background:transparent;color-scheme:light;min-height:560px;";
+    "width:100%;border:0;display:block;background:transparent;min-height:560px;";
   root.appendChild(iframe);
 
   const expectedOrigin = new URL(base).origin;

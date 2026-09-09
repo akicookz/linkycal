@@ -1243,7 +1243,8 @@ export function FormExperiencePageShell(
     <div className="w-full max-w-[60rem] mx-auto">
       <div
         className={cn(
-          "overflow-hidden rounded-[var(--radius)] bg-card",
+          "overflow-hidden rounded-[var(--radius)]",
+          !isEmbedded && "bg-card",
           mediaLayout !== "top" && "flex",
           mediaLayout === "right" && "flex-row-reverse",
         )}
@@ -1280,7 +1281,8 @@ export function FormExperiencePageShell(
       )}
       <div
         className={cn(
-          "bg-card px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5",
+          "px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5",
+          !isEmbedded && "bg-card",
           showBanner ? "rounded-b-[var(--radius)]" : "rounded-[var(--radius)]",
         )}
       >

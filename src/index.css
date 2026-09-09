@@ -116,6 +116,12 @@
   }
 }
 
+html[data-embed="1"],
+html[data-embed="1"] body {
+  background-color: transparent;
+  color-scheme: normal;
+}
+
 /* ─── Customizable Shadow Rings ──────────────────────────────────────────── */
 
 @utility ring-shadow {

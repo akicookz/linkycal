@@ -522,7 +522,12 @@ export default function PublicForm() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div
+        className={cn(
+          "flex items-center justify-center",
+          isEmbedded ? "py-16" : "min-h-screen bg-background",
+        )}
+      >
         <Loader className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
