@@ -38,7 +38,8 @@ function Input({
   variant,
   size,
   ...props
-}: React.ComponentProps<"input"> & VariantProps<typeof inputVariants>) {
+}: Omit<React.ComponentProps<"input">, "size"> &
+  VariantProps<typeof inputVariants>) {
   return (
     <input
       type={type}
