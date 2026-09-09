@@ -948,7 +948,7 @@ export function FormExperience(props: FormExperienceProps) {
             <FocusedStepProgress
               current={currentStepIndex}
               total={steps.length}
-              className="-mx-4 -mt-4 w-[calc(100%+2rem)] sm:-mx-8 sm:-mt-5 sm:w-[calc(100%+4rem)] md:mx-0 md:mt-0 md:w-[40%] md:max-w-[40%] md:shrink-0 lg:w-32 lg:max-w-32"
+              className="md:w-[40%] -mt-2 md:max-w-[40%] md:shrink-0 lg:w-32 lg:max-w-32"
             />
           </div>
           {!isChromeHidden(chrome, "intro") ? (
@@ -1265,7 +1265,7 @@ export function FormExperiencePageShell(
             {media}
           </div>
         )}
-        <div className="min-w-0 flex-1 px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5">
+        <div className="min-w-0 flex-1 px-4 py-4">
           {children}
         </div>
       </div>
@@ -1281,7 +1281,7 @@ export function FormExperiencePageShell(
       )}
       <div
         className={cn(
-          "px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5",
+          "px-4 py-4",
           !isEmbedded && "bg-card",
           showBanner ? "rounded-b-[var(--radius)]" : "rounded-[var(--radius)]",
         )}

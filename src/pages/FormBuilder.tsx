@@ -2857,16 +2857,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           )}
         </div>
       </div>
-
-      {form.type === "single" && (
-        <div className="px-6 pb-4">
-          <p className="text-[11px] text-muted-foreground text-center">
-            This form uses the classic one-page layout. The preview shows the
-            focused experience — switch to &quot;Focused&quot; in Settings to
-            present one question at a time.
-          </p>
-        </div>
-      )}
     </ExperienceThemeRoot>
   );
 
@@ -2992,13 +2982,13 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   key={`default-${selectedField.id}`}
                   defaultValue={
                     selectedField.validation &&
-                    typeof selectedField.validation === "object" &&
-                    typeof (selectedField.validation as Record<string, unknown>)
-                      .defaultValue === "string"
+                      typeof selectedField.validation === "object" &&
+                      typeof (selectedField.validation as Record<string, unknown>)
+                        .defaultValue === "string"
                       ? String(
-                          (selectedField.validation as Record<string, unknown>)
-                            .defaultValue,
-                        )
+                        (selectedField.validation as Record<string, unknown>)
+                          .defaultValue,
+                      )
                       : ""
                   }
                   placeholder="Used when the URL or embed does not pass this field"
@@ -3007,10 +2997,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                     const next = event.target.value.trim();
                     const current =
                       selectedField.validation &&
-                      typeof selectedField.validation === "object"
+                        typeof selectedField.validation === "object"
                         ? {
-                            ...(selectedField.validation as Record<string, unknown>),
-                          }
+                          ...(selectedField.validation as Record<string, unknown>),
+                        }
                         : {};
                     const previous =
                       typeof current.defaultValue === "string"
