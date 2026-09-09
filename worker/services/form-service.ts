@@ -354,7 +354,7 @@ export class FormService {
     formId: string,
     data: {
       sortOrder?: number;
-      title?: string;
+      title?: string | null;
       description?: string;
       richDescription?: string;
       settings?: Record<string, unknown>;
@@ -374,7 +374,7 @@ export class FormService {
       id,
       formId,
       sortOrder,
-      title: data.title ?? `Step ${sortOrder + 1}`,
+      title: data.title?.trim() || null,
       description: data.description ?? null,
       richDescription: data.richDescription ?? null,
       settings: data.settings ? JSON.stringify(data.settings) : null,
@@ -388,7 +388,7 @@ export class FormService {
     id: string,
     data: {
       sortOrder?: number;
-      title?: string;
+      title?: string | null;
       description?: string | null;
       richDescription?: string | null;
       settings?: Record<string, unknown> | null;
@@ -397,7 +397,7 @@ export class FormService {
   ) {
     const values: Record<string, unknown> = {};
     if (data.sortOrder !== undefined) values.sortOrder = data.sortOrder;
-    if (data.title !== undefined) values.title = data.title;
+    if (data.title !== undefined) values.title = data.title?.trim() || null;
     if (data.description !== undefined) values.description = data.description;
     if (data.richDescription !== undefined)
       values.richDescription = data.richDescription;

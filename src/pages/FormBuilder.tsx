@@ -1241,7 +1241,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     }: {
       stepId: string;
       data: Partial<{
-        title: string;
+        title: string | null;
         description: string | null;
         richDescription: string | null;
         settings: Record<string, unknown> | null;
@@ -2797,10 +2797,11 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 placeholder="Section title (shown as an intro screen)..."
                 textClassName="text-2xl sm:text-3xl font-semibold leading-snug"
                 saveStatus={saveStatus[selectedStep.id] ?? null}
+                allowEmpty
                 onSave={(title) =>
                   updateStepMutation.mutate({
                     stepId: selectedStep.id,
-                    data: { title },
+                    data: { title: title.trim() || null },
                   })
                 }
               />
@@ -3222,10 +3223,11 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   value={selectedStep.title ?? ""}
                   placeholder="Section title..."
                   saveStatus={saveStatus[selectedStep.id] ?? null}
+                  allowEmpty
                   onSave={(title) =>
                     updateStepMutation.mutate({
                       stepId: selectedStep.id,
-                      data: { title },
+                      data: { title: title.trim() || null },
                     })
                   }
                 />
@@ -3974,6 +3976,7 @@ function InlineEditableLabel({
   placeholder = "Untitled",
   saveStatus,
   textClassName,
+  allowEmpty = false,
 }: {
   value: string;
   onSave: (value: string) => void;
@@ -3981,6 +3984,7 @@ function InlineEditableLabel({
   placeholder?: string;
   saveStatus?: "saving" | "saved" | "error" | null;
   textClassName?: string;
+  allowEmpty?: boolean;
 }) {
   const [localValue, setLocalValue] = useState(value);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -4016,11 +4020,13 @@ function InlineEditableLabel({
         }}
         onBlur={() => {
           isEditingRef.current = false;
-          if (localValue.trim() && localValue !== value) {
-            onSave(localValue.trim());
-          } else {
-            setLocalValue(value);
+          const next = localValue.trim();
+          if (next === value) return;
+          if (next || allowEmpty) {
+            onSave(next);
+            return;
           }
+          setLocalValue(value);
         }}
         onKeyDown={(e) => {
           if (e.key === "Escape") {

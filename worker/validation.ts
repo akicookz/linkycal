@@ -389,7 +389,7 @@ export const updateFormSchema = z.object({
 
 export const createFormStepSchema = z.object({
   sortOrder: z.number().int().min(0).default(0),
-  title: z.string().max(200).optional(),
+  title: z.string().max(200).nullable().optional(),
   description: z.string().max(2000).optional(),
   richDescription: z.string().max(10000).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
@@ -398,7 +398,7 @@ export const createFormStepSchema = z.object({
 
 export const updateFormStepSchema = z.object({
   sortOrder: z.number().int().min(0).optional(),
-  title: z.string().max(200).optional(),
+  title: z.string().max(200).nullable().optional(),
   description: z.string().max(2000).nullable().optional(),
   richDescription: z.string().max(10000).nullable().optional(),
   settings: z.record(z.string(), z.unknown()).nullable().optional(),
