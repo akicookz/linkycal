@@ -43,7 +43,7 @@ export function FormFieldRenderer({
   const showsChoiceHint =
     field.type !== "checkbox" &&
     isChoiceField(field.type) &&
-    !!field.placeholder;
+    isCustomChoiceHint(field.placeholder);
   const labelTargetId =
     field.type === "rating" || isChoiceField(field.type) ? undefined : id;
 
@@ -263,8 +263,15 @@ function FileInput({
 
 type ChoiceMode = "select" | "multi_select" | "radio";
 
+const CANNED_CHOICE_HINTS = new Set(["Select an option", "Select options"]);
+
 function isChoiceField(type: string): type is ChoiceMode {
   return type === "select" || type === "multi_select" || type === "radio";
+}
+
+function isCustomChoiceHint(placeholder: string | null): boolean {
+  const hint = placeholder?.trim() ?? "";
+  return hint.length > 0 && !CANNED_CHOICE_HINTS.has(hint);
 }
 
 function ChoiceFieldGroup({
