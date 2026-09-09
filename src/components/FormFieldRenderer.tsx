@@ -43,8 +43,7 @@ export function FormFieldRenderer({
   const showsChoiceHint =
     field.type !== "checkbox" &&
     isChoiceField(field.type) &&
-    !!field.placeholder &&
-    !(field.type === "select" && !field.required);
+    !!field.placeholder;
   const labelTargetId =
     field.type === "rating" || isChoiceField(field.type) ? undefined : id;
 
@@ -91,8 +90,6 @@ export function FormFieldRenderer({
           options={field.options}
           value={value}
           onChange={onChange}
-          allowEmpty={!field.required}
-          emptyLabel={field.placeholder || "No selection"}
           error={error}
         />
       ) : field.type === "multi_select" ? (
@@ -276,8 +273,6 @@ function ChoiceFieldGroup({
   options,
   value,
   onChange,
-  allowEmpty = false,
-  emptyLabel,
   error,
 }: {
   id: string;
@@ -285,8 +280,6 @@ function ChoiceFieldGroup({
   options: Array<{ label: string; value: string }> | null;
   value: string;
   onChange: (value: string) => void;
-  allowEmpty?: boolean;
-  emptyLabel?: string;
   error?: string;
 }) {
   const selectedValues = value.split(",").filter(Boolean);
@@ -294,26 +287,6 @@ function ChoiceFieldGroup({
 
   return (
     <div className="space-y-2">
-      {mode === "select" && allowEmpty && (
-        <ChoiceCard
-          title={emptyLabel || "No selection"}
-          description="Leave this blank for now"
-          selected={!value}
-          control="checkbox"
-          error={!!error}
-        >
-          <input
-            type="radio"
-            name={id}
-            value=""
-            checked={!value}
-            onChange={() => onChange("")}
-            className="sr-only"
-            aria-invalid={error ? true : undefined}
-          />
-        </ChoiceCard>
-      )}
-
       {options?.map((option, index) => {
         const selected =
           mode === "multi_select"

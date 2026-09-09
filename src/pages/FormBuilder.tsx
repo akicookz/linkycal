@@ -176,6 +176,20 @@ interface FullForm {
   steps: FormStep[];
 }
 
+function stripDeletedFields(form: FullForm, deletedIds: Set<string>): FullForm {
+  if (deletedIds.size === 0) return form;
+  let changed = false;
+  const steps = form.steps.map((step) => {
+    const fields = (step.fields ?? []).filter((field) => !deletedIds.has(field.id));
+    if (fields.length !== (step.fields ?? []).length) {
+      changed = true;
+      return { ...step, fields };
+    }
+    return step;
+  });
+  return changed ? { ...form, steps } : form;
+}
+
 interface FieldOption {
   label: string;
   value: string;
@@ -564,6 +578,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     Record<string, "saving" | "saved" | "error">
   >({});
   const saveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const fieldIdMap = useRef<Map<string, string>>(new Map());
+  const deletedFieldIds = useRef(new Set<string>());
 
   const setSaveStatusFor = useCallback(
     (id: string, status: "saving" | "saved" | "error") => {
@@ -709,6 +725,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       return data.form ?? data;
     },
     enabled: !!projectId && !!formId,
+    select: (data) => stripDeletedFields(data, deletedFieldIds.current),
   });
 
   const form = formData;
@@ -962,7 +979,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   function optimisticSetForm(updater: (old: FullForm) => FullForm) {
     queryClient.setQueryData<FullForm>(formQueryKey, (old) =>
-      old ? updater(old) : old
+      old ? stripDeletedFields(updater(old), deletedFieldIds.current) : old
     );
   }
 
@@ -971,7 +988,30 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   }
 
   function rollback(snapshot: FullForm | undefined) {
-    queryClient.setQueryData<FullForm>(formQueryKey, snapshot);
+    queryClient.setQueryData<FullForm>(
+      formQueryKey,
+      snapshot
+        ? stripDeletedFields(snapshot, deletedFieldIds.current)
+        : snapshot,
+    );
+  }
+
+  function markFieldDeleted(fieldId: string) {
+    deletedFieldIds.current.add(fieldId);
+    const mapped = fieldIdMap.current.get(fieldId);
+    if (mapped) deletedFieldIds.current.add(mapped);
+  }
+
+  function unmarkFieldDeleted(fieldId: string) {
+    deletedFieldIds.current.delete(fieldId);
+    const mapped = fieldIdMap.current.get(fieldId);
+    if (mapped) deletedFieldIds.current.delete(mapped);
+  }
+
+  function isFieldDeleted(fieldId: string) {
+    if (deletedFieldIds.current.has(fieldId)) return true;
+    const mapped = fieldIdMap.current.get(fieldId);
+    return mapped ? deletedFieldIds.current.has(mapped) : false;
   }
 
   // ─── tempId → realId resolvers ───────────────────────────────────────────
@@ -980,7 +1020,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   // edits are never clobbered by a re-mount. Server calls resolve temp → real
   // through the maps below; if a create is still in flight, updates await its
   // resolution promise, so no PUT ever lands on a non-existent temp id.
-  const fieldIdMap = useRef<Map<string, string>>(new Map());
   const pendingFieldCreates = useRef<Map<string, Promise<string>>>(new Map());
   const fieldUpdateQueues = useRef<Map<string, Promise<void>>>(new Map());
   const stepIdMap = useRef<Map<string, string>>(new Map());
@@ -1005,17 +1044,23 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   function adoptServerFieldId(clientId: string, serverId: string) {
     if (!clientId || !serverId || clientId === serverId) return;
 
+    if (deletedFieldIds.current.has(clientId)) {
+      deletedFieldIds.current.add(serverId);
+    }
+
     fieldIdMap.current.set(clientId, serverId);
     for (const [key, value] of fieldIdMap.current.entries()) {
       if (value === clientId) {
         fieldIdMap.current.set(key, serverId);
       }
     }
-    setSelection((current) =>
-      current?.kind === "field" && current.id === clientId
-        ? { kind: "field", id: serverId }
-        : current,
-    );
+    setSelection((current) => {
+      if (current?.kind !== "field" || current.id !== clientId) return current;
+      if (deletedFieldIds.current.has(clientId) || deletedFieldIds.current.has(serverId)) {
+        return null;
+      }
+      return { kind: "field", id: serverId };
+    });
     setFieldOptionsState((prev) => {
       if (!prev[clientId]) return prev;
       const next = { ...prev, [serverId]: prev[clientId] };
@@ -1036,15 +1081,18 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     });
     queryClient.setQueryData<FullForm>(formQueryKey, (old) =>
       old
-        ? {
-          ...old,
-          steps: old.steps.map((step) => ({
-            ...step,
-            fields: step.fields.map((field) =>
-              field.id === clientId ? { ...field, id: serverId } : field,
-            ),
-          })),
-        }
+        ? stripDeletedFields(
+          {
+            ...old,
+            steps: old.steps.map((step) => ({
+              ...step,
+              fields: step.fields.map((field) =>
+                field.id === clientId ? { ...field, id: serverId } : field,
+              ),
+            })),
+          },
+          deletedFieldIds.current,
+        )
         : old,
     );
   }
@@ -1348,6 +1396,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       // would re-key the React row and destroy any draft state the user is
       // currently typing into.
       fieldIdMap.current.set(tempId, field.id);
+      if (deletedFieldIds.current.has(tempId)) {
+        deletedFieldIds.current.add(field.id);
+      }
       ctx.resolveCreate(field.id);
       pendingFieldCreates.current.delete(tempId);
 
@@ -1427,6 +1478,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             );
           }
         }
+        if (!res.ok && res.status === 404 && isFieldDeleted(fieldId)) {
+          return { field: undefined };
+        }
         if (!res.ok) throw new Error("Failed to update field");
         const json = await res.json();
         const field = json?.field as FormField | undefined;
@@ -1437,6 +1491,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       });
     },
     onMutate: async ({ fieldId, data }) => {
+      if (isFieldDeleted(fieldId)) return { snapshot: snapshotForm() };
       setSaveStatusFor(fieldId, "saving");
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
@@ -1451,6 +1506,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       // deliberately don't overwrite the cache with the server's echo — the
       // user may have typed newer characters between dispatch and response,
       // and re-applying the server field would clobber them.
+      if (isFieldDeleted(variables.fieldId)) return;
       const field = data?.field as FormField | undefined;
       if (field?.id) {
         adoptServerFieldId(variables.fieldId, field.id);
@@ -1458,6 +1514,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       setSaveStatusFor(field?.id ?? variables.fieldId, "saved");
     },
     onError: (_err, vars, ctx) => {
+      if (isFieldDeleted(vars.fieldId)) return;
       setSaveStatusFor(vars.fieldId, "error");
       if (ctx?.snapshot) rollback(ctx.snapshot);
     },
@@ -1465,21 +1522,28 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   const deleteFieldMutation = useMutation({
     mutationFn: async (fieldId: string) => {
-      const realFieldId = await resolveFieldId(fieldId);
-      const res = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/fields/${realFieldId}`,
-        { method: "DELETE" }
-      );
-      if (!res.ok) throw new Error("Failed to delete field");
+      return queueFieldUpdate(fieldId, async () => {
+        const realFieldId = await resolveFieldId(fieldId);
+        markFieldDeleted(realFieldId);
+        const res = await fetch(
+          `/api/projects/${projectId}/forms/${formId}/fields/${realFieldId}`,
+          { method: "DELETE" }
+        );
+        if (res.status === 404) return;
+        if (!res.ok) throw new Error("Failed to delete field");
+      });
     },
     onMutate: async (fieldId) => {
+      markFieldDeleted(fieldId);
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       optimisticSetForm((old) => ({
         ...old,
         steps: old.steps.map((s) => ({
           ...s,
-          fields: (s.fields ?? []).filter((f) => f.id !== fieldId),
+          fields: (s.fields ?? []).filter(
+            (f) => f.id !== fieldId && !deletedFieldIds.current.has(f.id),
+          ),
         })),
       }));
       if (selection?.kind === "field" && selection.id === fieldId) {
@@ -1487,8 +1551,11 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       }
       return { snapshot };
     },
-    onError: (_err, _vars, ctx) => {
-      if (ctx?.snapshot) rollback(ctx.snapshot);
+    onError: (_err, fieldId, ctx) => {
+      unmarkFieldDeleted(fieldId);
+      if (ctx?.snapshot) {
+        queryClient.setQueryData<FullForm>(formQueryKey, ctx.snapshot);
+      }
     },
   });
 
@@ -3946,7 +4013,7 @@ function InlineEditableLabel({
   }, [localValue]);
 
   return (
-    <div className="flex-1 min-w-0">
+    <div className="flex min-w-0 flex-1 items-start gap-2">
       <textarea
         ref={textareaRef}
         rows={1}
@@ -3972,39 +4039,50 @@ function InlineEditableLabel({
           }
         }}
         className={cn(
-          "text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-transparent hover:border-muted-foreground/30 focus:border-solid focus:border-primary outline-none min-w-0 pb-0.5 w-full transition-colors resize-none overflow-hidden block",
+          "min-w-0 flex-1 text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-transparent hover:border-muted-foreground/30 focus:border-solid focus:border-primary outline-none pb-0.5 w-full transition-colors resize-none overflow-hidden block",
           textClassName,
         )}
       />
-      {saveStatus && (
+      <div className="relative mt-1.5 shrink-0">
         <div
-          className={cn(
-            "flex items-center gap-1 mt-1 text-[11px]",
-            saveStatus === "saving" && "text-muted-foreground",
-            saveStatus === "saved" && "text-emerald-600",
-            saveStatus === "error" && "text-destructive",
-          )}
+          className="invisible flex items-center gap-1 text-[11px] leading-none"
+          aria-hidden
         >
-          {saveStatus === "saving" && (
-            <>
-              <Loader className="h-3 w-3 animate-spin" />
-              <span>Saving...</span>
-            </>
-          )}
-          {saveStatus === "saved" && (
-            <>
-              <Check className="h-3 w-3" />
-              <span>Saved</span>
-            </>
-          )}
-          {saveStatus === "error" && (
-            <>
-              <AlertCircle className="h-3 w-3" />
-              <span>Failed to save</span>
-            </>
-          )}
+          <AlertCircle className="h-3 w-3" />
+          <span>Failed to save</span>
         </div>
-      )}
+        {saveStatus && (
+          <div
+            className={cn(
+              "absolute inset-0 flex items-center justify-end gap-1 text-[11px] leading-none",
+              saveStatus === "saving" && "text-muted-foreground",
+              saveStatus === "saved" && "text-emerald-600",
+              saveStatus === "error" && "text-destructive",
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            {saveStatus === "saving" && (
+              <>
+                <Loader className="h-3 w-3 animate-spin" />
+                <span>Saving...</span>
+              </>
+            )}
+            {saveStatus === "saved" && (
+              <>
+                <Check className="h-3 w-3" />
+                <span>Saved</span>
+              </>
+            )}
+            {saveStatus === "error" && (
+              <>
+                <AlertCircle className="h-3 w-3" />
+                <span>Failed to save</span>
+              </>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

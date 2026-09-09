@@ -84,6 +84,7 @@ export default function PublicForm() {
   const [error, setError] = useState<string | null>(null);
   const currentAnalyticsStageRef =
     useRef<FormExperienceAnalyticsStage | null>(null);
+  const embedRootRef = useRef<HTMLDivElement>(null);
 
   // Spam prevention
   const [spamField, setSpamField] = useState("");
@@ -230,6 +231,9 @@ export default function PublicForm() {
   }, [theme, isEmbedded]);
 
   // ─── Embed: post height to parent + transparent background ─────────────
+  //
+  // Measure the form root, not documentElement. html/body fill the iframe
+  // viewport, so scrollHeight never shrinks after a taller step.
 
   useEffect(() => {
     if (!isEmbedded) return;
@@ -238,17 +242,27 @@ export default function PublicForm() {
     document.body.style.backgroundColor = "transparent";
     document.documentElement.style.backgroundColor = "transparent";
 
+    const root = embedRootRef.current;
+    if (!root) {
+      return () => {
+        document.body.style.backgroundColor = prevBodyBg;
+        document.documentElement.style.backgroundColor = prevHtmlBg;
+      };
+    }
+
     let last = 0;
     const sendHeight = () => {
-      const h = document.documentElement.scrollHeight;
-      if (h !== last) {
+      const h = Math.ceil(
+        Math.max(root.scrollHeight, root.getBoundingClientRect().height),
+      );
+      if (h > 0 && h !== last) {
         last = h;
         window.parent.postMessage({ type: "lc-height", height: h }, "*");
       }
     };
     sendHeight();
     const ro = new ResizeObserver(sendHeight);
-    ro.observe(document.documentElement);
+    ro.observe(root);
     window.addEventListener("resize", sendHeight);
 
     return () => {
@@ -257,7 +271,7 @@ export default function PublicForm() {
       document.body.style.backgroundColor = prevBodyBg;
       document.documentElement.style.backgroundColor = prevHtmlBg;
     };
-  }, [isEmbedded]);
+  }, [isEmbedded, isLoading, isError, submitted, form?.id]);
 
   const allSortedSteps = useMemo(
     () => (form ? getSortedFormSteps(form) : []),
@@ -516,7 +530,12 @@ export default function PublicForm() {
 
   if (isError || !form) {
     return (
-      <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
+      <ExperienceThemeRoot
+        ref={embedRootRef}
+        theme={theme}
+        compiledCss={compiledCss}
+        chrome={chrome}
+      >
         <FormExperiencePageShell
           theme={theme}
           chrome={chrome}
@@ -606,7 +625,12 @@ export default function PublicForm() {
         completionScreens.length - 1,
       );
       return (
-        <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
+        <ExperienceThemeRoot
+          ref={embedRootRef}
+          theme={theme}
+          compiledCss={compiledCss}
+          chrome={chrome}
+        >
           <FocusedFormExperienceShell
             theme={theme}
             chrome={chrome}
@@ -622,7 +646,12 @@ export default function PublicForm() {
     }
 
     return (
-      <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
+      <ExperienceThemeRoot
+        ref={embedRootRef}
+        theme={theme}
+        compiledCss={compiledCss}
+        chrome={chrome}
+      >
         <FormExperiencePageShell
           theme={theme}
           chrome={chrome}
@@ -635,7 +664,12 @@ export default function PublicForm() {
   }
 
   return (
-    <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
+    <ExperienceThemeRoot
+      ref={embedRootRef}
+      theme={theme}
+      compiledCss={compiledCss}
+      chrome={chrome}
+    >
       <FormExperience
         form={form}
         surface="standalone"

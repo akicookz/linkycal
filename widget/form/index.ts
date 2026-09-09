@@ -78,6 +78,7 @@ function initFormWidget(options: FormWidgetOptions): void {
     if (e.source !== iframe.contentWindow) return;
     const data = e.data as { type?: string; height?: number } | undefined;
     if (data?.type === "lc-height" && typeof data.height === "number" && data.height > 0) {
+      iframe.style.minHeight = "0";
       iframe.style.height = `${Math.ceil(data.height)}px`;
     }
   }

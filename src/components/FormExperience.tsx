@@ -1048,8 +1048,7 @@ export function FormExperience(props: FormExperienceProps) {
 //
 // Full-bleed Typeform-style canvas: question dashes at the top left of the
 // form pane, vertically centered question area, navigation chevrons + branding
-// at the bottom. Inside an embed it keeps a stable min-height instead of
-// filling the viewport so the host iframe doesn't jump between questions.
+// at the bottom. Embeds hug content height so the host iframe can shrink.
 
 // Fills its (relative, overflow-hidden) container while honoring the stored
 // focal point + zoom. Shared by the focused split and the classic card.
@@ -1133,7 +1132,7 @@ export function FocusedFormExperienceShell(
     <div
       className={cn(
         "flex flex-col relative",
-        isEmbedded ? "min-h-[560px]" : "min-h-dvh bg-background",
+        !isEmbedded && "min-h-dvh bg-background",
       )}
       style={experienceThemeStyle(theme, isEmbedded ? "embed" : "page")}
     >
