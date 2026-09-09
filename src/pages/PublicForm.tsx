@@ -11,6 +11,7 @@ import {
   type FormExperienceCheckpoint,
   type FormExperienceTheme,
 } from "@/components/FormExperience";
+import { ExperienceThemeRoot } from "@/components/experience-theme-root";
 import { SEOHead } from "@/components/SEOHead";
 import {
   buildFormExperienceModel,
@@ -34,7 +35,6 @@ import {
 } from "@/lib/form-prefill";
 import { cn } from "@/lib/utils";
 import {
-  publicRootProps,
   resolvePublicChromeFromPage,
 } from "../../shared/public-chrome";
 
@@ -516,18 +516,20 @@ export default function PublicForm() {
 
   if (isError || !form) {
     return (
-      <FormExperiencePageShell
-        theme={theme}
-        chrome={chrome}
-      >
-        <div className="flex flex-col items-center justify-center py-20 text-center">
-          <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
-          <h2 className="text-lg font-semibold mb-1">Form not found</h2>
-          <p className="text-sm text-muted-foreground">
-            This form may have been removed or is not yet published.
-          </p>
-        </div>
-      </FormExperiencePageShell>
+      <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
+        <FormExperiencePageShell
+          theme={theme}
+          chrome={chrome}
+        >
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <AlertCircle className="h-10 w-10 text-muted-foreground mb-4" />
+            <h2 className="text-lg font-semibold mb-1">Form not found</h2>
+            <p className="text-sm text-muted-foreground">
+              This form may have been removed or is not yet published.
+            </p>
+          </div>
+        </FormExperiencePageShell>
+      </ExperienceThemeRoot>
     );
   }
 
@@ -604,8 +606,7 @@ export default function PublicForm() {
         completionScreens.length - 1,
       );
       return (
-        <div {...publicRootProps(chrome)}>
-          {compiledCss ? <style>{compiledCss}</style> : null}
+        <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
           <FocusedFormExperienceShell
             theme={theme}
             chrome={chrome}
@@ -616,13 +617,12 @@ export default function PublicForm() {
             {seoHead}
             {completionContent}
           </FocusedFormExperienceShell>
-        </div>
+        </ExperienceThemeRoot>
       );
     }
 
     return (
-      <div {...publicRootProps(chrome)}>
-        {compiledCss ? <style>{compiledCss}</style> : null}
+      <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
         <FormExperiencePageShell
           theme={theme}
           chrome={chrome}
@@ -630,13 +630,12 @@ export default function PublicForm() {
           {seoHead}
           <div className="py-16">{completionContent}</div>
         </FormExperiencePageShell>
-      </div>
+      </ExperienceThemeRoot>
     );
   }
 
   return (
-    <div {...publicRootProps(chrome)}>
-      {compiledCss ? <style>{compiledCss}</style> : null}
+    <ExperienceThemeRoot theme={theme} compiledCss={compiledCss} chrome={chrome}>
       <FormExperience
         form={form}
         surface="standalone"
@@ -667,6 +666,6 @@ export default function PublicForm() {
         onCheckpoint={submitStepValues}
         onAnalyticsEvent={handleFormAnalyticsEvent}
       />
-    </div>
+    </ExperienceThemeRoot>
   );
 }

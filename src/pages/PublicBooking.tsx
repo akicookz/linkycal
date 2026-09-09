@@ -24,20 +24,18 @@ import {
   CalendarCheck as CalendarCheckIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  FocusedFieldInput,
-  type FocusedFieldData,
-} from "@/components/FocusedFieldInput";
+import { Textarea } from "@/components/ui/textarea";
 import {
   FormExperience,
   type FormExperienceCheckpoint,
 } from "@/components/FormExperience";
+import { ExperienceThemeRoot } from "@/components/experience-theme-root";
 import { Logo } from "@/components/Logo";
 import {
   chromeMarkerProps,
   isChromeHidden,
-  publicRootProps,
   resolvePublicChromeFromPage,
 } from "../../shared/public-chrome";
 import { SEOHead } from "@/components/SEOHead";
@@ -61,20 +59,10 @@ import {
   parseQueryString,
 } from "@/lib/form-prefill";
 import { cn } from "@/lib/utils";
+import type { FormExperienceTheme } from "@/lib/experience-theme";
 import type { AnalyticsIntegrationConfig } from "../../shared/funnel-analytics";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-interface BookingTheme {
-  primaryBg?: string;
-  primaryText?: string;
-  backgroundColor?: string;
-  textColor?: string;
-  borderRadius?: number;
-  fontFamily?: string;
-  backgroundImage?: string;
-  bannerImage?: string;
-}
 
 interface EventType {
   id: string;
@@ -91,7 +79,7 @@ interface ProjectInfo {
   id: string;
   name: string;
   slug: string;
-  settings?: { theme?: BookingTheme };
+  settings?: { theme?: FormExperienceTheme };
 }
 
 interface TimeSlot {
@@ -113,36 +101,6 @@ const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
-
-const BOOKING_NAME_FIELD: FocusedFieldData = {
-  id: "name",
-  type: "text",
-  label: "Name",
-  description: null,
-  placeholder: "Your full name",
-  required: true,
-  options: null,
-};
-
-const BOOKING_EMAIL_FIELD: FocusedFieldData = {
-  id: "email",
-  type: "email",
-  label: "Email",
-  description: null,
-  placeholder: "you@example.com",
-  required: true,
-  options: null,
-};
-
-const BOOKING_NOTES_FIELD: FocusedFieldData = {
-  id: "notes",
-  type: "textarea",
-  label: "Notes",
-  description: null,
-  placeholder: "Anything you'd like us to know",
-  required: false,
-  options: null,
-};
 
 function truncateMetaDescription(value: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -345,16 +303,16 @@ export default function PublicBooking({
   const project = data?.project;
   const owner = data?.owner;
   const themeFromProject = project?.settings?.theme;
-  const themeOverride = useMemo<BookingTheme | undefined>(() => {
+  const themeOverride = useMemo<FormExperienceTheme | undefined>(() => {
     const raw = searchParams.get("theme");
     if (!raw) return undefined;
     try {
-      return JSON.parse(atob(raw)) as BookingTheme;
+      return JSON.parse(atob(raw)) as FormExperienceTheme;
     } catch {
       return undefined;
     }
   }, [searchParams]);
-  const theme = useMemo<BookingTheme | undefined>(() => {
+  const theme = useMemo<FormExperienceTheme | undefined>(() => {
     if (!themeOverride && !themeFromProject) return undefined;
     return { ...(themeFromProject ?? {}), ...(themeOverride ?? {}) };
   }, [themeFromProject, themeOverride]);
@@ -907,22 +865,6 @@ export default function PublicBooking({
     </div>
   );
 
-  const primaryColorStyle: React.CSSProperties | undefined = theme?.primaryBg
-    ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff", borderColor: theme.primaryBg }
-    : undefined;
-  const primaryStyle: React.CSSProperties | undefined = (primaryColorStyle || theme?.borderRadius != null)
-    ? {
-        ...(primaryColorStyle ?? {}),
-        ...(theme?.borderRadius != null ? { borderRadius: `${theme.borderRadius}px` } : {}),
-      }
-    : undefined;
-  const switcherContainerRadius = theme?.borderRadius != null
-    ? `${Math.max(6, Math.round(theme.borderRadius * 0.625))}px`
-    : undefined;
-  const switcherButtonRadius = theme?.borderRadius != null
-    ? `${Math.max(4, Math.round(theme.borderRadius * 0.5))}px`
-    : undefined;
-
   // ─── Loading / Error ───────────────────────────────────────────────────
 
   if (isLoading) {
@@ -962,42 +904,16 @@ export default function PublicBooking({
   // ─── Render ────────────────────────────────────────────────────────────
 
   return (
-    <div
-      {...publicRootProps(chrome)}
+    <ExperienceThemeRoot
       ref={containerRef}
+      theme={theme}
+      compiledCss={data?.compiledCss}
+      chrome={chrome}
+      surface={isEmbedded ? "embed" : "page"}
       className={isEmbedded
         ? "w-full flex justify-center"
-        : "min-h-screen flex flex-col items-center justify-center px-4 py-8 sm:py-12"}
-      style={isEmbedded ? {
-        color: theme?.textColor || undefined,
-        fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
-        ...(theme?.primaryBg ? {
-          ["--theme-primary" as string]: theme.primaryBg,
-          ["--primary" as string]: theme.primaryBg,
-          ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
-          ["--ring" as string]: theme.primaryBg,
-        } : {}),
-        ...(theme?.borderRadius != null ? { ["--theme-radius" as string]: `${theme.borderRadius}px` } : {}),
-      } : {
-        backgroundColor: theme?.backgroundColor || "var(--background)",
-        color: theme?.textColor || "var(--foreground)",
-        fontFamily: theme?.fontFamily ? `"${theme.fontFamily}", sans-serif` : undefined,
-        ...(theme?.primaryBg ? {
-          ["--theme-primary" as string]: theme.primaryBg,
-          ["--primary" as string]: theme.primaryBg,
-          ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
-          ["--ring" as string]: theme.primaryBg,
-        } : {}),
-        ...(theme?.borderRadius != null ? { ["--theme-radius" as string]: `${theme.borderRadius}px` } : {}),
-        ...(theme?.backgroundImage ? {
-          backgroundImage: `url(${theme.backgroundImage})`,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-          backgroundRepeat: "no-repeat",
-        } : {}),
-      }}
+        : "min-h-screen bg-background flex flex-col items-center justify-center px-4 py-8 sm:py-12"}
     >
-      {data?.compiledCss ? <style>{data.compiledCss}</style> : null}
       <SEOHead
         title={`Book ${eventType.name}`}
         description={seoDescription}
@@ -1014,7 +930,7 @@ export default function PublicBooking({
         {/* ─── Banner ─── */}
         {showBanner && (
           <div
-            className="w-full h-36 sm:h-44 rounded-t-[16px] bg-cover bg-center mb-0"
+            className="w-full h-36 sm:h-44 rounded-t-[var(--radius)] bg-cover bg-center mb-0"
             style={{ backgroundImage: `url(${theme!.bannerImage})` }}
             {...chromeMarkerProps("banner")}
           />
@@ -1024,9 +940,8 @@ export default function PublicBooking({
         <div
           className={cn(
             "relative bg-card p-6 sm:p-8 transition-all duration-500",
-            showBanner ? "rounded-b-[16px]" : "rounded-[16px]",
+            showBanner ? "rounded-b-[var(--radius)]" : "rounded-[var(--radius)]",
           )}
-          style={{ borderRadius: showBanner ? undefined : theme?.borderRadius ? `${theme.borderRadius}px` : undefined }}
         >
 
           {showAvatar && owner && (
@@ -1172,9 +1087,6 @@ export default function PublicBooking({
                         if (day.day === 0) return <div key={`e-${i}`} />;
 
                         const isSelected = selectedDate === day.dateStr;
-                        const cellRadius = theme?.borderRadius
-                          ? `${Math.round(theme.borderRadius * 0.6)}px`
-                          : "12px";
 
                         return (
                           <button
@@ -1182,17 +1094,12 @@ export default function PublicBooking({
                             disabled={day.disabled}
                             onClick={() => handleDateSelect(day.dateStr)}
                             className={cn(
-                              "lc-themed-hover aspect-square flex flex-col items-center justify-center text-[14px] font-medium transition-all relative border border-transparent",
+                              "lc-themed-hover aspect-square flex flex-col items-center justify-center rounded-[var(--radius)] text-[14px] font-medium transition-all relative border border-transparent",
                               day.disabled && "text-muted-foreground/30 cursor-not-allowed",
                               !day.disabled && !isSelected && "bg-muted/50 cursor-pointer",
-                              isSelected && !primaryColorStyle && "bg-primary text-primary-foreground shadow-sm",
-                              isSelected && primaryColorStyle && "shadow-sm",
+                              isSelected && "bg-primary text-primary-foreground shadow-sm",
                             )}
                             data-selected={isSelected || undefined}
-                            style={{
-                              borderRadius: !day.disabled || isSelected ? cellRadius : undefined,
-                              ...(isSelected && primaryColorStyle ? primaryColorStyle : {}),
-                            }}
                           >
                             {day.day}
                             {day.isToday && !isSelected && !day.disabled && (
@@ -1207,7 +1114,6 @@ export default function PublicBooking({
                     {isMobile && selectedDate && (
                       <Button
                         className="w-full mt-6 h-12 text-[15px]"
-                        style={primaryStyle}
                         onClick={() => goMobileSubStep("time")}
                       >
                         <Clock className="h-4 w-4" />
@@ -1251,21 +1157,17 @@ export default function PublicBooking({
                           <p className="text-sm font-medium">
                             {formatDateShort(new Date(selectedDate + "T00:00:00"))}
                           </p>
-                          <div
-                            className="flex items-center bg-muted rounded-[10px] p-1 text-xs font-medium"
-                            style={switcherContainerRadius ? { borderRadius: switcherContainerRadius } : undefined}
-                          >
+                          <div className="flex items-center bg-muted rounded-[var(--radius)] p-1 text-xs font-medium">
                             {(["12h", "24h"] as const).map((fmt) => (
                               <button
                                 key={fmt}
                                 onClick={() => setTimeFormat(fmt)}
                                 className={cn(
-                                  "px-3 py-1 rounded-[8px] transition-all",
+                                  "px-3 py-1 rounded-[var(--radius)] transition-all",
                                   timeFormat === fmt
                                     ? "bg-background text-foreground shadow-sm"
                                     : "text-muted-foreground hover:text-foreground",
                                 )}
-                                style={switcherButtonRadius ? { borderRadius: switcherButtonRadius } : undefined}
                               >
                                 {fmt}
                               </button>
@@ -1281,11 +1183,10 @@ export default function PublicBooking({
                                 onClick={() => handleTimeSelect(slot)}
                                 className={cn(
                                   "lc-themed-button lc-themed-hover py-2.5 px-3 border border-transparent text-[13px] font-medium text-center transition-all",
-                                  isSelected && !primaryColorStyle && "bg-primary text-primary-foreground shadow-sm border-primary",
+                                  isSelected && "bg-primary text-primary-foreground shadow-sm border-primary",
                                   !isSelected && "bg-muted/50",
                                 )}
                                 data-selected={isSelected || undefined}
-                                style={isSelected && primaryColorStyle ? primaryColorStyle : undefined}
                               >
                                 {formatTime(slot.start, timezone, timeFormat)} - {formatTime(slot.end, timezone, timeFormat)}
                               </button>
@@ -1316,7 +1217,6 @@ export default function PublicBooking({
                     disabled={!selectedSlot}
                     onClick={() => setStep(mergeDetails ? 3 : 2)}
                     className="px-10"
-                    style={primaryStyle}
                   >
                     Your details
                     <ArrowRight className="h-4 w-4" />
@@ -1345,29 +1245,37 @@ export default function PublicBooking({
 
                 <div>
                   <Label htmlFor="name">Name *</Label>
-                  <FocusedFieldInput
-                    field={BOOKING_NAME_FIELD}
+                  <Input
+                    id="name"
+                    type="text"
                     value={guestName}
-                    onChange={setGuestName}
-                    density="compact"
+                    onChange={(e) => setGuestName(e.target.value)}
+                    placeholder="Your full name"
+                    required
+                    className="rounded-[var(--radius)]"
                   />
                 </div>
                 <div>
                   <Label htmlFor="email">Email *</Label>
-                  <FocusedFieldInput
-                    field={BOOKING_EMAIL_FIELD}
+                  <Input
+                    id="email"
+                    type="email"
                     value={guestEmail}
-                    onChange={setGuestEmail}
-                    density="compact"
+                    onChange={(e) => setGuestEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    className="rounded-[var(--radius)]"
                   />
                 </div>
                 <div>
                   <Label htmlFor="notes">Notes</Label>
-                  <FocusedFieldInput
-                    field={BOOKING_NOTES_FIELD}
+                  <Textarea
+                    id="notes"
                     value={guestNotes}
-                    onChange={setGuestNotes}
-                    density="compact"
+                    onChange={(e) => setGuestNotes(e.target.value)}
+                    placeholder="Anything you'd like us to know"
+                    rows={3}
+                    className="rounded-[var(--radius)]"
                   />
                 </div>
 
@@ -1393,7 +1301,6 @@ export default function PublicBooking({
                     disabled={!guestName || !guestEmail}
                     onClick={() => setStep(3)}
                     className="px-10"
-                    style={primaryStyle}
                   >
                     Next
                     <ArrowRight className="h-4 w-4" />
@@ -1403,7 +1310,6 @@ export default function PublicBooking({
                     disabled={!guestName || !guestEmail || submitting}
                     onClick={handleBook}
                     className="px-10"
-                    style={primaryStyle}
                   >
                     {submitting ? (
                       <><Loader className="h-4 w-4 animate-spin" /> Booking...</>
@@ -1510,6 +1416,6 @@ export default function PublicBooking({
           </div>
         )}
       </div>
-    </div>
+    </ExperienceThemeRoot>
   );
 }

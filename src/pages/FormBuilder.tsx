@@ -73,6 +73,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { FocusedFieldInput } from "@/components/FocusedFieldInput";
+import { ExperienceThemeRoot } from "@/components/experience-theme-root";
 import { FocusedStepProgress } from "@/components/FocusedStepProgress";
 import { useIsDesktop } from "@/hooks/use-mobile";
 import { useSession } from "@/lib/auth-client";
@@ -103,6 +104,7 @@ import {
 } from "@/lib/form-experience";
 import { getRenderableRichTextHtml, richTextToPlainText } from "@/lib/rich-text";
 import { cn, copyToClipboard } from "@/lib/utils";
+import type { FormExperienceTheme } from "@/lib/experience-theme";
 import { normalizeToFieldId } from "@/lib/constants";
 import {
   DndContext,
@@ -652,6 +654,34 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     },
     enabled: !!projectId,
   });
+  const { data: projectRecord } = useQuery<{
+    settings?: { theme?: FormExperienceTheme };
+  }>({
+    queryKey: ["projects", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}`);
+      if (!res.ok) throw new Error("Failed to fetch project");
+      const data = await res.json();
+      return data.project ?? data;
+    },
+    enabled: !!projectId,
+  });
+  const { data: customCssRecord } = useQuery<{
+    customCss: { compiledCss?: string } | null;
+  }>({
+    queryKey: ["projects", projectId, "custom-css"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/custom-css`);
+      if (!res.ok) throw new Error("Failed to fetch Custom CSS");
+      return res.json();
+    },
+    enabled: !!projectId && entitlements?.planLimits.customCss === true,
+  });
+  const previewTheme = projectRecord?.settings?.theme;
+  const previewCompiledCss =
+    entitlements?.planLimits.customCss === true
+      ? customCssRecord?.customCss?.compiledCss ?? null
+      : null;
   const { data: calendarAccounts } = useQuery<{
     accounts: CalendarConnectionAccount[];
   }>({
@@ -2478,14 +2508,19 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     : { current: -1, total: 0 };
 
   const previewCanvas = (
-    <div className="relative flex h-full min-h-0 max-h-full flex-col overflow-hidden rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] max-lg:min-h-[min(540px,100%)]">
+    <ExperienceThemeRoot
+      theme={previewTheme}
+      compiledCss={previewCompiledCss}
+      surface="page"
+      className="relative flex h-full min-h-0 max-h-full flex-col overflow-hidden rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] max-lg:min-h-[min(540px,100%)]"
+    >
       <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-12 sm:px-12">
         <div className="w-full max-w-xl mx-auto">
           <FocusedStepProgress
             current={previewProgress.current}
             total={previewProgress.total}
             surface="preview"
-            className="mb-8"
+            className="mb-14"
           />
           {selectedField && selectedField.type === "completion" ? (
             <div key={selectedField.id} className="animate-focused-screen space-y-4 text-center flex flex-col items-center">
@@ -2765,7 +2800,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           </p>
         </div>
       )}
-    </div>
+    </ExperienceThemeRoot>
   );
 
   // ─── Render: Settings panel ──────────────────────────────────────────────

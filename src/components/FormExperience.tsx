@@ -44,6 +44,10 @@ import {
   type FormExperienceScreen,
 } from "@/lib/form-experience";
 import {
+  experienceThemeStyle,
+  type FormExperienceTheme,
+} from "@/lib/experience-theme";
+import {
   getSectionImage,
   sectionImageStyle,
   type SectionImage,
@@ -57,16 +61,7 @@ import {
   type PublicChrome,
 } from "../../shared/public-chrome";
 
-export interface FormExperienceTheme {
-  primaryBg?: string;
-  primaryText?: string;
-  backgroundColor?: string;
-  textColor?: string;
-  borderRadius?: number;
-  fontFamily?: string;
-  backgroundImage?: string;
-  bannerImage?: string;
-}
+export type { FormExperienceTheme };
 
 export type FormExperienceCheckpoint = FormExperienceCheckpointData;
 
@@ -206,26 +201,6 @@ export function FormExperience(props: FormExperienceProps) {
       // Analytics cannot affect validation, persistence, or navigation.
     }
   }
-
-  const primaryStyle: CSSProperties | undefined =
-    theme?.primaryBg || theme?.borderRadius != null
-      ? {
-        ...(theme?.primaryBg
-          ? {
-            backgroundColor: theme.primaryBg,
-            color: theme.primaryText || "#fff",
-            borderColor: theme.primaryBg,
-          }
-          : {}),
-        ...(theme?.borderRadius != null
-          ? { borderRadius: `${theme.borderRadius}px` }
-          : {}),
-      }
-      : undefined;
-  const outlineStyle: CSSProperties | undefined =
-    theme?.borderRadius != null
-      ? { borderRadius: `${theme.borderRadius}px` }
-      : undefined;
 
   function setValue(fieldId: string, value: string) {
     setFieldErrors((previous) => {
@@ -556,7 +531,6 @@ export function FormExperience(props: FormExperienceProps) {
             disabled={submitting}
             onClick={submitEmptyBooking}
             className="px-10"
-            style={primaryStyle}
           >
             {submitting ? (
               <Loader className="h-4 w-4 animate-spin" />
@@ -632,7 +606,6 @@ export function FormExperience(props: FormExperienceProps) {
                   onClick={goNext}
                   disabled={submitting}
                   className="active:scale-[0.96]"
-                  style={primaryStyle}
                 >
                   {submitting ? (
                     <Loader className="h-4 w-4 animate-spin" />
@@ -696,7 +669,6 @@ export function FormExperience(props: FormExperienceProps) {
                     onClick={goNext}
                     disabled={submitting}
                     className="active:scale-[0.96]"
-                    style={primaryStyle}
                   >
                     {submitting ? (
                       <Loader className="h-4 w-4 animate-spin" />
@@ -767,7 +739,6 @@ export function FormExperience(props: FormExperienceProps) {
                     onClick={goNext}
                     disabled={submitting}
                     className="active:scale-[0.96]"
-                    style={primaryStyle}
                   >
                     {submitting ? (
                       <Loader className="h-4 w-4 animate-spin" />
@@ -850,7 +821,6 @@ export function FormExperience(props: FormExperienceProps) {
             disabled={submitting}
             onClick={goNext}
             className="px-6 active:scale-[0.96]"
-            style={primaryStyle}
           >
             {submitting ? (
               <Loader className="h-4 w-4 animate-spin" />
@@ -901,9 +871,6 @@ export function FormExperience(props: FormExperienceProps) {
                 fileValue={files[field.id] ?? null}
                 onFileChange={(file) => setFileValue(field.id, file)}
                 error={fieldErrors[field.id]}
-                themeColor={theme?.primaryBg}
-                themeTextColor={theme?.primaryText}
-                themeRadius={theme?.borderRadius}
               />
             ))}
 
@@ -928,7 +895,6 @@ export function FormExperience(props: FormExperienceProps) {
                 disabled={submitting}
                 onClick={submitCurrentStep}
                 className="px-10"
-                style={primaryStyle}
               >
                 {submitting ? (
                   <Loader className="h-4 w-4 animate-spin" />
@@ -943,7 +909,6 @@ export function FormExperience(props: FormExperienceProps) {
                 disabled={submitting}
                 onClick={submitCurrentStep}
                 className="px-10"
-                style={primaryStyle}
               >
                 Next
                 <ArrowRight className="h-4 w-4" />
@@ -1030,9 +995,6 @@ export function FormExperience(props: FormExperienceProps) {
               onFileChange={(file) => setFileValue(field.id, file)}
               error={fieldErrors[field.id]}
               textareaRows={3}
-              themeColor={theme?.primaryBg}
-              themeTextColor={theme?.primaryText}
-              themeRadius={theme?.borderRadius}
             />
           ))}
 
@@ -1050,7 +1012,6 @@ export function FormExperience(props: FormExperienceProps) {
                 variant="outline"
                 onClick={goPrev}
                 disabled={submitting}
-                style={outlineStyle}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Back
@@ -1060,7 +1021,6 @@ export function FormExperience(props: FormExperienceProps) {
               type="submit"
               disabled={submitting}
               className="min-w-[100px]"
-              style={primaryStyle}
             >
               {submitting ? (
                 <>
@@ -1161,23 +1121,11 @@ export function FocusedFormExperienceShell(
   const isEmbedded = searchParams.get("embed") === "1";
   const showBranding = !isChromeHidden(chrome, "branding");
 
-  const themeVars = theme?.primaryBg
-    ? ({
-      ["--primary" as string]: theme.primaryBg,
-      ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
-      ["--ring" as string]: theme.primaryBg,
-    } as CSSProperties)
-    : undefined;
-
-  const navButtonStyle: CSSProperties | undefined = theme?.primaryBg
-    ? { backgroundColor: theme.primaryBg, color: theme.primaryText || "#fff" }
-    : undefined;
-
   const stepProgress = (
     <FocusedStepProgress
       current={progressCurrent}
       total={progressTotal}
-      className="mb-8"
+      className="mb-14"
     />
   );
 
@@ -1187,24 +1135,7 @@ export function FocusedFormExperienceShell(
         "flex flex-col relative",
         isEmbedded ? "min-h-[560px]" : "min-h-dvh bg-background",
       )}
-      style={{
-        ...(themeVars ?? {}),
-        backgroundColor: !isEmbedded
-          ? theme?.backgroundColor || undefined
-          : undefined,
-        color: theme?.textColor || undefined,
-        fontFamily: theme?.fontFamily
-          ? `"${theme.fontFamily}", sans-serif`
-          : undefined,
-        ...(!isEmbedded && theme?.backgroundImage
-          ? {
-            backgroundImage: `url(${theme.backgroundImage})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }
-          : {}),
-      }}
+      style={experienceThemeStyle(theme, isEmbedded ? "embed" : "page")}
     >
       {media && mediaLayout === "top" ? (
         <div className="flex-1 flex flex-col min-h-0">
@@ -1260,7 +1191,6 @@ export function FocusedFormExperienceShell(
               disabled={!canPrev}
               aria-label="Previous question"
               className="flex h-9 w-9 items-center justify-center rounded-l-[10px] bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={navButtonStyle}
             >
               <ChevronLeft className="h-5 w-5" />
             </button>
@@ -1270,7 +1200,6 @@ export function FocusedFormExperienceShell(
               disabled={!canNext}
               aria-label="Next question"
               className="flex h-9 w-9 items-center justify-center rounded-r-[10px] bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={navButtonStyle}
             >
               <ChevronRight className="h-5 w-5" />
             </button>
@@ -1306,29 +1235,19 @@ export function FormExperiencePageShell(
   const showBanner =
     !!theme?.bannerImage && !isChromeHidden(chrome, "banner") && !media;
   const showBranding = !isChromeHidden(chrome, "branding");
-
-  const themeVars = theme?.primaryBg
-    ? ({
-      ["--primary" as string]: theme.primaryBg,
-      ["--primary-foreground" as string]: theme.primaryText || "#ffffff",
-      ["--ring" as string]: theme.primaryBg,
-    } as CSSProperties)
-    : undefined;
-
-  const radiusStyle =
-    theme?.borderRadius != null
-      ? { borderRadius: `${theme.borderRadius}px` }
-      : undefined;
+  const themeStyle = experienceThemeStyle(
+    theme,
+    isEmbedded ? "embed" : "page",
+  );
 
   const card = media ? (
-    <div className="w-full max-w-[60rem] mx-auto" style={themeVars}>
+    <div className="w-full max-w-[60rem] mx-auto">
       <div
         className={cn(
-          "overflow-hidden rounded-[20px] bg-card",
+          "overflow-hidden rounded-[var(--radius)] bg-card",
           mediaLayout !== "top" && "flex",
           mediaLayout === "right" && "flex-row-reverse",
         )}
-        style={radiusStyle}
       >
         {mediaLayout === "top" && (
           <div
@@ -1352,10 +1271,10 @@ export function FormExperiencePageShell(
       </div>
     </div>
   ) : (
-    <div className="w-full max-w-[60rem] mx-auto" style={themeVars}>
+    <div className="w-full max-w-[60rem] mx-auto">
       {showBanner && (
         <div
-          className="w-full h-40 sm:h-48 rounded-t-[20px] bg-cover bg-center"
+          className="w-full h-40 sm:h-48 rounded-t-[var(--radius)] bg-cover bg-center"
           style={{ backgroundImage: `url(${theme!.bannerImage})` }}
           {...chromeMarkerProps("banner")}
         />
@@ -1363,16 +1282,8 @@ export function FormExperiencePageShell(
       <div
         className={cn(
           "bg-card px-6 pb-7 pt-4 sm:px-10 sm:pb-9 sm:pt-5",
-          showBanner ? "rounded-b-[20px]" : "rounded-[20px]",
+          showBanner ? "rounded-b-[var(--radius)]" : "rounded-[var(--radius)]",
         )}
-        style={{
-          borderRadius:
-            theme?.borderRadius != null
-              ? showBanner
-                ? `0 0 ${theme.borderRadius}px ${theme.borderRadius}px`
-                : `${theme.borderRadius}px`
-              : undefined,
-        }}
       >
         {children}
       </div>
@@ -1392,14 +1303,7 @@ export function FormExperiencePageShell(
 
   if (isEmbedded) {
     return (
-      <div
-        style={{
-          color: theme?.textColor || undefined,
-          fontFamily: theme?.fontFamily
-            ? `"${theme.fontFamily}", sans-serif`
-            : undefined,
-        }}
-      >
+      <div style={themeStyle}>
         {card}
         {footer}
       </div>
@@ -1409,21 +1313,7 @@ export function FormExperiencePageShell(
   return (
     <div
       className="min-h-screen bg-background flex flex-col"
-      style={{
-        backgroundColor: theme?.backgroundColor || undefined,
-        color: theme?.textColor || undefined,
-        fontFamily: theme?.fontFamily
-          ? `"${theme.fontFamily}", sans-serif`
-          : undefined,
-        ...(theme?.backgroundImage
-          ? {
-            backgroundImage: `url(${theme.backgroundImage})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            backgroundRepeat: "no-repeat",
-          }
-          : {}),
-      }}
+      style={themeStyle}
     >
       <div className="flex-1 flex items-center justify-center px-5 py-10 sm:px-6 sm:py-14">
         {card}

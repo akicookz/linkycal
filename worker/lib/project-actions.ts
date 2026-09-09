@@ -174,6 +174,7 @@ function customCssSettings(css: dbSchema.ProjectCustomCssRow | null) {
     customCss: css
       ? {
           sourceCss: css.sourceCss,
+          compiledCss: css.compiledCss,
           sourceBytes: css.sourceBytes,
           updatedAt: css.updatedAt,
         }

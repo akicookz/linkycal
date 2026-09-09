@@ -2,6 +2,7 @@ import { useRef, type ReactNode, type RefObject } from "react";
 import { Check, Star, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -27,9 +28,6 @@ export function FormFieldRenderer({
   onFileChange,
   error,
   textareaRows = 4,
-  themeColor,
-  themeTextColor,
-  themeRadius,
 }: {
   field: FormFieldData;
   value: string;
@@ -38,9 +36,6 @@ export function FormFieldRenderer({
   onFileChange?: (file: File | null) => void;
   error?: string;
   textareaRows?: number;
-  themeColor?: string;
-  themeTextColor?: string;
-  themeRadius?: number;
 }) {
   const id = `field-${field.id}`;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -56,17 +51,8 @@ export function FormFieldRenderer({
   // Completion fields are not rendered as form inputs
   if (field.type === "completion") return null;
 
-  const themed = !!themeColor;
-  const themeVars: React.CSSProperties | undefined = themeColor
-    ? ({
-        ["--primary" as string]: themeColor,
-        ["--primary-foreground" as string]: themeTextColor || "#ffffff",
-        ["--ring" as string]: themeColor,
-      } as React.CSSProperties)
-    : undefined;
-
   return (
-    <div className="space-y-1.5" style={themeVars}>
+    <div className="space-y-1.5">
       {showsFieldLabel && (
         <Label htmlFor={labelTargetId} className="text-sm font-medium">
           {field.label}
@@ -88,18 +74,15 @@ export function FormFieldRenderer({
       )}
 
       {field.type === "textarea" ? (
-        <textarea
+        <Textarea
           id={id}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder ?? undefined}
           required={field.required}
           rows={textareaRows}
-          className={cn(
-            "flex w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 resize-y",
-            error && "border-destructive",
-          )}
-          style={themeRadius != null ? { borderRadius: `${themeRadius}px` } : undefined}
+          aria-invalid={error ? true : undefined}
+          className="rounded-[var(--radius)]"
         />
       ) : field.type === "select" ? (
         <ChoiceFieldGroup
@@ -111,8 +94,6 @@ export function FormFieldRenderer({
           allowEmpty={!field.required}
           emptyLabel={field.placeholder || "No selection"}
           error={error}
-          themeRadius={themeRadius}
-          themed={themed}
         />
       ) : field.type === "multi_select" ? (
         <ChoiceFieldGroup
@@ -122,8 +103,6 @@ export function FormFieldRenderer({
           value={value}
           onChange={onChange}
           error={error}
-          themeRadius={themeRadius}
-          themed={themed}
         />
       ) : field.type === "radio" ? (
         <ChoiceFieldGroup
@@ -133,8 +112,6 @@ export function FormFieldRenderer({
           value={value}
           onChange={onChange}
           error={error}
-          themeRadius={themeRadius}
-          themed={themed}
         />
       ) : field.type === "checkbox" ? (
         <ChoiceCard
@@ -148,8 +125,6 @@ export function FormFieldRenderer({
           selected={value === "true"}
           control="checkbox"
           error={!!error}
-          themeRadius={themeRadius}
-          themed={themed}
         >
           <input
             id={id}
@@ -176,8 +151,6 @@ export function FormFieldRenderer({
             onFileChange?.(file);
             onChange(file?.name ?? "");
           }}
-          themeRadius={themeRadius}
-          themed={themed}
         />
       ) : (
         <Input
@@ -201,8 +174,8 @@ export function FormFieldRenderer({
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder ?? undefined}
           required={field.required}
-          className={cn(error && "border-destructive")}
-          style={themeRadius != null ? { borderRadius: `${themeRadius}px` } : undefined}
+          aria-invalid={error ? true : undefined}
+          className="rounded-[var(--radius)]"
         />
       )}
 
@@ -225,8 +198,6 @@ function FileInput({
   required,
   error,
   onChange,
-  themeRadius,
-  themed,
 }: {
   id: string;
   inputRef: RefObject<HTMLInputElement | null>;
@@ -236,8 +207,6 @@ function FileInput({
   required?: boolean;
   error?: string;
   onChange: (file: File | null) => void;
-  themeRadius?: number;
-  themed?: boolean;
 }) {
   const displayName = fileValue?.name || value || placeholder || "Choose a file";
 
@@ -253,15 +222,11 @@ function FileInput({
       <label
         htmlFor={id}
         className={cn(
-          "flex cursor-pointer items-center gap-3 rounded-[16px] border px-4 py-3.5 transition-all",
-          themed
-            ? "border-[rgba(15,23,20,0.10)] hover:border-primary/25 hover:bg-white"
-            : "border-[rgba(27,67,50,0.10)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,247,245,0.92))] shadow-[0_12px_26px_-24px_rgba(15,26,20,0.42)] hover:border-primary/25 hover:bg-white",
+          "flex cursor-pointer items-center gap-3 rounded-[var(--radius)] border border-border px-4 py-3.5 transition-all hover:border-primary/25 hover:bg-white",
           error && "border-destructive/35",
         )}
-        style={themeRadius != null ? { borderRadius: `${themeRadius}px` } : undefined}
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-primary/10 text-primary">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary">
           <Upload className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
@@ -287,7 +252,7 @@ function FileInput({
         <button
           type="button"
           onClick={clearFile}
-          className="inline-flex items-center gap-1.5 rounded-[10px] px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />
           Clear file
@@ -314,8 +279,6 @@ function ChoiceFieldGroup({
   allowEmpty = false,
   emptyLabel,
   error,
-  themeRadius,
-  themed,
 }: {
   id: string;
   mode: ChoiceMode;
@@ -325,8 +288,6 @@ function ChoiceFieldGroup({
   allowEmpty?: boolean;
   emptyLabel?: string;
   error?: string;
-  themeRadius?: number;
-  themed?: boolean;
 }) {
   const selectedValues = value.split(",").filter(Boolean);
   const usesRadioIndicator = mode === "radio";
@@ -340,8 +301,6 @@ function ChoiceFieldGroup({
           selected={!value}
           control="checkbox"
           error={!!error}
-          themeRadius={themeRadius}
-          themed={themed}
         >
           <input
             type="radio"
@@ -368,8 +327,6 @@ function ChoiceFieldGroup({
             selected={selected}
             control={usesRadioIndicator ? "radio" : "checkbox"}
             error={!!error}
-            themeRadius={themeRadius}
-            themed={themed}
           >
             <input
               type={mode === "multi_select" ? "checkbox" : "radio"}
@@ -412,8 +369,6 @@ function ChoiceCard({
   control,
   error,
   children,
-  themeRadius,
-  themed,
 }: {
   title: ReactNode;
   description?: string | null;
@@ -421,25 +376,17 @@ function ChoiceCard({
   control: "checkbox" | "radio";
   error?: boolean;
   children: ReactNode;
-  themeRadius?: number;
-  themed?: boolean;
 }) {
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-center gap-4 rounded-[16px] border px-4 py-3.5 transition-all",
-        "bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(244,247,245,0.92))]",
-        !themed && "shadow-[0_12px_26px_-24px_rgba(15,26,20,0.42)]",
+        "flex cursor-pointer items-center gap-4 rounded-[var(--radius)] border px-4 py-3.5 transition-all",
+        "bg-card",
         selected
-          ? themed
-            ? "border-primary/40 bg-primary/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]"
-            : "border-primary/40 bg-primary/5 shadow-[inset_0_1px_0_rgba(255,255,255,0.72),0_16px_32px_-28px_rgba(27,67,50,0.35)]"
-          : themed
-            ? "border-[rgba(15,23,20,0.10)] hover:border-primary/25 hover:bg-white"
-            : "border-[rgba(27,67,50,0.10)] hover:border-primary/25 hover:bg-white",
+          ? "border-primary/40 bg-primary/5"
+          : "border-border hover:border-primary/25 hover:bg-white",
         error && !selected && "border-destructive/35",
       )}
-      style={themeRadius != null ? { borderRadius: `${themeRadius}px` } : undefined}
     >
       {children}
       <div className="min-w-0 flex-1">
@@ -471,7 +418,7 @@ function ChoiceIndicator({
         control === "radio" ? "rounded-full" : "rounded-[6px]",
         selected
           ? "border-primary bg-primary text-primary-foreground"
-          : "border-[rgba(27,67,50,0.18)] bg-white text-transparent",
+          : "border-border bg-white text-transparent",
       )}
     >
       {control === "radio" ? (
@@ -510,7 +457,7 @@ function RatingInput({
           key={star}
           type="button"
           onClick={() => onChange(star.toString())}
-          className="p-0.5 transition-colors"
+          className="p-0.5 rounded-[var(--radius)] transition-colors"
         >
           <Star
             className={cn(

@@ -1,5 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Check, Star, Upload, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -185,10 +187,12 @@ export function FocusedFieldInput({
 
   return (
     <div className="space-y-2" data-control-density={density}>
-      <input
+      <Input
         id={field.id}
         aria-label={field.label}
         type={inputTypeFor(field.type)}
+        variant="focused"
+        size={density === "compact" ? "default" : "lg"}
         value={value}
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
@@ -199,14 +203,7 @@ export function FocusedFieldInput({
           }
         }}
         placeholder={field.placeholder || "Type your answer here..."}
-        className={cn(
-          "ring-shadow w-full rounded-[12px] border-0 bg-primary/[0.03] px-4 font-medium tracking-[-0.01em] text-foreground placeholder:text-muted-foreground/45 placeholder:font-normal outline-none transition-[background-color,box-shadow] duration-150 ease-out focus:bg-primary/[0.045] focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
-          density === "compact"
-            ? "h-11 text-base"
-            : "h-12 max-w-xl text-lg",
-          error &&
-            "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)] focus:ring-shadow-[var(--destructive)]",
-        )}
+        aria-invalid={error ? true : undefined}
       />
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
@@ -251,14 +248,14 @@ function FocusedFileInput({
         className={cn(
           "ring-shadow flex w-full cursor-pointer items-center border-0 text-left transition-[background-color,box-shadow,transform] duration-150 ease-out hover:bg-primary/[0.065] hover:ring-shadow-[color-mix(in_srgb,var(--primary)_32%,transparent)] active:scale-[0.96] focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring/60",
           density === "compact"
-            ? "min-h-11 max-w-none gap-3 rounded-[12px] px-3.5 py-3"
-            : "min-h-12 max-w-xl gap-3.5 rounded-[14px] px-4 py-3.5",
+            ? "min-h-11 max-w-none gap-3 rounded-[var(--radius)] px-3.5 py-3"
+            : "min-h-12 max-w-xl gap-3.5 rounded-[var(--radius)] px-4 py-3.5",
           "bg-primary/[0.035]",
           error &&
             "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
         )}
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-primary/10 text-primary">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary">
           <Upload className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
@@ -288,7 +285,7 @@ function FocusedFileInput({
         <button
           type="button"
           onClick={clearFile}
-          className="inline-flex min-h-10 items-center gap-1.5 rounded-[10px] px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
+          className="inline-flex min-h-10 items-center gap-1.5 rounded-[var(--radius)] px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-primary/10 hover:text-foreground"
         >
           <X className="h-3.5 w-3.5" />
           Clear file
@@ -334,11 +331,13 @@ function FocusedTextarea({
 
   return (
     <div className="space-y-2" data-control-density={density}>
-      <textarea
+      <Textarea
         id={inputId}
         aria-label={ariaLabel}
         ref={ref}
         rows={1}
+        variant="focused"
+        size={density === "compact" ? "default" : "lg"}
         value={value}
         autoFocus={autoFocus}
         onChange={(e) => onChange(e.target.value)}
@@ -349,14 +348,7 @@ function FocusedTextarea({
           }
         }}
         placeholder={placeholder}
-        className={cn(
-          "ring-shadow w-full resize-none overflow-hidden rounded-[12px] border-0 bg-primary/[0.03] px-4 py-3 font-medium tracking-[-0.01em] text-foreground placeholder:text-muted-foreground/45 placeholder:font-normal outline-none transition-[background-color,box-shadow] duration-150 ease-out focus:bg-primary/[0.045] focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
-          density === "compact"
-            ? "min-h-11 text-base"
-            : "min-h-12 max-w-xl text-lg",
-          error &&
-            "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)] focus:ring-shadow-[var(--destructive)]",
-        )}
+        aria-invalid={error ? true : undefined}
       />
       <p className="text-xs text-muted-foreground">
         <span className="font-semibold">Shift ⇧ + Enter ↵</span> to make a line
@@ -390,8 +382,8 @@ function FocusedChoiceCard({
       className={cn(
         "ring-shadow flex w-full items-center border-0 text-left transition-[background-color,box-shadow,transform] duration-150 ease-out active:scale-[0.96] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60",
         density === "compact"
-          ? "min-h-11 max-w-none gap-3 rounded-[12px] px-3.5 py-2.5"
-          : "min-h-12 max-w-xl gap-3.5 rounded-[14px] px-4 py-3.5",
+          ? "min-h-11 max-w-none gap-3 rounded-[var(--radius)] px-3.5 py-2.5"
+          : "min-h-12 max-w-xl gap-3.5 rounded-[var(--radius)] px-4 py-3.5",
         selected
           ? "ring-shadow-[var(--primary)] bg-primary/[0.09]"
           : "bg-primary/[0.035] hover:bg-primary/[0.065] hover:ring-shadow-[color-mix(in_srgb,var(--primary)_32%,transparent)]",
@@ -401,8 +393,8 @@ function FocusedChoiceCard({
         className={cn(
           "ring-shadow flex shrink-0 items-center justify-center border-0 text-xs font-semibold transition-[background-color,color,box-shadow] duration-150",
           density === "compact"
-            ? "h-6 w-6 rounded-[7px]"
-            : "h-7 w-7 rounded-[8px]",
+            ? "h-6 w-6 rounded-[var(--radius)]"
+            : "h-7 w-7 rounded-[var(--radius)]",
           selected
             ? "ring-shadow-[var(--primary)] bg-primary text-primary-foreground"
             : "bg-background/80 text-primary",
@@ -452,7 +444,7 @@ function FocusedRating({
             onChange(star.toString());
             onCommit?.("choice");
           }}
-          className="group flex h-10 w-10 items-center justify-center rounded-[10px] transition-transform hover:scale-110 active:scale-[0.96]"
+          className="group flex h-10 w-10 items-center justify-center rounded-[var(--radius)] transition-transform hover:scale-110 active:scale-[0.96]"
           aria-label={`${star} star${star === 1 ? "" : "s"}`}
         >
           <Star
