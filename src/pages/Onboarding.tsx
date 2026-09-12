@@ -523,7 +523,6 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
     id: string;
     name: string;
     slug: string;
-    type: "single" | "multi_step";
     steps?: Array<{
       title: string | null;
       description: string | null;

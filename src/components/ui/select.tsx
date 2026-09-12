@@ -1,8 +1,26 @@
 import * as React from "react";
 import * as SelectPrimitive from "@radix-ui/react-select";
+import { cva, type VariantProps } from "class-variance-authority";
 import { Check, ChevronDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+
+const selectTriggerVariants = cva(
+  "flex items-center justify-between text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 [&>span]:min-w-0 [&>span]:truncate",
+  {
+    variants: {
+      variant: {
+        default:
+          "h-9 w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 focus:ring-2 focus:ring-ring focus:ring-offset-2 md:h-10",
+        underline:
+          "inline-flex h-7 max-w-[9rem] min-w-0 gap-0.5 overflow-hidden rounded-none border-0 border-b border-foreground/25 bg-transparent px-0 py-0 text-[13px] font-medium shadow-none focus:border-foreground focus:ring-0 [&>span]:max-w-full",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+    },
+  },
+);
 
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
@@ -10,20 +28,23 @@ const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
   React.ComponentRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(function SelectTrigger({ className, children, ...props }, ref) {
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger> &
+    VariantProps<typeof selectTriggerVariants>
+>(function SelectTrigger({ className, children, variant, ...props }, ref) {
   return (
     <SelectPrimitive.Trigger
       ref={ref}
-      className={cn(
-        "flex h-9 w-full items-center justify-between rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 md:h-10 [&>span]:min-w-0 [&>span]:truncate",
-        className,
-      )}
+      className={cn(selectTriggerVariants({ variant }), className)}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDown className="h-4 w-4 opacity-50" />
+        <ChevronDown
+          className={cn(
+            "shrink-0 opacity-50",
+            variant === "underline" ? "h-3.5 w-3.5" : "h-4 w-4",
+          )}
+        />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );

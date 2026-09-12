@@ -529,7 +529,7 @@ export const formFields = sqliteTable(
     placeholder: text("placeholder"),
     required: integer("required", { mode: "boolean" }).notNull().default(false),
     hidden: integer("hidden", { mode: "boolean" }).notNull().default(false),
-    validation: text("validation", { mode: "json" }),
+    settings: text("settings", { mode: "json" }),
     options: text("options", { mode: "json" }),
     visibility: text("visibility", { mode: "json" }),
     contactMapping: text("contact_mapping", {

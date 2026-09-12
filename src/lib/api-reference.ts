@@ -133,7 +133,9 @@ export const API_REFERENCE_SECTIONS: ApiReferenceSection[] = [
       "Manage forms, ordered steps and fields, submitted responses, and private response files.",
     notes: [
       "Reorder endpoints accept the complete ordered list of IDs.",
-      "Forms use name, slug, type, status, and settings. Steps contain display and visibility data; fields contain type, label, validation, options, contact mapping, and visibility.",
+      "Each form step is one page. New forms write type as single. Keep settings.pageLayout on the step settings JSON and settings.transition on the form settings JSON.",
+      "PATCH of only steps/0 without complete can leave an exploded form in_progress. Send complete on the last visible page.",
+      "Forms still return name, slug, type, status, and settings. Steps contain display and visibility data. Fields contain type, label, settings, options, contact mapping, and visibility.",
       "Deleting a response removes its stored values and owned response files.",
     ],
     operations: [

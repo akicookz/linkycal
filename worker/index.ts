@@ -5655,7 +5655,6 @@ app.post("/api/onboarding/default-form", async (c) => {
         new FormService(transaction).create(projectId, {
           name: "Contact form",
           slug,
-          type: "single",
         }),
     });
     if (!creation.ok) return c.json(creation.body, creation.status);

@@ -1,5 +1,13 @@
 import { eq, and, asc, desc, inArray } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
+import type { FocusedFormPageStep } from "../../shared/form-pages";
+import {
+  defaultPageLayout,
+  formNeedsFocusedExplode,
+  pagesFromFocusedForm,
+  rewriteSettingsPageLayoutFieldId,
+  sortOrdersFromPageLayout,
+} from "../../shared/form-pages";
 import * as dbSchema from "../db/schema";
 import { getUniqueFieldId } from "../lib/field-ids";
 import { plainTextToRichTextHtml } from "../lib/rich-text";
@@ -116,11 +124,11 @@ function normalizeStepRow<
 }
 
 function normalizeFieldRow<
-  T extends { validation: unknown; options: unknown; visibility?: unknown },
+  T extends { settings: unknown; options: unknown; visibility?: unknown },
 >(field: T) {
   return {
     ...field,
-    validation: parseJsonObject(field.validation),
+    settings: parseJsonObject(field.settings),
     options: parseFieldOptions(field.options),
     visibility: parseJsonObject(field.visibility),
   };
@@ -191,6 +199,151 @@ function formatResponseDisplayValue(
   return rawValue;
 }
 
+// ─── Focused Page Explode ──────────────────────────────────────────────────
+
+interface FocusedExplodeStep extends FocusedFormPageStep {
+  visibility?: unknown;
+}
+
+interface FocusedExplodePage {
+  id: string;
+  sortOrder: number;
+  title: string | null;
+  description: string | null;
+  richDescription: string | null;
+  settings: Record<string, unknown>;
+  visibility: string | null;
+  fieldIds: string[];
+}
+
+interface FocusedExplodeLeftover {
+  id: string;
+  sortOrder: number;
+  settings: Record<string, unknown>;
+}
+
+interface FocusedExplodePlan {
+  pages: FocusedExplodePage[];
+  leftovers: FocusedExplodeLeftover[];
+  deleteStepIds: string[];
+}
+
+function jsonText(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function pageLayoutPresent(settings: Record<string, unknown>): boolean {
+  const raw = settings.pageLayout;
+  return raw != null && typeof raw === "object" && !Array.isArray(raw);
+}
+
+function settingsWithPageLayout(
+  settings: unknown,
+  fieldIds: readonly string[],
+): Record<string, unknown> {
+  const next =
+    settings && typeof settings === "object" && !Array.isArray(settings)
+      ? { ...(settings as Record<string, unknown>) }
+      : {};
+  if (!pageLayoutPresent(next)) {
+    next.pageLayout = defaultPageLayout(fieldIds);
+  }
+  return next;
+}
+
+function withDefaultPageLayouts<
+  T extends {
+    steps: Array<{
+      settings: unknown;
+      fields: Array<{ id: string; type: string }>;
+    }>;
+  },
+>(form: T): T {
+  return {
+    ...form,
+    steps: form.steps.map(function addPageLayout(step) {
+      return {
+        ...step,
+        settings: settingsWithPageLayout(
+          step.settings,
+          step.fields
+            .filter(function isQuestion(field) {
+              return field.type !== "completion";
+            })
+            .map(function idOf(field) {
+              return field.id;
+            }),
+        ),
+      };
+    }),
+  };
+}
+
+function buildFocusedExplodePlan(
+  steps: readonly FocusedExplodeStep[],
+): FocusedExplodePlan {
+  const drafts = pagesFromFocusedForm(steps);
+  const movedFieldIds = new Set(
+    drafts.flatMap(function fieldIdsOf(draft) {
+      return draft.fieldIds;
+    }),
+  );
+  const explodedSourceIds = new Set(
+    drafts.map(function sourceIdOf(draft) {
+      return draft.sourceStepId;
+    }),
+  );
+  const sourceById = new Map(
+    steps.map(function entryOf(step) {
+      return [step.id, step] as const;
+    }),
+  );
+
+  const pages = drafts.map(function toPage(draft, index) {
+    return {
+      id: crypto.randomUUID(),
+      sortOrder: index,
+      title: draft.title,
+      description: draft.description,
+      richDescription: draft.richDescription,
+      settings: draft.settings,
+      visibility: jsonText(sourceById.get(draft.sourceStepId)?.visibility),
+      fieldIds: draft.fieldIds,
+    };
+  });
+
+  const leftovers: FocusedExplodeLeftover[] = [];
+  const deleteStepIds: string[] = [];
+  const sorted = [...steps].sort(function byOrder(a, b) {
+    return a.sortOrder - b.sortOrder;
+  });
+
+  for (const step of sorted) {
+    const remaining = step.fields.filter(function notMoved(field) {
+      return !movedFieldIds.has(field.id);
+    });
+    if (explodedSourceIds.has(step.id) && remaining.length === 0) {
+      deleteStepIds.push(step.id);
+      continue;
+    }
+
+    leftovers.push({
+      id: step.id,
+      sortOrder: pages.length + leftovers.length,
+      settings: settingsWithPageLayout(
+        step.settings,
+        remaining.map(function idOf(field) {
+          return field.id;
+        }),
+      ),
+    });
+  }
+
+  return { pages, leftovers, deleteStepIds };
+}
+
 // ─── Form Service ────────────────────────────────────────────────────────────
 
 export class FormService {
@@ -225,6 +378,17 @@ export class FormService {
         )
         .bind(nextId, formId, currentId),
     ]);
+
+    const steps = await this.listSteps(formId);
+    for (const step of steps) {
+      const current = parseJsonObject(step.settings);
+      const next = rewriteSettingsPageLayoutFieldId(current, currentId, nextId);
+      if (JSON.stringify(next) === JSON.stringify(current ?? {})) continue;
+      await this.db
+        .update(dbSchema.formSteps)
+        .set({ settings: JSON.stringify(next) })
+        .where(eq(dbSchema.formSteps.id, step.id));
+    }
   }
 
   // ─── Forms CRUD ──────────────────────────────────────────────────────────
@@ -269,7 +433,6 @@ export class FormService {
     data: {
       name: string;
       slug: string;
-      type?: "multi_step" | "single";
       settings?: Record<string, unknown>;
     },
   ) {
@@ -279,18 +442,17 @@ export class FormService {
       projectId,
       name: data.name,
       slug: data.slug,
-      type: data.type ?? "single",
+      type: "single",
       status: "draft",
       settings: data.settings ? JSON.stringify(data.settings) : null,
     });
 
-    // Create a default first section, untitled — the builder labels sections
-    // by position, and untitled sections never render an intro screen.
     const stepId = crypto.randomUUID();
     await this.db.insert(dbSchema.formSteps).values({
       id: stepId,
       formId: id,
       sortOrder: 0,
+      settings: JSON.stringify(settingsWithPageLayout(null, [])),
     });
 
     return this.getById(id);
@@ -301,7 +463,6 @@ export class FormService {
     data: {
       name?: string;
       slug?: string;
-      type?: "multi_step" | "single";
       status?: "draft" | "active" | "archived";
       settings?: Record<string, unknown> | null;
     },
@@ -309,7 +470,6 @@ export class FormService {
     const values: Record<string, unknown> = {};
     if (data.name !== undefined) values.name = data.name;
     if (data.slug !== undefined) values.slug = data.slug;
-    if (data.type !== undefined) values.type = data.type;
     if (data.status !== undefined) values.status = data.status;
     if (data.settings !== undefined)
       values.settings = data.settings ? JSON.stringify(data.settings) : null;
@@ -367,7 +527,8 @@ export class FormService {
     let sortOrder = data.sortOrder ?? 0;
     if (data.sortOrder === undefined) {
       const steps = await this.listSteps(formId);
-      sortOrder = steps.length;
+      sortOrder =
+        steps.reduce((max, item) => Math.max(max, item.sortOrder), -1) + 1;
     }
 
     await this.db.insert(dbSchema.formSteps).values({
@@ -377,7 +538,7 @@ export class FormService {
       title: data.title?.trim() || null,
       description: data.description ?? null,
       richDescription: data.richDescription ?? null,
-      settings: data.settings ? JSON.stringify(data.settings) : null,
+      settings: JSON.stringify(settingsWithPageLayout(data.settings, [])),
       visibility: data.visibility ? JSON.stringify(data.visibility) : null,
     });
 
@@ -415,7 +576,45 @@ export class FormService {
       .set(values)
       .where(eq(dbSchema.formSteps.id, id));
 
+    if (data.settings) {
+      await this.syncFieldSortOrderFromPageLayout(id, data.settings);
+    }
+
     return this.getStepById(id);
+  }
+
+  async syncFieldSortOrderFromPageLayout(
+    stepId: string,
+    settings: Record<string, unknown>,
+  ) {
+    const fields = await this.listFieldsByStep(stepId);
+    const questionIds = fields
+      .filter(function isQuestion(field) {
+        return field.type !== "completion";
+      })
+      .map(function idOf(field) {
+        return field.id;
+      });
+    if (questionIds.length === 0) return;
+
+    const orderById = sortOrdersFromPageLayout(settings, questionIds);
+    let completionOrder = questionIds.length;
+    for (const field of fields) {
+      const sortOrder =
+        field.type === "completion"
+          ? completionOrder++
+          : orderById[field.id];
+      if (sortOrder === undefined || field.sortOrder === sortOrder) continue;
+      await this.db
+        .update(dbSchema.formFields)
+        .set({ sortOrder })
+        .where(
+          and(
+            eq(dbSchema.formFields.formId, field.formId),
+            eq(dbSchema.formFields.id, field.id),
+          ),
+        );
+    }
   }
 
   async deleteStep(id: string) {
@@ -502,7 +701,7 @@ export class FormService {
     placeholder?: string;
     required?: boolean;
     hidden?: boolean;
-    validation?: Record<string, unknown>;
+    settings?: Record<string, unknown>;
     options?: Array<{ label: string; value: string }>;
     visibility?: Record<string, unknown> | null;
     contactMapping?: "name" | "email" | null;
@@ -548,7 +747,7 @@ export class FormService {
       placeholder,
       required: hidden ? false : (data.required ?? false),
       hidden,
-      validation: data.validation ? JSON.stringify(data.validation) : null,
+      settings: data.settings ? JSON.stringify(data.settings) : null,
       options: data.options ? JSON.stringify(data.options) : null,
       visibility: hidden ? null : (data.visibility ? JSON.stringify(data.visibility) : null),
       contactMapping: data.contactMapping ?? null,
@@ -569,7 +768,7 @@ export class FormService {
       placeholder?: string | null;
       required?: boolean;
       hidden?: boolean;
-      validation?: Record<string, unknown> | null;
+      settings?: Record<string, unknown> | null;
       options?: Array<{ label: string; value: string }> | null;
       contactMapping?: string | null;
       visibility?: Record<string, unknown> | null;
@@ -619,9 +818,9 @@ export class FormService {
     } else if (data.required !== undefined) {
       values.required = data.required;
     }
-    if (data.validation !== undefined)
-      values.validation = data.validation
-        ? JSON.stringify(data.validation)
+    if (data.settings !== undefined)
+      values.settings = data.settings
+        ? JSON.stringify(data.settings)
         : null;
     if (data.options !== undefined)
       values.options = data.options ? JSON.stringify(data.options) : null;
@@ -975,6 +1174,20 @@ export class FormService {
   // ─── Full Form with Steps + Fields ───────────────────────────────────────
 
   async getFullForm(formId: string) {
+    const form = await this.readFullForm(formId);
+    if (!form) return null;
+    if (formNeedsFocusedExplode(form)) {
+      await this.persistFocusedPageExplode(
+        formId,
+        buildFocusedExplodePlan(form.steps),
+      );
+      const exploded = await this.readFullForm(formId);
+      return exploded ? withDefaultPageLayouts(exploded) : null;
+    }
+    return withDefaultPageLayouts(form);
+  }
+
+  private async readFullForm(formId: string) {
     const form = await this.getById(formId);
     if (!form) return null;
 
@@ -987,6 +1200,78 @@ export class FormService {
     }));
 
     return { ...form, steps: stepsWithFields };
+  }
+
+  private async persistFocusedPageExplode(
+    formId: string,
+    plan: FocusedExplodePlan,
+  ) {
+    const db = this.db as typeof this.db & { $client: D1Database };
+    const statements: D1PreparedStatement[] = [
+      db.$client.prepare("PRAGMA defer_foreign_keys = ON"),
+    ];
+
+    for (const page of plan.pages) {
+      statements.push(
+        db.$client
+          .prepare(
+            "INSERT INTO form_steps (id, form_id, sort_order, title, description, rich_description, settings, visibility) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .bind(
+            page.id,
+            formId,
+            page.sortOrder,
+            page.title,
+            page.description,
+            page.richDescription,
+            JSON.stringify(page.settings),
+            page.visibility,
+          ),
+      );
+    }
+
+    for (const page of plan.pages) {
+      for (let index = 0; index < page.fieldIds.length; index++) {
+        statements.push(
+          db.$client
+            .prepare(
+              "UPDATE form_fields SET step_id = ?, sort_order = ? WHERE form_id = ? AND id = ?",
+            )
+            .bind(page.id, index, formId, page.fieldIds[index]),
+        );
+      }
+    }
+
+    for (const leftover of plan.leftovers) {
+      statements.push(
+        db.$client
+          .prepare(
+            "UPDATE form_steps SET sort_order = ?, settings = ? WHERE id = ? AND form_id = ?",
+          )
+          .bind(
+            leftover.sortOrder,
+            JSON.stringify(leftover.settings),
+            leftover.id,
+            formId,
+          ),
+      );
+    }
+
+    for (const stepId of plan.deleteStepIds) {
+      statements.push(
+        db.$client
+          .prepare("DELETE FROM form_steps WHERE id = ? AND form_id = ?")
+          .bind(stepId, formId),
+      );
+    }
+
+    statements.push(
+      db.$client
+        .prepare("UPDATE forms SET type = ? WHERE id = ?")
+        .bind("single", formId),
+    );
+
+    await db.$client.batch(statements);
   }
 
   async getFullFormBySlug(projectId: string, slug: string) {

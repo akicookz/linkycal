@@ -36,7 +36,6 @@ interface FormStepForPrompt {
 interface FormForPrompt {
   name: string;
   slug: string;
-  type: string;
   steps?: FormStepForPrompt[];
 }
 
@@ -492,8 +491,7 @@ ${renderHtmlFormExample(form, projectSlug, origin)}
 ## Form
 - projectSlug: \`${projectSlug}\`
 - formSlug: \`${form.slug}\`
-- Type: ${form.type === "multi_step" ? "Multi-step" : "Single step"}
-${form.steps ? `- Steps: ${form.steps.length}` : ""}
+${form.steps ? `- Pages: ${form.steps.length}` : ""}
 - Public endpoints; no auth required.
 
 Use one flow at a time:
@@ -572,13 +570,12 @@ LinkyCal.form({
 
 ## Form Details
 - **${form.name}**
-- Type: ${form.type === "multi_step" ? "Multi-step form" : "Single page form"}
-${form.steps ? `- ${form.steps.length} step(s)` : ""}
-${form.steps?.map((s, i) => `- Step ${i + 1}: ${s.title || "Untitled"} (${s.fields.length} fields)`).join("\n") || ""}
+${form.steps ? `- ${form.steps.length} page(s)` : ""}
+${form.steps?.map((s, i) => `- Page ${i + 1}: ${s.title || "Untitled"} (${s.fields.length} fields)`).join("\n") || ""}
 
 ## Widget Features
 - Fully responsive — works on mobile, tablet, and desktop
-${form.type === "multi_step" ? "- Multi-step navigation with progress indicator" : "- Single-page form with all fields visible"}
+- Page navigation with a progress indicator
 - Supports all field types: text, email, phone, select, radio, checkbox, rating, date, time, file upload
 - Built-in validation for required fields and email format
 - Automatic submission handling
@@ -610,7 +607,7 @@ LinkyCal.form({
 });
 \`\`\`
 
-Keys are field ids. \`hidden\` wins over the host page query string. Hidden fields may also set \`validation.defaultValue\` in the builder.
+Keys are field ids. \`hidden\` wins over the host page query string. Hidden fields may also set \`settings.defaultValue\` in the builder.
 
 ## Integration Notes
 - Place the \`<div>\` container wherever you want the form to appear on your page

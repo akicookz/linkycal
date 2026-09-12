@@ -4,7 +4,11 @@ import {
   type FormCondition,
   type FormConditionField,
 } from "@/lib/form-conditions";
-import { sectionShowsFieldsTogether } from "@/lib/form-sections";
+import {
+  analyticsStageForPage,
+  formNeedsFocusedExplode,
+  pagesFromFocusedForm,
+} from "@/lib/form-pages";
 
 export interface FormExperienceField {
   id: string;
@@ -16,7 +20,7 @@ export interface FormExperienceField {
   placeholder: string | null;
   required: boolean;
   hidden?: boolean;
-  validation: Record<string, unknown> | null;
+  settings: Record<string, unknown> | null;
   options: Array<{ label: string; value: string }> | null;
   visibility?: FormCondition | null;
   contactMapping?: "name" | "email" | null;
@@ -36,7 +40,7 @@ export interface FormExperienceStep {
 export interface FormExperienceForm {
   id: string;
   name: string;
-  type: "multi_step" | "single";
+  type?: "multi_step" | "single";
   status?: string;
   settings?: unknown;
   steps: FormExperienceStep[];
@@ -46,32 +50,12 @@ export interface VisibleFormExperienceStep extends FormExperienceStep {
   fields: FormExperienceField[];
 }
 
-export type FormExperienceScreen = {
-  key: string;
-  stepId: string;
-  stepIndex: number;
-} & (
-  | {
-      kind: "statement";
-      title: string | null;
-      description: string | null;
-      richDescription: string | null;
-    }
-  | { kind: "question"; field: FormExperienceField; questionNumber: number }
-  | {
-      kind: "group";
-      fields: FormExperienceField[];
-      firstQuestionNumber: number;
-    }
-);
-
 export interface FormExperienceModel {
   allSortedSteps: FormExperienceStep[];
   allFields: FormExperienceField[];
   fieldsById: Record<string, FormConditionField>;
   completionField: FormExperienceField | null;
   steps: VisibleFormExperienceStep[];
-  screens: FormExperienceScreen[];
   hiddenValueFieldIds: string[];
   hasDisplayContent: boolean;
 }
@@ -98,7 +82,6 @@ export interface FormExperienceAnalyticsEvent {
 }
 
 export interface CreateFormExperienceCheckpointInput {
-  formType: FormExperienceForm["type"];
   surface: "standalone" | "booking";
   steps: VisibleFormExperienceStep[];
   hiddenFields?: FormExperienceField[];
@@ -186,13 +169,12 @@ export function getCompletionField(
 export function createFormExperienceCheckpoint(
   input: CreateFormExperienceCheckpointInput,
 ): FormExperienceCheckpoint | null {
-  const { formType, surface, steps, hiddenFields = [], stepIndex, isFinal } = input;
+  const { surface, steps, hiddenFields = [], stepIndex, isFinal } = input;
   const current = steps[stepIndex];
   if (!current) {
     const supportsEmptyCheckpoint =
       steps.length === 0 &&
-      ((surface === "booking" && isFinal) ||
-        (surface === "standalone" && formType === "single"));
+      (surface === "standalone" || (surface === "booking" && isFinal));
     if (!supportsEmptyCheckpoint) {
       return null;
     }
@@ -211,163 +193,114 @@ export function createFormExperienceCheckpoint(
   };
 }
 
-function hasMeaningfulIntro(step: FormExperienceStep): boolean {
-  const title = step.title?.trim() ?? "";
-  const isDefaultTitle = /^(step|section) \d+$/i.test(title);
-  return !!(
-    step.description?.trim() ||
-    step.richDescription?.trim() ||
-    (title && !isDefaultTitle)
-  );
-}
-
-function buildFocusedScreens(
-  steps: VisibleFormExperienceStep[],
-): FormExperienceScreen[] {
-  const screens: FormExperienceScreen[] = [];
-  let questionNumber = 0;
-
-  steps.forEach((step, stepIndex) => {
-    if (hasMeaningfulIntro(step)) {
-      screens.push({
-        kind: "statement",
-        key: `statement-${step.id}`,
-        stepId: step.id,
-        stepIndex,
-        title: step.title,
-        description: step.description,
-        richDescription: step.richDescription,
-      });
-    }
-
-    if (sectionShowsFieldsTogether(step.settings)) {
-      if (step.fields.length > 0) {
-        screens.push({
-          kind: "group",
-          key: `group-${step.id}`,
-          stepId: step.id,
-          stepIndex,
-          fields: step.fields,
-          firstQuestionNumber: questionNumber + 1,
-        });
-        questionNumber += step.fields.length;
-      }
-      return;
-    }
-
-    for (const currentField of step.fields) {
-      questionNumber += 1;
-      screens.push({
-        kind: "question",
-        key: `field-${currentField.id}`,
-        stepId: step.id,
-        stepIndex,
-        field: currentField,
-        questionNumber,
-      });
-    }
-  });
-
-  return screens;
-}
-
-export function getFocusedQuestionProgress(
-  screens: FormExperienceScreen[],
-  screenIndex: number,
-): { current: number; total: number } {
-  let total = 0;
-  let current = -1;
-  for (let index = 0; index < screens.length; index += 1) {
-    if (screens[index].kind === "statement") continue;
-    if (index <= screenIndex) current = total;
-    total += 1;
-  }
-  return { current, total };
-}
-
-export function getFocusedQuestionProgressForScreenField(
-  screens: FormExperienceScreen[],
-  fieldId: string | null,
-  options?: { completed?: boolean },
-): { current: number; total: number } {
-  if (options?.completed) {
-    return getFocusedQuestionProgress(screens, screens.length - 1);
-  }
-  const screenIndex = screens.findIndex((screen) => {
-    if (screen.kind === "question") return screen.field.id === fieldId;
-    if (screen.kind === "group") {
-      return screen.fields.some((field) => field.id === fieldId);
-    }
-    return false;
-  });
-  return getFocusedQuestionProgress(screens, screenIndex);
-}
-
 function boundedAnalyticsLabel(value: string, fallback: string): string {
   const normalized = value.replace(/\s+/g, " ").trim();
   return (normalized || fallback).slice(0, 160);
 }
 
-export function buildFormExperienceAnalyticsStages(input: {
-  formType: FormExperienceForm["type"];
-  steps: VisibleFormExperienceStep[];
-  screens: FormExperienceScreen[];
-}): FormExperienceAnalyticsStage[] {
-  if (input.formType === "single") {
-    return input.steps.map(function mapStep(step, index) {
-      return {
-        key: `step-${step.id}`,
-        label: boundedAnalyticsLabel(
-          step.title ?? "",
-          `Step ${index + 1}`,
-        ),
-        kind: "step" as const,
-        order: index + 1,
-        required: step.fields.some(function isRequired(field) {
-          return field.required;
-        }),
-      };
-    });
-  }
+function analyticsLabelForPage(
+  step: VisibleFormExperienceStep,
+  index: number,
+): string {
+  const title = step.title?.trim() ?? "";
+  if (title) return title;
+  if (step.fields.length === 1) return step.fields[0].label;
+  return `Step ${index + 1}`;
+}
 
-  return input.screens.map(function mapScreen(screen, index) {
-    const step = input.steps[screen.stepIndex];
-    if (screen.kind === "statement") {
-      return {
-        key: screen.key,
-        label: boundedAnalyticsLabel(
-          screen.title ?? "",
-          "Introduction",
-        ),
-        kind: "statement" as const,
-        order: index + 1,
-      };
-    }
-    if (screen.kind === "question") {
-      return {
-        key: screen.key,
-        label: boundedAnalyticsLabel(screen.field.label, "Question"),
-        kind: "question" as const,
-        order: index + 1,
-        fieldType: screen.field.type,
-        required: screen.field.required,
-      };
-    }
-    const first = screen.firstQuestionNumber;
-    const last = first + screen.fields.length - 1;
+export function buildFormExperienceAnalyticsStages(input: {
+  steps: VisibleFormExperienceStep[];
+}): FormExperienceAnalyticsStage[] {
+  return input.steps.map(function mapPage(step, index) {
+    const stage = analyticsStageForPage({
+      stepId: step.id,
+      fields: step.fields,
+    });
     return {
-      key: screen.key,
+      key: stage.key,
       label: boundedAnalyticsLabel(
-        step?.title ?? "",
-        first === last ? `Question ${first}` : `Questions ${first}–${last}`,
+        analyticsLabelForPage(step, index),
+        `Step ${index + 1}`,
       ),
-      kind: "group" as const,
+      kind: stage.kind,
       order: index + 1,
-      required: screen.fields.some(function isRequired(field) {
+      fieldType: stage.fieldType,
+      required: step.fields.some(function isRequired(field) {
         return field.required;
       }),
     };
   });
+}
+
+function explodeFocusedPages(
+  form: FormExperienceForm,
+  sortedSteps: FormExperienceStep[],
+): FormExperienceStep[] {
+  if (!formNeedsFocusedExplode(form)) return sortedSteps;
+
+  const fieldsById = new Map<string, FormExperienceField>();
+  const stepsById = new Map<string, FormExperienceStep>();
+  for (const step of sortedSteps) {
+    stepsById.set(step.id, step);
+    for (const field of step.fields) {
+      fieldsById.set(field.id, field);
+    }
+  }
+
+  const drafts = pagesFromFocusedForm(
+    sortedSteps.map(function toDraftInput(step) {
+      return {
+        id: step.id,
+        sortOrder: step.sortOrder,
+        title: step.title,
+        description: step.description,
+        richDescription: step.richDescription,
+        settings: step.settings,
+        fields: step.fields.map(function toPageField(field) {
+          return {
+            id: field.id,
+            type: field.type,
+            sortOrder: field.sortOrder,
+          };
+        }),
+      };
+    }),
+  );
+
+  const pages = drafts.map(function toVirtualStep(draft, index) {
+    const virtualId = `page-${draft.fieldIds.join("-")}`;
+    const source = stepsById.get(draft.sourceStepId);
+    return {
+      id: virtualId,
+      sortOrder: index,
+      title: draft.title,
+      description: draft.description,
+      richDescription: draft.richDescription,
+      settings: draft.settings,
+      visibility: source?.visibility ?? null,
+      fields: draft.fieldIds.flatMap(function attachField(fieldId) {
+        const field = fieldsById.get(fieldId);
+        if (!field) return [];
+        return [{ ...field, stepId: virtualId }];
+      }),
+    };
+  });
+
+  const completions = sortedSteps.filter(function isCompletionOnly(step) {
+    return (
+      step.fields.length > 0 &&
+      step.fields.every(function isCompletion(field) {
+        return field.type === "completion";
+      })
+    );
+  });
+
+  return [
+    ...pages,
+    ...completions.map(function reindex(step, index) {
+      return { ...step, sortOrder: pages.length + index };
+    }),
+  ];
 }
 
 export function buildFormExperienceModel(
@@ -390,19 +323,10 @@ export function buildFormExperienceModel(
     };
   }
   const conditionInputs = { values, fieldsById };
-  const withoutCompletionSteps = allSortedSteps.filter(
-    (step) =>
-      !(
-        step.fields.length > 0 &&
-        step.fields.every((currentField) => currentField.type === "completion")
-      ),
-  );
+  const pageSteps = explodeFocusedPages(form, allSortedSteps);
 
-  const conditionallyVisibleSteps = withoutCompletionSteps.filter((step) =>
+  const conditionallyVisibleSteps = pageSteps.filter((step) =>
     isStepVisible({ visibility: step.visibility ?? null }, conditionInputs),
-  );
-  const conditionallyVisibleStepIds = new Set(
-    conditionallyVisibleSteps.map((step) => step.id),
   );
   const steps = conditionallyVisibleSteps
     .map<VisibleFormExperienceStep>((step) => ({
@@ -432,7 +356,13 @@ export function buildFormExperienceModel(
     }))
     .filter((step) => step.fields.length > 0);
 
-  const screens = form.type === "multi_step" ? buildFocusedScreens(steps) : [];
+  const visibleFieldIds = new Set(
+    steps.flatMap(function fieldIdsOf(step) {
+      return step.fields.map(function idOf(field) {
+        return field.id;
+      });
+    }),
+  );
   const hiddenValueFieldIds = allFields
     .filter(
       (currentField) =>
@@ -440,16 +370,7 @@ export function buildFormExperienceModel(
         !currentField.hidden &&
         values[currentField.id] !== undefined &&
         !(surface === "booking" && excludedFieldIds.has(currentField.id)) &&
-        (!conditionallyVisibleStepIds.has(currentField.stepId) ||
-          !isFieldVisible(
-            {
-              id: currentField.id,
-              type: currentField.type,
-              options: currentField.options,
-              visibility: currentField.visibility ?? null,
-            },
-            conditionInputs,
-          )),
+        !visibleFieldIds.has(currentField.id),
     )
     .map((currentField) => currentField.id);
 
@@ -459,12 +380,8 @@ export function buildFormExperienceModel(
     fieldsById,
     completionField,
     steps,
-    screens,
     hiddenValueFieldIds,
-    hasDisplayContent:
-      form.type === "multi_step"
-        ? screens.length > 0
-        : steps.some((step) => step.fields.length > 0),
+    hasDisplayContent: steps.some((step) => step.fields.length > 0),
   };
 }
 

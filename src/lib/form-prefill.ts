@@ -86,13 +86,13 @@ export function hiddenFieldDefaults(
     type: string;
     hidden?: boolean;
     options?: Array<{ label: string; value: string }> | null;
-    validation?: Record<string, unknown> | null;
+    settings?: Record<string, unknown> | null;
   }>,
 ): Record<string, string> {
   const query: FormPrefillQuery = {};
   for (const field of fields) {
-    if (!field.hidden || !field.validation) continue;
-    const raw = field.validation.defaultValue;
+    if (!field.hidden || !field.settings) continue;
+    const raw = field.settings.defaultValue;
     if (typeof raw !== "string" || raw.length === 0) continue;
     query[field.id] = raw;
   }

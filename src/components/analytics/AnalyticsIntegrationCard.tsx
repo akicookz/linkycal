@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
+import { SwitchRow } from "@/components/ui/switch-row";
 import type {
   AnalyticsIntegrationConfig,
   ConfigureAnalyticsIntegrationInput,
@@ -107,19 +107,13 @@ export function AnalyticsIntegrationCard({
           </div>
         </div>
 
-        <div className="flex items-center justify-between gap-4 rounded-[16px] bg-muted/50 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium">Enable {name}</p>
-            <p className="text-pretty text-xs text-muted-foreground">
-              Send safe booking and form funnel events to this provider.
-            </p>
-          </div>
-          <Switch
-            aria-label={`Enable ${name}`}
-            checked={enabled}
-            onCheckedChange={setEnabled}
-          />
-        </div>
+        <SwitchRow
+          title={`Enable ${name}`}
+          description="Send safe booking and form funnel events to this provider."
+          aria-label={`Enable ${name}`}
+          checked={enabled}
+          onCheckedChange={setEnabled}
+        />
 
         {config.provider === "posthog"
           ? (

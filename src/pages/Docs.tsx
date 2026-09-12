@@ -835,7 +835,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   Visitor API · <IC>/api/v1/*</IC>
                 </p>
                 <p className="text-xs text-muted-foreground text-pretty mt-1">
-                  Canonical anonymous endpoints for availability, bookings, and multi-step form
+                  Canonical anonymous endpoints for availability, bookings, and page form
                   submissions. These routes are safe for visitor-side code and are rate limited by
                   IP.
                 </p>
@@ -923,8 +923,9 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <IC>POST /api/v1/forms/:projectSlug/:formSlug/responses</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Start a new form response. Returns the response object and full form config including
-              all steps and fields.
+              Start a new form response. Returns the response object and full form config. Each
+              step is one page. Step settings.pageLayout and form settings.transition live on the
+              existing settings JSON.
             </p>
 
             <PropTable
@@ -981,8 +982,8 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <IC>PATCH /api/v1/forms/:projectSlug/:formSlug/responses/:responseId/steps/:stepIndex</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Submit field values for a specific step. Steps must be submitted in order (0, 1, 2...).
-              Pass <IC>complete: true</IC> on the final visible step to mark the response completed.
+              Submit field values for a specific page. Pages must be submitted in order (0, 1, 2...).
+              Pass <IC>complete: true</IC> on the final visible page to mark the response completed.
             </p>
 
             <PropTable
@@ -997,7 +998,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
                   name: "complete",
                   type: "boolean",
                   required: false,
-                  description: "Set true on the last visible step to finalize the response. Required for forms with conditional steps, where the server can't infer the final step from the index alone.",
+                  description: "Set true on the last visible page to finalize the response. Required when the last page is conditional, because the server cannot infer the last page from the index alone.",
                 },
               ]}
             />
@@ -1024,8 +1025,9 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
 }`}
             </CodeBlock>
 
-	            <Callout type="tip">
-	              When the response status changes to <IC>completed</IC>, all steps have been submitted.
+	            <Callout type="warning">
+	              If you PATCH only <IC>steps/0</IC> and omit <IC>complete</IC>, an exploded form can stay{" "}
+	              <IC>in_progress</IC>. Send <IC>complete</IC> on the last visible page.
 	            </Callout>
 
             <SectionHeading id="upload-file" level="h2">
@@ -1100,8 +1102,8 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               <IC>GET /api/widget/form/:projectSlug/:formSlug/config</IC>
             </p>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Returns the full form structure with steps, fields, and validation rules. This is the
-              same endpoint used internally by the form widget.
+              Returns the full form structure with pages, fields, and validation rules. Each step
+              is one page. This is the same endpoint used internally by the form widget.
             </p>
 
             <CodeBlock title="Request" language="bash">
@@ -1563,7 +1565,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               Form Widget
             </SectionHeading>
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
-              Embed multi-step forms directly on your site. The widget renders each step in sequence
+              Embed page forms directly on your site. The widget renders each page in sequence
               and handles validation, submission, and completion state.
             </p>
 
@@ -1683,8 +1685,7 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
             <p className="text-muted-foreground text-sm leading-relaxed mb-4">
               Flags are <IC>hide_banner</IC>, <IC>hide_branding</IC>, <IC>hide_title</IC>,{" "}
               <IC>hide_intro</IC>, <IC>hide_avatar</IC>, and <IC>hide_media</IC>.
-              Focused forms have no form title or theme banner, so those two flags do
-              nothing there. Custom CSS can target <IC>[data-lc-banner]</IC>,{" "}
+              Custom CSS can target <IC>[data-lc-banner]</IC>,{" "}
               <IC>[data-lc-title]</IC>, <IC>[data-lc-intro]</IC>, <IC>[data-lc-avatar]</IC>,{" "}
               <IC>[data-lc-media]</IC>, and <IC>[data-lc-branding]</IC>.
             </p>
@@ -1882,7 +1883,8 @@ curl "https://linkycal.com/api/v1/availability/your-project?date=2026-08-12&time
               The server exposes {MCP_TOOL_COUNT} tools for the project, grouped by
               read or write access, then by domain. Read tools return JSON;
               write tools enforce the same plan limits and validation as the
-              dashboard.
+              dashboard. <IC>create_form</IC> always creates a page form and
+              ignores <IC>type</IC>. Each step is one page.
             </p>
 
             <div className="my-4 space-y-3">

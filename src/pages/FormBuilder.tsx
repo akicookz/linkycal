@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft,
-  ArrowRight,
   Plus,
   Loader,
   AlertCircle,
@@ -41,7 +40,7 @@ import { RichTextEditor } from "@/components/RichTextEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { SwitchRow } from "@/components/ui/switch-row";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -72,9 +71,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
-import { FocusedFieldInput } from "@/components/FocusedFieldInput";
 import { ExperienceThemeRoot } from "@/components/experience-theme-root";
 import { FocusedStepProgress } from "@/components/FocusedStepProgress";
+import {
+  FormPageCanvas,
+  InlineEditableLabel,
+} from "@/components/FormPageCanvas";
 import { useIsDesktop } from "@/hooks/use-mobile";
 import { useSession } from "@/lib/auth-client";
 import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
@@ -85,11 +87,13 @@ import {
   generateFormEmbedPrompt,
 } from "@/lib/prompts";
 import {
-  sectionShowsFieldsTogether,
-  getSectionImage,
-  type SectionImage,
-} from "@/lib/form-sections";
-import { SectionImageField } from "@/components/SectionImageField";
+  buildQuestionNumberByFieldId,
+  parseFormTransition,
+  rewriteSettingsPageLayoutFieldId,
+  sortOrdersFromPageLayout,
+  type FormPageLayout,
+  type FormTransition,
+} from "@/lib/form-pages";
 import { ChromeHideToggles } from "@/components/ChromeHideToggles";
 import { useEntitlements } from "@/hooks/use-entitlements";
 import {
@@ -97,12 +101,6 @@ import {
   parseChromeFlags,
   type ChromeFlags,
 } from "../../shared/public-chrome";
-import {
-  buildFormExperienceModel,
-  getFocusedQuestionProgressForScreenField,
-  type FormExperienceForm,
-} from "@/lib/form-experience";
-import { getRenderableRichTextHtml, richTextToPlainText } from "@/lib/rich-text";
 import { cn, copyToClipboard } from "@/lib/utils";
 import type { FormExperienceTheme } from "@/lib/experience-theme";
 import { normalizeToFieldId } from "@/lib/constants";
@@ -126,11 +124,16 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { FormConditionEditor } from "@/components/FormConditionEditor";
 import {
-  FormConditionEditor,
-  type ConditionSourceField,
-} from "@/components/FormConditionEditor";
-import type { FormCondition } from "@/lib/form-conditions";
+  buildFormConditionSources,
+  type FormCondition,
+} from "@/lib/form-conditions";
+import {
+  isChoiceLayoutFieldType,
+  parseOptionsLayout,
+  withOptionsLayout,
+} from "@/lib/form-field-settings";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -144,7 +147,7 @@ interface FormField {
   placeholder: string | null;
   required: boolean;
   hidden?: boolean;
-  validation: unknown;
+  settings: unknown;
   options: Array<{ label: string; value: string }> | null;
   contactMapping: string | null;
   visibility?: FormCondition | null;
@@ -168,7 +171,6 @@ interface FullForm {
   projectId: string;
   name: string;
   slug: string;
-  type: "multi_step" | "single";
   status: string;
   settings: unknown;
   createdAt: string;
@@ -209,6 +211,7 @@ interface FormSettings {
   nativeAction?: NativeActionSettings;
   responseNotificationEmail?: string;
   chrome?: ChromeFlags;
+  transition?: FormTransition;
 }
 
 interface CalendarConnectionAccount {
@@ -235,49 +238,6 @@ const GROUP_DROPPABLE_ID_PREFIX = "group:";
 
 function isValidEmailAddress(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function toFormExperienceForm(form: FullForm): FormExperienceForm {
-  return {
-    id: form.id,
-    name: form.name,
-    type: form.type,
-    status: form.status,
-    steps: [...form.steps]
-      .sort((a, b) => a.sortOrder - b.sortOrder)
-      .map((step) => ({
-        id: step.id,
-        sortOrder: step.sortOrder,
-        title: step.title,
-        description: step.description,
-        richDescription: step.richDescription,
-        settings: step.settings,
-        visibility: step.visibility ?? null,
-        fields: [...(step.fields ?? [])]
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((field) => ({
-            id: field.id,
-            stepId: field.stepId,
-            sortOrder: field.sortOrder,
-            type: field.type,
-            label: field.label,
-            description: field.description,
-            placeholder: field.placeholder,
-            required: field.required,
-            hidden: field.hidden,
-            validation:
-              field.validation && typeof field.validation === "object"
-                ? (field.validation as Record<string, unknown>)
-                : null,
-            options: field.options,
-            visibility: field.visibility ?? null,
-            contactMapping:
-              field.contactMapping === "name" || field.contactMapping === "email"
-                ? field.contactMapping
-                : null,
-          })),
-      })),
-  };
 }
 
 // ─── Field Type Definitions ──────────────────────────────────────────────────
@@ -400,6 +360,28 @@ function toPersistedFieldOptions(options: DraftFieldOption[]): FieldOption[] {
 
 function sortFields(fields: FormField[]): FormField[] {
   return [...fields].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function applyPageLayoutSortOrders<T extends {
+  settings?: unknown;
+  fields: FormField[];
+}>(step: T): T {
+  const questionIds = step.fields
+    .filter(function isQuestion(field) {
+      return field.type !== "completion";
+    })
+    .map(function idOf(field) {
+      return field.id;
+    });
+  if (questionIds.length === 0) return step;
+  const orderById = sortOrdersFromPageLayout(step.settings, questionIds);
+  return {
+    ...step,
+    fields: step.fields.map(function withOrder(field) {
+      const sortOrder = orderById[field.id];
+      return sortOrder === undefined ? field : { ...field, sortOrder };
+    }),
+  };
 }
 
 function isCompletionOnlyStep(step: FormStep): boolean {
@@ -556,11 +538,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     Record<string, DraftFieldOption[]>
   >({});
   const [autoFocusSelectedLabel, setAutoFocusSelectedLabel] = useState(false);
-  // Fields whose (empty) description editor was explicitly opened via
-  // "+ Add description" — cleared whenever the selection changes.
-  const [expandedFieldDesc, setExpandedFieldDesc] = useState<Set<string>>(
-    new Set(),
-  );
   // Interactive answers typed into the live preview (never persisted)
   const [previewValues, setPreviewValues] = useState<Record<string, string>>({});
 
@@ -613,7 +590,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const [createData, setCreateData] = useState({
     name: "",
     slug: "",
-    type: "multi_step" as "single" | "multi_step",
   });
   const [createSlugManual, setCreateSlugManual] = useState(false);
 
@@ -624,7 +600,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   }, [createData.name, createSlugManual]);
 
   const createFormMutation = useMutation({
-    mutationFn: async (data: { name: string; slug: string; type: string }) => {
+    mutationFn: async (data: { name: string; slug: string }) => {
       const res = await fetch(`/api/projects/${projectId}/forms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -730,17 +706,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   const form = formData;
   const currentProject = projects?.find((project) => project.id === projectId);
-  const previewExperienceModel = useMemo(
-    () =>
-      form
-        ? buildFormExperienceModel({
-          form: toFormExperienceForm(form),
-          values: {},
-          surface: "standalone",
-        })
-        : null,
-    [form],
-  );
 
   const steps = form?.steps ?? [];
   const sortedSteps = [...steps].sort((a, b) => a.sortOrder - b.sortOrder);
@@ -828,70 +793,19 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       ? sortedSteps.find((s) => s.id === selection.id) ?? null
       : selectedFieldEntry?.step ?? null;
 
-  // Numbering across all non-completion fields, in step order
-  const questionNumberByFieldId = useMemo(() => {
-    const map: Record<string, number> = {};
-    let n = 0;
-    for (const step of sortedSteps) {
-      for (const field of sortFields(step.fields ?? [])) {
-        if (field.type === "completion" || field.hidden) continue;
-        n += 1;
-        map[field.id] = n;
-      }
-    }
-    return map;
-  }, [sortedSteps]);
+  // Numbering across all non-completion fields, in pageLayout reading order
+  const questionNumberByFieldId = useMemo(
+    () => buildQuestionNumberByFieldId(sortedSteps),
+    [sortedSteps],
+  );
   const orderedQuestionFields = sortedSteps.flatMap((step) =>
     sortFields(step.fields ?? []).filter((f) => f.type !== "completion" && !f.hidden),
   );
 
-  // ─── Condition source lookups ────────────────────────────────────────────
-  //
-  // For each field, "earlier fields" = all fields in steps with lower
-  // sortOrder + fields in the same step with lower sortOrder.
-  // For each step, "earlier fields" = all fields in steps with lower sortOrder.
-  const { sourcesByFieldId, sourcesByStepId } = useMemo(() => {
-    const stepTitleFor = (step: FormStep) =>
-      step.title?.trim() || `Section ${step.sortOrder + 1}`;
-
-    const byStep: Record<string, ConditionSourceField[]> = {};
-    for (const step of sortedSteps) {
-      const earlier = sortedSteps.filter((s) => s.sortOrder < step.sortOrder);
-      byStep[step.id] = earlier.flatMap((s) =>
-        sortFields(s.fields ?? [])
-          .filter((f) => f.type !== "completion")
-          .map((f) => ({
-            id: f.id,
-            label: f.label,
-            type: f.type,
-            stepTitle: stepTitleFor(s),
-            options: f.options ?? null,
-          })),
-      );
-    }
-
-    const byField: Record<string, ConditionSourceField[]> = {};
-    for (const step of sortedSteps) {
-      const ownFields = sortFields(step.fields ?? []);
-      for (let i = 0; i < ownFields.length; i++) {
-        const target = ownFields[i];
-        if (target.type === "completion") continue;
-        const earlierInStep: ConditionSourceField[] = ownFields
-          .slice(0, i)
-          .filter((ff) => ff.type !== "completion")
-          .map((ff) => ({
-            id: ff.id,
-            label: ff.label,
-            type: ff.type,
-            stepTitle: stepTitleFor(step),
-            options: ff.options ?? null,
-          }));
-        byField[target.id] = [...(byStep[step.id] ?? []), ...earlierInStep];
-      }
-    }
-
-    return { sourcesByFieldId: byField, sourcesByStepId: byStep };
-  }, [sortedSteps]);
+  const { sourcesByFieldId, sourcesByStepId } = useMemo(
+    () => buildFormConditionSources(sortedSteps),
+    [sortedSteps],
+  );
 
   // Default selection: first question, else first step
   useEffect(() => {
@@ -920,7 +834,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   // and collapse any empty description editors left open on other questions.
   useEffect(() => {
     if (autoFocusSelectedLabel) setAutoFocusSelectedLabel(false);
-    setExpandedFieldDesc((prev) => (prev.size === 0 ? prev : new Set()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection]);
 
@@ -1086,6 +999,11 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             ...old,
             steps: old.steps.map((step) => ({
               ...step,
+              settings: rewriteSettingsPageLayoutFieldId(
+                step.settings,
+                clientId,
+                serverId,
+              ),
               fields: step.fields.map((field) =>
                 field.id === clientId ? { ...field, id: serverId } : field,
               ),
@@ -1126,7 +1044,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       data: Partial<{
         name: string;
         slug: string;
-        type: "multi_step" | "single";
         status: string;
         settings: FormSettings | null;
       }>
@@ -1171,8 +1088,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // No default title — sections are labeled "Section N" in the UI,
-          // and an untitled section never renders an intro screen.
+          // No default title — pages are labeled "Page N" in the UI.
           body: JSON.stringify(vars?.title ? { title: vars.title } : {}),
         }
       );
@@ -1267,7 +1183,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       optimisticSetForm((old) => ({
         ...old,
         steps: old.steps.map((s) =>
-          s.id === stepId ? { ...s, ...data } : s
+          s.id === stepId ? applyPageLayoutSortOrders({ ...s, ...data }) : s
         ),
       }));
       return { snapshot };
@@ -1361,7 +1277,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   description: null,
                   placeholder: null,
                   required: false,
-                  validation: null,
+                  settings: null,
                   options: null,
                   contactMapping: null,
                   createdAt: new Date().toISOString(),
@@ -1445,7 +1361,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         hidden: boolean;
         type: string;
         options: FieldOption[] | null;
-        validation: Record<string, unknown> | null;
+        settings: Record<string, unknown> | null;
         stepId: string;
         sortOrder: number;
         contactMapping: string | null;
@@ -1622,6 +1538,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     else delete nextSettings.chrome;
 
     return nextSettings;
+  }
+
+  function persistStepSettings(
+    step: FormStep,
+    patch: Record<string, unknown>,
+  ) {
+    const current =
+      step.settings && typeof step.settings === "object"
+        ? (step.settings as Record<string, unknown>)
+        : {};
+    updateStepMutation.mutate({
+      stepId: step.id,
+      data: { settings: { ...current, ...patch } },
+    });
   }
 
   const handleResponseNotificationDestinationChange = useCallback(
@@ -1894,7 +1824,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               description: "<p>Your response has been submitted successfully.</p>",
               placeholder: null,
               required: false,
-              validation: null,
+              settings: null,
               options: null,
               contactMapping: null,
               createdAt: new Date().toISOString(),
@@ -2127,52 +2057,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     });
   }
 
-  // Canvas description editing: hidden until the question has one (or the
-  // user clicks "+ Add description"), Typeform-style.
-  function fieldDescriptionEditor(field: FormField) {
-    const hasDescription = !!field.description;
-    if (!hasDescription && !expandedFieldDesc.has(field.id)) {
-      return (
-        <button
-          type="button"
-          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() =>
-            setExpandedFieldDesc((prev) => new Set(prev).add(field.id))
-          }
-        >
-          <Plus className="h-3 w-3 inline mr-0.5 -mt-px" />
-          Add description
-        </button>
-      );
-    }
-    return (
-      <RichTextEditor
-        key={`field-desc-${field.id}`}
-        value={field.description ?? ""}
-        placeholder="Add a description (optional)"
-        variant="compact"
-        autoFocus={!hasDescription}
-        onSave={(html) =>
-          updateFieldMutation.mutate({
-            fieldId: field.id,
-            data: { description: html },
-          })
-        }
-      />
-    );
-  }
-
-  function selectNextQuestion() {
-    if (!selectedField) return;
-    const index = orderedQuestionFields.findIndex((f) => f.id === selectedField.id);
-    const next = orderedQuestionFields[index + 1];
-    if (next) {
-      setSelection({ kind: "field", id: next.id });
-    } else if (completionField) {
-      setSelection({ kind: "field", id: completionField.id });
-    }
-  }
-
   // ─── Render: Create mode ─────────────────────────────────────────────────
 
   if (isCreateMode) {
@@ -2231,31 +2115,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="create-type">Experience</Label>
-                <Select
-                  value={createData.type}
-                  onValueChange={(val) =>
-                    setCreateData((prev) => ({
-                      ...prev,
-                      type: val as "single" | "multi_step",
-                    }))
-                  }
-                >
-                  <SelectTrigger id="create-type">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="multi_step">
-                      Focused — one question at a time
-                    </SelectItem>
-                    <SelectItem value="single">
-                      Classic — all questions on one page
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
               {createFormMutation.isError && (
                 <p className="text-sm text-destructive">
                   {createFormMutation.error?.message ?? "Something went wrong."}
@@ -2277,8 +2136,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   type="submit"
                   disabled={createFormMutation.isPending}
                 >
-                  {createFormMutation.isPending && (
+                  {createFormMutation.isPending ? (
                     <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
                   )}
                   Create Form
                 </Button>
@@ -2416,7 +2277,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         {contentSteps.length === 0 ? (
           <div className="flex flex-col items-center justify-center rounded-[16px] border border-dashed py-8 text-center">
             <p className="text-xs text-muted-foreground mb-3 px-3">
-              No sections yet. Add a section to start building your form.
+              No pages yet. Add a page to start building your form.
             </p>
             <Button
               size="sm"
@@ -2424,7 +2285,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               disabled={addStepMutation.isPending}
             >
               <Plus className="h-4 w-4" />
-              Add Section
+              Add page
             </Button>
           </div>
         ) : (
@@ -2446,7 +2307,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                     key={step.id}
                     step={step}
                     stepNumber={stepIdx + 1}
-                    isGrouped={sectionShowsFieldsTogether(step.settings)}
                     isSelected={selection?.kind === "step" && selection.id === step.id}
                     selectedFieldId={selection?.kind === "field" ? selection.id : null}
                     questionNumberByFieldId={questionNumberByFieldId}
@@ -2470,7 +2330,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 })()
               ) : dragging?.type === "step" ? (
                 <div className="rounded-[12px] border bg-background px-3 py-2 shadow-lg text-sm font-medium">
-                  {sortedSteps.find((s) => s.id === dragging.id)?.title || "Section"}
+                  {sortedSteps.find((s) => s.id === dragging.id)?.title || "Page"}
                 </div>
               ) : null}
             </DragOverlay>
@@ -2489,7 +2349,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           ) : (
             <Plus className="h-3.5 w-3.5" />
           )}
-          Add Section
+          Add page
         </Button>
 
         {/* Ending */}
@@ -2536,43 +2396,24 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   // ─── Render: Preview canvas ──────────────────────────────────────────────
 
-  const selectedQuestionNumber = selectedField
-    ? questionNumberByFieldId[selectedField.id] ?? null
-    : null;
-  const selectedSectionIsGrouped =
-    !!selectedField &&
-    selectedField.type !== "completion" &&
-    !!selectedStep &&
-    sectionShowsFieldsTogether(selectedStep.settings);
-  const selectedSectionFields =
-    selectedSectionIsGrouped && selectedStep
-      ? sortFields(selectedStep.fields ?? []).filter((f) => f.type !== "completion")
-      : [];
-  const previewProgress = previewExperienceModel
-    ? form.type === "multi_step"
-      ? getFocusedQuestionProgressForScreenField(
-        previewExperienceModel.screens,
-        selectedField?.id ?? null,
-        { completed: selectedField?.type === "completion" },
-      )
-      : {
-        current:
-          selectedField?.type === "completion"
-            ? previewExperienceModel.steps.length - 1
-            : selectedField
-              ? previewExperienceModel.steps.findIndex(
-                (step) =>
-                  step.id === selectedField.stepId ||
-                  step.fields.some((field) => field.id === selectedField.id),
-              )
-              : selectedStep
-                ? previewExperienceModel.steps.findIndex(
-                  (step) => step.id === selectedStep.id,
-                )
-                : -1,
-        total: previewExperienceModel.steps.length,
+  const canvasStep =
+    selectedStep && !isCompletionOnlyStep(selectedStep) ? selectedStep : null;
+  const canvasFields = canvasStep
+    ? sortFields(canvasStep.fields ?? []).filter((field) => field.type !== "completion")
+    : [];
+  const canvasPageIndex = canvasStep
+    ? contentSteps.findIndex((step) => step.id === canvasStep.id)
+    : -1;
+  const previewProgress =
+    selectedField?.type === "completion"
+      ? {
+        current: contentSteps.length,
+        total: contentSteps.length + 1,
       }
-    : { current: -1, total: 0 };
+      : {
+        current: canvasPageIndex,
+        total: contentSteps.length + (completionField ? 1 : 0),
+      };
 
   const previewCanvas = (
     <ExperienceThemeRoot
@@ -2581,16 +2422,16 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       surface="page"
       className="relative flex h-full min-h-0 max-h-full flex-col overflow-hidden rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] max-lg:min-h-[min(540px,100%)]"
     >
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-6 py-12 sm:px-12">
-        <div className="w-full max-w-xl mx-auto">
+      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-10 py-12 sm:px-16 lg:px-24">
+        <div className="w-full mx-auto">
           <FocusedStepProgress
             current={previewProgress.current}
             total={previewProgress.total}
             surface="preview"
-            className="mb-14"
+            className="mx-auto mb-14 max-w-xl"
           />
           {selectedField && selectedField.type === "completion" ? (
-            <div key={selectedField.id} className="animate-focused-screen space-y-4 text-center flex flex-col items-center">
+            <div key={selectedField.id} className="mx-auto max-w-xl animate-focused-screen space-y-4 text-center flex flex-col items-center">
               <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
                 <PartyPopper className="h-7 w-7 text-primary" />
               </div>
@@ -2622,238 +2463,80 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 />
               </div>
             </div>
-          ) : selectedField && selectedSectionIsGrouped ? (
-            <div
-              key={`group-${selectedStep?.id}`}
-              className="animate-focused-screen space-y-6"
-            >
-              <div className="space-y-7">
-                {selectedSectionFields.map((field) => {
-                  const isSel = field.id === selectedField.id;
-                  return (
-                    <div
-                      key={field.id}
-                      onClick={() => {
-                        if (!isSel) setSelection({ kind: "field", id: field.id });
-                      }}
-                      className={cn(
-                        "-mx-3 space-y-2 rounded-[16px] px-3 py-2.5 transition-colors",
-                        isSel
-                          ? "bg-primary/[0.05] ring-1 ring-primary/15"
-                          : "cursor-pointer hover:bg-black/[0.025]",
-                      )}
-                    >
-                      {isSel ? (
-                        <>
-                          <div className="flex items-start gap-2">
-                            <span className="text-xl sm:text-2xl font-semibold leading-snug shrink-0">
-                              {questionNumberByFieldId[field.id]}.
-                            </span>
-                            <InlineEditableLabel
-                              key={`field-label-${field.id}`}
-                              value={field.label}
-                              autoFocus={autoFocusSelectedLabel}
-                              placeholder="Your question here..."
-                              textClassName="text-xl sm:text-2xl font-semibold leading-snug"
-                              saveStatus={saveStatus[field.id] ?? null}
-                              onSave={(label) =>
-                                updateFieldMutation.mutate({
-                                  fieldId: field.id,
-                                  data: { label },
-                                })
-                              }
-                            />
-                          </div>
-                          {fieldDescriptionEditor(field)}
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-xl sm:text-2xl font-semibold leading-snug">
-                            {field.hidden
-                              ? "Hidden. "
-                              : `${questionNumberByFieldId[field.id]}. `}
-                            {field.label || "Untitled question"}
-                            {field.required && (
-                              <span className="text-destructive ml-1">*</span>
-                            )}
-                          </p>
-                          {field.description && (
-                            <div
-                              className="text-base text-muted-foreground prose prose-sm max-w-none"
-                              dangerouslySetInnerHTML={{ __html: field.description }}
-                            />
-                          )}
-                        </>
-                      )}
-                      <FocusedFieldInput
-                        key={`preview-${field.id}`}
-                        field={{
-                          id: field.id,
-                          type: field.type,
-                          label: field.label,
-                          description: field.description,
-                          placeholder: field.placeholder,
-                          required: field.required,
-                          options: toPersistedFieldOptions(getFieldOptions(field)),
-                        }}
-                        value={previewValues[field.id] ?? ""}
-                        onChange={(val) =>
-                          setPreviewValues((prev) => ({ ...prev, [field.id]: val }))
-                        }
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Button
-                  size="lg"
-                  className="px-7 text-base glow-surface"
-                  onClick={() => {
-                    const lastInSection =
-                      selectedSectionFields[selectedSectionFields.length - 1];
-                    const lastIndex = orderedQuestionFields.findIndex(
-                      (f) => f.id === lastInSection?.id,
-                    );
-                    const next = orderedQuestionFields[lastIndex + 1];
-                    if (next) {
-                      setSelection({ kind: "field", id: next.id });
-                    } else if (completionField) {
-                      setSelection({ kind: "field", id: completionField.id });
-                    }
-                  }}
-                >
-                  <Check className="h-4 w-4" />
-                  OK
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  press <span className="font-semibold">Enter ↵</span>
-                </span>
-              </div>
-            </div>
-          ) : selectedField ? (
-            <div key={selectedField.id} className="animate-focused-screen space-y-6">
-              <div className="space-y-2">
-                <div className="flex items-start gap-2">
-                  <span className="text-2xl sm:text-3xl font-semibold leading-snug shrink-0">
-                    {selectedQuestionNumber}.
-                  </span>
-                  <InlineEditableLabel
-                    key={`field-label-${selectedField.id}`}
-                    value={selectedField.label}
-                    autoFocus={autoFocusSelectedLabel}
-                    placeholder="Your question here..."
-                    textClassName="text-2xl sm:text-3xl font-semibold leading-snug"
-                    saveStatus={saveStatus[selectedField.id] ?? null}
-                    onSave={(label) =>
-                      updateFieldMutation.mutate({
-                        fieldId: selectedField.id,
-                        data: { label },
-                      })
-                    }
-                  />
-                </div>
-                {fieldDescriptionEditor(selectedField)}
-              </div>
-
-              <FocusedFieldInput
-                key={`preview-${selectedField.id}`}
-                field={{
-                  id: selectedField.id,
-                  type: selectedField.type,
-                  label: selectedField.label,
-                  description: selectedField.description,
-                  placeholder: selectedField.placeholder,
-                  required: selectedField.required,
-                  options: toPersistedFieldOptions(getFieldOptions(selectedField)),
-                }}
-                value={previewValues[selectedField.id] ?? ""}
-                onChange={(val) =>
-                  setPreviewValues((prev) => ({ ...prev, [selectedField.id]: val }))
-                }
-                onCommit={() => selectNextQuestion()}
-              />
-
-              <div className="flex items-center gap-3">
-                <Button
-                  size="lg"
-                  className="px-7 text-base glow-surface"
-                  onClick={selectNextQuestion}
-                >
-                  <Check className="h-4 w-4" />
-                  OK
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  press <span className="font-semibold">Enter ↵</span>
-                </span>
-              </div>
-            </div>
-          ) : selectedStep ? (
-            <div key={selectedStep.id} className="animate-focused-screen space-y-5">
-              <InlineEditableLabel
-                key={`step-title-${selectedStep.id}`}
-                value={selectedStep.title ?? ""}
-                placeholder="Section title (shown as an intro screen)..."
-                textClassName="text-2xl sm:text-3xl font-semibold leading-snug"
-                saveStatus={saveStatus[selectedStep.id] ?? null}
-                allowEmpty
-                onSave={(title) =>
-                  updateStepMutation.mutate({
-                    stepId: selectedStep.id,
-                    data: { title: title.trim() || null },
-                  })
-                }
-              />
-              <RichTextEditor
-                key={`step-rich-desc-${selectedStep.id}`}
-                value={getRenderableRichTextHtml(
-                  selectedStep.richDescription,
-                  selectedStep.description,
-                )}
-                variant="compact"
-                placeholder="Add a short intro, context, or instructions for this section."
-                onSave={(richDescription) => {
-                  const currentValue = getRenderableRichTextHtml(
-                    selectedStep.richDescription,
-                    selectedStep.description,
-                  );
-                  const plainDescription =
-                    richTextToPlainText(richDescription) || null;
-                  if (
-                    richDescription !== currentValue ||
-                    plainDescription !== (selectedStep.description ?? null)
-                  ) {
-                    updateStepMutation.mutate({
-                      stepId: selectedStep.id,
-                      data: {
-                        description: plainDescription,
-                        richDescription,
-                      },
-                    });
-                  }
-                }}
-              />
-              <div className="flex items-center gap-3 pt-1">
-                <Button size="lg" className="px-7 text-base glow-surface" onClick={() => {
-                  const firstField = sortFields(selectedStep.fields ?? []).find((f) => f.type !== "completion");
-                  if (firstField) setSelection({ kind: "field", id: firstField.id });
-                }}>
-                  <ArrowRight className="h-4 w-4" />
-                  Continue
-                </Button>
-                <span className="text-xs text-muted-foreground">
-                  press <span className="font-semibold">Enter ↵</span>
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                The intro screen only shows to respondents when the section has
-                a title or description.
-              </p>
-            </div>
+          ) : canvasStep ? (
+            <FormPageCanvas
+              key={canvasStep.id}
+              step={canvasStep}
+              fields={canvasFields.map((field) => ({
+                id: field.id,
+                type: field.type,
+                label: field.label,
+                description: field.description,
+                placeholder: field.placeholder,
+                required: field.required,
+                hidden: field.hidden,
+                options: toPersistedFieldOptions(getFieldOptions(field)),
+                settings:
+                  field.settings && typeof field.settings === "object"
+                    ? (field.settings as Record<string, unknown>)
+                    : null,
+                visibility: field.visibility ?? null,
+              }))}
+              selectedFieldId={
+                selectedField && selectedField.type !== "completion"
+                  ? selectedField.id
+                  : null
+              }
+              questionNumberByFieldId={questionNumberByFieldId}
+              uploadUrl={`/api/projects/${projectId}/uploads`}
+              previewValues={previewValues}
+              onPreviewValueChange={(fieldId, value) =>
+                setPreviewValues((prev) => ({ ...prev, [fieldId]: value }))
+              }
+              saveStatus={saveStatus}
+              autoFocusSelectedLabel={autoFocusSelectedLabel}
+              onSelectField={(fieldId) => setSelection({ kind: "field", id: fieldId })}
+              onSelectStep={() => setSelection({ kind: "step", id: canvasStep.id })}
+              onSaveLayout={(nextLayout: FormPageLayout) =>
+                persistStepSettings(canvasStep, { pageLayout: nextLayout })
+              }
+              onSaveTitle={(title) =>
+                updateStepMutation.mutate({
+                  stepId: canvasStep.id,
+                  data: { title },
+                })
+              }
+              onSaveRichText={(richDescription, plainDescription) =>
+                updateStepMutation.mutate({
+                  stepId: canvasStep.id,
+                  data: {
+                    description: plainDescription,
+                    richDescription,
+                  },
+                })
+              }
+              onSaveFieldLabel={(fieldId, label) =>
+                updateFieldMutation.mutate({
+                  fieldId,
+                  data: { label },
+                })
+              }
+              onSaveFieldDescription={(fieldId, html) =>
+                updateFieldMutation.mutate({
+                  fieldId,
+                  data: { description: html },
+                })
+              }
+              onUploadError={(error) =>
+                planLimitDialog.handleEntitlementError(
+                  error,
+                  "upload this section image",
+                )
+              }
+            />
           ) : (
             <p className="text-sm text-muted-foreground text-center">
-              Select a question on the left to preview and edit it.
+              Select a page on the left to edit it.
             </p>
           )}
         </div>
@@ -2922,58 +2605,62 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
 
 
-            <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-              <p className="text-sm font-medium">Required</p>
-              <Switch
-                checked={selectedField.required}
-                disabled={!!selectedField.hidden}
+            <SwitchRow
+              title="Required"
+              checked={selectedField.required}
+              disabled={!!selectedField.hidden}
+              onCheckedChange={(checked) =>
+                updateFieldMutation.mutate({
+                  fieldId: selectedField.id,
+                  data: { required: checked },
+                })
+              }
+            />
+
+            {isChoiceLayoutFieldType(selectedField.type) && (
+              <SwitchRow
+                title="Two-column layout"
+                description="Show choices side by side on wider screens"
+                checked={parseOptionsLayout(selectedField.settings) === "two"}
                 onCheckedChange={(checked) =>
                   updateFieldMutation.mutate({
                     fieldId: selectedField.id,
-                    data: { required: checked },
+                    data: {
+                      settings: withOptionsLayout(
+                        selectedField.settings,
+                        checked ? "two" : "one",
+                      ),
+                    },
                   })
                 }
               />
-            </div>
+            )}
 
             {(selectedField.type === "name" || selectedField.type === "email") && (
-              <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Save to contact</p>
-                  <p className="text-xs text-muted-foreground">
-                    Use as the contact&apos;s {selectedField.type}
-                  </p>
-                </div>
-                <Switch
-                  checked={!!selectedField.contactMapping}
-                  onCheckedChange={() => handleContactMappingToggle(selectedField)}
-                />
-              </div>
+              <SwitchRow
+                title="Save to contact"
+                description={`Use as the contact's ${selectedField.type}`}
+                checked={!!selectedField.contactMapping}
+                onCheckedChange={() => handleContactMappingToggle(selectedField)}
+              />
             )}
 
             {selectedField.type !== "completion" && selectedField.type !== "file" && (
-              <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Hidden field</p>
-                  <p className="text-xs text-muted-foreground">
-                    Prefill via ?{selectedField.id}= on links and embeds, or set
-                    a default below.
-                  </p>
-                </div>
-                <Switch
-                  checked={!!selectedField.hidden}
-                  onCheckedChange={(checked) =>
-                    updateFieldMutation.mutate({
-                      fieldId: selectedField.id,
-                      data: {
-                        hidden: checked,
-                        required: false,
-                        visibility: checked ? null : selectedField.visibility,
-                      },
-                    })
-                  }
-                />
-              </div>
+              <SwitchRow
+                title="Hidden field"
+                description="Prefill via ?label= or set default value below"
+                checked={!!selectedField.hidden}
+                onCheckedChange={(checked) =>
+                  updateFieldMutation.mutate({
+                    fieldId: selectedField.id,
+                    data: {
+                      hidden: checked,
+                      required: false,
+                      visibility: checked ? null : selectedField.visibility,
+                    },
+                  })
+                }
+              />
             )}
 
             {selectedField.hidden && (
@@ -2982,12 +2669,12 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 <Input
                   key={`default-${selectedField.id}`}
                   defaultValue={
-                    selectedField.validation &&
-                      typeof selectedField.validation === "object" &&
-                      typeof (selectedField.validation as Record<string, unknown>)
+                    selectedField.settings &&
+                      typeof selectedField.settings === "object" &&
+                      typeof (selectedField.settings as Record<string, unknown>)
                         .defaultValue === "string"
                       ? String(
-                        (selectedField.validation as Record<string, unknown>)
+                        (selectedField.settings as Record<string, unknown>)
                           .defaultValue,
                       )
                       : ""
@@ -2997,10 +2684,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   onBlur={(event) => {
                     const next = event.target.value.trim();
                     const current =
-                      selectedField.validation &&
-                        typeof selectedField.validation === "object"
+                      selectedField.settings &&
+                        typeof selectedField.settings === "object"
                         ? {
-                          ...(selectedField.validation as Record<string, unknown>),
+                          ...(selectedField.settings as Record<string, unknown>),
                         }
                         : {};
                     const previous =
@@ -3013,7 +2700,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                     updateFieldMutation.mutate({
                       fieldId: selectedField.id,
                       data: {
-                        validation:
+                        settings:
                           Object.keys(current).length > 0 ? current : null,
                       },
                     });
@@ -3103,7 +2790,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               );
             })()}
 
-            {!selectedField.hidden && (sourcesByFieldId[selectedField.id] ?? []).length > 0 && (
+            {!selectedField.hidden && (
               <FormConditionEditor
                 title="Show this question when"
                 condition={selectedField.visibility ?? null}
@@ -3168,10 +2855,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 type="url"
                 key={`completion-redirect-${selectedField.id}`}
                 defaultValue={
-                  selectedField.validation &&
-                    typeof selectedField.validation === "object" &&
-                    (selectedField.validation as Record<string, unknown>).redirectUrl
-                    ? String((selectedField.validation as Record<string, unknown>).redirectUrl)
+                  selectedField.settings &&
+                    typeof selectedField.settings === "object" &&
+                    (selectedField.settings as Record<string, unknown>).redirectUrl
+                    ? String((selectedField.settings as Record<string, unknown>).redirectUrl)
                     : ""
                 }
                 placeholder="https://your-site.com/thanks"
@@ -3181,7 +2868,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   updateFieldMutation.mutate({
                     fieldId: selectedField.id,
                     data: {
-                      validation: url ? { redirectUrl: url } : null,
+                      settings: url ? { redirectUrl: url } : null,
                     },
                   });
                 }}
@@ -3212,7 +2899,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         ) : selectedStep ? (
           <>
             <p className="text-sm font-medium">
-              Section settings
+              Page settings
             </p>
 
             {isTemplateMode && (
@@ -3221,7 +2908,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 <InlineEditableLabel
                   key={`settings-step-${selectedStep.id}`}
                   value={selectedStep.title ?? ""}
-                  placeholder="Section title..."
+                  placeholder="Page title..."
                   saveStatus={saveStatus[selectedStep.id] ?? null}
                   allowEmpty
                   onSave={(title) =>
@@ -3234,62 +2921,17 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               </div>
             )}
 
-            <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium">Show questions together</p>
-                <p className="text-xs text-muted-foreground">
-                  All questions on one screen
-                </p>
-              </div>
-              <Switch
-                checked={sectionShowsFieldsTogether(selectedStep.settings)}
-                onCheckedChange={(checked) => {
-                  const current =
-                    selectedStep.settings && typeof selectedStep.settings === "object"
-                      ? (selectedStep.settings as Record<string, unknown>)
-                      : {};
-                  updateStepMutation.mutate({
-                    stepId: selectedStep.id,
-                    data: { settings: { ...current, groupFields: checked } },
-                  });
-                }}
-              />
-            </div>
-
-            <SectionImageField
-              value={getSectionImage(selectedStep.settings)}
-              uploadUrl={`/api/projects/${projectId}/uploads`}
-              onChange={(next: SectionImage | null) => {
-                const current =
-                  selectedStep.settings && typeof selectedStep.settings === "object"
-                    ? (selectedStep.settings as Record<string, unknown>)
-                    : {};
+            <FormConditionEditor
+              title="Show this page when"
+              condition={selectedStep.visibility ?? null}
+              sources={sourcesByStepId[selectedStep.id] ?? []}
+              onChange={(next) =>
                 updateStepMutation.mutate({
                   stepId: selectedStep.id,
-                  data: { settings: { ...current, image: next } },
-                });
-              }}
-              onUploadError={(error) =>
-                planLimitDialog.handleEntitlementError(
-                  error,
-                  "upload this section image",
-                )
+                  data: { visibility: next },
+                })
               }
             />
-
-            {(sourcesByStepId[selectedStep.id] ?? []).length > 0 && (
-              <FormConditionEditor
-                title="Show this section when"
-                condition={selectedStep.visibility ?? null}
-                sources={sourcesByStepId[selectedStep.id] ?? []}
-                onChange={(next) =>
-                  updateStepMutation.mutate({
-                    stepId: selectedStep.id,
-                    data: { visibility: next },
-                  })
-                }
-              />
-            )}
 
             {contentSteps.length > 1 && (
               <Button
@@ -3304,7 +2946,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                 ) : (
                   <Trash2 className="h-3.5 w-3.5" />
                 )}
-                Delete section
+                Delete page
               </Button>
             )}
           </>
@@ -3379,23 +3021,23 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-muted-foreground">Experience</Label>
+                    <Label className="text-xs text-muted-foreground">Transition</Label>
                     <Select
-                      value={form.type}
+                      value={parseFormTransition(form.settings)}
                       onValueChange={(val) =>
-                        updateFormMutation.mutate({ type: val as "multi_step" | "single" })
+                        updateFormMutation.mutate({
+                          settings: buildUpdatedFormSettings({
+                            transition: val as FormTransition,
+                          }),
+                        })
                       }
                     >
                       <SelectTrigger className="h-9">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="multi_step">
-                          Focused — one question at a time
-                        </SelectItem>
-                        <SelectItem value="single">
-                          Classic — all questions on one page
-                        </SelectItem>
+                        <SelectItem value="vertical">Vertical</SelectItem>
+                        <SelectItem value="horizontal">Horizontal</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -3470,24 +3112,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                       }
                     />
                   </div>
-                  <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium">Status</p>
-                      <p className="text-xs text-muted-foreground">
-                        {form.status === "active"
-                          ? "Form is live and accepting responses"
-                          : "Form is hidden from respondents"}
-                      </p>
-                    </div>
-                    <Switch
-                      checked={form.status === "active"}
-                      onCheckedChange={(checked) =>
-                        updateFormMutation.mutate({
-                          status: checked ? "active" : "draft",
-                        })
-                      }
-                    />
-                  </div>
+                  <SwitchRow
+                    title="Status"
+                    description={
+                      form.status === "active"
+                        ? "Form is live and accepting responses"
+                        : "Form is hidden from respondents"
+                    }
+                    checked={form.status === "active"}
+                    onCheckedChange={(checked) =>
+                      updateFormMutation.mutate({
+                        status: checked ? "active" : "draft",
+                      })
+                    }
+                  />
 
                 </div>
               </PopoverContent>
@@ -3564,8 +3202,9 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         <div className="space-y-4">
           <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
             {contentPanel}
-            {settingsPanel}
+            <div className="h-[min(540px,70vh)] min-h-[360px]">{previewCanvas}</div>
           </div>
+          {settingsPanel}
           {props.onboardingFooter}
         </div>
       ) : isDesktop ? (
@@ -3668,7 +3307,6 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 function ContentStepGroup({
   step,
   stepNumber,
-  isGrouped,
   isSelected,
   selectedFieldId,
   questionNumberByFieldId,
@@ -3678,7 +3316,6 @@ function ContentStepGroup({
 }: {
   step: FormStep;
   stepNumber: number;
-  isGrouped: boolean;
   isSelected: boolean;
   selectedFieldId: string | null;
   questionNumberByFieldId: Record<string, number>;
@@ -3726,15 +3363,12 @@ function ContentStepGroup({
           className="flex min-w-0 flex-1 items-baseline gap-2 text-left"
         >
           <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground shrink-0">
-            Section {stepNumber}
+            Page {stepNumber}
           </span>
           {step.title?.trim() && (
             <span className="truncate text-xs font-medium text-foreground">
               {step.title}
             </span>
-          )}
-          {isGrouped && (
-            <Layers className="h-3 w-3 shrink-0 self-center text-muted-foreground/70" />
           )}
         </button>
         {onDeleteStep && (
@@ -3742,7 +3376,7 @@ function ContentStepGroup({
             type="button"
             onClick={onDeleteStep}
             className="rounded-full bg-muted p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-            aria-label={`Delete section ${stepNumber}`}
+            aria-label={`Delete page ${stepNumber}`}
           >
             <X className="h-3 w-3" />
           </button>
@@ -3967,118 +3601,3 @@ function FieldDragPreview({ field }: { field: FormField }) {
   );
 }
 
-// ─── Inline Editable Label ───────────────────────────────────────────────────
-
-function InlineEditableLabel({
-  value,
-  onSave,
-  autoFocus = false,
-  placeholder = "Untitled",
-  saveStatus,
-  textClassName,
-  allowEmpty = false,
-}: {
-  value: string;
-  onSave: (value: string) => void;
-  autoFocus?: boolean;
-  placeholder?: string;
-  saveStatus?: "saving" | "saved" | "error" | null;
-  textClassName?: string;
-  allowEmpty?: boolean;
-}) {
-  const [localValue, setLocalValue] = useState(value);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const isEditingRef = useRef(false);
-
-  useEffect(() => {
-    // Only adopt an external value change when the user isn't actively editing.
-    // Otherwise a background cache update (e.g. the server response to a
-    // sibling mutation) would wipe the characters they're currently typing.
-    if (!isEditingRef.current) setLocalValue(value);
-  }, [value]);
-
-  // Auto-resize textarea to fit content
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (el) {
-      el.style.height = "auto";
-      el.style.height = `${el.scrollHeight}px`;
-    }
-  }, [localValue]);
-
-  return (
-    <div className="flex min-w-0 flex-1 items-start gap-2">
-      <textarea
-        ref={textareaRef}
-        rows={1}
-        autoFocus={autoFocus}
-        value={localValue}
-        placeholder={placeholder}
-        onChange={(e) => setLocalValue(e.target.value)}
-        onFocus={() => {
-          isEditingRef.current = true;
-        }}
-        onBlur={() => {
-          isEditingRef.current = false;
-          const next = localValue.trim();
-          if (next === value) return;
-          if (next || allowEmpty) {
-            onSave(next);
-            return;
-          }
-          setLocalValue(value);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            setLocalValue(value);
-            e.currentTarget.blur();
-          }
-        }}
-        className={cn(
-          "min-w-0 flex-1 text-sm font-medium text-foreground bg-transparent border-0 border-b border-dashed border-transparent hover:border-muted-foreground/30 focus:border-solid focus:border-primary outline-none pb-0.5 w-full transition-colors resize-none overflow-hidden block",
-          textClassName,
-        )}
-      />
-      <div className="relative mt-1.5 shrink-0">
-        <div
-          className="invisible flex items-center gap-1 text-[11px] leading-none"
-          aria-hidden
-        >
-          <AlertCircle className="h-3 w-3" />
-          <span>Failed to save</span>
-        </div>
-        {saveStatus && (
-          <div
-            className={cn(
-              "absolute inset-0 flex items-center justify-end gap-1 text-[11px] leading-none",
-              saveStatus === "saving" && "text-muted-foreground",
-              saveStatus === "saved" && "text-emerald-600",
-              saveStatus === "error" && "text-destructive",
-            )}
-            role="status"
-            aria-live="polite"
-          >
-            {saveStatus === "saving" && (
-              <>
-                <Loader className="h-3 w-3 animate-spin" />
-                <span>Saving...</span>
-              </>
-            )}
-            {saveStatus === "saved" && (
-              <>
-                <Check className="h-3 w-3" />
-                <span>Saved</span>
-              </>
-            )}
-            {saveStatus === "error" && (
-              <>
-                <AlertCircle className="h-3 w-3" />
-                <span>Failed to save</span>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}

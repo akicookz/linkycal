@@ -370,7 +370,6 @@ export const createFormSchema = z.object({
     .min(1)
     .max(80)
     .regex(/^[a-z0-9-]+$/),
-  type: z.enum(["multi_step", "single"]).default("single"),
   settings: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -382,13 +381,12 @@ export const updateFormSchema = z.object({
     .max(80)
     .regex(/^[a-z0-9-]+$/)
     .optional(),
-  type: z.enum(["multi_step", "single"]).optional(),
   status: z.enum(["draft", "active", "archived"]).optional(),
   settings: z.record(z.string(), z.unknown()).nullable().optional(),
 });
 
 export const createFormStepSchema = z.object({
-  sortOrder: z.number().int().min(0).default(0),
+  sortOrder: z.number().int().min(0).optional(),
   title: z.string().max(200).nullable().optional(),
   description: z.string().max(2000).optional(),
   richDescription: z.string().max(10000).optional(),
@@ -470,7 +468,7 @@ export const createFormFieldObject = z.object({
     .describe(
       "Never shown to respondents. Still accepts prefill and conditions. Cannot be required, have visibility rules, or be type file or completion.",
     ),
-  validation: z.record(z.string(), z.unknown()).optional(),
+  settings: z.record(z.string(), z.unknown()).optional(),
   options: z.array(z.object({ label: z.string(), value: z.string() })).optional(),
   visibility: formConditionSchema.nullable().optional(),
   contactMapping: z.enum(["name", "email"]).nullable().optional(),
@@ -513,7 +511,7 @@ export const updateFormFieldObject = z.object({
       .describe(
         "Never shown to respondents. Still accepts prefill and conditions. Cannot be required, have visibility rules, or be type file or completion.",
       ),
-    validation: z.record(z.string(), z.unknown()).nullable().optional(),
+    settings: z.record(z.string(), z.unknown()).nullable().optional(),
     options: z
       .array(z.object({ label: z.string(), value: z.string() }))
       .nullable()

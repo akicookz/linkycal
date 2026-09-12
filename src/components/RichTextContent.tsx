@@ -18,7 +18,7 @@ export function RichTextContent({
   return (
     <div
       className={cn(
-        "text-sm leading-relaxed text-muted-foreground [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_em]:italic [&_p:not(:last-child)]:mb-2 [&_strong]:font-semibold",
+        "text-sm leading-relaxed text-muted-foreground [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_em]:italic [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-[12px] [&_p:not(:last-child)]:mb-2 [&_strong]:font-semibold",
         className,
       )}
       dangerouslySetInnerHTML={{ __html: html }}

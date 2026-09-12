@@ -1825,7 +1825,7 @@ function buildOpenApi(routes: RegisteredRoute[]): OpenApiDocument {
             hidden: {
               type: "boolean",
               description:
-                "Never shown to respondents. Still accepts query/embed prefill, validation.defaultValue, and conditions.",
+                "Never shown to respondents. Still accepts query/embed prefill, settings.defaultValue, and conditions.",
             },
             required: { type: "boolean" },
           },

@@ -22,6 +22,7 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-field-fill: var(--field-fill);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -77,6 +78,7 @@
 
   --muted: #f4f7f5;
   --muted-foreground: #5c7268;
+  --field-fill: #fafafa;
 
   --accent: #f1f5f3;
   --accent-foreground: #0f1a14;
@@ -410,11 +412,14 @@ html[data-embed="1"] body {
 @keyframes focusedScreenIn {
   from {
     opacity: 0;
-    transform: translateY(var(--screen-from, 40px));
+    transform: translate(
+      var(--screen-from-x, 0),
+      var(--screen-from-y, 40px)
+    );
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(0, 0);
   }
 }
 

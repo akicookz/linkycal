@@ -17,19 +17,38 @@ function normalizePlainText(value: string | null | undefined): string {
   return (value ?? "").replace(/\r\n?/g, "\n").trim();
 }
 
-function sanitizeHref(value: string | null): string | null {
-  if (!value) return null;
-
+function resolveUrl(value: string): URL | null {
   try {
-    const parsed = new URL(value, window.location.origin);
-    if (!ALLOWED_LINK_PROTOCOLS.includes(parsed.protocol)) {
-      return null;
-    }
-
-    return parsed.href;
+    const origin =
+      typeof window !== "undefined" && window.location?.origin
+        ? window.location.origin
+        : "https://linkycal.local";
+    return new URL(value, origin);
   } catch {
     return null;
   }
+}
+
+function sanitizeHref(value: string | null): string | null {
+  if (!value) return null;
+  const parsed = resolveUrl(value);
+  if (!parsed || !ALLOWED_LINK_PROTOCOLS.includes(parsed.protocol)) {
+    return null;
+  }
+  return parsed.href;
+}
+
+function sanitizeImageSrc(value: string | null): string | null {
+  if (!value) return null;
+  const parsed = resolveUrl(value);
+  if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
+    return null;
+  }
+  return parsed.href;
+}
+
+function hasRichImage(html: string): boolean {
+  return /<img\b/i.test(html);
 }
 
 function serializeNode(node: ChildNode): string {
@@ -57,6 +76,13 @@ function serializeNode(node: ChildNode): string {
 
   if (tagName === "i" || tagName === "em") {
     return children ? `<em>${children}</em>` : "";
+  }
+
+  if (tagName === "img") {
+    const src = sanitizeImageSrc(element.getAttribute("src"));
+    if (!src) return "";
+    const alt = escapeAttribute(element.getAttribute("alt") ?? "");
+    return `<img src="${escapeAttribute(src)}" alt="${alt}">`;
   }
 
   if (tagName === "a") {
@@ -93,8 +119,9 @@ export function plainTextToRichTextHtml(value: string | null | undefined): strin
 }
 
 export function sanitizeRichTextHtml(value: string | null | undefined): string | null {
-  if (!value || typeof DOMParser === "undefined") {
-    return plainTextToRichTextHtml(value);
+  if (!value) return null;
+  if (typeof DOMParser === "undefined") {
+    return sanitizeRichTextWithoutDom(value);
   }
 
   const parser = new DOMParser();
@@ -107,6 +134,7 @@ export function sanitizeRichTextHtml(value: string | null | undefined): string |
     .join("")
     .trim();
 
+  if (hasRichImage(sanitized)) return sanitized;
   return getPlainTextFromSanitizedHtml(sanitized).length === 0 ? null : sanitized;
 }
 
@@ -116,7 +144,10 @@ export function richTextToPlainText(value: string | null | undefined): string {
 }
 
 export function isRichTextEmpty(value: string | null | undefined): boolean {
-  return richTextToPlainText(value).length === 0;
+  const sanitized = sanitizeRichTextHtml(value);
+  if (!sanitized) return true;
+  if (hasRichImage(sanitized)) return false;
+  return getPlainTextFromSanitizedHtml(sanitized).length === 0;
 }
 
 export function getRenderableRichTextHtml(
@@ -124,6 +155,25 @@ export function getRenderableRichTextHtml(
   fallbackPlainText?: string | null,
 ): string | null {
   return sanitizeRichTextHtml(richValue) ?? plainTextToRichTextHtml(fallbackPlainText);
+}
+
+function sanitizeRichTextWithoutDom(value: string): string | null {
+  const images = (value.match(/<img\b[^>]*>/gi) ?? [])
+    .map(function toSafeImage(tag) {
+      const src =
+        tag.match(/src\s*=\s*"([^"]+)"/i)?.[1] ??
+        tag.match(/src\s*=\s*'([^']+)'/i)?.[1] ??
+        null;
+      const alt = tag.match(/alt\s*=\s*"([^"]*)"/i)?.[1] ?? "";
+      const safeSrc = sanitizeImageSrc(src);
+      if (!safeSrc) return "";
+      return `<img src="${escapeAttribute(safeSrc)}" alt="${escapeAttribute(alt)}">`;
+    })
+    .join("");
+  const withoutImages = value.replace(/<img\b[^>]*>/gi, "");
+  const text = plainTextToRichTextHtml(withoutImages.replace(/<[^>]+>/g, " "));
+  if (!text && !images) return null;
+  return `${text ?? ""}${images}`;
 }
 
 function getPlainTextFromSanitizedHtml(value: string | null | undefined): string {

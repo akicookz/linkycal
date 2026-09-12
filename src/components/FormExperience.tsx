@@ -13,18 +13,14 @@ import {
   ArrowRight,
   CalendarCheck,
   Check,
-  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   Loader,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  FocusedFieldInput,
-  isChoiceFieldType,
-  type FocusedFieldDensity,
-} from "@/components/FocusedFieldInput";
 import { FocusedStepProgress } from "@/components/FocusedStepProgress";
 import { FormFieldRenderer } from "@/components/FormFieldRenderer";
 import { Logo } from "@/components/Logo";
@@ -34,15 +30,21 @@ import {
   createFormExperienceCheckpoint,
   createFormTransitionLock,
   buildFormExperienceAnalyticsStages,
-  getFocusedQuestionProgress,
   validateFormExperienceField,
   type FormExperienceAnalyticsEvent,
   type FormExperienceAnalyticsStage,
   type FormExperienceCheckpoint as FormExperienceCheckpointData,
   type FormExperienceField,
   type FormExperienceForm,
-  type FormExperienceScreen,
 } from "@/lib/form-experience";
+import {
+  isDefaultPageTitle,
+  parseFormTransition,
+  parsePageLayout,
+  type FormPageFieldBlock,
+  type FormPageLayout,
+  type FormTransition,
+} from "@/lib/form-pages";
 import {
   experienceThemeStyle,
   type FormExperienceTheme,
@@ -51,7 +53,6 @@ import {
   getSectionImage,
   sectionImageStyle,
   type SectionImage,
-  type SectionImageLayout,
 } from "@/lib/form-sections";
 import { cn } from "@/lib/utils";
 import {
@@ -64,6 +65,15 @@ import {
 export type { FormExperienceTheme };
 
 export type FormExperienceCheckpoint = FormExperienceCheckpointData;
+
+function isChoiceFieldType(type: string): boolean {
+  return (
+    type === "select" ||
+    type === "multi_select" ||
+    type === "radio" ||
+    type === "checkbox"
+  );
+}
 
 export interface FormExperienceProps {
   form: FormExperienceForm;
@@ -86,49 +96,21 @@ export interface FormExperienceProps {
   onExitBack?: () => void;
 }
 
-interface FocusedQuestionHeadingProps {
-  number: number;
-  label: string;
-  required: boolean;
-  density: FocusedFieldDensity;
-  level?: "h1" | "h2";
-}
-
-function FocusedQuestionHeading(props: FocusedQuestionHeadingProps) {
-  const {
-    number,
-    label,
-    required,
-    density,
-    level: Heading = "h1",
-  } = props;
-
-  return (
-    <div className="flex min-w-0 items-start gap-2.5">
-      <span
-        data-focused-question-number={number}
-        className={cn(
-          "shrink-0 pt-[0.42em] font-medium tabular-nums text-muted-foreground/80",
-          density === "compact" ? "text-[11px] sm:text-xs" : "text-xs sm:text-sm",
-        )}
-      >
-        {number}.
-      </span>
-      <Heading
-        className={cn(
-          "min-w-0 font-medium leading-[1.28] tracking-[-0.015em] text-balance",
-          density === "compact" ? "text-lg sm:text-xl" : "text-xl sm:text-2xl",
-        )}
-      >
-        {label}
-        {required && (
-          <span className="ml-1 align-super text-[0.58em] font-semibold text-destructive/80">
-            *
-          </span>
-        )}
-      </Heading>
-    </div>
-  );
+function screenFromStyle(
+  transition: FormTransition,
+  direction: "forward" | "back",
+): CSSProperties {
+  const offset = direction === "forward" ? "48px" : "-48px";
+  if (transition === "horizontal") {
+    return {
+      "--screen-from-x": offset,
+      "--screen-from-y": "0px",
+    } as CSSProperties;
+  }
+  return {
+    "--screen-from-x": "0px",
+    "--screen-from-y": offset,
+  } as CSSProperties;
 }
 
 export function FormExperience(props: FormExperienceProps) {
@@ -153,7 +135,6 @@ export function FormExperience(props: FormExperienceProps) {
     onExitBack,
   } = props;
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [screenIndex, setScreenIndex] = useState(0);
   const [direction, setDirection] = useState<"forward" | "back">("forward");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -169,25 +150,30 @@ export function FormExperience(props: FormExperienceProps) {
       }),
     [form, values, surface, excludedFieldIds, requiredFieldIds],
   );
-  const { steps, screens } = model;
+  const { steps } = model;
+  const transition = parseFormTransition(form.settings);
   const analyticsStages = useMemo(
     () =>
       buildFormExperienceAnalyticsStages({
-        formType: form.type,
         steps,
-        screens,
       }),
-    [form.type, steps, screens],
+    [steps],
   );
   const currentStep = steps[currentStepIndex];
   const currentFields = currentStep?.fields ?? [];
-  const currentScreen = screens[screenIndex] ?? null;
-  const isLastStep = currentStepIndex === steps.length - 1;
-  const isLastScreen = screenIndex === screens.length - 1;
-  const currentAnalyticsStage =
-    form.type === "multi_step"
-      ? analyticsStages[screenIndex] ?? null
-      : analyticsStages[currentStepIndex] ?? null;
+  const currentFieldIds = currentFields.map(function idOf(field) {
+    return field.id;
+  });
+  const pageLayout = currentStep
+    ? parsePageLayout(currentStep.settings, currentFieldIds)
+    : null;
+  const isLastStep =
+    steps.length === 0 || currentStepIndex === steps.length - 1;
+  const currentAnalyticsStage = analyticsStages[currentStepIndex] ?? null;
+  const choiceField =
+    currentFields.length === 1 && isChoiceFieldType(currentFields[0].type)
+      ? currentFields[0]
+      : null;
   const analyticsObserverRef = useRef(onAnalyticsEvent);
   analyticsObserverRef.current = onAnalyticsEvent;
   const previousAnalyticsStagesRef = useRef<FormExperienceAnalyticsStage[]>(
@@ -228,18 +214,11 @@ export function FormExperience(props: FormExperienceProps) {
     return errors;
   }
 
-  function validateScreen(screen: FormExperienceScreen) {
-    if (screen.kind === "statement") return {};
-    if (screen.kind === "question") return validateFields([screen.field]);
-    return validateFields(screen.fields);
-  }
-
   async function checkpoint(
     stepIndex: number,
     isFinal: boolean,
   ): Promise<boolean> {
     const currentCheckpoint = createFormExperienceCheckpoint({
-      formType: form.type,
       surface,
       steps,
       hiddenFields: model.allFields.filter((field) => field.hidden),
@@ -264,50 +243,29 @@ export function FormExperience(props: FormExperienceProps) {
       return submitEmptyBooking();
     }
     return transitionLock.current.run(async () => {
-      const screen = screens[screenIndex];
-      if (!screen) return false;
-
-      const errors = validateScreen(screen);
+      const errors = validateFields(currentFields);
       if (Object.keys(errors).length > 0) {
         setFieldErrors(errors);
-        const analyticsStage = analyticsStages[screenIndex];
-        if (analyticsStage) {
+        if (currentAnalyticsStage) {
           emitAnalyticsEvent({
             type: "validation_failed",
-            screen: analyticsStage,
+            screen: currentAnalyticsStage,
           });
         }
         return false;
       }
-
-      const next = screens[screenIndex + 1];
-      const leavingStep = isLastScreen || next?.stepIndex !== screen.stepIndex;
-      if (leavingStep) {
-        const accepted = await checkpoint(screen.stepIndex, isLastScreen);
-        if (!accepted) return false;
-        const analyticsStage = analyticsStages[screenIndex];
-        if (analyticsStage) {
-          emitAnalyticsEvent({
-            type: "completed",
-            screen: analyticsStage,
-          });
-        }
-        if (isLastScreen) return true;
-      } else {
-        const analyticsStage = analyticsStages[screenIndex];
-        if (analyticsStage) {
-          emitAnalyticsEvent({
-            type: "completed",
-            screen: analyticsStage,
-          });
-        }
+      const accepted = await checkpoint(currentStepIndex, isLastStep);
+      if (accepted && currentAnalyticsStage) {
+        emitAnalyticsEvent({
+          type: "completed",
+          screen: currentAnalyticsStage,
+        });
       }
-
-      setDirection("forward");
-      setScreenIndex((previous) =>
-        Math.min(previous + 1, screens.length - 1),
-      );
-      return true;
+      if (accepted && !isLastStep) {
+        setDirection("forward");
+        setCurrentStepIndex((previous) => previous + 1);
+      }
+      return accepted;
     });
   }
 
@@ -316,54 +274,14 @@ export function FormExperience(props: FormExperienceProps) {
     return transitionLock.current.run(() => checkpoint(0, true));
   }
 
-  async function submitCurrentStep(): Promise<boolean> {
-    if (submitting) return false;
-    return transitionLock.current.run(async () => {
-      const errors = validateFields(currentFields);
-      if (Object.keys(errors).length > 0) {
-        setFieldErrors(errors);
-        const analyticsStage = analyticsStages[currentStepIndex];
-        if (analyticsStage) {
-          emitAnalyticsEvent({
-            type: "validation_failed",
-            screen: analyticsStage,
-          });
-        }
-        return false;
-      }
-      const accepted = await checkpoint(currentStepIndex, isLastStep);
-      const analyticsStage = analyticsStages[currentStepIndex];
-      if (accepted && analyticsStage) {
-        emitAnalyticsEvent({
-          type: "completed",
-          screen: analyticsStage,
-        });
-      }
-      if (accepted && !isLastStep) {
-        setCurrentStepIndex((previous) => previous + 1);
-      }
-      return accepted;
-    });
-  }
-
   function goPrev() {
     if (submitting || transitionLock.current.isLocked()) return;
     clearAutoAdvance();
-
-    if (form.type === "multi_step") {
-      if (screenIndex === 0) {
-        if (surface === "booking") onExitBack?.();
-        return;
-      }
-      setDirection("back");
-      setScreenIndex((previous) => Math.max(previous - 1, 0));
-      return;
-    }
-
     if (currentStepIndex === 0) {
       if (surface === "booking") onExitBack?.();
       return;
     }
+    setDirection("back");
     setCurrentStepIndex((previous) => Math.max(previous - 1, 0));
   }
 
@@ -373,13 +291,6 @@ export function FormExperience(props: FormExperienceProps) {
       setCurrentStepIndex(steps.length - 1);
     }
   }, [steps.length, currentStepIndex]);
-
-  useEffect(() => {
-    if (screens.length === 0) return;
-    if (screenIndex >= screens.length) {
-      setScreenIndex(screens.length - 1);
-    }
-  }, [screens.length, screenIndex]);
 
   useEffect(() => {
     if (model.hiddenValueFieldIds.length === 0) return;
@@ -414,13 +325,13 @@ export function FormExperience(props: FormExperienceProps) {
   // timers never act on stale state.
   const goNextRef = useRef(goNext);
   const goPrevRef = useRef(goPrev);
-  const currentScreenRef = useRef<FormExperienceScreen | null>(currentScreen);
+  const choiceFieldRef = useRef(choiceField);
   const setValueRef = useRef(setValue);
   const valuesRef = useRef(values);
   useEffect(() => {
     goNextRef.current = goNext;
     goPrevRef.current = goPrev;
-    currentScreenRef.current = currentScreen;
+    choiceFieldRef.current = choiceField;
     setValueRef.current = setValue;
     valuesRef.current = values;
   });
@@ -435,11 +346,7 @@ export function FormExperience(props: FormExperienceProps) {
 
   useEffect(() => () => clearAutoAdvance(), []);
 
-  // ─── Focused keyboard shortcuts ──────────────────────────────────────────
-
   useEffect(() => {
-    if (form.type !== "multi_step") return;
-
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement | null;
       const inTextInput =
@@ -447,7 +354,6 @@ export function FormExperience(props: FormExperienceProps) {
         target instanceof HTMLTextAreaElement ||
         (target?.isContentEditable ?? false);
 
-      // Text inputs handle Enter themselves (FocusedFieldInput onCommit).
       if (event.key === "Enter" && !inTextInput) {
         event.preventDefault();
         goNextRef.current();
@@ -456,34 +362,33 @@ export function FormExperience(props: FormExperienceProps) {
 
       if (inTextInput) return;
 
-      if (event.key === "ArrowDown") {
+      const nextKey = transition === "horizontal" ? "ArrowRight" : "ArrowDown";
+      const prevKey = transition === "horizontal" ? "ArrowLeft" : "ArrowUp";
+      if (event.key === nextKey) {
         event.preventDefault();
         goNextRef.current();
         return;
       }
-      if (event.key === "ArrowUp") {
+      if (event.key === prevKey) {
         event.preventDefault();
         goPrevRef.current();
         return;
       }
 
-      // Letter shortcuts for choice questions (A, B, C, ...)
       if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const screen = currentScreenRef.current;
+      const field = choiceFieldRef.current;
       if (
-        screen?.kind !== "question" ||
-        !isChoiceFieldType(screen.field.type) ||
-        screen.field.type === "checkbox" ||
+        !field ||
+        field.type === "checkbox" ||
         !/^[a-z]$/i.test(event.key)
       ) {
         return;
       }
       const optionIndex = event.key.toUpperCase().charCodeAt(0) - 65;
-      const option = screen.field.options?.[optionIndex];
+      const option = field.options?.[optionIndex];
       if (!option) return;
       event.preventDefault();
 
-      const field = screen.field;
       if (field.type === "multi_select") {
         const selected = (valuesRef.current[field.id] ?? "")
           .split(",")
@@ -500,16 +405,12 @@ export function FormExperience(props: FormExperienceProps) {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form.type]);
+  }, [transition]);
 
   if (surface === "booking" && !model.hasDisplayContent) {
     return renderEmptyBookingExperience();
   }
-  if (form.type === "multi_step") {
-    return renderFocusedExperience();
-  }
-  return renderClassicExperience();
+  return renderPageExperience();
 
   function renderEmptyBookingExperience() {
     return (
@@ -550,218 +451,164 @@ export function FormExperience(props: FormExperienceProps) {
     );
   }
 
-  function renderFocusedExperience() {
+  function handleFieldChange(field: FormExperienceField, value: string) {
+    setValue(field.id, value);
+    if (
+      choiceField &&
+      choiceField.id === field.id &&
+      field.type !== "checkbox" &&
+      field.type !== "multi_select"
+    ) {
+      scheduleAutoAdvance();
+    }
+  }
+
+  function renderPageChrome(): ReactNode {
+    const title = currentStep?.title?.trim() ?? "";
+    const showTitle =
+      !isChromeHidden(chrome, "intro") &&
+      !!title &&
+      !isDefaultPageTitle(title);
+    const showIntro =
+      !isChromeHidden(chrome, "intro") &&
+      !!(
+        currentStep?.richDescription?.trim() || currentStep?.description?.trim()
+      );
+    const image = getSectionImage(currentStep?.settings);
+    const showImage = !isChromeHidden(chrome, "media") && !!image;
+    if (!showTitle && !showIntro && !showImage) return null;
+    return (
+      <div className="space-y-3">
+        {showTitle ? (
+          <p
+            className="text-sm font-medium leading-snug"
+            {...chromeMarkerProps("intro")}
+          >
+            {title}
+          </p>
+        ) : null}
+        {showIntro ? (
+          <div {...chromeMarkerProps("intro")}>
+            <RichTextContent
+              value={currentStep?.richDescription}
+              fallbackPlainText={currentStep?.description}
+              className={cn(
+                surface === "booking"
+                  ? "text-sm sm:text-base text-muted-foreground text-pretty"
+                  : "text-base sm:text-lg text-muted-foreground text-pretty",
+              )}
+            />
+          </div>
+        ) : null}
+        {showImage && image ? (
+          <div
+            className="relative aspect-[4/3] w-full overflow-hidden rounded-[16px]"
+            {...chromeMarkerProps("media")}
+          >
+            <SectionMedia image={image} />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderPageField(block: FormPageFieldBlock): ReactNode {
+    const field = currentFields.find(function match(item) {
+      return item.id === block.fieldId;
+    });
+    if (!field) return null;
+    return (
+      <FormFieldRenderer
+        key={field.id}
+        field={field}
+        value={values[field.id] ?? ""}
+        onChange={(value) => handleFieldChange(field, value)}
+        fileValue={files[field.id] ?? null}
+        onFileChange={(file) => setFileValue(field.id, file)}
+        error={fieldErrors[field.id]}
+        textareaRows={3}
+      />
+    );
+  }
+
+  function renderPageColumns(layout: FormPageLayout): ReactNode {
+    return (
+      <>
+        {renderPageChrome()}
+        <div className="space-y-6">
+          {layout.rows.map(function renderRow(row, rowIndex) {
+            const left = row.left ? renderPageField(row.left) : null;
+            const right = row.right ? renderPageField(row.right) : null;
+            if (left && right) {
+              return (
+                <div
+                  key={`row-${rowIndex}`}
+                  className="grid gap-6 md:grid-cols-2"
+                >
+                  <div>{left}</div>
+                  <div>{right}</div>
+                </div>
+              );
+            }
+            return <div key={`row-${rowIndex}`}>{left ?? right}</div>;
+          })}
+        </div>
+      </>
+    );
+  }
+
+  function renderPageExperience() {
     const isCompact = surface === "booking";
-    const focusedDensity: FocusedFieldDensity = isCompact
-      ? "compact"
-      : "comfortable";
-    const questionProgress = getFocusedQuestionProgress(screens, screenIndex);
-    const currentSectionImage =
-      currentScreen && !isChromeHidden(chrome, "media")
-        ? getSectionImage(
-          steps.find((step) => step.id === currentScreen.stepId)?.settings,
-        )
-        : null;
-    const animatedScreen = currentScreen ? (
+    const hiddenInputs = model.allFields
+      .filter((field) => field.hidden)
+      .map((field) => (
+        <input
+          key={field.id}
+          type="hidden"
+          name={field.id}
+          value={values[field.id] ?? ""}
+        />
+      ));
+
+    const standaloneActions = surface === "standalone" && (
+      <div className="flex items-center gap-3 pt-1">
+        <Button
+          type="button"
+          onClick={goNext}
+          disabled={submitting}
+          className="active:scale-[0.96]"
+        >
+          {submitting ? (
+            <Loader className="h-4 w-4 animate-spin" />
+          ) : isLastStep ? (
+            <Check className="h-4 w-4" />
+          ) : null}
+          {isLastStep ? "Submit" : "Next"}
+          {!submitting && !isLastStep && <ArrowRight className="h-4 w-4" />}
+        </Button>
+        <span className="hidden sm:inline text-[11px] text-muted-foreground/80">
+          press <span className="font-semibold">Enter ↵</span>
+        </span>
+      </div>
+    );
+
+    const pageBody = currentStep && pageLayout ? (
       <div
-        key={currentScreen.key}
+        key={currentStep.id}
         data-density={isCompact ? "compact" : "comfortable"}
         className="animate-focused-screen"
-        style={
-          {
-            "--screen-from": direction === "forward" ? "48px" : "-48px",
-          } as CSSProperties
-        }
+        style={screenFromStyle(transition, direction)}
       >
-        {currentScreen.kind === "statement" ? (
-          <div className={isCompact ? "space-y-4" : "space-y-6"}>
-            {!isChromeHidden(chrome, "intro") ? (
-              <div {...chromeMarkerProps("intro")}>
-                {currentScreen.title && (
-                  <h1
-                    className={cn(
-                      isCompact
-                        ? "text-xl sm:text-2xl"
-                        : "text-2xl sm:text-3xl",
-                      "font-medium leading-[1.2] tracking-[-0.02em] text-balance",
-                    )}
-                  >
-                    {currentScreen.title}
-                  </h1>
-                )}
-                <RichTextContent
-                  value={currentScreen.richDescription}
-                  fallbackPlainText={currentScreen.description}
-                  className={cn(
-                    isCompact
-                      ? "text-sm sm:text-base text-muted-foreground text-pretty"
-                      : "text-base sm:text-lg text-muted-foreground text-pretty",
-                  )}
-                />
-              </div>
-            ) : null}
-            {surface === "standalone" && (
-              <div className="flex items-center gap-3 pt-1">
-                <Button
-                  onClick={goNext}
-                  disabled={submitting}
-                  className="active:scale-[0.96]"
-                >
-                  {submitting ? (
-                    <Loader className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="h-4 w-4" />
-                  )}
-                  Continue
-                </Button>
-                <span className="hidden sm:inline text-[11px] text-muted-foreground/80">
-                  press <span className="font-semibold">Enter ↵</span>
-                </span>
-              </div>
-            )}
-          </div>
-        ) : currentScreen.kind === "group" ? (
-          <div className={isCompact ? "space-y-5" : "space-y-7"}>
-            <div className={isCompact ? "space-y-6" : "space-y-8"}>
-              {currentScreen.fields.map((field, index) => (
-                <div key={field.id} className="space-y-3">
-                  <FocusedQuestionHeading
-                    number={currentScreen.firstQuestionNumber + index}
-                    label={field.label}
-                    required={field.required}
-                    density={focusedDensity}
-                    level="h2"
-                  />
-                  {field.description && (
-                    <div
-                      className={cn(
-                        isCompact
-                          ? "text-sm sm:text-base text-muted-foreground prose prose-sm max-w-none text-pretty"
-                          : "text-base text-muted-foreground prose prose-sm max-w-none text-pretty",
-                      )}
-                      dangerouslySetInnerHTML={{ __html: field.description }}
-                    />
-                  )}
-                  <FocusedFieldInput
-                    key={field.id}
-                    field={field}
-                    value={values[field.id] ?? ""}
-                    onChange={(value) => setValue(field.id, value)}
-                    fileValue={files[field.id] ?? null}
-                    onFileChange={(file) => setFileValue(field.id, file)}
-                    onCommit={(trigger) => {
-                      // No auto-advance on choice — other questions on
-                      // this screen may still be unanswered.
-                      if (trigger === "enter") goNext();
-                    }}
-                    autoFocus={index === 0}
-                    error={fieldErrors[field.id]}
-                    density={focusedDensity}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {surface === "standalone" && (
-              <>
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={goNext}
-                    disabled={submitting}
-                    className="active:scale-[0.96]"
-                  >
-                    {submitting ? (
-                      <Loader className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Check className="h-4 w-4" />
-                    )}
-                    {isLastScreen ? "Submit" : "OK"}
-                  </Button>
-                  <span className="hidden sm:inline text-[11px] text-muted-foreground/80">
-                    press <span className="font-semibold">Enter ↵</span>
-                  </span>
-                </div>
-
-                {error && (
-                  <p className="text-sm text-destructive flex items-center gap-1.5">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    {error}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        ) : (
-          <div className={isCompact ? "space-y-5" : "space-y-7"}>
-            <div className={isCompact ? "space-y-2" : "space-y-2.5"}>
-              <FocusedQuestionHeading
-                number={currentScreen.questionNumber}
-                label={currentScreen.field.label}
-                required={currentScreen.field.required}
-                density={focusedDensity}
-              />
-              {currentScreen.field.description && (
-                <div
-                  className={cn(
-                    isCompact
-                      ? "text-sm sm:text-base text-muted-foreground prose prose-sm max-w-none text-pretty"
-                      : "text-base text-muted-foreground prose prose-sm max-w-none text-pretty",
-                  )}
-                  dangerouslySetInnerHTML={{
-                    __html: currentScreen.field.description,
-                  }}
-                />
-              )}
-            </div>
-
-            <FocusedFieldInput
-              key={currentScreen.field.id}
-              field={currentScreen.field}
-              value={values[currentScreen.field.id] ?? ""}
-              onChange={(value) => setValue(currentScreen.field.id, value)}
-              fileValue={files[currentScreen.field.id] ?? null}
-              onFileChange={(file) =>
-                setFileValue(currentScreen.field.id, file)
-              }
-              onCommit={(trigger) => {
-                if (trigger === "choice") scheduleAutoAdvance();
-                else goNext();
-              }}
-              autoFocus
-              error={fieldErrors[currentScreen.field.id]}
-              density={focusedDensity}
-            />
-
-            {surface === "standalone" && (
-              <>
-                <div className="flex items-center gap-3">
-                  <Button
-                    onClick={goNext}
-                    disabled={submitting}
-                    className="active:scale-[0.96]"
-                  >
-                    {submitting ? (
-                      <Loader className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Check className="h-4 w-4" />
-                    )}
-                    {isLastScreen ? "Submit" : "OK"}
-                  </Button>
-                  <span className="hidden sm:inline text-[11px] text-muted-foreground/80">
-                    press <span className="font-semibold">Enter ↵</span>
-                  </span>
-                </div>
-
-                {error && (
-                  <p className="text-sm text-destructive flex items-center gap-1.5">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    {error}
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        )}
+        <div className={isCompact ? "space-y-5" : "space-y-7"}>
+          {renderPageColumns(pageLayout)}
+          {standaloneActions}
+          {surface === "standalone" && error && (
+            <p className="text-sm text-destructive flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5" />
+              {error}
+            </p>
+          )}
+        </div>
       </div>
     ) : (
       <p className="text-sm text-muted-foreground text-center">
@@ -774,23 +621,19 @@ export function FormExperience(props: FormExperienceProps) {
         <FocusedFormExperienceShell
           theme={theme}
           chrome={chrome}
-          progressCurrent={questionProgress.current}
-          progressTotal={questionProgress.total}
+          progressCurrent={currentStepIndex}
+          progressTotal={steps.length}
           showNav
-          canPrev={screenIndex > 0 && !submitting}
-          canNext={!isLastScreen && !submitting}
+          navAxis={transition}
+          canPrev={currentStepIndex > 0 && !submitting}
+          canNext={!submitting}
           onPrev={goPrev}
           onNext={goNext}
-          media={
-            currentSectionImage ? (
-              <SectionMedia image={currentSectionImage} />
-            ) : undefined
-          }
-          mediaLayout={currentSectionImage?.layout}
         >
           {head}
           {honeypot}
-          {animatedScreen}
+          {hiddenInputs}
+          {pageBody}
         </FocusedFormExperienceShell>
       );
     }
@@ -799,13 +642,14 @@ export function FormExperience(props: FormExperienceProps) {
       <>
         {head}
         {honeypot}
+        {hiddenInputs}
         <FocusedStepProgress
-          current={questionProgress.current}
-          total={questionProgress.total}
+          current={currentStepIndex}
+          total={steps.length}
           surface="booking"
           className="mb-1"
         />
-        <div className="py-4 sm:py-6">{animatedScreen}</div>
+        <div className="py-4 sm:py-6">{pageBody}</div>
         <div className="mt-8 flex items-center justify-between">
           <button
             type="button"
@@ -824,12 +668,12 @@ export function FormExperience(props: FormExperienceProps) {
           >
             {submitting ? (
               <Loader className="h-4 w-4 animate-spin" />
-            ) : isLastScreen ? (
+            ) : isLastStep ? (
               <CalendarCheck className="h-4 w-4" />
             ) : (
               <ArrowRight className="h-4 w-4" />
             )}
-            {isLastScreen ? "Confirm Booking" : "Next"}
+            {isLastStep ? "Confirm Booking" : "Next"}
           </Button>
         </div>
         {error && (
@@ -841,207 +685,6 @@ export function FormExperience(props: FormExperienceProps) {
       </>
     );
   }
-
-  function renderClassicExperience() {
-    if (surface === "booking") {
-      return (
-        <div>
-          {head}
-          {honeypot}
-          {!isChromeHidden(chrome, "intro") ? (
-            <div {...chromeMarkerProps("intro")}>
-              {currentStep?.title && (
-                <h2 className="text-base font-semibold mb-1">{currentStep.title}</h2>
-              )}
-              <RichTextContent
-                value={currentStep?.richDescription}
-                fallbackPlainText={currentStep?.description}
-                className="mb-5 text-[13px]"
-              />
-            </div>
-          ) : null}
-
-          <div className="space-y-4">
-            {currentFields.map((field) => (
-              <FormFieldRenderer
-                key={field.id}
-                field={field}
-                value={values[field.id] ?? ""}
-                onChange={(value) => setValue(field.id, value)}
-                fileValue={files[field.id] ?? null}
-                onFileChange={(file) => setFileValue(field.id, file)}
-                error={fieldErrors[field.id]}
-              />
-            ))}
-
-            {error && isLastStep && (
-              <p className="text-sm text-destructive">{error}</p>
-            )}
-          </div>
-
-          <div className="flex items-center justify-between mt-6">
-            <button
-              type="button"
-              onClick={goPrev}
-              disabled={submitting}
-              className="flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </button>
-            {isLastStep ? (
-              <Button
-                type="button"
-                disabled={submitting}
-                onClick={submitCurrentStep}
-                className="px-10"
-              >
-                {submitting ? (
-                  <Loader className="h-4 w-4 animate-spin" />
-                ) : (
-                  <CalendarCheck className="h-4 w-4" />
-                )}
-                {submitting ? "Booking..." : "Confirm Booking"}
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                disabled={submitting}
-                onClick={submitCurrentStep}
-                className="px-10"
-              >
-                Next
-                <ArrowRight className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    const classicSectionImage = isChromeHidden(chrome, "media")
-      ? null
-      : getSectionImage(currentStep?.settings);
-
-    return (
-      <FormExperiencePageShell
-        theme={theme}
-        chrome={chrome}
-        media={
-          classicSectionImage ? (
-            <SectionMedia image={classicSectionImage} />
-          ) : undefined
-        }
-        mediaLayout={classicSectionImage?.layout}
-      >
-        {head}
-        <div className="mb-7">
-          <div className="flex flex-col-reverse gap-4 md:flex-row md:items-center md:justify-between md:gap-4">
-            {!isChromeHidden(chrome, "title") ? (
-              <h1
-                className="min-w-0 text-lg font-semibold"
-                {...chromeMarkerProps("title")}
-              >
-                {form.name}
-              </h1>
-            ) : null}
-            <FocusedStepProgress
-              current={currentStepIndex}
-              total={steps.length}
-              className="md:w-[40%] -mt-2 md:max-w-[40%] md:shrink-0 lg:w-32 lg:max-w-32"
-            />
-          </div>
-          {!isChromeHidden(chrome, "intro") ? (
-            <div {...chromeMarkerProps("intro")}>
-              {steps.length > 1 && currentStep?.title && (
-                <p className="mt-1.5 text-sm text-muted-foreground">{currentStep.title}</p>
-              )}
-              <RichTextContent
-                value={currentStep?.richDescription}
-                fallbackPlainText={currentStep?.description}
-                className="mt-1.5"
-              />
-            </div>
-          ) : null}
-        </div>
-
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            submitCurrentStep();
-          }}
-          className="space-y-5 sm:space-y-6"
-        >
-          {honeypot}
-
-          {model.allFields
-            .filter((field) => field.hidden)
-            .map((field) => (
-              <input
-                key={field.id}
-                type="hidden"
-                name={field.id}
-                value={values[field.id] ?? ""}
-              />
-            ))}
-
-          {currentFields.map((field) => (
-            <FormFieldRenderer
-              key={field.id}
-              field={field}
-              value={values[field.id] ?? ""}
-              onChange={(value) => setValue(field.id, value)}
-              fileValue={files[field.id] ?? null}
-              onFileChange={(file) => setFileValue(field.id, file)}
-              error={fieldErrors[field.id]}
-              textareaRows={3}
-            />
-          ))}
-
-          {error && (
-            <p className="text-sm text-destructive flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" />
-              {error}
-            </p>
-          )}
-
-          <div className="flex items-center gap-3 pt-6">
-            {currentStepIndex > 0 && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={goPrev}
-                disabled={submitting}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Back
-              </Button>
-            )}
-            <Button
-              type="submit"
-              disabled={submitting}
-              className="min-w-[100px]"
-            >
-              {submitting ? (
-                <>
-                  <Loader className="h-4 w-4 animate-spin" />{" "}
-                  {isLastStep ? "Submitting..." : "Next"}
-                </>
-              ) : isLastStep ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4" /> Submit
-                </>
-              ) : (
-                <>
-                  Next <ChevronRight className="h-4 w-4" />
-                </>
-              )}
-            </Button>
-          </div>
-        </form>
-      </FormExperiencePageShell>
-    );
-  }
 }
 
 // ─── Focused Shell ───────────────────────────────────────────────────────────
@@ -1050,8 +693,6 @@ export function FormExperience(props: FormExperienceProps) {
 // form pane, vertically centered question area, navigation chevrons + branding
 // at the bottom. Embeds hug content height so the host iframe can shrink.
 
-// Fills its (relative, overflow-hidden) container while honoring the stored
-// focal point + zoom. Shared by the focused split and the classic card.
 function SectionMedia({ image }: { image: SectionImage }) {
   return (
     <img
@@ -1071,12 +712,11 @@ export interface FocusedFormExperienceShellProps {
   progressCurrent: number;
   progressTotal: number;
   showNav: boolean;
+  navAxis?: FormTransition;
   canPrev?: boolean;
   canNext?: boolean;
   onPrev?: () => void;
   onNext?: () => void;
-  media?: ReactNode;
-  mediaLayout?: SectionImageLayout;
 }
 
 function FocusedFormPane(props: {
@@ -1109,16 +749,16 @@ export function FocusedFormExperienceShell(
     progressCurrent,
     progressTotal,
     showNav,
+    navAxis = "vertical",
     canPrev = false,
     canNext = false,
     onPrev,
     onNext,
-    media,
-    mediaLayout = "left",
   } = props;
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
   const showBranding = !isChromeHidden(chrome, "branding");
+  const isVerticalNav = navAxis === "vertical";
 
   const stepProgress = (
     <FocusedStepProgress
@@ -1136,40 +776,9 @@ export function FocusedFormExperienceShell(
       )}
       style={experienceThemeStyle(theme, isEmbedded ? "embed" : "page")}
     >
-      {media && mediaLayout === "top" ? (
-        <div className="flex-1 flex flex-col min-h-0">
-          <div
-            className="relative w-full h-44 shrink-0 overflow-hidden sm:h-60"
-            {...chromeMarkerProps("media")}
-          >
-            {media}
-          </div>
-          <FocusedFormPane className="py-12" progress={stepProgress}>
-            {children}
-          </FocusedFormPane>
-        </div>
-      ) : media ? (
-        <div
-          className={cn(
-            "flex-1 flex min-h-0",
-            mediaLayout === "right" && "flex-row-reverse",
-          )}
-        >
-          <div
-            className="relative hidden md:block md:w-[44%] shrink-0 overflow-hidden"
-            {...chromeMarkerProps("media")}
-          >
-            {media}
-          </div>
-          <FocusedFormPane progress={stepProgress}>
-            {children}
-          </FocusedFormPane>
-        </div>
-      ) : (
-        <FocusedFormPane progress={stepProgress}>{children}</FocusedFormPane>
-      )}
+      <FocusedFormPane progress={stepProgress}>{children}</FocusedFormPane>
 
-      <div className="flex items-center justify-between px-5 pb-4 sm:px-8 sm:pb-5">
+      <div className="mt-auto flex shrink-0 items-end justify-between px-5 pb-4 sm:px-8 sm:pb-5">
         {showBranding ? (
           <Link
             to="/"
@@ -1183,24 +792,43 @@ export function FocusedFormExperienceShell(
         )}
 
         {showNav && (
-          <div className="flex items-center gap-1">
+          <div
+            className={cn(
+              "flex items-center gap-1",
+              isVerticalNav && "flex-col",
+            )}
+          >
             <button
               type="button"
               onClick={onPrev}
               disabled={!canPrev}
               aria-label="Previous question"
-              className="flex h-9 w-9 items-center justify-center rounded-l-[10px] bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={cn(
+                "flex h-9 w-9 items-center justify-center bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed",
+                isVerticalNav ? "rounded-t-[10px]" : "rounded-l-[10px]",
+              )}
             >
-              <ChevronLeft className="h-5 w-5" />
+              {isVerticalNav ? (
+                <ChevronUp className="h-5 w-5" />
+              ) : (
+                <ChevronLeft className="h-5 w-5" />
+              )}
             </button>
             <button
               type="button"
               onClick={onNext}
               disabled={!canNext}
               aria-label="Next question"
-              className="flex h-9 w-9 items-center justify-center rounded-r-[10px] bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+              className={cn(
+                "flex h-9 w-9 items-center justify-center bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed",
+                isVerticalNav ? "rounded-b-[10px]" : "rounded-r-[10px]",
+              )}
             >
-              <ChevronRight className="h-5 w-5" />
+              {isVerticalNav ? (
+                <ChevronDown className="h-5 w-5" />
+              ) : (
+                <ChevronRight className="h-5 w-5" />
+              )}
             </button>
           </div>
         )}
@@ -1215,62 +843,23 @@ export interface FormExperiencePageShellProps {
   children: ReactNode;
   theme?: FormExperienceTheme;
   chrome?: PublicChrome;
-  media?: ReactNode;
-  mediaLayout?: SectionImageLayout;
 }
 
 export function FormExperiencePageShell(
   props: FormExperiencePageShellProps,
 ): ReactNode {
-  const {
-    children,
-    theme,
-    chrome = EMPTY_CHROME,
-    media,
-    mediaLayout = "left",
-  } = props;
+  const { children, theme, chrome = EMPTY_CHROME } = props;
   const [searchParams] = useSearchParams();
   const isEmbedded = searchParams.get("embed") === "1";
   const showBanner =
-    !!theme?.bannerImage && !isChromeHidden(chrome, "banner") && !media;
+    !!theme?.bannerImage && !isChromeHidden(chrome, "banner");
   const showBranding = !isChromeHidden(chrome, "branding");
   const themeStyle = experienceThemeStyle(
     theme,
     isEmbedded ? "embed" : "page",
   );
 
-  const card = media ? (
-    <div className="w-full max-w-[60rem] mx-auto">
-      <div
-        className={cn(
-          "overflow-hidden rounded-[var(--radius)]",
-          !isEmbedded && "bg-card",
-          mediaLayout !== "top" && "flex",
-          mediaLayout === "right" && "flex-row-reverse",
-        )}
-      >
-        {mediaLayout === "top" && (
-          <div
-            className="relative h-44 w-full shrink-0 overflow-hidden sm:h-60"
-            {...chromeMarkerProps("media")}
-          >
-            {media}
-          </div>
-        )}
-        {(mediaLayout === "left" || mediaLayout === "right") && (
-          <div
-            className="relative hidden shrink-0 overflow-hidden sm:block sm:w-[42%]"
-            {...chromeMarkerProps("media")}
-          >
-            {media}
-          </div>
-        )}
-        <div className="min-w-0 flex-1 px-4 py-4">
-          {children}
-        </div>
-      </div>
-    </div>
-  ) : (
+  const card = (
     <div className="w-full max-w-[60rem] mx-auto">
       {showBanner && (
         <div

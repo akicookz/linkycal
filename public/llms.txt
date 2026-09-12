@@ -56,7 +56,7 @@ Report filters:
 
 Booking reports preserve high-level totals and unique-journey stages, continuation/drop-off rates, Journey sources, and Visitor devices. UTC-backed visitor events add clicked weekdays and selected-date availability checks with minimum/maximum slot counts. Persisted booking rows add most-booked weekdays and times; every request counts once regardless of confirmed, pending, cancelled, declined, rescheduled, or replacement status. Booking-request distributions follow period and event type filters because D1 booking rows do not persist UTM, source, or device attribution.
 
-Form reports preserve high-level totals and add the rendered statement/question/group/step sequence, unique-journey continuation and drop-offs, conditional skips, Journey sources, and Visitor devices. Focused forms continue to persist every step response independently of analytics delivery.
+Form reports preserve high-level totals and add the rendered page sequence, unique-journey continuation and drop-offs, conditional skips, Journey sources, and Visitor devices. Each page still persists independently of analytics delivery.
 
 Aggregate analytics never contain names, emails, raw answers, journey IDs, IP addresses, or raw errors. Provider payloads also exclude labels and visitor histories. Detailed results expose the first-ingestion boundary so older traffic is not presented as zero detailed activity.
 
@@ -126,7 +126,7 @@ Further documentation:
 - OpenAPI 3.1: https://linkycal.com/openapi.json
 
 Form MCP details:
-- create_form_field and update_form_field accept optional hidden. Hidden fields stay off the public screen, still accept prefill and conditions, and cannot be required, have visibility rules, or be type file or completion. Store a static fallback in validation.defaultValue. Public links prefill with ?field_id=value. Widgets accept hidden: { field_id: value } and forward the host page query string.
+- create_form_field and update_form_field accept optional hidden. Hidden fields stay off the public screen, still accept prefill and conditions, and cannot be required, have visibility rules, or be type file or completion. Store a static fallback in settings.defaultValue. Public links prefill with ?field_id=value. Widgets accept hidden: { field_id: value } and forward the host page query string.
 - get_form and the REST field list return each field's hidden flag.
 
 Analytics MCP details:

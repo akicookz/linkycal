@@ -103,7 +103,7 @@ export function WorkflowConditionEditor({
             emit({ when: v === "any" ? "any" : "all", rules })
           }
         >
-          <SelectTrigger className="h-6 w-auto text-[11px] px-2 rounded-full bg-background">
+          <SelectTrigger variant="underline">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -127,7 +127,7 @@ export function WorkflowConditionEditor({
           return (
             <div key={idx} className="flex items-start gap-1.5 flex-wrap">
               <Select
-                value={rule.source}
+                value={variable ? rule.source : undefined}
                 onValueChange={(source) =>
                   updateRule(
                     idx,
@@ -135,8 +135,8 @@ export function WorkflowConditionEditor({
                   )
                 }
               >
-                <SelectTrigger className="h-7 text-[11px] px-2 w-[180px] bg-background">
-                  <SelectValue />
+                <SelectTrigger variant="underline">
+                  <SelectValue placeholder="Select field" />
                 </SelectTrigger>
                 <SelectContent>
                   {variables.flatMap((group) =>
@@ -160,7 +160,7 @@ export function WorkflowConditionEditor({
                   })
                 }
               >
-                <SelectTrigger className="h-7 text-[11px] px-2 w-[140px] bg-background">
+                <SelectTrigger variant="underline">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -177,7 +177,7 @@ export function WorkflowConditionEditor({
                   value={String(rule.value ?? "false")}
                   onValueChange={(value) => updateRule(idx, { value })}
                 >
-                  <SelectTrigger className="h-7 w-[120px] bg-background px-2 text-[11px]">
+                  <SelectTrigger variant="underline">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -190,7 +190,7 @@ export function WorkflowConditionEditor({
               {needsValue && valueType === "number" && (
                 <Input
                   type="number"
-                  className="h-7 w-[160px] bg-background text-[11px]"
+                  className="h-7 w-40 rounded-none border-0 border-b border-foreground/25 bg-transparent px-0 text-[13px] shadow-none focus-visible:border-foreground focus-visible:ring-0"
                   placeholder="Number"
                   value={
                     rule.value === undefined || rule.value === null
@@ -203,7 +203,7 @@ export function WorkflowConditionEditor({
 
               {needsValue && valueType === "text" && (
                 <Input
-                  className="h-7 w-[160px] bg-background text-[11px]"
+                  className="h-7 w-40 rounded-none border-0 border-b border-foreground/25 bg-transparent px-0 text-[13px] shadow-none focus-visible:border-foreground focus-visible:ring-0"
                   placeholder="Value"
                   value={
                     rule.value === undefined || rule.value === null

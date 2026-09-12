@@ -155,3 +155,91 @@ export function isStepVisible(
 ): boolean {
   return evaluateFormCondition(step.visibility ?? null, inputs);
 }
+
+export type FormConditionSourceField = {
+  id: string;
+  label: string;
+  type: string;
+  stepTitle: string;
+  options: Array<{ label: string; value: string }> | null;
+};
+
+export interface FormConditionSourceStep {
+  id: string;
+  sortOrder: number;
+  title: string | null;
+  fields: Array<{
+    id: string;
+    type: string;
+    label: string;
+    sortOrder: number;
+    options: Array<{ label: string; value: string }> | null;
+  }>;
+}
+
+function isQuestionField(type: string): boolean {
+  return type !== "completion";
+}
+
+function orderBySortThenIndex<T extends { sortOrder: number }>(
+  items: readonly T[],
+): T[] {
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      if (a.item.sortOrder !== b.item.sortOrder) {
+        return a.item.sortOrder - b.item.sortOrder;
+      }
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
+function toSourceField(
+  field: FormConditionSourceStep["fields"][number],
+  stepTitle: string,
+): FormConditionSourceField {
+  return {
+    id: field.id,
+    label: field.label,
+    type: field.type,
+    stepTitle,
+    options: field.options ?? null,
+  };
+}
+
+export function buildFormConditionSources(
+  steps: readonly FormConditionSourceStep[],
+): {
+  sourcesByFieldId: Record<string, FormConditionSourceField[]>;
+  sourcesByStepId: Record<string, FormConditionSourceField[]>;
+} {
+  const orderedSteps = orderBySortThenIndex(steps);
+  const sourcesByFieldId: Record<string, FormConditionSourceField[]> = {};
+  const sourcesByStepId: Record<string, FormConditionSourceField[]> = {};
+
+  for (let stepIndex = 0; stepIndex < orderedSteps.length; stepIndex++) {
+    const step = orderedSteps[stepIndex];
+    const stepTitle = step.title?.trim() || `Page ${stepIndex + 1}`;
+    const earlierPages = orderedSteps.slice(0, stepIndex).flatMap((earlier, earlierIndex) => {
+      const earlierTitle = earlier.title?.trim() || `Page ${earlierIndex + 1}`;
+      return orderBySortThenIndex(earlier.fields ?? [])
+        .filter((field) => isQuestionField(field.type))
+        .map((field) => toSourceField(field, earlierTitle));
+    });
+    sourcesByStepId[step.id] = earlierPages;
+
+    const ownFields = orderBySortThenIndex(step.fields ?? []);
+    for (let fieldIndex = 0; fieldIndex < ownFields.length; fieldIndex++) {
+      const target = ownFields[fieldIndex];
+      if (!isQuestionField(target.type)) continue;
+      const earlierInStep = ownFields
+        .slice(0, fieldIndex)
+        .filter((field) => isQuestionField(field.type))
+        .map((field) => toSourceField(field, stepTitle));
+      sourcesByFieldId[target.id] = [...earlierPages, ...earlierInStep];
+    }
+  }
+
+  return { sourcesByFieldId, sourcesByStepId };
+}

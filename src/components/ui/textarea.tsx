@@ -11,23 +11,11 @@ const textareaVariants = cva(
         default:
           "min-h-16 rounded-[12px] border border-input bg-muted/50 px-3 py-2 resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-invalid:border-destructive",
         focused:
-          "min-h-11 resize-none overflow-hidden rounded-[var(--radius)] border-0 bg-primary/[0.03] px-4 py-3 shadow-none ring-shadow placeholder:text-muted-foreground/45 focus:bg-primary/[0.045] focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 aria-invalid:ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
-      },
-      size: {
-        default: "",
-        lg: "",
+          "min-h-11 resize-none overflow-hidden rounded-[var(--radius)] border-0 bg-field-fill px-4 py-3 shadow-none ring-shadow placeholder:text-muted-foreground/45 focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 aria-invalid:ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
       },
     },
-    compoundVariants: [
-      {
-        variant: "focused",
-        size: "lg",
-        class: "min-h-12 max-w-xl",
-      },
-    ],
     defaultVariants: {
       variant: "default",
-      size: "default",
     },
   },
 );
@@ -35,12 +23,12 @@ const textareaVariants = cva(
 const Textarea = React.forwardRef<
   HTMLTextAreaElement,
   React.ComponentProps<"textarea"> & VariantProps<typeof textareaVariants>
->(function Textarea({ className, variant, size, ...props }, ref) {
+>(function Textarea({ className, variant, ...props }, ref) {
   return (
     <textarea
       ref={ref}
       data-slot="textarea"
-      className={cn(textareaVariants({ variant, size }), className)}
+      className={cn(textareaVariants({ variant }), className)}
       {...props}
     />
   );

@@ -3,6 +3,11 @@ import { Check, Star, Upload, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  optionsLayoutClassName,
+  parseOptionsLayout,
+  type OptionsLayout,
+} from "@/lib/form-field-settings";
 import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -15,10 +20,13 @@ export interface FormFieldData {
   placeholder: string | null;
   required: boolean;
   options: Array<{ label: string; value: string }> | null;
+  settings?: Record<string, unknown> | null;
   contactMapping?: string | null;
 }
 
 // ─── Field Renderer ──────────────────────────────────────────────────────────
+
+export type FormFieldChrome = "full" | "control";
 
 export function FormFieldRenderer({
   field,
@@ -28,6 +36,7 @@ export function FormFieldRenderer({
   onFileChange,
   error,
   textareaRows = 4,
+  chrome = "full",
 }: {
   field: FormFieldData;
   value: string;
@@ -36,6 +45,7 @@ export function FormFieldRenderer({
   onFileChange?: (file: File | null) => void;
   error?: string;
   textareaRows?: number;
+  chrome?: FormFieldChrome;
 }) {
   const id = `field-${field.id}`;
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,23 +60,26 @@ export function FormFieldRenderer({
   // Completion fields are not rendered as form inputs
   if (field.type === "completion") return null;
 
+  const showChrome = chrome === "full";
+  const hasSupportingCopy = Boolean(field.description) || showsChoiceHint;
+
   return (
-    <div className="space-y-1.5">
-      {showsFieldLabel && (
+    <div className={cn(showChrome && "space-y-1.5", showChrome && !hasSupportingCopy && "space-y-3")}>
+      {showChrome && showsFieldLabel && (
         <Label htmlFor={labelTargetId} className="text-sm font-medium">
           {field.label}
           {field.required && <span className="text-destructive ml-0.5">*</span>}
         </Label>
       )}
 
-      {field.description && (
+      {showChrome && field.description && (
         <div
           className="text-xs leading-5 text-muted-foreground prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{ __html: field.description }}
         />
       )}
 
-      {showsChoiceHint && (
+      {showChrome && showsChoiceHint && (
         <p className="text-xs leading-5 text-muted-foreground">
           {field.placeholder}
         </p>
@@ -81,13 +94,14 @@ export function FormFieldRenderer({
           required={field.required}
           rows={textareaRows}
           aria-invalid={error ? true : undefined}
-          className="rounded-[var(--radius)]"
+          variant="focused"
         />
       ) : field.type === "select" ? (
         <ChoiceFieldGroup
           id={id}
           mode="select"
           options={field.options}
+          layout={parseOptionsLayout(field.settings)}
           value={value}
           onChange={onChange}
           error={error}
@@ -97,6 +111,7 @@ export function FormFieldRenderer({
           id={id}
           mode="multi_select"
           options={field.options}
+          layout={parseOptionsLayout(field.settings)}
           value={value}
           onChange={onChange}
           error={error}
@@ -106,6 +121,7 @@ export function FormFieldRenderer({
           id={id}
           mode="radio"
           options={field.options}
+          layout={parseOptionsLayout(field.settings)}
           value={value}
           onChange={onChange}
           error={error}
@@ -172,7 +188,7 @@ export function FormFieldRenderer({
           placeholder={field.placeholder ?? undefined}
           required={field.required}
           aria-invalid={error ? true : undefined}
-          className="rounded-[var(--radius)]"
+          variant="focused"
         />
       )}
 
@@ -219,8 +235,9 @@ function FileInput({
       <label
         htmlFor={id}
         className={cn(
-          "flex cursor-pointer items-center gap-3 rounded-[var(--radius)] border border-border px-4 py-3.5 transition-all hover:border-primary/25 hover:bg-white",
-          error && "border-destructive/35",
+          "flex cursor-pointer items-center gap-3 rounded-[var(--radius)] border-0 bg-field-fill px-4 py-3.5 ring-shadow transition-all hover:ring-shadow-[color-mix(in_srgb,var(--primary)_32%,transparent)]",
+          error &&
+          "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
         )}
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary">
@@ -278,6 +295,7 @@ function ChoiceFieldGroup({
   id,
   mode,
   options,
+  layout,
   value,
   onChange,
   error,
@@ -285,6 +303,7 @@ function ChoiceFieldGroup({
   id: string;
   mode: ChoiceMode;
   options: Array<{ label: string; value: string }> | null;
+  layout: OptionsLayout;
   value: string;
   onChange: (value: string) => void;
   error?: string;
@@ -293,7 +312,13 @@ function ChoiceFieldGroup({
   const usesRadioIndicator = mode === "radio";
 
   return (
-    <div className="space-y-2">
+    <div
+      className={optionsLayoutClassName(
+        layout,
+        "space-y-2",
+        "grid gap-2 md:grid-cols-2",
+      )}
+    >
       {options?.map((option, index) => {
         const selected =
           mode === "multi_select"
@@ -360,12 +385,14 @@ function ChoiceCard({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-center gap-4 rounded-[var(--radius)] border px-4 py-3.5 transition-all",
-        "bg-card",
+        "flex cursor-pointer items-center gap-4 rounded-[var(--radius)] border-0 px-4 ring-shadow transition-all",
+        description ? "min-h-11 py-2.5" : "h-11",
         selected
-          ? "border-primary/40 bg-primary/5"
-          : "border-border hover:border-primary/25 hover:bg-white",
-        error && !selected && "border-destructive/35",
+          ? "bg-field-fill ring-shadow-[var(--primary)]"
+          : "bg-field-fill hover:ring-shadow-[color-mix(in_srgb,var(--primary)_32%,transparent)]",
+        error &&
+        !selected &&
+        "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
       )}
     >
       {children}
@@ -394,11 +421,11 @@ function ChoiceIndicator({
   return (
     <span
       className={cn(
-        "ml-3 flex h-5 w-5 shrink-0 items-center justify-center border transition-all",
+        "ml-3 flex h-5 w-5 shrink-0 items-center justify-center border-0 ring-shadow transition-all",
         control === "radio" ? "rounded-full" : "rounded-[6px]",
         selected
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-white text-transparent",
+          ? "bg-primary text-primary-foreground ring-shadow-[var(--primary)]"
+          : "bg-background/80 text-transparent",
       )}
     >
       {control === "radio" ? (

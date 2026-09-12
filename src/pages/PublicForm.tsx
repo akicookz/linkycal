@@ -17,7 +17,6 @@ import {
   buildFormExperienceModel,
   getAllFormFields,
   getCompletionField,
-  getFocusedQuestionProgress,
   getSortedFormSteps,
   type FormExperienceAnalyticsEvent,
   type FormExperienceAnalyticsStage,
@@ -129,7 +128,6 @@ export default function PublicForm() {
     return { ...(themeFromProject ?? {}), ...(themeOverride ?? {}) };
   }, [themeFromProject, themeOverride]);
 
-  const isFocusedExperience = form?.type === "multi_step";
   const analytics = useMemo<FunnelAnalyticsDispatcher | null>(() => {
     if (!formSlug || !project) return null;
     return createFunnelAnalyticsDispatcher({
@@ -300,7 +298,7 @@ export default function PublicForm() {
       type: field.type,
       options: field.options,
       hidden: field.hidden,
-      validation: field.validation,
+      settings: field.settings,
     }));
     const prefilled = {
       ...hiddenFieldDefaults(prefillFields),
@@ -314,10 +312,10 @@ export default function PublicForm() {
   // Completion redirect — hook must be declared before any early returns
   // so the hook call order stays stable across loading/error/success renders.
   const completionRedirectUrl =
-    completionField?.validation &&
-    typeof completionField.validation.redirectUrl === "string" &&
-    completionField.validation.redirectUrl.trim()
-      ? completionField.validation.redirectUrl.trim()
+    completionField?.settings &&
+    typeof completionField.settings.redirectUrl === "string" &&
+    completionField.settings.redirectUrl.trim()
+      ? completionField.settings.redirectUrl.trim()
       : null;
   useEffect(() => {
     if (!submitted || !completionRedirectUrl) return;
@@ -595,12 +593,7 @@ export default function PublicForm() {
         <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center mb-5">
           <CheckCircle2 className="h-7 w-7 text-primary" />
         </div>
-        <h2
-          className={cn(
-            "font-semibold mb-2",
-            isFocusedExperience ? "text-2xl sm:text-3xl" : "text-xl",
-          )}
-        >
+        <h2 className="font-semibold mb-2 text-2xl sm:text-3xl">
           {completionTitle}
         </h2>
         {completionDescription ? (
@@ -619,37 +612,13 @@ export default function PublicForm() {
       </div>
     );
 
-    if (isFocusedExperience) {
-      const completionScreens = buildFormExperienceModel({
-        form,
-        values: {},
-        surface: "standalone",
-      }).screens;
-      const completionProgress = getFocusedQuestionProgress(
-        completionScreens,
-        completionScreens.length - 1,
-      );
-      return (
-        <ExperienceThemeRoot
-          ref={embedRootRef}
-          theme={theme}
-          compiledCss={compiledCss}
-          chrome={chrome}
-        >
-          <FocusedFormExperienceShell
-            theme={theme}
-            chrome={chrome}
-            progressCurrent={completionProgress.current}
-            progressTotal={completionProgress.total}
-            showNav={false}
-          >
-            {seoHead}
-            {completionContent}
-          </FocusedFormExperienceShell>
-        </ExperienceThemeRoot>
-      );
-    }
-
+    const pageCount = form
+      ? buildFormExperienceModel({
+          form,
+          values: {},
+          surface: "standalone",
+        }).steps.length
+      : 0;
     return (
       <ExperienceThemeRoot
         ref={embedRootRef}
@@ -657,13 +626,16 @@ export default function PublicForm() {
         compiledCss={compiledCss}
         chrome={chrome}
       >
-        <FormExperiencePageShell
+        <FocusedFormExperienceShell
           theme={theme}
           chrome={chrome}
+          progressCurrent={pageCount > 0 ? pageCount - 1 : 0}
+          progressTotal={pageCount}
+          showNav={false}
         >
           {seoHead}
-          <div className="py-16">{completionContent}</div>
-        </FormExperiencePageShell>
+          {completionContent}
+        </FocusedFormExperienceShell>
       </ExperienceThemeRoot>
     );
   }

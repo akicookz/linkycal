@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from "react";
-import { Bold, Italic, Link2 } from "lucide-react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { Bold, ImageIcon, Italic, Link2, Loader } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  firstImageFile,
+  uploadProjectImage,
+} from "@/lib/project-image-upload";
 import { isRichTextEmpty, sanitizeRichTextHtml } from "@/lib/rich-text";
 import { cn } from "@/lib/utils";
 
@@ -13,22 +17,36 @@ interface RichTextEditorProps {
   // only shows the formatting toolbar while editing — for in-canvas editing.
   variant?: "default" | "compact";
   autoFocus?: boolean;
+  uploadUrl?: string;
+  onUploadError?: (error: unknown) => boolean;
   onSave: (value: string | null) => void;
 }
 
-export function RichTextEditor({
-  value,
-  placeholder = "Write something...",
-  className,
-  variant = "default",
-  autoFocus = false,
-  onSave,
-}: RichTextEditorProps) {
+export interface RichTextEditorHandle {
+  insertImageFile: (file: File) => Promise<void>;
+}
+
+export const RichTextEditor = forwardRef<RichTextEditorHandle, RichTextEditorProps>(
+  function RichTextEditor(
+    {
+      value,
+      placeholder = "Write something...",
+      className,
+      variant = "default",
+      autoFocus = false,
+      uploadUrl,
+      onUploadError,
+      onSave,
+    },
+    ref,
+  ) {
   const editorRef = useRef<HTMLDivElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [draftValue, setDraftValue] = useState(
     () => sanitizeRichTextHtml(value) ?? "",
   );
   const [isFocused, setIsFocused] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const isCompact = variant === "compact";
 
   useEffect(() => {
@@ -82,6 +100,40 @@ export function RichTextEditor({
     syncDraftFromDom();
   }
 
+  function persistDraft(nextValue: string) {
+    const currentValue = sanitizeRichTextHtml(value) ?? "";
+    if (nextValue !== currentValue) {
+      onSave(nextValue || null);
+    }
+  }
+
+  function insertImage(url: string) {
+    editorRef.current?.focus();
+    const safeSrc = sanitizeRichTextHtml(`<img src="${url}" alt="">`);
+    if (!safeSrc) return;
+    document.execCommand("insertHTML", false, safeSrc);
+    persistDraft(syncDraftFromDom());
+  }
+
+  async function insertImageFile(file: File) {
+    if (!uploadUrl) return;
+    setUploading(true);
+    try {
+      const url = await uploadProjectImage(uploadUrl, file);
+      insertImage(url);
+    } catch (error) {
+      if (!onUploadError?.(error)) {
+        console.error("Upload error:", error);
+      }
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  useImperativeHandle(ref, function handle() {
+    return { insertImageFile };
+  });
+
   function handleBlur() {
     setIsFocused(false);
 
@@ -130,6 +182,26 @@ export function RichTextEditor({
         <Link2 className="h-3.5 w-3.5" />
         Link
       </Button>
+      {uploadUrl ? (
+        <Button
+          type="button"
+          variant={isCompact ? "ghost" : "outline"}
+          size="sm"
+          className={toolbarButton}
+          disabled={uploading}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={function openImagePicker() {
+            fileInputRef.current?.click();
+          }}
+        >
+          {uploading ? (
+            <Loader className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <ImageIcon className="h-3.5 w-3.5" />
+          )}
+          Image
+        </Button>
+      ) : null}
     </div>
   );
 
@@ -149,7 +221,7 @@ export function RichTextEditor({
             className={cn(
               "pointer-events-none absolute text-muted-foreground",
               isCompact
-                ? "left-0 top-0.5 text-base text-muted-foreground/60"
+                ? "left-0 top-0.5 text-sm text-muted-foreground/60"
                 : "left-3 top-3 text-sm",
             )}
           >
@@ -166,21 +238,52 @@ export function RichTextEditor({
           }}
           onBlur={handleBlur}
           onPaste={(event) => {
+            const image = firstImageFile(event.clipboardData);
+            if (image && uploadUrl) {
+              event.preventDefault();
+              void insertImageFile(image);
+              return;
+            }
             event.preventDefault();
             const text = event.clipboardData.getData("text/plain");
             document.execCommand("insertText", false, text);
             syncDraftFromDom();
           }}
+          onDragOver={function allowImageDrop(event) {
+            if (uploadUrl && firstImageFile(event.dataTransfer)) {
+              event.preventDefault();
+            }
+          }}
+          onDrop={function dropImage(event) {
+            const image = firstImageFile(event.dataTransfer);
+            if (!image || !uploadUrl) return;
+            event.preventDefault();
+            event.stopPropagation();
+            void insertImageFile(image);
+          }}
           className={cn(
-            "leading-relaxed outline-none transition-colors [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_em]:italic [&_p:not(:last-child)]:mb-2 [&_strong]:font-semibold",
+            "leading-relaxed outline-none transition-colors [&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_em]:italic [&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-[12px] [&_p:not(:last-child)]:mb-2 [&_strong]:font-semibold",
             isCompact
               ? // Mirror InlineEditableLabel's affordance so title and
                 // description feel like one editing surface.
-                "min-h-[1.75rem] border-0 border-b border-dashed border-transparent bg-transparent py-0.5 text-base text-muted-foreground hover:border-muted-foreground/30 focus:border-solid focus:border-primary"
+                "min-h-[1.5rem] border-0 border-b border-dashed border-transparent bg-transparent py-0.5 text-sm text-muted-foreground hover:border-muted-foreground/30 focus:border-solid focus:border-primary"
               : "min-h-[132px] rounded-[16px] border bg-background px-3 py-3 text-sm focus:border-primary/40",
           )}
         />
+        {uploadUrl ? (
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            className="sr-only"
+            onChange={function onFile(event) {
+              const file = event.target.files?.[0];
+              if (file) void insertImageFile(file);
+              event.target.value = "";
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );
-}
+});

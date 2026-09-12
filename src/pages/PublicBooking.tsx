@@ -372,7 +372,7 @@ export default function PublicBooking({
       type: field.type,
       options: field.options,
       hidden: field.hidden,
-      validation: field.validation,
+      settings: field.settings,
     }));
     const prefill = buildBookingPrefill({
       fields: prefillFields,
@@ -422,9 +422,7 @@ export default function PublicBooking({
     () =>
       bookingForm && bookingFormModel
         ? buildFormExperienceAnalyticsStages({
-            formType: bookingForm.type,
             steps: bookingFormModel.steps,
-            screens: bookingFormModel.screens,
           })
         : [],
     [bookingForm, bookingFormModel],

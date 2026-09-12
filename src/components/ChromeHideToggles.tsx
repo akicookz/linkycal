@@ -1,4 +1,4 @@
-import { Switch } from "@/components/ui/switch";
+import { SwitchRow } from "@/components/ui/switch-row";
 import {
   CHROME_FLAG_KEYS,
   type ChromeFlags,
@@ -20,7 +20,7 @@ const FORM_ROWS: ChromeHideRow[] = [
   {
     id: "title",
     title: "Hide title",
-    description: "Hide the form name. Focused forms already omit it.",
+    description: "Hide the form name on the public page.",
   },
   {
     id: "intro",
@@ -94,19 +94,13 @@ export function ChromeHideToggles(props: ChromeHideTogglesProps) {
       {rows.map((row) => {
         const key = CHROME_FLAG_KEYS[row.id];
         return (
-          <div
+          <SwitchRow
             key={row.id}
-            className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3"
-          >
-            <div className="pr-3">
-              <p className="text-sm font-medium">{row.title}</p>
-              <p className="text-xs text-muted-foreground">{row.description}</p>
-            </div>
-            <Switch
-              checked={props.flags[key] === true}
-              onCheckedChange={(checked) => setFlag(row.id, checked)}
-            />
-          </div>
+            title={row.title}
+            description={row.description}
+            checked={props.flags[key] === true}
+            onCheckedChange={(checked) => setFlag(row.id, checked)}
+          />
         );
       })}
     </div>

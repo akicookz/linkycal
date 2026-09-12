@@ -34,7 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
+import { SwitchRow } from "@/components/ui/switch-row";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -1734,24 +1734,18 @@ export default function Contacts() {
                       );
                     })}
                   </div>
-                  <div className="flex items-center justify-between rounded-[16px] bg-muted/50 px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium">Show Untagged column</p>
-                      <p className="text-xs text-muted-foreground">
-                        Include contacts with no tag
-                      </p>
-                    </div>
-                    <Switch
-                      checked={!!config.showUntagged}
-                      onCheckedChange={(checked) => {
-                        const currentConfig = configRef.current;
-                        applyPipelineConfig({
-                          ...currentConfig,
-                          showUntagged: checked || undefined,
-                        });
-                      }}
-                    />
-                  </div>
+                  <SwitchRow
+                    title="Show Untagged column"
+                    description="Include contacts with no tag"
+                    checked={!!config.showUntagged}
+                    onCheckedChange={(checked) => {
+                      const currentConfig = configRef.current;
+                      applyPipelineConfig({
+                        ...currentConfig,
+                        showUntagged: checked || undefined,
+                      });
+                    }}
+                  />
                 </div>
               )}
 

@@ -28,7 +28,7 @@ interface FormField {
   label: string;
   placeholder: string | null;
   required: boolean;
-  validation: unknown;
+  settings: unknown;
   options: Array<{ label: string; value: string }> | null;
   createdAt: string;
 }
@@ -48,7 +48,6 @@ interface FullForm {
   projectId: string;
   name: string;
   slug: string;
-  type: "multi_step" | "single";
   status: "draft" | "active" | "archived";
   settings: unknown;
   createdAt: string;

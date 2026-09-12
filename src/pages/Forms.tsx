@@ -23,13 +23,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -54,7 +47,6 @@ interface Form {
   projectId: string;
   name: string;
   slug: string;
-  type: "multi_step" | "single";
   status: "draft" | "active" | "archived";
   settings: unknown;
   createdAt: string;
@@ -64,7 +56,6 @@ interface Form {
 interface CreateFormData {
   name: string;
   slug: string;
-  type: "multi_step" | "single";
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -87,10 +78,6 @@ function statusVariant(status: Form["status"]) {
   }
 }
 
-function typeLabel(type: Form["type"]) {
-  return type === "multi_step" ? "Focused" : "Classic";
-}
-
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString("en-US", {
     month: "short",
@@ -102,7 +89,6 @@ function formatDate(dateStr: string): string {
 const defaultFormData: CreateFormData = {
   name: "",
   slug: "",
-  type: "multi_step",
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -442,9 +428,6 @@ export default function Forms() {
                   <Badge variant={statusVariant(form.status)} className="px-2 py-0.5 text-[11px]">
                     {form.status}
                   </Badge>
-                  <Badge variant="secondary" className="px-2 py-0.5 text-[11px]">
-                    {typeLabel(form.type)}
-                  </Badge>
                 </div>
 
                 <p className="text-xs text-muted-foreground">
@@ -495,31 +478,6 @@ export default function Forms() {
               <p className="text-[11px] text-muted-foreground">
                 URL-friendly identifier. Auto-generated from name.
               </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="form-type">Experience</Label>
-              <Select
-                value={formData.type}
-                onValueChange={(val) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    type: val as "single" | "multi_step",
-                  }))
-                }
-              >
-                <SelectTrigger id="form-type">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="multi_step">
-                    Focused — one question at a time
-                  </SelectItem>
-                  <SelectItem value="single">
-                    Classic — all questions on one page
-                  </SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             {createMutation.isError && (

@@ -13,15 +13,10 @@ import type {
   FormCondition,
   FormConditionOperator,
   FormConditionRule,
+  FormConditionSourceField,
 } from "@/lib/form-conditions";
 
-export type ConditionSourceField = {
-  id: string;
-  label: string;
-  type: string;
-  stepTitle: string;
-  options: Array<{ label: string; value: string }> | null;
-};
+export type ConditionSourceField = FormConditionSourceField;
 
 type ChoiceOperator = "equals" | "not_equals" | "is_one_of" | "is_not_one_of";
 type NumberOperator =
@@ -169,19 +164,29 @@ export function FormConditionEditor({
   }
 
   if (sources.length === 0) {
-    return null;
+    return (
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium">{title}</p>
+        <p className="text-xs text-muted-foreground">
+          Needs a previous question.
+        </p>
+      </div>
+    );
   }
 
   if (rules.length === 0) {
     return (
-      <button
-        type="button"
-        className="flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/40 hover:text-foreground"
-        onClick={addRule}
-      >
-        <Plus className="h-3.5 w-3.5" />
-        Add logic
-      </button>
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium">{title}</p>
+        <button
+          type="button"
+          className="flex w-full items-center justify-center gap-1.5 rounded-[12px] border border-dashed px-3 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:bg-muted/40 hover:text-foreground"
+          onClick={addRule}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          Add logic
+        </button>
+      </div>
     );
   }
 
@@ -195,7 +200,7 @@ export function FormConditionEditor({
             emit({ when: v === "any" ? "any" : "all", rules })
           }
         >
-          <SelectTrigger className="h-6 w-auto text-[11px] px-2 rounded-full bg-background">
+          <SelectTrigger variant="underline">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -209,7 +214,6 @@ export function FormConditionEditor({
       <div className="space-y-1.5">
         {rules.map((rule, idx) => {
           const source = sourceById[rule.fieldId];
-          const sourceMissing = !source;
           const operators = source
             ? getOperatorsForType(source.type)
             : (["equals"] as FormConditionOperator[]);
@@ -225,7 +229,7 @@ export function FormConditionEditor({
               className="flex items-start gap-1.5 flex-wrap"
             >
               <Select
-                value={rule.fieldId}
+                value={source ? rule.fieldId : undefined}
                 onValueChange={(nextId) => {
                   const nextSource = sourceById[nextId];
                   if (!nextSource) return;
@@ -242,8 +246,8 @@ export function FormConditionEditor({
                   });
                 }}
               >
-                <SelectTrigger className="h-7 text-[11px] px-2 w-[160px] bg-background">
-                  <SelectValue />
+                <SelectTrigger variant="underline">
+                  <SelectValue placeholder="Select field" />
                 </SelectTrigger>
                 <SelectContent>
                   {sources.map((s) => (
@@ -263,7 +267,7 @@ export function FormConditionEditor({
                   updateRule(idx, { operator: v as FormConditionOperator })
                 }
               >
-                <SelectTrigger className="h-7 text-[11px] px-2 w-[130px] bg-background">
+                <SelectTrigger variant="underline">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -282,12 +286,6 @@ export function FormConditionEditor({
                   value={rule.value}
                   onChange={(next) => updateRule(idx, { value: next })}
                 />
-              )}
-
-              {sourceMissing && (
-                <span className="text-[11px] text-destructive self-center">
-                  (field removed)
-                </span>
               )}
 
               <Button
@@ -360,20 +358,29 @@ function ConditionValueInput({
       );
     }
 
+    const selected = asScalar(value);
+    const hasSelected = options.some((opt) => opt.value === selected);
+
     return (
       <Select
-        value={asScalar(value)}
+        value={hasSelected ? selected : undefined}
         onValueChange={(v) => onChange(v)}
       >
-        <SelectTrigger className="h-7 text-[11px] px-2 w-[160px] bg-background">
-          <SelectValue placeholder="Select…" />
+        <SelectTrigger variant="underline">
+          <SelectValue placeholder="Select option" />
         </SelectTrigger>
         <SelectContent>
-          {options.map((opt) => (
-            <SelectItem key={opt.value} value={opt.value}>
-              {opt.label || opt.value}
+          {options.length === 0 ? (
+            <SelectItem value="__no_options" disabled>
+              No options
             </SelectItem>
-          ))}
+          ) : (
+            options.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label || opt.value}
+              </SelectItem>
+            ))
+          )}
         </SelectContent>
       </Select>
     );
@@ -383,7 +390,7 @@ function ConditionValueInput({
     return (
       <DebouncedTextInput
         type="number"
-        className="h-7 text-[11px] w-[120px] bg-background"
+        className="h-7 w-[7.5rem] rounded-none border-0 border-b border-foreground/25 bg-transparent px-0 text-[13px] shadow-none focus-visible:border-foreground focus-visible:ring-0"
         value={asScalar(value)}
         onSave={(v) => onChange(v)}
       />
@@ -393,7 +400,7 @@ function ConditionValueInput({
   return (
     <DebouncedTextInput
       type="text"
-      className="h-7 text-[11px] w-[160px] bg-background"
+        className="h-7 w-40 rounded-none border-0 border-b border-foreground/25 bg-transparent px-0 text-[13px] shadow-none focus-visible:border-foreground focus-visible:ring-0"
       value={asScalar(value)}
       onSave={(v) => onChange(v)}
     />

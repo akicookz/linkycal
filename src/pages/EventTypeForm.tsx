@@ -286,7 +286,7 @@ export default function EventTypeForm() {
   });
 
   // Fetch project forms for booking form picker
-  const { data: projectForms } = useQuery<Array<{ id: string; name: string; type: string; status: string }>>({
+  const { data: projectForms } = useQuery<Array<{ id: string; name: string; status: string }>>({
     queryKey: ["projects", projectId, "forms"],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/forms`);
@@ -1143,9 +1143,6 @@ export default function EventTypeForm() {
                     {projectForms?.map((form) => (
                       <SelectItem key={form.id} value={form.id}>
                         {form.name}
-                        <span className="text-muted-foreground ml-1">
-                          ({form.type === "multi_step" ? "Multi-step" : "Single"})
-                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>

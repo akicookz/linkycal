@@ -59,7 +59,12 @@ export async function createForm(
   ctx: ToolContext,
   input: unknown,
 ): Promise<ToolResult> {
-  return actionToMcpResult(await createFormAction(mcpFormDeps(ctx), input));
+  const body =
+    input && typeof input === "object" && !Array.isArray(input)
+      ? { ...(input as Record<string, unknown>) }
+      : {};
+  delete body.type;
+  return actionToMcpResult(await createFormAction(mcpFormDeps(ctx), body));
 }
 
 export async function updateForm(
@@ -67,6 +72,7 @@ export async function updateForm(
   input: { formId: string } & Record<string, unknown>,
 ): Promise<ToolResult> {
   const { formId, ...data } = input;
+  delete data.type;
   return actionToMcpResult(await updateFormAction(mcpFormDeps(ctx), formId, data));
 }
 
@@ -271,12 +277,12 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
   server.registerTool(
     "create_form",
     withMcpToolDiscovery("create_form", {
-      description: "Create a draft form with one empty initial step.",
+      description:
+        "Create a draft page form with one empty page. New forms store type as single. The tool ignores type if a client sends it.",
       outputSchema: formSlugOutputSchema,
       inputSchema: {
         name: createShape.name.describe("Form name"),
         slug: createShape.slug.describe("URL slug"),
-        type: createShape.type.describe("single or multi_step"),
         settings: createShape.settings.describe("Form presentation settings"),
       },
     }),
@@ -291,7 +297,6 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         formId: z.string().describe("Form id"),
         name: updateShape.name,
         slug: updateShape.slug,
-        type: updateShape.type,
         status: updateShape.status,
         settings: updateShape.settings,
       },
@@ -359,7 +364,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         type: createFieldShape.type, label: createFieldShape.label, description: createFieldShape.description,
         placeholder: createFieldShape.placeholder, required: createFieldShape.required,
         hidden: createFieldShape.hidden,
-        validation: createFieldShape.validation, options: createFieldShape.options,
+        settings: createFieldShape.settings, options: createFieldShape.options,
         visibility: createFieldShape.visibility, contactMapping: createFieldShape.contactMapping,
       },
     }),
@@ -375,7 +380,7 @@ export function registerFormTools(server: McpServer, ctx: ToolContext) {
         sortOrder: updateFieldShape.sortOrder, type: updateFieldShape.type, label: updateFieldShape.label,
         description: updateFieldShape.description, placeholder: updateFieldShape.placeholder,
         required: updateFieldShape.required, hidden: updateFieldShape.hidden,
-        validation: updateFieldShape.validation,
+        settings: updateFieldShape.settings,
         options: updateFieldShape.options, visibility: updateFieldShape.visibility,
         contactMapping: updateFieldShape.contactMapping,
       },
