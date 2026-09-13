@@ -1,6 +1,8 @@
 import {
+  forwardRef,
   useState,
   useEffect,
+  useImperativeHandle,
   useRef,
   type DragEvent,
   type ReactNode,
@@ -35,7 +37,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  FormBuilderCaret,
+  type FormBuilderCaretHandle,
+} from "@/components/form-builder-caret";
 import { FormFieldRenderer } from "@/components/FormFieldRenderer";
+import type {
+  FormBuilderCommandDef,
+  FormBuilderCommandHandlers,
+  InsertionContext,
+} from "@/lib/form-builder-commands";
 import {
   RichTextEditor,
   type RichTextEditorHandle,
@@ -113,27 +124,50 @@ export interface FormPageCanvasProps {
   onSaveFieldLabel: (fieldId: string, label: string) => void;
   onSaveFieldDescription: (fieldId: string, html: string) => void;
   onUploadError?: (error: unknown) => boolean;
+  slash?: {
+    enabled: boolean;
+    commands: readonly FormBuilderCommandDef[];
+    getContext: (gapIndex: number) => InsertionContext;
+    handlers: FormBuilderCommandHandlers;
+  } | null;
 }
 
-export function FormPageCanvas({
-  step,
-  fields,
-  selectedFieldId,
-  questionNumberByFieldId,
-  uploadUrl,
-  previewValues,
-  onPreviewValueChange,
-  saveStatus,
-  autoFocusSelectedLabel = false,
-  onSelectField,
-  onSelectStep,
-  onSaveLayout,
-  onSaveTitle,
-  onSaveRichText,
-  onSaveFieldLabel,
-  onSaveFieldDescription,
-  onUploadError,
-}: FormPageCanvasProps) {
+export interface FormPageCanvasHandle {
+  focusSlash(): void;
+}
+
+export const FormPageCanvas = forwardRef<FormPageCanvasHandle, FormPageCanvasProps>(
+  function FormPageCanvas(
+    {
+      step,
+      fields,
+      selectedFieldId,
+      questionNumberByFieldId,
+      uploadUrl,
+      previewValues,
+      onPreviewValueChange,
+      saveStatus,
+      autoFocusSelectedLabel = false,
+      onSelectField,
+      onSelectStep,
+      onSaveLayout,
+      onSaveTitle,
+      onSaveRichText,
+      onSaveFieldLabel,
+      onSaveFieldDescription,
+      onUploadError,
+      slash = null,
+    },
+    ref,
+  ) {
+  const lastCaretRef = useRef<FormBuilderCaretHandle>(null);
+  useImperativeHandle(ref, function bindCanvasHandle() {
+    return {
+      focusSlash() {
+        lastCaretRef.current?.focusAndOpen();
+      },
+    };
+  });
   const descriptionEditorRef = useRef<RichTextEditorHandle>(null);
   const persistLayout = persistPageLayout(step.settings, fields);
   const layout = paintPageLayout(
@@ -214,30 +248,24 @@ export function FormPageCanvas({
         onDragCancel={handleDragCancel}
         onDragEnd={handleDragEnd}
       >
-        <div className="space-y-1">
-          <RowGap index={0} active={dragging} />
-          {rows.map(function renderRow(row, rowIndex) {
-            return (
-              <div key={rowKey(row, rowIndex)}>
-                <FieldRow
-                  row={row}
-                  rowIndex={rowIndex}
-                  dragging={dragging}
-                  activeFieldId={activeFieldId}
-                  fields={fields}
-                  selectedFieldId={selectedFieldId}
-                  questionNumberByFieldId={questionNumberByFieldId}
-                  previewValues={previewValues}
-                  onPreviewValueChange={onPreviewValueChange}
-                  saveStatus={saveStatus}
-                  autoFocusSelectedLabel={autoFocusSelectedLabel}
-                  onSelectField={onSelectField}
-                  onSaveFieldLabel={onSaveFieldLabel}
-                  onSaveFieldDescription={onSaveFieldDescription}
-                />
-                <RowGap index={rowIndex + 1} active={dragging} />
-              </div>
-            );
+        <div className="space-y-8">
+          {renderPageRows({
+            rows,
+            dragging,
+            slash,
+            lastCaretRef,
+            persistLayout,
+            activeFieldId,
+            fields,
+            selectedFieldId,
+            questionNumberByFieldId,
+            previewValues,
+            onPreviewValueChange,
+            saveStatus,
+            autoFocusSelectedLabel,
+            onSelectField,
+            onSaveFieldLabel,
+            onSaveFieldDescription,
           })}
         </div>
         <DragOverlay>
@@ -247,7 +275,7 @@ export function FormPageCanvas({
     </div>
     </TooltipProvider>
   );
-}
+});
 
 function PageChrome({
   step,
@@ -502,6 +530,137 @@ function FieldEdgeSlot({
   );
 }
 
+function renderPageRows(input: {
+  rows: FormPageRow[];
+  dragging: boolean;
+  slash: FormPageCanvasProps["slash"];
+  lastCaretRef: Ref<FormBuilderCaretHandle | null>;
+  persistLayout: FormPageLayout;
+  activeFieldId: string | null;
+  fields: FormPageCanvasField[];
+  selectedFieldId: string | null;
+  questionNumberByFieldId: Record<string, number>;
+  previewValues: Record<string, string>;
+  onPreviewValueChange: (fieldId: string, value: string) => void;
+  saveStatus: Record<string, FormPageSaveStatus | undefined>;
+  autoFocusSelectedLabel: boolean;
+  onSelectField: (fieldId: string) => void;
+  onSaveFieldLabel: (fieldId: string, label: string) => void;
+  onSaveFieldDescription: (fieldId: string, html: string) => void;
+}) {
+  const emptyPage =
+    input.rows.length === 1 && !input.rows[0]?.left && !input.rows[0]?.right;
+  const showSlash = !!input.slash?.enabled && !input.dragging;
+
+  function fieldRow(row: FormPageRow, rowIndex: number) {
+    return (
+      <FieldRow
+        row={row}
+        rowIndex={rowIndex}
+        dragging={input.dragging}
+        activeFieldId={input.activeFieldId}
+        fields={input.fields}
+        selectedFieldId={input.selectedFieldId}
+        questionNumberByFieldId={input.questionNumberByFieldId}
+        previewValues={input.previewValues}
+        onPreviewValueChange={input.onPreviewValueChange}
+        saveStatus={input.saveStatus}
+        autoFocusSelectedLabel={input.autoFocusSelectedLabel}
+        onSelectField={input.onSelectField}
+        onSaveFieldLabel={input.onSaveFieldLabel}
+        onSaveFieldDescription={input.onSaveFieldDescription}
+      />
+    );
+  }
+
+  function gap(index: number) {
+    return <RowGap index={index} active={input.dragging} />;
+  }
+
+  if (input.dragging) {
+    if (emptyPage) return gap(0);
+    return (
+      <>
+        {gap(0)}
+        {input.rows.map(function renderDragRow(row, rowIndex) {
+          return (
+            <div key={rowKey(row, rowIndex)}>
+              {fieldRow(row, rowIndex)}
+              {gap(rowIndex + 1)}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  if (showSlash && input.slash) {
+    const slash = input.slash;
+    if (emptyPage) {
+      return (
+        <FormBuilderCaret
+          ref={input.lastCaretRef}
+          gapIndex={0}
+          commands={slash.commands}
+          getContext={slash.getContext}
+          handlers={slash.handlers}
+          layout={input.persistLayout}
+          variant="empty"
+        />
+      );
+    }
+
+    return (
+      <>
+        {input.rows.map(function renderSlashRow(row, rowIndex) {
+          const last = rowIndex === input.rows.length - 1;
+          return (
+            <div key={rowKey(row, rowIndex)} className="relative">
+              {fieldRow(row, rowIndex)}
+              {last ? null : (
+                <FormBuilderCaret
+                  gapIndex={rowIndex + 1}
+                  edge="after"
+                  commands={slash.commands}
+                  getContext={slash.getContext}
+                  handlers={slash.handlers}
+                  layout={input.persistLayout}
+                  variant="gap"
+                />
+              )}
+            </div>
+          );
+        })}
+        <FormBuilderCaret
+          ref={input.lastCaretRef}
+          gapIndex={input.rows.length}
+          commands={slash.commands}
+          getContext={slash.getContext}
+          handlers={slash.handlers}
+          layout={input.persistLayout}
+          variant="empty"
+        />
+      </>
+    );
+  }
+
+  if (emptyPage) return gap(0);
+
+  return (
+    <>
+      {gap(0)}
+      {input.rows.map(function renderRow(row, rowIndex) {
+        return (
+          <div key={rowKey(row, rowIndex)}>
+            {fieldRow(row, rowIndex)}
+            {gap(rowIndex + 1)}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function RowGap({ index, active }: { index: number; active: boolean }) {
   const { setNodeRef, isOver } = useDroppable({
     id: pageRowGapId(index),
@@ -751,8 +910,8 @@ export function InlineEditableLabel({
   return (
     <div
       className={cn(
-        "relative min-w-0",
-        fitContent ? "grid w-max max-w-full" : "flex-1",
+        "relative",
+        fitContent ? "grid w-max max-w-full min-w-0" : "w-full",
       )}
     >
       {fitContent ? (
@@ -769,7 +928,7 @@ export function InlineEditableLabel({
       <textarea
         ref={textareaRef}
         rows={1}
-        cols={1}
+        cols={fitContent ? 1 : undefined}
         autoFocus={autoFocus}
         value={localValue}
         placeholder={placeholder}
@@ -796,7 +955,7 @@ export function InlineEditableLabel({
           }
         }}
         className={cn(
-          "min-w-0 resize-none overflow-hidden bg-transparent text-sm font-medium leading-none text-foreground outline-none border-0 border-b border-dashed border-transparent pb-0.5 transition-colors hover:border-muted-foreground/30 focus:border-solid focus:border-primary",
+          "resize-none overflow-hidden bg-transparent text-sm font-medium leading-none text-foreground outline-none border-0 border-b border-dashed border-transparent pb-0.5 transition-colors hover:border-muted-foreground/30 focus:border-solid focus:border-primary",
           fitContent
             ? "col-start-1 row-start-1 w-full min-w-0 field-sizing-content"
             : "block w-full",

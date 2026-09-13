@@ -12,27 +12,10 @@ import * as dbSchema from "../db/schema";
 import { getUniqueFieldId } from "../lib/field-ids";
 import { plainTextToRichTextHtml } from "../lib/rich-text";
 import { hiddenFieldConflict } from "../validation";
-
-// ─── Field Helpers ───────────────────────────────────────────────────────────
-
-const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
-  name: "Full name",
-  text: "Start typing...",
-  textarea: "Start typing...",
-  email: "name@example.com",
-  phone: "+1 (555) 000-0000",
-  url: "https://example.com",
-  number: "0",
-  completion: null,
-  date: "Select a date",
-  time: "Select a time",
-  select: null,
-  multi_select: null,
-  radio: null,
-  checkbox: null,
-  rating: null,
-  file: "Choose a file",
-};
+import {
+  defaultOptionsForFieldType,
+  FIELD_TYPE_PLACEHOLDERS,
+} from "../../shared/field-placeholders";
 
 const PRIVATE_FORM_UPLOAD_PREFIX = "form-responses/";
 type FormFieldType = dbSchema.FormFieldRow["type"];
@@ -724,6 +707,10 @@ export class FormService {
 
     const placeholder =
       data.placeholder ?? FIELD_TYPE_PLACEHOLDERS[data.type] ?? null;
+    const options =
+      data.options && data.options.length > 0
+        ? data.options
+        : defaultOptionsForFieldType(data.type);
 
     const hidden = data.hidden ?? false;
     if (
@@ -748,7 +735,7 @@ export class FormService {
       required: hidden ? false : (data.required ?? false),
       hidden,
       settings: data.settings ? JSON.stringify(data.settings) : null,
-      options: data.options ? JSON.stringify(data.options) : null,
+      options: options ? JSON.stringify(options) : null,
       visibility: hidden ? null : (data.visibility ? JSON.stringify(data.visibility) : null),
       contactMapping: data.contactMapping ?? null,
     });

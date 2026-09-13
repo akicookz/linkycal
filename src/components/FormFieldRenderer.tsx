@@ -286,6 +286,10 @@ function isChoiceField(type: string): type is ChoiceMode {
   return type === "select" || type === "multi_select" || type === "radio";
 }
 
+function choiceLetter(index: number): string {
+  return String.fromCharCode(65 + (index % 26));
+}
+
 function isCustomChoiceHint(placeholder: string | null): boolean {
   const hint = placeholder?.trim() ?? "";
   return hint.length > 0 && !CANNED_CHOICE_HINTS.has(hint);
@@ -328,6 +332,7 @@ function ChoiceFieldGroup({
         return (
           <ChoiceCard
             key={`${option.value}-${index}`}
+            letter={mode === "radio" ? undefined : choiceLetter(index)}
             title={option.label}
             selected={selected}
             control={usesRadioIndicator ? "radio" : "checkbox"}
@@ -368,6 +373,7 @@ function handleChoiceChange(
 }
 
 function ChoiceCard({
+  letter,
   title,
   description,
   selected,
@@ -375,6 +381,7 @@ function ChoiceCard({
   error,
   children,
 }: {
+  letter?: string;
   title: ReactNode;
   description?: string | null;
   selected: boolean;
@@ -388,7 +395,7 @@ function ChoiceCard({
         "flex cursor-pointer items-center gap-4 rounded-[var(--radius)] border-0 px-4 ring-shadow transition-all",
         description ? "min-h-11 py-2.5" : "h-11",
         selected
-          ? "bg-field-fill ring-shadow-[var(--primary)]"
+          ? "bg-primary/[0.09] ring-shadow-primary"
           : "bg-field-fill hover:ring-shadow-[color-mix(in_srgb,var(--primary)_32%,transparent)]",
         error &&
         !selected &&
@@ -396,6 +403,18 @@ function ChoiceCard({
       )}
     >
       {children}
+      {letter ? (
+        <span
+          className={cn(
+            "flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-xs font-semibold",
+            selected
+              ? "bg-primary text-primary-foreground"
+              : "bg-background/80 text-primary",
+          )}
+        >
+          {letter}
+        </span>
+      ) : null}
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium leading-5 text-foreground">
           {title}
@@ -424,7 +443,7 @@ function ChoiceIndicator({
         "ml-3 flex h-5 w-5 shrink-0 items-center justify-center border-0 ring-shadow transition-all",
         control === "radio" ? "rounded-full" : "rounded-[6px]",
         selected
-          ? "bg-primary text-primary-foreground ring-shadow-[var(--primary)]"
+          ? "bg-primary text-primary-foreground ring-shadow-primary"
           : "bg-background/80 text-transparent",
       )}
     >

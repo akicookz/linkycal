@@ -131,23 +131,11 @@ function formatLimit(limit: number | null): string {
   return limit === null ? "Unlimited" : limit.toLocaleString("en-US");
 }
 
-// ─── Form Field Defaults ──────────────────────────────────────────────────────
-
-export const FIELD_TYPE_PLACEHOLDERS: Record<string, string | null> = {
-  text: "Start typing...",
-  textarea: "Start typing...",
-  email: "name@example.com",
-  phone: "+1 (555) 000-0000",
-  number: "0",
-  date: "Select a date",
-  time: "Select a time",
-  select: null,
-  multi_select: null,
-  radio: null,
-  checkbox: null,
-  rating: null,
-  file: "Choose a file",
-};
+export {
+  FIELD_TYPE_PLACEHOLDERS,
+  defaultOptionsForFieldType,
+  defaultPlaceholderForFieldType,
+} from "../../shared/field-placeholders";
 
 export function normalizeToFieldId(label: string): string {
   return (

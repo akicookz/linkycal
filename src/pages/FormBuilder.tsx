@@ -76,6 +76,7 @@ import { FocusedStepProgress } from "@/components/FocusedStepProgress";
 import {
   FormPageCanvas,
   InlineEditableLabel,
+  type FormPageCanvasHandle,
 } from "@/components/FormPageCanvas";
 import { useIsDesktop } from "@/hooks/use-mobile";
 import { useSession } from "@/lib/auth-client";
@@ -87,6 +88,26 @@ import {
   generateFormEmbedPrompt,
 } from "@/lib/prompts";
 import {
+  afterSubmitFromCompletion,
+  compactAfterSubmit,
+  hasAfterSubmitSettings,
+  parseAfterSubmit,
+  type AfterSubmitSettings,
+} from "@/lib/form-after-submit";
+import { persistPageLayout } from "@/lib/form-canvas-layout";
+import {
+  isFocusableControl,
+  isSlashHotkey,
+  isTypingSurface,
+} from "@/lib/form-builder-slash";
+import {
+  applyMoveBeside,
+  applyMoveOwnRow,
+  buildFormBuilderCommands,
+  buildInsertionContext,
+} from "@/lib/form-builder-commands";
+import {
+  applyFieldDrop,
   buildQuestionNumberByFieldId,
   parseFormTransition,
   rewriteSettingsPageLayoutFieldId,
@@ -103,7 +124,11 @@ import {
 } from "../../shared/public-chrome";
 import { cn, copyToClipboard } from "@/lib/utils";
 import type { FormExperienceTheme } from "@/lib/experience-theme";
-import { normalizeToFieldId } from "@/lib/constants";
+import {
+  defaultOptionsForFieldType,
+  defaultPlaceholderForFieldType,
+  normalizeToFieldId,
+} from "@/lib/constants";
 import {
   DndContext,
   DragOverlay,
@@ -212,6 +237,7 @@ interface FormSettings {
   responseNotificationEmail?: string;
   chrome?: ChromeFlags;
   transition?: FormTransition;
+  afterSubmit?: AfterSubmitSettings;
 }
 
 interface CalendarConnectionAccount {
@@ -360,6 +386,22 @@ function toPersistedFieldOptions(options: DraftFieldOption[]): FieldOption[] {
 
 function sortFields(fields: FormField[]): FormField[] {
   return [...fields].sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+function toCanvasLayoutFields(fields: FormField[]) {
+  return fields
+    .filter(function isQuestion(field) {
+      return field.type !== "completion";
+    })
+    .map(function toLayoutField(field) {
+      return {
+        id: field.id,
+        type: field.type,
+        hidden: field.hidden,
+        options: field.options,
+        visibility: field.visibility ?? null,
+      };
+    });
 }
 
 function applyPageLayoutSortOrders<T extends {
@@ -579,9 +621,37 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const [editingName, setEditingName] = useState<string>("");
   const [editingSlug, setEditingSlug] = useState<string>("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [deleteFormOpen, setDeleteFormOpen] = useState(false);
   const [contentSheetOpen, setContentSheetOpen] = useState(false);
   const [fieldSettingsSheetOpen, setFieldSettingsSheetOpen] = useState(false);
   const isDesktop = useIsDesktop();
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+  const pageCanvasRef = useRef<FormPageCanvasHandle>(null);
+  const pendingSlashFocusRef = useRef(false);
+
+  useEffect(
+    function focusSlashAfterAddPage() {
+      if (!pendingSlashFocusRef.current) return;
+      if (!isDesktop) {
+        pendingSlashFocusRef.current = false;
+        return;
+      }
+      if (selection?.kind !== "step") return;
+      let cancelled = false;
+      const frame = window.requestAnimationFrame(function afterPaint() {
+        window.requestAnimationFrame(function afterMount() {
+          if (cancelled) return;
+          pendingSlashFocusRef.current = false;
+          pageCanvasRef.current?.focusSlash();
+        });
+      });
+      return function cleanup() {
+        cancelled = true;
+        window.cancelAnimationFrame(frame);
+      };
+    },
+    [isDesktop, selection],
+  );
 
   // ─── Create mode (no formId) ─────────────────────────────────────────────
 
@@ -769,7 +839,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const hasFileFields = steps.some((step) =>
     (step.fields ?? []).some((field) => field.type === "file")
   );
-  const hasCompletionPage = !!completionField;
+  const storedAfterSubmit = parseAfterSubmit(formSettings);
 
   const nativeActionUrl = form && currentProject
     ? `${window.location.origin}/api/public/forms/${currentProject.slug}/${form.slug}/submit`
@@ -813,8 +883,8 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     const firstField = orderedQuestionFields[0];
     if (firstField) {
       setSelection({ kind: "field", id: firstField.id });
-    } else if (sortedSteps.length > 0) {
-      setSelection({ kind: "step", id: sortedSteps[0].id });
+    } else if (contentSteps.length > 0) {
+      setSelection({ kind: "step", id: contentSteps[0].id });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, selection]);
@@ -824,8 +894,11 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     if (!form || !selection) return;
     const exists =
       selection.kind === "field"
-        ? !!findField(selection.id)
-        : sortedSteps.some((s) => s.id === selection.id);
+        ? (() => {
+          const found = findField(selection.id);
+          return !!found && found.field.type !== "completion";
+        })()
+        : contentSteps.some((s) => s.id === selection.id);
     if (!exists) setSelection(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form, selection, sortedSteps.length]);
@@ -937,6 +1010,16 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const fieldUpdateQueues = useRef<Map<string, Promise<void>>>(new Map());
   const stepIdMap = useRef<Map<string, string>>(new Map());
   const pendingStepCreates = useRef<Map<string, Promise<string>>>(new Map());
+
+  function settingsWithServerFieldIds(settings: Record<string, unknown>) {
+    let next = settings;
+    for (const [clientId, serverId] of fieldIdMap.current) {
+      if (clientId && serverId && clientId !== serverId) {
+        next = rewriteSettingsPageLayoutFieldId(next, clientId, serverId);
+      }
+    }
+    return next;
+  }
 
   async function resolveFieldId(clientId: string): Promise<string> {
     const mapped = fieldIdMap.current.get(clientId);
@@ -1079,6 +1162,22 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
     },
   });
 
+  const deleteFormMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/forms/${formId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to delete form");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["projects", projectId, "forms"],
+      });
+      setDeleteFormOpen(false);
+      navigate(`/app/projects/${projectId}/forms`);
+    },
+  });
+
   // ─── Step mutations ──────────────────────────────────────────────────────
 
   const addStepMutation = useMutation({
@@ -1117,6 +1216,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
         ],
       }));
       setSelection({ kind: "step", id: tempId });
+      pendingSlashFocusRef.current = true;
 
       let resolveCreate!: (realId: string) => void;
       let rejectCreate!: (err: unknown) => void;
@@ -1165,12 +1265,15 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       }>;
     }) => {
       const realStepId = await resolveStepId(stepId);
+      const payload = data.settings
+        ? { ...data, settings: settingsWithServerFieldIds(data.settings) }
+        : data;
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/steps/${realStepId}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
+          body: JSON.stringify(payload),
         }
       );
       if (!res.ok) throw new Error("Failed to update step");
@@ -1243,52 +1346,78 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       type: string;
       label: string;
       description?: string;
+      insertAt?: { type: "gap"; index: number };
     }) => {
       const realStepId = await resolveStepId(stepId);
+      const placeholder = defaultPlaceholderForFieldType(type);
+      const options = defaultOptionsForFieldType(type);
       const res = await fetch(
         `/api/projects/${projectId}/forms/${formId}/fields`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ stepId: realStepId, type, label, ...(description ? { description } : {}) }),
+          body: JSON.stringify({
+            stepId: realStepId,
+            type,
+            label,
+            ...(description ? { description } : {}),
+            ...(placeholder ? { placeholder } : {}),
+            ...(options ? { options } : {}),
+          }),
         }
       );
       if (!res.ok) throw new Error("Failed to add field");
       return res.json();
     },
-    onMutate: async ({ stepId, type, label }) => {
+    onMutate: async ({ stepId, type, label, insertAt }) => {
       await queryClient.cancelQueries({ queryKey: formQueryKey });
       const snapshot = snapshotForm();
       const tempId = `temp-${crypto.randomUUID()}`;
+      const seedOptions = defaultOptionsForFieldType(type);
       optimisticSetForm((old) => ({
         ...old,
-        steps: old.steps.map((step) =>
-          step.id === stepId
-            ? {
-              ...step,
-              fields: [
-                ...step.fields,
-                {
-                  id: tempId,
-                  stepId,
-                  sortOrder: step.fields.length,
-                  type,
-                  label,
-                  description: null,
-                  placeholder: null,
-                  required: false,
-                  settings: null,
-                  options: null,
-                  contactMapping: null,
-                  createdAt: new Date().toISOString(),
-                },
-              ],
-            }
-            : step,
-        ),
+        steps: old.steps.map((step) => {
+          if (step.id !== stepId) return step;
+          const newField: FormField = {
+            id: tempId,
+            stepId,
+            sortOrder: step.fields.length,
+            type,
+            label,
+            description: null,
+            placeholder: defaultPlaceholderForFieldType(type),
+            required: false,
+            settings: null,
+            options: seedOptions,
+            contactMapping: null,
+            createdAt: new Date().toISOString(),
+          };
+          const fields = [...step.fields, newField];
+          if (!insertAt) return { ...step, fields };
+          const persist = persistPageLayout(
+            step.settings,
+            toCanvasLayoutFields(fields),
+          );
+          const nextLayout = applyFieldDrop(persist, tempId, insertAt);
+          const current =
+            step.settings && typeof step.settings === "object"
+              ? (step.settings as Record<string, unknown>)
+              : {};
+          return applyPageLayoutSortOrders({
+            ...step,
+            fields,
+            settings: { ...current, pageLayout: nextLayout },
+          });
+        }),
       }));
       setSelection({ kind: "field", id: tempId });
       setAutoFocusSelectedLabel(true);
+      if (seedOptions) {
+        setFieldOptionsState((prev) => ({
+          ...prev,
+          [tempId]: toDraftFieldOptions(seedOptions),
+        }));
+      }
 
       let resolveCreate!: (realId: string) => void;
       let rejectCreate!: (err: unknown) => void;
@@ -1302,7 +1431,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
       return { snapshot, tempId, resolveCreate, rejectCreate };
     },
-    onSuccess: (data, _variables, ctx) => {
+    onSuccess: (data, variables, ctx) => {
       const field = data?.field as FormField | undefined;
       const tempId = ctx?.tempId;
       if (!field || !tempId) return;
@@ -1317,6 +1446,22 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       }
       ctx.resolveCreate(field.id);
       pendingFieldCreates.current.delete(tempId);
+
+      if (variables.insertAt) {
+        const latest = snapshotForm();
+        const step = latest?.steps.find(function match(item) {
+          return item.id === variables.stepId;
+        });
+        if (step) {
+          const current =
+            step.settings && typeof step.settings === "object"
+              ? (step.settings as Record<string, unknown>)
+              : {};
+          if (current.pageLayout) {
+            persistStepSettings(step, { pageLayout: current.pageLayout });
+          }
+        }
+      }
 
       if (isOptionFieldType(field.type)) {
         setFieldOptionsState((prev) =>
@@ -1523,10 +1668,23 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             ...patch.nativeAction,
           }
           : undefined,
+      afterSubmit:
+        formSettings.afterSubmit ||
+        patch.afterSubmit ||
+        hasAfterSubmitSettings(formSettings)
+          ? compactAfterSubmit({
+            ...formSettings.afterSubmit,
+            ...patch.afterSubmit,
+          }) ?? {}
+          : undefined,
     };
 
     if (!nextSettings.nativeAction) {
       delete nextSettings.nativeAction;
+    }
+
+    if (nextSettings.afterSubmit === undefined) {
+      delete nextSettings.afterSubmit;
     }
 
     if (!nextSettings.responseNotificationEmail) {
@@ -1553,6 +1711,24 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       data: { settings: { ...current, ...patch } },
     });
   }
+
+  const afterSubmitMigratedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!form || isTemplateMode) return;
+    if (afterSubmitMigratedFor.current === form.id) return;
+    if (hasAfterSubmitSettings(form.settings)) {
+      afterSubmitMigratedFor.current = form.id;
+      return;
+    }
+    const inherited = afterSubmitFromCompletion(completionField);
+    if (!inherited) return;
+    afterSubmitMigratedFor.current = form.id;
+    updateFormMutation.mutate({
+      settings: buildUpdatedFormSettings({ afterSubmit: inherited }),
+    });
+    // One-time copy of leftover ending copy into form settings.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, completionField, isTemplateMode]);
 
   const handleResponseNotificationDestinationChange = useCallback(
     (value: string) => {
@@ -1787,98 +1963,93 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   // ─── Add content ─────────────────────────────────────────────────────────
 
-  function handleAddField(type: string, label: string) {
-    const targetStep =
+  function currentContentStep() {
+    return (
       (selectedStep && !isCompletionOnlyStep(selectedStep) ? selectedStep : null) ??
       contentSteps[contentSteps.length - 1] ??
-      null;
+      null
+    );
+  }
+
+  function handleAddField(
+    type: string,
+    label: string,
+    gapIndex: number | null = null,
+  ) {
+    const targetStep = currentContentStep();
     if (!targetStep) return;
-    addFieldMutation.mutate({ stepId: targetStep.id, type, label });
+    addFieldMutation.mutate({
+      stepId: targetStep.id,
+      type,
+      label,
+      insertAt:
+        gapIndex == null ? undefined : { type: "gap", index: gapIndex },
+    });
   }
 
-  async function handleAddCompletionPage() {
-    const tempStepId = `temp-${crypto.randomUUID()}`;
-    const tempFieldId = `temp-${crypto.randomUUID()}`;
-    const snapshot = snapshotForm();
-
-    // Optimistic: add step with completion field already present
-    optimisticSetForm((old) => ({
-      ...old,
-      steps: [
-        ...old.steps,
-        {
-          id: tempStepId,
-          formId: old.id,
-          sortOrder: old.steps.length,
-          title: "Completion",
-          description: null,
-          richDescription: null,
-          settings: null,
-          fields: [
-            {
-              id: tempFieldId,
-              stepId: tempStepId,
-              sortOrder: 0,
-              type: "completion",
-              label: "Thank you!",
-              description: "<p>Your response has been submitted successfully.</p>",
-              placeholder: null,
-              required: false,
-              settings: null,
-              options: null,
-              contactMapping: null,
-              createdAt: new Date().toISOString(),
-            },
-          ],
-        },
-      ],
-    }));
-    setSelection({ kind: "field", id: tempFieldId });
-
-    try {
-      // Create the step on the server
-      const stepRes = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/steps`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: "Completion" }),
-        },
-      );
-      if (!stepRes.ok) throw new Error("Failed to create step");
-      const stepJson = await stepRes.json();
-      const newStep = stepJson?.step as FormStep | undefined;
-      if (!newStep) throw new Error("No step returned");
-
-      // Create the completion field on the server
-      const fieldRes = await fetch(
-        `/api/projects/${projectId}/forms/${formId}/fields`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            stepId: newStep.id,
-            type: "completion",
-            label: "Thank you!",
-            description: "<p>Your response has been submitted successfully.</p>",
-          }),
-        },
-      );
-      if (!fieldRes.ok) throw new Error("Failed to create field");
-      const fieldJson = await fieldRes.json();
-      const newField = fieldJson?.field as FormField | undefined;
-
-      // Record tempId → realId mappings so future edits on this step/field
-      // resolve to the server ids. The cache keeps the tempIds so the row
-      // doesn't re-mount and any in-progress user typing stays put.
-      stepIdMap.current.set(tempStepId, newStep.id);
-      if (newField) fieldIdMap.current.set(tempFieldId, newField.id);
-    } catch {
-      // Rollback on any failure
-      if (snapshot) rollback(snapshot);
-      setSelection(null);
-    }
+  function handleMoveBeside() {
+    const step = currentContentStep();
+    const field =
+      selectedField && selectedField.type !== "completion" ? selectedField : null;
+    if (!step || !field) return;
+    const next = applyMoveBeside(
+      persistPageLayout(step.settings, toCanvasLayoutFields(step.fields)),
+      field.id,
+    );
+    if (!next) return;
+    persistStepSettings(step, { pageLayout: next });
   }
+
+  function handleMoveOwnRow() {
+    const step = currentContentStep();
+    const field =
+      selectedField && selectedField.type !== "completion" ? selectedField : null;
+    if (!step || !field) return;
+    const next = applyMoveOwnRow(
+      persistPageLayout(step.settings, toCanvasLayoutFields(step.fields)),
+      field.id,
+    );
+    if (!next) return;
+    persistStepSettings(step, { pageLayout: next });
+  }
+
+  const builderCommands = useMemo(
+    function commands() {
+      return buildFormBuilderCommands({
+        fieldTypes: FIELD_TYPES,
+      });
+    },
+    [],
+  );
+
+  function insertionContextAt(gapIndex: number | null) {
+    const step = currentContentStep();
+    const fieldId =
+      selectedField && selectedField.type !== "completion"
+        ? selectedField.id
+        : null;
+    return buildInsertionContext({
+      stepId: step?.id ?? null,
+      fieldId,
+      gapIndex,
+      layout: step
+        ? persistPageLayout(step.settings, toCanvasLayoutFields(step.fields))
+        : { rows: [] },
+      isCompletion:
+        (!!selectedField && selectedField.type === "completion") ||
+        (!!selectedStep && isCompletionOnlyStep(selectedStep)),
+      hasContentStep: contentSteps.length > 0,
+    });
+  }
+
+  const commandHandlers = {
+    addField: handleAddField,
+    addPage: function addPage() {
+      addStepMutation.mutate({});
+    },
+    moveBeside: handleMoveBeside,
+    moveOwnRow: handleMoveOwnRow,
+  };
 
   // ─── Field options helpers (auto-save) ──────────────────────────────────
 
@@ -2003,16 +2174,12 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       });
     }
     if (!wasOptionType && isOptionType) {
-      const seedOptions = val === "multi_select"
-        ? toDraftFieldOptions([
-          { label: "Option 1", value: "option_1" },
-          { label: "Option 2", value: "option_2" },
-        ])
-        : toDraftFieldOptions([
-          { label: "Option 1", value: "option_1" },
-        ]);
-      updateData.options = toPersistedFieldOptions(seedOptions);
-      setFieldOptions(field.id, seedOptions);
+      const seeded = defaultOptionsForFieldType(val);
+      if (seeded) {
+        const seedOptions = toDraftFieldOptions(seeded);
+        updateData.options = toPersistedFieldOptions(seedOptions);
+        setFieldOptions(field.id, seedOptions);
+      }
     }
     if (val === "file" || val === "completion") {
       updateData.hidden = false;
@@ -2168,14 +2335,12 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           <Skeleton className="h-8 w-8" />
           <Skeleton className="h-7 w-48" />
         </div>
-        <div className="grid min-h-0 flex-1 gap-6 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)]">
-          <Card className="min-h-0 overflow-hidden">
-            <CardContent className="space-y-2 pt-4">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
-            </CardContent>
-          </Card>
+        <div className="grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)]">
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
           <Skeleton className="h-full min-h-0 w-full rounded-[24px]" />
         </div>
       </div>
@@ -2212,186 +2377,82 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   // ─── Render: Builder panels ──────────────────────────────────────────────
 
-  const addContentPopover = (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          size="sm"
-          className="px-2.5"
-          disabled={contentSteps.length === 0}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-64 p-1.5 max-h-[420px] overflow-y-auto">
-        {FIELD_TYPES.map((ft) => (
-          <button
-            key={ft.type}
-            type="button"
-            onClick={() => handleAddField(ft.type, ft.label)}
-            className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-sm text-left hover:bg-muted/60 transition-colors"
-          >
-            <span
-              className={cn(
-                "flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
-                ft.chipClass,
-              )}
-            >
-              <ft.icon className="h-3.5 w-3.5" />
-            </span>
-            {ft.label}
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={handleAddCompletionPage}
-          disabled={hasCompletionPage || addStepMutation.isPending}
-          className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-sm text-left hover:bg-muted/60 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <span
-            className={cn(
-              "flex h-7 w-7 shrink-0 items-center justify-center rounded-[8px]",
-              COMPLETION_TYPE_META.chipClass,
-            )}
-          >
-            <PartyPopper className="h-3.5 w-3.5" />
-          </span>
-          Ending page
-        </button>
-      </PopoverContent>
-    </Popover>
-  );
-
   const contentPanel = (
-    <Card className="h-fit">
-      <CardContent className="space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">
-            Content
-          </p>
-          {addContentPopover}
-        </div>
+    <div className="space-y-2">
+      <p className="text-sm font-medium">
+        Content
+      </p>
 
-        {contentSteps.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-[16px] border border-dashed py-8 text-center">
-            <p className="text-xs text-muted-foreground mb-3 px-3">
-              No pages yet. Add a page to start building your form.
-            </p>
-            <Button
-              size="sm"
-              onClick={() => addStepMutation.mutate({})}
-              disabled={addStepMutation.isPending}
-            >
-              <Plus className="h-4 w-4" />
-              Add page
-            </Button>
-          </div>
-        ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={collisionDetection}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragCancel={handleDragCancel}
-            onDragEnd={handleDragEnd}
-          >
-            <SortableContext
-              items={contentSteps.map((step) => `${STEP_SORTABLE_ID_PREFIX}${step.id}`)}
-              strategy={verticalListSortingStrategy}
-            >
-              <div className="space-y-4">
-                {contentSteps.map((step, stepIdx) => (
-                  <ContentStepGroup
-                    key={step.id}
-                    step={step}
-                    stepNumber={stepIdx + 1}
-                    isSelected={selection?.kind === "step" && selection.id === step.id}
-                    selectedFieldId={selection?.kind === "field" ? selection.id : null}
-                    questionNumberByFieldId={questionNumberByFieldId}
-                    onSelectStep={() => setSelection({ kind: "step", id: step.id })}
-                    onSelectField={(fieldId) => setSelection({ kind: "field", id: fieldId })}
-                    onDeleteStep={
-                      contentSteps.length > 1
-                        ? () => deleteStepMutation.mutate(step.id)
-                        : undefined
-                    }
-                  />
-                ))}
-              </div>
-            </SortableContext>
-
-            <DragOverlay>
-              {dragging?.type === "field" ? (
-                (() => {
-                  const found = findField(dragging.id);
-                  return found ? <FieldDragPreview field={found.field} /> : null;
-                })()
-              ) : dragging?.type === "step" ? (
-                <div className="rounded-[12px] border bg-background px-3 py-2 shadow-lg text-sm font-medium">
-                  {sortedSteps.find((s) => s.id === dragging.id)?.title || "Page"}
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        )}
-
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => addStepMutation.mutate({})}
-          disabled={addStepMutation.isPending}
+      {contentSteps.length === 0 ? null : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisionDetection}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragCancel={handleDragCancel}
+          onDragEnd={handleDragEnd}
         >
-          {addStepMutation.isPending ? (
-            <Loader className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Plus className="h-3.5 w-3.5" />
-          )}
-          Add page
-        </Button>
+          <SortableContext
+            items={contentSteps.map((step) => `${STEP_SORTABLE_ID_PREFIX}${step.id}`)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-2">
+              {contentSteps.map((step, stepIdx) => (
+                <ContentStepGroup
+                  key={step.id}
+                  step={step}
+                  stepNumber={stepIdx + 1}
+                  isSelected={
+                    (selection?.kind === "step" && selection.id === step.id) ||
+                    (selection?.kind === "field" &&
+                      (step.fields ?? []).some((field) => field.id === selection.id))
+                  }
+                  selectedFieldId={selection?.kind === "field" ? selection.id : null}
+                  questionNumberByFieldId={questionNumberByFieldId}
+                  onSelectStep={() => setSelection({ kind: "step", id: step.id })}
+                  onSelectField={(fieldId) => setSelection({ kind: "field", id: fieldId })}
+                  onDeleteStep={
+                    contentSteps.length > 1
+                      ? () => deleteStepMutation.mutate(step.id)
+                      : undefined
+                  }
+                  onDeleteField={(fieldId) => deleteFieldMutation.mutate(fieldId)}
+                />
+              ))}
+            </div>
+          </SortableContext>
 
-        {/* Ending */}
-        <div className="space-y-1.5">
-          <p className="text-sm font-medium">
-            Ending
-          </p>
-          {completionField ? (
-            <button
-              type="button"
-              onClick={() => setSelection({ kind: "field", id: completionField.id })}
-              className={cn(
-                "flex w-full items-center gap-2.5 rounded-[12px] px-2 py-2 text-left text-sm transition-colors",
-                selection?.kind === "field" && selection.id === completionField.id
-                  ? "bg-primary/10 text-foreground"
-                  : "hover:bg-muted/60",
-              )}
-            >
-              <span
-                className={cn(
-                  "flex h-7 w-9 shrink-0 items-center justify-center rounded-[8px]",
-                  COMPLETION_TYPE_META.chipClass,
-                )}
-              >
-                <PartyPopper className="h-3.5 w-3.5" />
-              </span>
-              <span className="truncate font-medium">{completionField.label}</span>
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={handleAddCompletionPage}
-              disabled={addStepMutation.isPending}
-              className="flex w-full items-center gap-2.5 rounded-[12px] border border-dashed px-2 py-2 text-left text-sm text-muted-foreground hover:bg-muted/40 transition-colors disabled:opacity-50"
-            >
-              <Plus className="h-3.5 w-3.5 ml-1" />
-              Add ending page
-            </button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+          <DragOverlay>
+            {dragging?.type === "field" ? (
+              (() => {
+                const found = findField(dragging.id);
+                return found ? <FieldDragPreview field={found.field} /> : null;
+              })()
+            ) : dragging?.type === "step" ? (
+              <div className="rounded-[12px] border bg-background px-3 py-2 shadow-lg text-sm font-medium">
+                {sortedSteps.find((s) => s.id === dragging.id)?.title || "Page"}
+              </div>
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+      )}
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="w-full border border-dashed border-border text-muted-foreground hover:text-foreground"
+        onClick={() => addStepMutation.mutate({})}
+        disabled={addStepMutation.isPending}
+      >
+        {addStepMutation.isPending ? (
+          <Loader className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Plus className="h-3.5 w-3.5" />
+        )}
+        Add page
+      </Button>
+    </div>
   );
 
   // ─── Render: Preview canvas ──────────────────────────────────────────────
@@ -2404,16 +2465,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
   const canvasPageIndex = canvasStep
     ? contentSteps.findIndex((step) => step.id === canvasStep.id)
     : -1;
-  const previewProgress =
-    selectedField?.type === "completion"
-      ? {
-        current: contentSteps.length,
-        total: contentSteps.length + 1,
-      }
-      : {
-        current: canvasPageIndex,
-        total: contentSteps.length + (completionField ? 1 : 0),
-      };
+  const previewProgress = {
+    current: canvasPageIndex,
+    total: contentSteps.length,
+  };
 
   const previewCanvas = (
     <ExperienceThemeRoot
@@ -2422,49 +2477,34 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
       surface="page"
       className="relative flex h-full min-h-0 max-h-full flex-col overflow-hidden rounded-[24px] border bg-gradient-to-b from-white to-[#f6faf7] max-lg:min-h-[min(540px,100%)]"
     >
-      <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-10 py-12 sm:px-16 lg:px-24">
-        <div className="w-full mx-auto">
+      <div
+        ref={previewScrollRef}
+        tabIndex={-1}
+        className="flex min-h-0 flex-1 items-start overflow-y-auto px-10 py-12 sm:px-16 lg:px-24 outline-none"
+        onPointerDown={function onPreviewPointerDown(event) {
+          if (!isDesktop || !canvasStep) return;
+          if (isTypingSurface(event.target)) return;
+          if (isFocusableControl(event.target, previewScrollRef.current)) return;
+          previewScrollRef.current?.focus({ preventScroll: true });
+        }}
+        onKeyDown={function onPreviewKeyDown(event) {
+          if (!isDesktop || !canvasStep) return;
+          if (!isSlashHotkey(event.nativeEvent)) return;
+          if (isTypingSurface(event.target)) return;
+          event.preventDefault();
+          pageCanvasRef.current?.focusSlash();
+        }}
+      >
+        <div className="w-full max-w-4xl mx-auto">
           <FocusedStepProgress
             current={previewProgress.current}
             total={previewProgress.total}
             surface="preview"
-            className="mx-auto mb-14 max-w-xl"
+            className="mb-8"
           />
-          {selectedField && selectedField.type === "completion" ? (
-            <div key={selectedField.id} className="mx-auto max-w-xl animate-focused-screen space-y-4 text-center flex flex-col items-center">
-              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
-                <PartyPopper className="h-7 w-7 text-primary" />
-              </div>
-              <InlineEditableLabel
-                key={`completion-label-${selectedField.id}`}
-                value={selectedField.label}
-                placeholder="Thank you!"
-                textClassName="text-2xl sm:text-3xl font-semibold text-center"
-                saveStatus={saveStatus[selectedField.id] ?? null}
-                onSave={(label) =>
-                  updateFieldMutation.mutate({
-                    fieldId: selectedField.id,
-                    data: { label },
-                  })
-                }
-              />
-              <div className="w-full max-w-md mx-auto text-left">
-                <RichTextEditor
-                  key={`completion-desc-${selectedField.id}`}
-                  value={selectedField.description ?? ""}
-                  variant="compact"
-                  placeholder="Write a thank-you message for your respondents."
-                  onSave={(html) =>
-                    updateFieldMutation.mutate({
-                      fieldId: selectedField.id,
-                      data: { description: html },
-                    })
-                  }
-                />
-              </div>
-            </div>
-          ) : canvasStep ? (
+          {canvasStep ? (
             <FormPageCanvas
+              ref={pageCanvasRef}
               key={canvasStep.id}
               step={canvasStep}
               fields={canvasFields.map((field) => ({
@@ -2533,10 +2573,20 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                   "upload this section image",
                 )
               }
+              slash={
+                isDesktop
+                  ? {
+                    enabled: true,
+                    commands: builderCommands,
+                    getContext: insertionContextAt,
+                    handlers: commandHandlers,
+                  }
+                  : null
+              }
             />
           ) : (
             <p className="text-sm text-muted-foreground text-center">
-              Select a page on the left to edit it.
+              Select a page on the left to edit.
             </p>
           )}
         </div>
@@ -2546,13 +2596,22 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
   // ─── Render: Settings panel ──────────────────────────────────────────────
 
+  const pageConditionSources = selectedStep
+    ? (sourcesByStepId[selectedStep.id] ?? [])
+    : [];
+  const hasPageSettings =
+    !!selectedStep &&
+    (isTemplateMode ||
+      pageConditionSources.length > 0 ||
+      contentSteps.length > 1);
+
   const settingsPanel = (
-    <Card className="h-fit">
-      <CardContent className="space-y-4">
+    <Card className="h-fit gap-0 py-0 md:gap-0 md:py-0">
+      <CardContent className="space-y-3 p-3 md:p-3">
         {selectedField && selectedField.type !== "completion" ? (
           <>
             <p className="text-sm font-medium">
-              Question settings
+              Field settings
             </p>
 
             {isTemplateMode && (
@@ -2607,6 +2666,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
 
             <SwitchRow
               title="Required"
+              className="px-3 py-2.5"
               checked={selectedField.required}
               disabled={!!selectedField.hidden}
               onCheckedChange={(checked) =>
@@ -2620,6 +2680,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             {isChoiceLayoutFieldType(selectedField.type) && (
               <SwitchRow
                 title="Two-column layout"
+                className="px-3 py-2.5"
                 description="Show choices side by side on wider screens"
                 checked={parseOptionsLayout(selectedField.settings) === "two"}
                 onCheckedChange={(checked) =>
@@ -2639,6 +2700,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             {(selectedField.type === "name" || selectedField.type === "email") && (
               <SwitchRow
                 title="Save to contact"
+                className="px-3 py-2.5"
                 description={`Use as the contact's ${selectedField.type}`}
                 checked={!!selectedField.contactMapping}
                 onCheckedChange={() => handleContactMappingToggle(selectedField)}
@@ -2648,6 +2710,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             {selectedField.type !== "completion" && selectedField.type !== "file" && (
               <SwitchRow
                 title="Hidden field"
+                className="px-3 py-2.5"
                 description="Prefill via ?label= or set default value below"
                 checked={!!selectedField.hidden}
                 onCheckedChange={(checked) =>
@@ -2756,7 +2819,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                       items={options.map((o) => o.id)}
                       strategy={verticalListSortingStrategy}
                     >
-                      <div className="space-y-1.5">
+                      <div className="space-y-1.5 pl-5">
                         {options.map((opt, idx) => (
                           <SortableChoiceRow
                             key={opt.id}
@@ -2820,83 +2883,10 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
               ) : (
                 <Trash2 className="h-3.5 w-3.5" />
               )}
-              Delete question
+              Delete field
             </Button>
           </>
-        ) : selectedField && selectedField.type === "completion" ? (
-          <>
-            <p className="text-sm font-medium">
-              Ending settings
-            </p>
-
-            {isTemplateMode && (
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Title</Label>
-                <InlineEditableLabel
-                  key={`settings-completion-${selectedField.id}`}
-                  value={selectedField.label}
-                  placeholder="Thank you!"
-                  saveStatus={saveStatus[selectedField.id] ?? null}
-                  onSave={(label) =>
-                    updateFieldMutation.mutate({
-                      fieldId: selectedField.id,
-                      data: { label },
-                    })
-                  }
-                />
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                Redirect URL (optional)
-              </Label>
-              <Input
-                type="url"
-                key={`completion-redirect-${selectedField.id}`}
-                defaultValue={
-                  selectedField.settings &&
-                    typeof selectedField.settings === "object" &&
-                    (selectedField.settings as Record<string, unknown>).redirectUrl
-                    ? String((selectedField.settings as Record<string, unknown>).redirectUrl)
-                    : ""
-                }
-                placeholder="https://your-site.com/thanks"
-                className="h-9 text-sm"
-                onBlur={(e) => {
-                  const url = e.target.value.trim();
-                  updateFieldMutation.mutate({
-                    fieldId: selectedField.id,
-                    data: {
-                      settings: url ? { redirectUrl: url } : null,
-                    },
-                  });
-                }}
-              />
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Shows for 5 seconds before redirecting if a URL is set.
-              </p>
-            </div>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="mt-2 w-full bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => {
-                const step = findField(selectedField.id)?.step;
-                if (step) deleteStepMutation.mutate(step.id);
-              }}
-              disabled={deleteStepMutation.isPending}
-            >
-              {deleteStepMutation.isPending ? (
-                <Loader className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Trash2 className="h-3.5 w-3.5" />
-              )}
-              Delete ending
-            </Button>
-          </>
-        ) : selectedStep ? (
+        ) : hasPageSettings && selectedStep ? (
           <>
             <p className="text-sm font-medium">
               Page settings
@@ -2924,7 +2914,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             <FormConditionEditor
               title="Show this page when"
               condition={selectedStep.visibility ?? null}
-              sources={sourcesByStepId[selectedStep.id] ?? []}
+              sources={pageConditionSources}
               onChange={(next) =>
                 updateStepMutation.mutate({
                   stepId: selectedStep.id,
@@ -2952,7 +2942,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           </>
         ) : (
           <p className="text-sm text-muted-foreground py-4 text-center">
-            Select a question to edit its settings.
+            Page and field settings show up here.
           </p>
         )}
       </CardContent>
@@ -3127,6 +3117,87 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
                     }
                   />
 
+                  <div className="space-y-3">
+                    <p className="text-xs text-muted-foreground">After submit</p>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Thank-you title
+                      </Label>
+                      <Input
+                        key={`after-submit-title-${form.id}-${hasAfterSubmitSettings(formSettings)}`}
+                        defaultValue={storedAfterSubmit.title ?? ""}
+                        placeholder="Thank you!"
+                        className="h-9"
+                        onBlur={(event) => {
+                          const title = event.target.value.trim();
+                          if (title === (storedAfterSubmit.title ?? "")) return;
+                          updateFormMutation.mutate({
+                            settings: buildUpdatedFormSettings({
+                              afterSubmit: { title },
+                            }),
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Thank-you message
+                      </Label>
+                      <RichTextEditor
+                        key={`after-submit-message-${form.id}-${hasAfterSubmitSettings(formSettings)}`}
+                        value={storedAfterSubmit.message ?? ""}
+                        placeholder="Your response has been submitted successfully."
+                        onSave={(html) => {
+                          const message = html ?? "";
+                          if (message === (storedAfterSubmit.message ?? "")) return;
+                          updateFormMutation.mutate({
+                            settings: buildUpdatedFormSettings({
+                              afterSubmit: { message },
+                            }),
+                          });
+                        }}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground">
+                        Redirect URL (optional)
+                      </Label>
+                      <Input
+                        type="url"
+                        key={`after-submit-redirect-${form.id}-${hasAfterSubmitSettings(formSettings)}`}
+                        defaultValue={storedAfterSubmit.redirectUrl ?? ""}
+                        placeholder="https://your-site.com/thanks"
+                        className="h-9 text-sm"
+                        onBlur={(event) => {
+                          const redirectUrl = event.target.value.trim();
+                          if (redirectUrl === (storedAfterSubmit.redirectUrl ?? "")) {
+                            return;
+                          }
+                          updateFormMutation.mutate({
+                            settings: buildUpdatedFormSettings({
+                              afterSubmit: { redirectUrl },
+                            }),
+                          });
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        Shows for 5 seconds before redirecting if a URL is set.
+                      </p>
+                    </div>
+                  </div>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full bg-destructive/5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setDeleteFormOpen(true);
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete form
+                  </Button>
                 </div>
               </PopoverContent>
             </Popover>
@@ -3208,7 +3279,7 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
           {props.onboardingFooter}
         </div>
       ) : isDesktop ? (
-        <div className="grid min-h-0 flex-1 gap-5 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+        <div className="grid min-h-0 flex-1 gap-3 overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
           <div className="min-h-0 overflow-y-auto overscroll-contain">
             {contentPanel}
           </div>
@@ -3295,6 +3366,38 @@ export default function FormBuilder(props: FormBuilderProps = {}) {
             entitlement="removeBranding"
             actionLabel="hide LinkyCal branding"
           />
+          <Dialog open={deleteFormOpen} onOpenChange={setDeleteFormOpen}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Delete Form</DialogTitle>
+                <DialogDescription>
+                  Are you sure you want to delete this form? This action cannot
+                  be undone and will remove all associated responses.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteFormOpen(false)}
+                  disabled={deleteFormMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteFormMutation.mutate()}
+                  disabled={deleteFormMutation.isPending}
+                >
+                  {deleteFormMutation.isPending ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
+                  Delete
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </>
       )}
 
@@ -3313,6 +3416,7 @@ function ContentStepGroup({
   onSelectStep,
   onSelectField,
   onDeleteStep,
+  onDeleteField,
 }: {
   step: FormStep;
   stepNumber: number;
@@ -3322,6 +3426,7 @@ function ContentStepGroup({
   onSelectStep: () => void;
   onSelectField: (fieldId: string) => void;
   onDeleteStep?: () => void;
+  onDeleteField: (fieldId: string) => void;
 }) {
   const {
     attributes,
@@ -3343,15 +3448,18 @@ function ContentStepGroup({
   );
 
   return (
-    <div ref={setNodeRef} style={style} className="space-y-1">
-      <div
-        className={cn(
-          "group/steprow flex items-center gap-1 rounded-[10px] px-1 py-1 transition-colors",
-          isSelected ? "bg-primary/10" : "hover:bg-muted/50",
-        )}
-      >
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        "relative space-y-0.5 rounded-[12px] px-1 py-1 transition-colors",
+        isSelected ? "bg-foreground/[0.035]" : "hover:bg-foreground/[0.02]",
+      )}
+    >
+      <div className="group/steprow flex items-center py-0.5">
         <span
-          className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/50 hover:text-muted-foreground active:cursor-grabbing"
+          className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/0 transition-colors group-hover/steprow:text-muted-foreground/60 active:cursor-grabbing"
+          aria-label={`Drag page ${stepNumber}`}
           {...listeners}
           {...attributes}
         >
@@ -3375,7 +3483,7 @@ function ContentStepGroup({
           <button
             type="button"
             onClick={onDeleteStep}
-            className="rounded-full bg-muted p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            className="rounded-full p-1 text-muted-foreground/0 transition-colors group-hover/steprow:text-muted-foreground hover:text-destructive"
             aria-label={`Delete page ${stepNumber}`}
           >
             <X className="h-3 w-3" />
@@ -3389,6 +3497,7 @@ function ContentStepGroup({
         selectedFieldId={selectedFieldId}
         questionNumberByFieldId={questionNumberByFieldId}
         onSelectField={onSelectField}
+        onDeleteField={onDeleteField}
       />
     </div>
   );
@@ -3400,12 +3509,14 @@ function StepFieldList({
   selectedFieldId,
   questionNumberByFieldId,
   onSelectField,
+  onDeleteField,
 }: {
   stepId: string;
   fields: FormField[];
   selectedFieldId: string | null;
   questionNumberByFieldId: Record<string, number>;
   onSelectField: (fieldId: string) => void;
+  onDeleteField: (fieldId: string) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `${GROUP_DROPPABLE_ID_PREFIX}${stepId}`,
@@ -3421,24 +3532,19 @@ function StepFieldList({
         className={cn(
           "space-y-0.5 rounded-[12px] transition-colors",
           isOver && "bg-primary/5",
-          fields.length === 0 && "border border-dashed px-2 py-3",
+          fields.length === 0 && "min-h-2",
         )}
       >
-        {fields.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground text-center">
-            Drop a question here
-          </p>
-        ) : (
-          fields.map((field) => (
-            <ContentFieldRow
-              key={field.id}
-              field={field}
-              questionNumber={questionNumberByFieldId[field.id]}
-              isSelected={selectedFieldId === field.id}
-              onSelect={() => onSelectField(field.id)}
-            />
-          ))
-        )}
+        {fields.map((field) => (
+          <ContentFieldRow
+            key={field.id}
+            field={field}
+            questionNumber={questionNumberByFieldId[field.id]}
+            isSelected={selectedFieldId === field.id}
+            onSelect={() => onSelectField(field.id)}
+            onDelete={() => onDeleteField(field.id)}
+          />
+        ))}
       </div>
     </SortableContext>
   );
@@ -3514,11 +3620,13 @@ function ContentFieldRow({
   questionNumber,
   isSelected,
   onSelect,
+  onDelete,
 }: {
   field: FormField;
   questionNumber: number | undefined;
   isSelected: boolean;
   onSelect: () => void;
+  onDelete: () => void;
 }) {
   const {
     attributes,
@@ -3539,19 +3647,28 @@ function ContentFieldRow({
   const Icon = meta.icon;
 
   return (
-    <div ref={setNodeRef} style={style} className="group/fieldrow flex items-center gap-1">
+    <div ref={setNodeRef} style={style} className="group/fieldrow flex items-center">
+      <span
+        className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/0 transition-colors group-hover/fieldrow:text-muted-foreground/60 active:cursor-grabbing"
+        aria-label="Drag field"
+        {...listeners}
+        {...attributes}
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </span>
       <button
         type="button"
         onClick={onSelect}
         className={cn(
-          "flex min-w-0 flex-1 items-center gap-2.5 rounded-[12px] px-2 py-2 text-left text-sm transition-colors",
-          isSelected ? "bg-primary/10" : "hover:bg-muted/60",
+          "flex min-w-0 flex-1 items-center gap-2.5 rounded-[12px] py-1.5 pr-2 text-left text-sm transition-colors",
+          isSelected ? "text-foreground" : "text-muted-foreground",
         )}
       >
         <span
           className={cn(
             "flex h-7 w-10 shrink-0 items-center justify-center gap-0.5 rounded-[8px]",
             meta.chipClass,
+            !isSelected && "opacity-70",
           )}
         >
           <Icon className="h-3 w-3" />
@@ -3559,18 +3676,19 @@ function ContentFieldRow({
             <span className="text-[10px] font-semibold">{questionNumber}</span>
           )}
         </span>
-        <span className="min-w-0 flex-1 truncate font-medium text-foreground">
+        <span className="min-w-0 flex-1 truncate font-medium">
           {field.label || "Untitled question"}
           {field.required && <span className="text-destructive ml-0.5">*</span>}
         </span>
       </button>
-      <span
-        className="flex h-6 w-5 shrink-0 cursor-grab items-center justify-center text-muted-foreground/0 transition-colors group-hover/fieldrow:text-muted-foreground/60 active:cursor-grabbing"
-        {...listeners}
-        {...attributes}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="rounded-full p-1 text-muted-foreground/0 transition-colors group-hover/fieldrow:text-muted-foreground hover:text-destructive"
+        aria-label="Delete field"
       >
-        <GripVertical className="h-3.5 w-3.5" />
-      </span>
+        <X className="h-3 w-3" />
+      </button>
     </div>
   );
 }
