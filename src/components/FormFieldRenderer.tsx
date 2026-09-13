@@ -240,7 +240,7 @@ function FileInput({
           "ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
         )}
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-primary/10 text-primary">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius)] bg-background text-muted-foreground">
           <Upload className="h-4 w-4" />
         </span>
         <span className="min-w-0 flex-1">
@@ -395,7 +395,7 @@ function ChoiceCard({
         "flex cursor-pointer items-center gap-4 rounded-[var(--radius)] border-0 px-4 ring-shadow transition-all",
         description ? "min-h-11 py-2.5" : "h-11",
         selected
-          ? "bg-primary/[0.09] ring-shadow-primary"
+          ? "bg-selected text-selected-foreground ring-shadow-primary"
           : "bg-field-fill hover:ring-shadow-[color-mix(in_srgb,var(--primary)_32%,transparent)]",
         error &&
         !selected &&
@@ -409,7 +409,7 @@ function ChoiceCard({
             "flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] text-xs font-semibold",
             selected
               ? "bg-primary text-primary-foreground"
-              : "bg-background/80 text-primary",
+              : "bg-background/80 text-muted-foreground",
           )}
         >
           {letter}

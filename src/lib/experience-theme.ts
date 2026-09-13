@@ -1,5 +1,7 @@
 import type { CSSProperties } from "react";
 
+import { deriveThemePalette } from "../../shared/theme-palette";
+
 export interface FormExperienceTheme {
   primaryBg?: string;
   primaryText?: string;
@@ -31,8 +33,14 @@ export function experienceThemeVars(
   const primaryBg = theme.primaryBg;
   const radius =
     theme.borderRadius != null ? `${theme.borderRadius}px` : undefined;
+  const palette = deriveThemePalette({
+    background: theme.backgroundColor,
+    text: theme.textColor,
+    primary: theme.primaryBg,
+    primaryText: theme.primaryText,
+  });
 
-  return cssVars([
+  const entries: Array<[string, string | undefined]> = [
     ["--primary", primaryBg],
     ["--primary-foreground", primaryBg ? theme.primaryText || "#ffffff" : theme.primaryText],
     ["--ring", primaryBg],
@@ -54,7 +62,31 @@ export function experienceThemeVars(
     ["--radius-md", radius ? `max(0px, calc(${radius} - 2px))` : undefined],
     ["--radius-lg", radius],
     ["--radius-xl", radius ? `calc(${radius} + 4px)` : undefined],
-  ]);
+  ];
+
+  if (palette) {
+    entries.push(
+      ["--background", palette.background],
+      ["--foreground", palette.foreground],
+      ["--card", palette.card],
+      ["--card-foreground", palette.foreground],
+      ["--muted", palette.muted],
+      ["--muted-foreground", palette.mutedForeground],
+      ["--placeholder", palette.placeholder],
+      ["--field-fill", palette.fieldFill],
+      ["--border", palette.border],
+      ["--input", palette.input],
+      ["--ring-shadow-color", palette.border],
+    );
+    if (palette.selected != null) {
+      entries.push(["--selected", palette.selected]);
+    }
+    if (palette.selectedForeground != null) {
+      entries.push(["--selected-foreground", palette.selectedForeground]);
+    }
+  }
+
+  return cssVars(entries);
 }
 
 export function experienceThemeStyle(

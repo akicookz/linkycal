@@ -13,6 +13,7 @@ import {
 } from "@/components/FormExperience";
 import { ExperienceThemeRoot } from "@/components/experience-theme-root";
 import { SEOHead } from "@/components/SEOHead";
+import { resolveFormAfterSubmit } from "@/lib/form-after-submit";
 import {
   buildFormExperienceModel,
   getAllFormFields,
@@ -309,21 +310,17 @@ export default function PublicForm() {
     }
   }, [form, allFields]);
 
-  // Completion redirect — hook must be declared before any early returns
+  const afterSubmit = resolveFormAfterSubmit(form?.settings, completionField);
+  // After-submit redirect — hook must be declared before any early returns
   // so the hook call order stays stable across loading/error/success renders.
-  const completionRedirectUrl =
-    completionField?.settings &&
-    typeof completionField.settings.redirectUrl === "string" &&
-    completionField.settings.redirectUrl.trim()
-      ? completionField.settings.redirectUrl.trim()
-      : null;
   useEffect(() => {
-    if (!submitted || !completionRedirectUrl) return;
+    const redirectUrl = afterSubmit.redirectUrl;
+    if (!submitted || !redirectUrl) return;
     const timer = setTimeout(() => {
-      window.location.href = completionRedirectUrl;
+      window.location.href = redirectUrl;
     }, 5000);
     return () => clearTimeout(timer);
-  }, [submitted, completionRedirectUrl]);
+  }, [submitted, afterSubmit.redirectUrl]);
 
   function setValue(fieldId: string, value: string) {
     setValues((previous) => ({ ...previous, [fieldId]: value }));
@@ -581,12 +578,6 @@ export default function PublicForm() {
 
   // ─── Success State ─────────────────────────────────────────────────────
 
-  const completionTitle = completionField?.label || "Thank you!";
-  const completionDescription = completionField?.description || null;
-  const completionFallbackText = completionField
-    ? null
-    : "Your response has been submitted successfully.";
-
   if (submitted) {
     const completionContent = (
       <div className="flex flex-col items-center justify-center text-center animate-focused-screen">
@@ -594,19 +585,19 @@ export default function PublicForm() {
           <CheckCircle2 className="h-7 w-7 text-primary" />
         </div>
         <h2 className="font-semibold mb-2 text-2xl sm:text-3xl">
-          {completionTitle}
+          {afterSubmit.title}
         </h2>
-        {completionDescription ? (
+        {afterSubmit.messageHtml ? (
           <div
             className="text-sm text-muted-foreground max-w-sm prose prose-sm"
-            dangerouslySetInnerHTML={{ __html: completionDescription }}
+            dangerouslySetInnerHTML={{ __html: afterSubmit.messageHtml }}
           />
-        ) : completionFallbackText ? (
+        ) : afterSubmit.fallbackText ? (
           <p className="text-sm text-muted-foreground max-w-sm">
-            {completionFallbackText}
+            {afterSubmit.fallbackText}
           </p>
         ) : null}
-        {completionRedirectUrl && (
+        {afterSubmit.redirectUrl && (
           <p className="text-xs text-muted-foreground mt-4">Redirecting...</p>
         )}
       </div>

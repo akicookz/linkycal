@@ -1,3 +1,5 @@
+import { deriveThemePalette } from "../../shared/theme-palette";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface EmailTheme {
@@ -137,17 +139,26 @@ function resolveTheme(theme?: EmailTheme): ResolvedPalette {
   const fontFamily = theme?.fontFamily
     ? `'${theme.fontFamily}', ${DEFAULT_FONT_STACK}`
     : DEFAULT_FONT_STACK;
+  const background = isHex(theme?.backgroundColor)
+    ? theme!.backgroundColor!
+    : DEFAULT_BACKGROUND;
+  const text = isHex(theme?.textColor) ? theme!.textColor! : DEFAULT_TEXT;
+  const primaryText = isHex(theme?.primaryText)
+    ? theme!.primaryText!
+    : DEFAULT_PRIMARY_TEXT;
+  const palette = deriveThemePalette({
+    background,
+    text,
+    primary,
+    primaryText,
+  });
   return {
     primary,
-    primaryText: isHex(theme?.primaryText)
-      ? theme!.primaryText!
-      : DEFAULT_PRIMARY_TEXT,
+    primaryText,
     primaryTint: lighten(primary, 0.95),
-    background: isHex(theme?.backgroundColor)
-      ? theme!.backgroundColor!
-      : DEFAULT_BACKGROUND,
-    text: isHex(theme?.textColor) ? theme!.textColor! : DEFAULT_TEXT,
-    muted: DEFAULT_MUTED,
+    background,
+    text,
+    muted: palette?.mutedForeground ?? DEFAULT_MUTED,
     radius:
       typeof theme?.borderRadius === "number" && theme.borderRadius >= 0
         ? Math.min(theme.borderRadius, 32)

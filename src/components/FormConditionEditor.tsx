@@ -163,16 +163,7 @@ export function FormConditionEditor({
     emit({ when, rules: nextRules });
   }
 
-  if (sources.length === 0) {
-    return (
-      <div className="space-y-1.5">
-        <p className="text-xs font-medium">{title}</p>
-        <p className="text-xs text-muted-foreground">
-          Needs a previous question.
-        </p>
-      </div>
-    );
-  }
+  if (sources.length === 0) return null;
 
   if (rules.length === 0) {
     return (

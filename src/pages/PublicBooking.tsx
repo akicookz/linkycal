@@ -1097,10 +1097,10 @@ export default function PublicBooking({
                             disabled={day.disabled}
                             onClick={() => handleDateSelect(day.dateStr)}
                             className={cn(
-                              "lc-themed-hover aspect-square flex flex-col items-center justify-center rounded-[var(--radius)] text-[14px] font-medium transition-all relative border border-transparent",
+                              "lc-themed-hover aspect-square flex flex-col items-center justify-center rounded-[var(--radius)] text-[14px] font-medium transition-all relative border-0 ring-shadow",
                               day.disabled && "text-muted-foreground/30 cursor-not-allowed",
                               !day.disabled && !isSelected && "bg-muted/50 cursor-pointer",
-                              isSelected && "bg-primary text-primary-foreground shadow-sm",
+                              isSelected && "bg-primary text-primary-foreground ring-shadow-primary",
                             )}
                             data-selected={isSelected || undefined}
                           >
@@ -1145,7 +1145,7 @@ export default function PublicBooking({
                           {Array.from({ length: 8 }).map((_, i) => (
                             <div
                               key={i}
-                              className="h-10 rounded-lg border border-border bg-muted/50 animate-pulse"
+                              className="h-10 rounded-[var(--radius)] border-0 bg-muted/50 ring-shadow animate-pulse"
                             />
                           ))}
                         </div>
@@ -1185,8 +1185,8 @@ export default function PublicBooking({
                                 key={slot.start}
                                 onClick={() => handleTimeSelect(slot)}
                                 className={cn(
-                                  "lc-themed-button lc-themed-hover py-2.5 px-3 border border-transparent text-[13px] font-medium text-center transition-all",
-                                  isSelected && "bg-primary text-primary-foreground shadow-sm border-primary",
+                                  "lc-themed-button lc-themed-hover py-2.5 px-3 border-0 ring-shadow text-[13px] font-medium text-center transition-all",
+                                  isSelected && "bg-primary text-primary-foreground ring-shadow-primary",
                                   !isSelected && "bg-muted/50",
                                 )}
                                 data-selected={isSelected || undefined}
@@ -1251,11 +1251,11 @@ export default function PublicBooking({
                   <Input
                     id="name"
                     type="text"
+                    variant="focused"
                     value={guestName}
                     onChange={(e) => setGuestName(e.target.value)}
                     placeholder="Your full name"
                     required
-                    className="rounded-[var(--radius)]"
                   />
                 </div>
                 <div>
@@ -1263,22 +1263,22 @@ export default function PublicBooking({
                   <Input
                     id="email"
                     type="email"
+                    variant="focused"
                     value={guestEmail}
                     onChange={(e) => setGuestEmail(e.target.value)}
                     placeholder="you@example.com"
                     required
-                    className="rounded-[var(--radius)]"
                   />
                 </div>
                 <div>
                   <Label htmlFor="notes">Notes</Label>
                   <Textarea
                     id="notes"
+                    variant="focused"
                     value={guestNotes}
                     onChange={(e) => setGuestNotes(e.target.value)}
                     placeholder="Anything you'd like us to know"
                     rows={3}
-                    className="rounded-[var(--radius)]"
                   />
                 </div>
 
@@ -1379,7 +1379,7 @@ export default function PublicBooking({
               )}
 
               {selectedSlot && selectedDate && (
-                <div className="rounded-lg border border-border p-4 text-left mb-5 mx-auto max-w-sm">
+                <div className="rounded-[var(--radius)] border-0 bg-field-fill p-4 text-left mb-5 mx-auto max-w-sm ring-shadow">
                   <p className="text-sm font-semibold">{eventType.name}</p>
                   <p className="text-sm text-muted-foreground mt-1">
                     {formatDateFull(new Date(selectedDate + "T00:00:00"))}

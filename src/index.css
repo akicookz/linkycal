@@ -23,6 +23,9 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-field-fill: var(--field-fill);
+  --color-placeholder: var(--placeholder);
+  --color-selected: var(--selected);
+  --color-selected-foreground: var(--selected-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
@@ -79,6 +82,9 @@
   --muted: #f4f7f5;
   --muted-foreground: #5c7268;
   --field-fill: #fafafa;
+  --placeholder: #9aa8a1;
+  --selected: color-mix(in srgb, var(--primary) 9%, var(--background));
+  --selected-foreground: var(--foreground);
 
   --accent: #f1f5f3;
   --accent-foreground: #0f1a14;
@@ -502,7 +508,7 @@ html[data-embed="1"] body {
   border-radius: var(--radius);
 }
 .lc-themed-hover:not([data-selected="true"]):hover {
-  border-color: var(--primary);
+  --ring-shadow-color: var(--primary);
 }
 
 .dark {

@@ -65,7 +65,7 @@ export function FocusedStepProgress(props: FocusedStepProgressProps) {
           className={cn(
             "min-w-0 rounded-full transition-all duration-300",
             dot.size === "small" ? "h-0.5 flex-[0.45]" : "h-1 flex-1",
-            dot.index <= current ? "bg-primary" : "bg-primary/15",
+            dot.index <= current ? "bg-primary" : "bg-muted",
           )}
         />
       ))}
