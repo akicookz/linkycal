@@ -369,7 +369,7 @@ export default function Landing() {
                 <div className="flex items-center gap-2 mb-1">
                   <Link2 className="w-[18px] h-[18px] text-brand" />
                   <h3 className="text-lg font-semibold text-foreground">
-                    Share via link or embed in your site
+                    Share via link or use headless
                   </h3>
                 </div>
                 <p className="text-sm text-brand font-medium leading-relaxed">
