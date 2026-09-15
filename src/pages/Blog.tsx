@@ -105,6 +105,7 @@ export default function Blog() {
         title={post.title}
         description={post.description}
         type="article"
+        image={post.image}
         canonical={`https://linkycal.com/blog/${post.slug}`}
         structuredData={{ "@context": "https://schema.org", "@type": "Article", headline: post.title, description: post.description, datePublished: post.date, author: { "@type": "Organization", name: post.author }, url: `https://linkycal.com/blog/${post.slug}` }}
       />
@@ -114,8 +115,9 @@ export default function Blog() {
         <h1 className="mt-5 font-heading text-5xl font-semibold leading-[1.05] tracking-[-0.04em] sm:text-6xl">{post.title}</h1>
         <p className="mt-6 text-pretty text-xl leading-8 text-muted-foreground">{post.description}</p>
         <p className="mt-4 text-sm text-muted-foreground">By {post.author}</p>
+        {post.image && <img src={post.image} alt="" className="mt-8 max-h-[28rem] w-full rounded-[20px] object-cover" />}
         <div className="mt-12 overflow-hidden text-[17px] leading-8 text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-6 [&_blockquote]:py-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-2xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc">
-          {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : PostBody ? <PostBody /> : <p className="text-muted-foreground">Loading article…</p>}
+          {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : loadedPost?.slug === post.slug && PostBody ? <PostBody /> : <p className="text-muted-foreground">Loading article…</p>}
         </div>
       </main>
     </BlogLayout>

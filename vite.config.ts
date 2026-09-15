@@ -9,7 +9,6 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import type { Plugin } from "vite";
 
 function blogRegistryPlugin() {
   const virtualId = "virtual:blog-registry";
@@ -57,10 +56,10 @@ function blogRegistryPlugin() {
       );
       return `export const blogEntries = ${JSON.stringify(publishedEntries)};\nexport const postLoaders = {\n${loaders.join("\n")}\n};`;
     },
-    handleHotUpdate({ file, server }: { file: string; server: { moduleGraph: { getModuleById(id: string): unknown; invalidateModule(module: unknown): void }; ws: { send(message: { type: string }): void } } }) {
+    handleHotUpdate({ file, server }: { file: string; server: { restart: () => Promise<void> } }) {
       const contentDirectory = path.resolve(__dirname, "src/content/blog");
       if (file.startsWith(`${contentDirectory}${path.sep}`)) {
-        server.ws.send({ type: "full-reload" });
+        void server.restart();
       }
     },
   };
@@ -93,13 +92,10 @@ export default defineConfig({
   },
   plugins: [
     blogRegistryPlugin(),
-    ({
-      enforce: "pre",
-      include: /src[\\/]content[\\/]blog[\\/].*\.mdx?$/,
-      ...mdx({
+    Object.assign(mdx({
+        include: /src[\\/]content[\\/]blog[\\/].*\.mdx?$/,
         remarkPlugins: [remarkFrontmatter, remarkGfm],
-      }),
-    } as unknown as Plugin),
+      }), { enforce: "pre" as const }),
     react(),
     cloudflare(),
     tailwindcss(),

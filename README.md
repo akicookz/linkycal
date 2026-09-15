@@ -155,10 +155,27 @@ specific top-level SPA routes.
 Blog posts live in `src/content/blog/` and support both `.md` and `.mdx` files.
 Each post starts with YAML frontmatter containing `title`, `description`,
 `date` (`YYYY-MM-DD`), `author`, `slug`, `category`, and optional `draft` and
-`image` fields. Posts marked `draft: true`, invalid frontmatter, and duplicate
-slugs are excluded from the public registry. Markdown uses GitHub-flavored
-syntax; MDX also supports React components. The public index is `/blog` and an
-article is available at `/blog/:slug`.
+`image` fields:
+
+```yaml
+---
+title: A useful article title
+description: A short summary for the index and search previews.
+date: 2026-09-16
+author: LinkyCal team
+slug: a-useful-article-title
+category: Forms
+draft: false
+image: /blog/a-useful-article-title.png
+---
+```
+
+Frontmatter is parsed and validated during the Vite build. Invalid frontmatter
+or duplicate slugs fail the build with the source filename. Posts marked
+`draft: true` are omitted from the generated public registry and their body is
+not included in the shipped client chunks. Markdown uses GitHub-flavored
+syntax; MDX also supports trusted React components. The public index is
+`/blog` and an article is available at `/blog/:slug`.
 
 ### Prerequisites
 
