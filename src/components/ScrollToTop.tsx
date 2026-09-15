@@ -14,7 +14,13 @@ export function ScrollToTop() {
       html.style.scrollBehavior = "auto";
 
       if (hash) {
-        const el = document.getElementById(hash.slice(1));
+        let hashId = hash.slice(1);
+        try {
+          hashId = decodeURIComponent(hashId);
+        } catch {
+          // Keep the raw hash when a malformed escape is present.
+        }
+        const el = document.getElementById(hashId);
         if (el) {
           el.scrollIntoView({ block: "start" });
           html.style.scrollBehavior = previous;
