@@ -313,8 +313,8 @@ export default function Blog() {
                       <span>Setup with your agents</span>
                       <div className="flex items-center pl-1" aria-hidden="true">
                         {["Claude", "ChatGPT", "Lovable", "Cursor"].map((clientName, index) => (
-                          <span key={clientName} title={clientName} className={index > 0 ? "-ml-2" : undefined}>
-                            <McpClientIcon clientName={clientName} className="size-10 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.14)] ring-2 ring-brand" />
+                          <span key={clientName} title={clientName} className={index > 0 ? "-ml-1.5" : undefined}>
+                            <McpClientIcon clientName={clientName} className="size-7 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.14)] ring-1 ring-brand [&_img]:size-4" />
                           </span>
                         ))}
                       </div>
