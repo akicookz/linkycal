@@ -124,6 +124,75 @@
   }
 }
 
+/* ─── Blog editorial layout ─────────────────────────────────────────────── */
+
+.blog-cover,
+.blog-cover-image {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 8.15;
+  overflow: hidden;
+  border-radius: 1.25rem;
+}
+
+.blog-cover {
+  background: #1b4332;
+  isolation: isolate;
+}
+
+.blog-cover-image {
+  max-height: 32rem;
+  object-fit: cover;
+}
+
+.blog-cover-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.12;
+  background-image: linear-gradient(rgba(255, 255, 255, 0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.3) 1px, transparent 1px);
+  background-size: 3rem 3rem;
+}
+
+.blog-cover-orbit {
+  position: absolute;
+  width: 20rem;
+  height: 20rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+}
+
+.blog-cover-orbit-one {
+  right: -5rem;
+  top: -9rem;
+}
+
+.blog-cover-orbit-two {
+  right: 3rem;
+  top: -1rem;
+  opacity: 0.45;
+}
+
+.blog-toc {
+  padding-top: 0.35rem;
+}
+
+.blog-article-body aside {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  background: color-mix(in srgb, var(--brand) 6%, white);
+  color: var(--foreground);
+}
+
+@media (max-width: 639px) {
+  .blog-cover,
+  .blog-cover-image {
+    aspect-ratio: 1.18 / 1;
+  }
+}
+
 html[data-embed="1"],
 html[data-embed="1"] body {
   background-color: transparent;

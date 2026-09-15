@@ -1,7 +1,8 @@
-import { ArrowLeft, ArrowRight, CalendarDays } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { SEOHead } from "@/components/SEOHead";
+import { Logo } from "@/components/Logo";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Button } from "@/components/ui/button";
@@ -103,15 +104,15 @@ function ArticleTableOfContents({ headings }: { headings: ArticleHeading[] }) {
 
   if (!headings.length) return null;
   return (
-    <nav aria-label="Table of contents" className="rounded-[16px] bg-muted/45 p-4">
+    <nav aria-label="Table of contents" className="blog-toc">
       <p className="text-sm font-semibold text-foreground">On this page</p>
-      <ol className="mt-3 space-y-1.5">
+      <ol className="mt-4 space-y-2">
         {headings.map((heading) => (
-          <li key={heading.id} className={heading.level === 3 ? "pl-3" : undefined}>
+          <li key={heading.id} className={heading.level === 3 ? "pl-4" : undefined}>
             <a
               href={`#${heading.id}`}
               aria-current={activeId === heading.id ? "location" : undefined}
-              className={`block rounded-lg px-2 py-1.5 text-sm leading-5 transition-colors ${activeId === heading.id ? "bg-brand/10 font-medium text-brand" : "text-muted-foreground hover:bg-brand/5 hover:text-foreground"}`}
+              className={`block text-sm leading-5 transition-colors ${activeId === heading.id ? "font-medium text-brand" : "text-muted-foreground hover:text-foreground"}`}
             >
               {heading.label}
             </a>
@@ -119,6 +120,31 @@ function ArticleTableOfContents({ headings }: { headings: ArticleHeading[] }) {
         ))}
       </ol>
     </nav>
+  );
+}
+
+function ArticleCover({ post }: { post: BlogPost }) {
+  if (post.image) {
+    return <img src={post.image} alt="" className="blog-cover-image" />;
+  }
+
+  return (
+    <div className="blog-cover" aria-label={`${post.title} cover`}>
+      <div className="blog-cover-grid" aria-hidden="true" />
+      <div className="blog-cover-orbit blog-cover-orbit-one" aria-hidden="true" />
+      <div className="blog-cover-orbit blog-cover-orbit-two" aria-hidden="true" />
+      <div className="relative z-10 flex h-full flex-col justify-between p-7 sm:p-10">
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-sm font-medium text-white/75">{post.category}</span>
+          <Logo size="sm" variant="light" />
+        </div>
+        <p className="max-w-3xl text-balance font-heading text-4xl font-semibold leading-[1.02] tracking-[-0.045em] text-white sm:text-6xl">{post.title}</p>
+        <div className="flex items-center justify-between gap-4 text-sm text-white/65">
+          <span>{formatDate(post.date)}</span>
+          <span className="hidden sm:inline">linkycal.com/blog</span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -190,23 +216,22 @@ export default function Blog() {
         canonical={`https://linkycal.com/blog/${post.slug}`}
         structuredData={{ "@context": "https://schema.org", "@type": "Article", headline: post.title, description: post.description, datePublished: post.date, author: { "@type": "Organization", name: post.author }, url: `https://linkycal.com/blog/${post.slug}` }}
       />
-      <main className="mx-auto max-w-6xl px-6 pb-28 pt-36">
-        <Link to="/blog" className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> All articles</Link>
-        <div className="mt-12 max-w-3xl">
-          <div className="flex items-center gap-3 text-sm text-muted-foreground"><span className="font-semibold text-brand">{post.category}</span><span>·</span><span className="inline-flex items-center gap-1.5"><CalendarDays className="h-4 w-4" /> {formatDate(post.date)}</span></div>
-          <h1 className="mt-5 font-heading text-5xl font-semibold leading-[1.05] tracking-[-0.04em] sm:text-6xl">{post.title}</h1>
-          <p className="mt-6 text-pretty text-xl leading-8 text-muted-foreground">{post.description}</p>
-          <p className="mt-4 text-sm text-muted-foreground">By {post.author}</p>
-          {post.image && <img src={post.image} alt="" className="mt-8 max-h-[28rem] w-full rounded-[20px] object-cover" />}
-        </div>
-        <div className="mt-12 grid gap-12 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+      <main className="mx-auto max-w-[1240px] px-6 pb-28 pt-28 sm:pt-32">
+        <Link to="/blog" className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground"><ArrowLeft className="h-4 w-4" /> All articles</Link>
+        <div className="grid gap-10 lg:grid-cols-[minmax(0,900px)_240px] lg:items-start lg:gap-18">
           <div className="min-w-0">
-            <div className="mb-10 lg:hidden"><ArticleTableOfContents headings={headings} /></div>
-            <div className="overflow-hidden text-[17px] leading-8 text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-6 [&_blockquote]:py-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-2xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc">
+            <ArticleCover post={post} />
+            <div className="mt-7 max-w-3xl">
+              <h1 className="text-balance font-heading text-[30px] font-semibold leading-tight tracking-[-0.03em]">{post.title}</h1>
+              <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><span>{formatDate(post.date)}</span><span>·</span><span>By {post.author}</span></div>
+              <p className="mt-4 text-lg leading-7 text-muted-foreground">{post.description}</p>
+            </div>
+            <div className="mb-8 mt-10 lg:hidden"><ArticleTableOfContents headings={headings} /></div>
+            <div className="blog-article-body overflow-hidden text-[17px] leading-[1.75] text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-[22px] [&_h2]:font-semibold [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc">
               {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : loadedPost?.slug === post.slug && PostBody ? <ArticleBody PostBody={PostBody} onHeadings={setHeadings} /> : <p className="text-muted-foreground">Loading article…</p>}
             </div>
           </div>
-          <aside className="sticky top-28 hidden lg:block"><ArticleTableOfContents headings={headings} /></aside>
+          <aside className="sticky top-24 hidden max-h-[calc(100vh-7rem)] overflow-y-auto lg:block"><ArticleTableOfContents headings={headings} /></aside>
         </div>
       </main>
     </BlogLayout>
