@@ -346,10 +346,10 @@ export default function Landing() {
           </p>
 
           {/* CTA */}
-          <div className="flex flex-wrap items-center justify-center gap-3 mt-9">
+          <div className="mx-auto mt-9 flex w-full max-w-md flex-col items-stretch gap-3">
             <button
               onClick={openAuth}
-              className="marketing-pill-cta h-14 pl-8 pr-2.5 gap-3 text-[15px] font-medium"
+              className="marketing-pill-cta hero-cta-flat h-14 w-full justify-center gap-3 px-2.5 text-[15px] font-medium"
             >
               Build your free form
               <span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center">
@@ -357,7 +357,7 @@ export default function Landing() {
               </span>
             </button>
             <SetupAgentsLink
-              className="h-14 rounded-full bg-white/70 px-7 text-[15px] font-medium text-foreground shadow-[0_10px_30px_-18px_rgba(15,26,20,0.5)] backdrop-blur transition-colors hover:bg-white"
+              className="h-14 w-full justify-center rounded-full bg-white/70 px-7 text-[15px] font-medium text-foreground backdrop-blur transition-colors hover:bg-white"
             />
           </div>
 

@@ -420,6 +420,15 @@ html[data-embed="1"] body {
     0 24px 55px -18px rgba(27, 67, 50, 0.75);
 }
 
+/* The hero CTAs sit in a stacked, full-width group and should feel grounded. */
+.marketing-pill-cta.hero-cta-flat,
+.marketing-pill-cta.hero-cta-flat:hover {
+  background: #1b4332;
+  box-shadow: none;
+  transform: translateY(0);
+  transition: background-color 0.2s ease;
+}
+
 .marketing-pill-dark {
   display: inline-flex;
   align-items: center;

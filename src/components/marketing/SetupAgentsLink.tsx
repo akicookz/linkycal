@@ -20,7 +20,7 @@ export function SetupAgentsLink({ className }: SetupAgentsLinkProps) {
           <span key={clientName} title={clientName} className={index > 0 ? "-ml-1.5" : undefined}>
             <McpClientIcon
               clientName={clientName}
-              className="size-7 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.14)] ring-1 ring-brand [&_img]:size-4"
+              className="size-7 rounded-full bg-white shadow-none ring-0 [&_img]:size-4"
             />
           </span>
         ))}
