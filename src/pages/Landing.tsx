@@ -317,7 +317,7 @@ export default function Landing() {
 
         <div className="max-w-7xl mx-auto px-6 relative pt-32 sm:pt-36">
           {/* Announcement badge */}
-          <div className="flex justify-center">
+          <div className="flex justify-start sm:justify-center">
             <Link
               to="/features/api"
               className="inline-flex items-center gap-2.5 rounded-full bg-white/80 backdrop-blur pl-1.5 pr-4 py-1.5 shadow-[0_10px_30px_-18px_rgba(15,26,20,0.5)] hover:bg-white transition-colors"
