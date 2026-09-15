@@ -320,7 +320,7 @@ export default function Blog() {
                       </div>
                     </Link>
                     <span className="hidden text-white/40 sm:inline" aria-hidden="true">|</span>
-                    <Button size="lg" variant="secondary" onClick={onGetStarted} className="w-full bg-white text-brand shadow-none hover:bg-white/90 active:scale-[0.96] sm:w-auto"><ArrowRight /> Sign up for free account</Button>
+                    <Button size="lg" variant="secondary" onClick={onGetStarted} className="w-full bg-white text-brand shadow-none hover:bg-white/90 active:scale-[0.96] sm:w-auto">Sign up for free account <ArrowRight /></Button>
                   </div>
                 </div>
               </div>

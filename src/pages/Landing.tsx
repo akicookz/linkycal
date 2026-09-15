@@ -15,7 +15,7 @@ import { getSafeAuthRedirect, storeAuthRedirect } from "@/lib/auth-redirect";
 import { usePostHog } from "@posthog/react";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
-import { CopyLlmsButton } from "@/components/marketing/CopyLlmsButton";
+import { SetupAgentsLink } from "@/components/marketing/SetupAgentsLink";
 import {
   ToolkitSection,
   ComparisonSection,
@@ -332,10 +332,10 @@ export default function Landing() {
           </div>
 
           {/* Headline */}
-          <h1 className="font-heading font-bold tracking-[-0.035em] leading-[1.03] text-[2.75rem] sm:text-[3.75rem] lg:text-[4.6rem] text-foreground text-center text-balance max-w-5xl mx-auto mt-8">
+          <h1 className="font-heading font-bold tracking-[-0.035em] leading-[1.03] text-[2.75rem] sm:text-[3.75rem] lg:text-[4.6rem] text-foreground text-left sm:text-center text-balance max-w-5xl mx-auto mt-8">
             Headless forms and scheduling infrastructure for everyone.
           </h1>
-          <p className="text-base sm:text-lg text-muted-foreground text-center leading-relaxed max-w-2xl mx-auto mt-6">
+          <p className="text-base sm:text-lg text-muted-foreground text-left sm:text-center leading-relaxed max-w-2xl mx-auto mt-6">
             LinkyCal is the{" "}
             <span className="font-semibold text-foreground">
               headless backend
@@ -356,9 +356,8 @@ export default function Landing() {
                 <ArrowRight className="w-4 h-4" />
               </span>
             </button>
-            <CopyLlmsButton
-              className="inline-flex items-center gap-2.5 h-14 px-7 rounded-full bg-white/70 backdrop-blur border border-[#0F1A14]/8 text-[15px] font-medium text-foreground hover:bg-white transition-colors cursor-pointer"
-              iconClassName="w-[18px] h-[18px]"
+            <SetupAgentsLink
+              className="h-14 rounded-full bg-white/70 px-7 text-[15px] font-medium text-foreground shadow-[0_10px_30px_-18px_rgba(15,26,20,0.5)] backdrop-blur transition-colors hover:bg-white"
             />
           </div>
 

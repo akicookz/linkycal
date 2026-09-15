@@ -25,7 +25,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { plans as customerPlans } from "@/lib/constants";
-import { CopyLlmsButton } from "@/components/marketing/CopyLlmsButton";
+import { SetupAgentsLink } from "@/components/marketing/SetupAgentsLink";
 
 interface MarketingCtaProps {
   onGetStarted: () => void;
@@ -38,6 +38,7 @@ interface SectionHeadingProps {
   subtitle?: string;
   align?: "center" | "left";
   className?: string;
+  responsiveCenter?: boolean;
 }
 
 function SectionHeading({
@@ -45,12 +46,14 @@ function SectionHeading({
   subtitle,
   align = "center",
   className,
+  responsiveCenter = false,
 }: SectionHeadingProps) {
   return (
     <div
       className={cn(
         align === "center" ? "text-center mx-auto" : "text-left",
         "max-w-3xl",
+        responsiveCenter && "text-left sm:text-center",
         className,
       )}
     >
@@ -61,7 +64,11 @@ function SectionHeading({
         <p
           className={cn(
             "text-base sm:text-lg text-muted-foreground leading-relaxed mt-5",
-            align === "center" ? "max-w-xl mx-auto" : "max-w-xl",
+            align === "center"
+              ? responsiveCenter
+                ? "max-w-xl sm:mx-auto"
+                : "max-w-xl mx-auto"
+              : "max-w-xl",
           )}
         >
           {subtitle}
@@ -235,6 +242,7 @@ export function ToolkitSection() {
         <SectionHeading
           title="You ship the frontend. We run the backend."
           subtitle="Point your forms and booking flows at LinkyCal. We store every submission, enrich it into a contact, and trigger the follow-up."
+          responsiveCenter
         />
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-14">
           {toolkitCards.map((card) => (
@@ -787,9 +795,8 @@ export function HeadlessSection() {
               <Code2 className="w-4 h-4" />
               Explore the API
             </Link>
-            <CopyLlmsButton
-              className="inline-flex items-center gap-2 h-12 px-2 text-sm font-medium text-brand hover:text-foreground transition-colors cursor-pointer"
-              iconClassName="w-4 h-4"
+            <SetupAgentsLink
+              className="h-12 px-2 text-sm font-medium text-brand transition-colors hover:text-foreground"
             />
           </div>
         </div>
