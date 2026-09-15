@@ -86,10 +86,11 @@ function createHeadingLinkIcon(): SVGSVGElement {
 
 function ensureHeadingLink(heading: HTMLHeadingElement, label: string, id: string): void {
   let link = heading.querySelector<HTMLAnchorElement>(":scope > a[data-heading-link]");
+  heading.classList.add("group");
   if (!link) {
     link = document.createElement("a");
     link.dataset.headingLink = "true";
-    link.className = "mr-2 inline-flex h-6 w-6 shrink-0 align-middle !text-muted-foreground/55 transition-colors hover:!text-brand focus-visible:!text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30";
+    link.className = "absolute -left-6 top-[0.7em] inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center !text-muted-foreground/55 opacity-0 pointer-events-none transition-[opacity,color] duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:!text-brand focus-visible:pointer-events-auto focus-visible:!text-brand focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30";
     link.appendChild(createHeadingLinkIcon());
     heading.prepend(link);
   }
@@ -266,7 +267,7 @@ export default function Blog() {
               <p className="mt-4 text-lg leading-7 text-muted-foreground">{post.description}</p>
             </div>
             <div className="mb-8 mt-10 lg:hidden"><ArticleTableOfContents headings={headings} /></div>
-            <div className="blog-article-body overflow-hidden text-[17px] leading-[1.75] text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-[22px] [&_h2]:font-semibold [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc">
+            <div className="blog-article-body text-[17px] leading-[1.75] text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:relative [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-[22px] [&_h2]:font-semibold [&_h3]:relative [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc">
               {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : loadedPost?.slug === post.slug && PostBody ? <ArticleBody PostBody={PostBody} onHeadings={setHeadings} /> : <p className="text-muted-foreground">Loading article…</p>}
             </div>
           </div>
