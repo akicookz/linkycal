@@ -59,11 +59,46 @@ function createHeadingId(label: string, usedIds: Set<string>): string {
   return id;
 }
 
+function createHeadingLinkIcon(): SVGSVGElement {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  icon.setAttribute("focusable", "false");
+  icon.classList.add("h-4", "w-4");
+  for (const pathData of [
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
+    "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+  ]) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "currentColor");
+    path.setAttribute("stroke-linecap", "round");
+    path.setAttribute("stroke-linejoin", "round");
+    path.setAttribute("stroke-width", "2");
+    icon.appendChild(path);
+  }
+  return icon;
+}
+
+function ensureHeadingLink(heading: HTMLHeadingElement, label: string, id: string): void {
+  let link = heading.querySelector<HTMLAnchorElement>(":scope > a[data-heading-link]");
+  if (!link) {
+    link = document.createElement("a");
+    link.dataset.headingLink = "true";
+    link.className = "mr-2 inline-flex h-6 w-6 shrink-0 align-middle !text-muted-foreground/55 transition-colors hover:!text-brand focus-visible:!text-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/30";
+    link.appendChild(createHeadingLinkIcon());
+    heading.prepend(link);
+  }
+  link.href = `#${id}`;
+  link.setAttribute("aria-label", `Link to section: ${label}`);
+}
+
 function ArticleBody({ PostBody, onHeadings }: { PostBody: ComponentType; onHeadings: (headings: ArticleHeading[]) => void }) {
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    const headings = Array.from(bodyRef.current?.querySelectorAll("h2, h3") ?? []);
+    const headings = Array.from(bodyRef.current?.querySelectorAll<HTMLHeadingElement>("h2, h3") ?? []);
     const usedIds = new Set<string>();
     const articleHeadings = headings.map((heading) => {
       const label = heading.textContent?.trim() || "Section";
@@ -72,6 +107,7 @@ function ArticleBody({ PostBody, onHeadings }: { PostBody: ComponentType; onHead
       usedIds.add(id);
       heading.id = id;
       heading.classList.add("scroll-mt-24");
+      ensureHeadingLink(heading, label, id);
       const level: 2 | 3 = heading.tagName === "H3" ? 3 : 2;
       return { id, label, level };
     });
