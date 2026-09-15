@@ -1,5 +1,5 @@
 interface LogoProps {
-  size?: "xs" | "sm" | "md" | "lg";
+  size?: "xs" | "sm" | "md" | "lg" | "nav" | "navMobile";
   iconOnly?: boolean;
   variant?: "dark" | "light";
 }
@@ -9,6 +9,8 @@ const logoSizes = {
   sm: { icon: 28, font: 22, gap: 8 },
   md: { icon: 40, font: 32, gap: 10 },
   lg: { icon: 52, font: 42, gap: 12 },
+  nav: { icon: 28, font: 24, gap: 7 },
+  navMobile: { icon: 32, font: 24, gap: 8 },
 } as const;
 
 function Logo({ size = "md", iconOnly = false, variant = "dark" }: LogoProps) {

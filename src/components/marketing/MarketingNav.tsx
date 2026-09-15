@@ -39,8 +39,11 @@ export function MarketingNav({ onGetStarted }: MarketingNavProps) {
       )}
     >
       <nav className="relative max-w-7xl mx-auto px-6 h-[4.5rem] flex items-center justify-between">
-        <Link to="/" className="shrink-0">
-          <Logo size="md" />
+        <Link to="/" className="hidden shrink-0 sm:block" aria-label="LinkyCal home">
+          <Logo size="nav" />
+        </Link>
+        <Link to="/" className="shrink-0 sm:hidden" aria-label="LinkyCal home">
+          <Logo size="navMobile" iconOnly />
         </Link>
 
         {/* Centered links */}
