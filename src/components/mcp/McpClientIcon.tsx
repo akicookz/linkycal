@@ -21,6 +21,9 @@ function clientLogoPath(clientName: string): string | null {
   if (normalized.includes("lovable")) {
     return "/mcp-client-logos/lovable.svg";
   }
+  if (normalized.includes("base44")) {
+    return "/mcp-client-logos/base44.svg";
+  }
   return null;
 }
 

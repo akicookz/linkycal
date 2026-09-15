@@ -357,7 +357,7 @@ export default function Landing() {
               </span>
             </button>
             <SetupAgentsLink
-              className="h-14 w-full justify-center rounded-full bg-white/70 px-7 text-[15px] font-medium text-foreground backdrop-blur transition-colors hover:bg-white sm:w-auto"
+              className="h-14 w-full justify-center rounded-full bg-white/70 px-4 text-[15px] font-medium text-foreground backdrop-blur transition-colors hover:bg-white sm:w-auto sm:px-7"
             />
           </div>
 

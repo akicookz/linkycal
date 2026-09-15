@@ -309,10 +309,10 @@ export default function Blog() {
                 <div>
                   <h2 id="article-cta-title" className="text-balance font-heading text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl">Switch in 5 minutes</h2>
                   <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
-                    <Link to="/docs#mcp-connect" className="flex min-h-10 items-center gap-3 text-sm font-medium text-white/85 transition-colors hover:text-white" aria-label="Setup with your agents: Claude, ChatGPT, Lovable, and Cursor">
+                    <Link to="/docs#mcp-connect" className="flex min-h-10 items-center gap-3 text-sm font-medium text-white/85 transition-colors hover:text-white" aria-label="Setup with your agents: Claude, ChatGPT, Lovable, Cursor, and Base44">
                       <span>Setup with your agents</span>
                       <div className="flex items-center pl-1" aria-hidden="true">
-                        {["Claude", "ChatGPT", "Lovable", "Cursor"].map((clientName, index) => (
+                        {["Claude", "ChatGPT", "Lovable", "Cursor", "Base44"].map((clientName, index) => (
                           <span key={clientName} title={clientName} className={index > 0 ? "-ml-1.5" : undefined}>
                             <McpClientIcon clientName={clientName} className="size-7 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.14)] ring-1 ring-brand [&_img]:size-4" />
                           </span>
