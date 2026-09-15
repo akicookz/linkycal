@@ -1,10 +1,11 @@
-import { ArrowLeft, ArrowRight, BookOpen, ChevronDown } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { SEOHead } from "@/components/SEOHead";
 import { Logo } from "@/components/Logo";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
+import { McpClientIcon } from "@/components/mcp/McpClientIcon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -304,14 +305,23 @@ export default function Blog() {
               {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : loadedPost?.slug === post.slug && PostBody ? <ArticleBody PostBody={PostBody} onHeadings={setHeadings} /> : <p className="text-muted-foreground">Loading article…</p>}
             </div>
             <section className="mt-14 overflow-hidden rounded-[24px] bg-brand px-6 py-8 text-white shadow-[0_18px_50px_rgba(27,67,50,0.18)] sm:px-10 sm:py-10" aria-labelledby="article-cta-title">
-              <div className="flex flex-col gap-8 sm:gap-9">
-                <div className="max-w-xl">
-                  <h2 id="article-cta-title" className="text-balance font-heading text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl">Give your forms a better home.</h2>
-                  <p className="mt-3 max-w-lg text-pretty text-sm leading-6 text-white/75 sm:text-base">Start with 500 free responses per month, then connect your forms to contacts and workflows.</p>
-                </div>
-                <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-                  <Button size="lg" variant="secondary" onClick={onGetStarted} className="w-full bg-white text-brand shadow-none hover:bg-white/90 active:scale-[0.96] sm:w-auto"><ArrowRight /> Start for free</Button>
-                  <Button asChild size="lg" variant="ghost" className="w-full text-white hover:bg-white/10 hover:text-white active:scale-[0.96] sm:w-auto"><Link to="/docs"><BookOpen /> Explore the docs</Link></Button>
+              <div className="flex flex-col gap-7 sm:gap-8">
+                <div>
+                  <h2 id="article-cta-title" className="text-balance font-heading text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl">Switch in 5 minutes</h2>
+                  <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-center sm:gap-6">
+                    <Link to="/docs#mcp-connect" className="flex min-h-10 items-center gap-3 text-sm font-medium text-white/85 transition-colors hover:text-white" aria-label="Setup with your agents: Claude, ChatGPT, Lovable, and Cursor">
+                      <span>Setup with your agents</span>
+                      <div className="flex items-center pl-1" aria-hidden="true">
+                        {["Claude", "ChatGPT", "Lovable", "Cursor"].map((clientName, index) => (
+                          <span key={clientName} title={clientName} className={index > 0 ? "-ml-2" : undefined}>
+                            <McpClientIcon clientName={clientName} className="size-10 rounded-full bg-white shadow-[0_2px_8px_rgba(0,0,0,0.14)] ring-2 ring-brand" />
+                          </span>
+                        ))}
+                      </div>
+                    </Link>
+                    <span className="hidden text-white/40 sm:inline" aria-hidden="true">|</span>
+                    <Button size="lg" variant="secondary" onClick={onGetStarted} className="w-full bg-white text-brand shadow-none hover:bg-white/90 active:scale-[0.96] sm:w-auto"><ArrowRight /> Sign up for free account</Button>
+                  </div>
                 </div>
               </div>
             </section>
