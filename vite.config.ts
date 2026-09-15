@@ -5,8 +5,66 @@ import tailwindcss from "@tailwindcss/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 import remarkFrontmatter from "remark-frontmatter";
 import remarkGfm from "remark-gfm";
-import remarkMdxFrontmatter from "remark-mdx-frontmatter";
-import path from "path";
+import { readFileSync, readdirSync } from "node:fs";
+import path from "node:path";
+import { parse as parseYaml } from "yaml";
+import { z } from "zod";
+import type { Plugin } from "vite";
+
+function blogRegistryPlugin() {
+  const virtualId = "virtual:blog-registry";
+  const resolvedId = `\0${virtualId}`;
+  const frontmatterSchema = z.object({
+    title: z.string().min(1),
+    description: z.string().min(1),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+      const date = new Date(`${value}T00:00:00Z`);
+      return !Number.isNaN(date.valueOf()) && date.toISOString().slice(0, 10) === value;
+    }, "must be a real calendar date"),
+    author: z.string().min(1),
+    slug: z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    category: z.string().min(1),
+    draft: z.boolean().default(false),
+    image: z.string().optional(),
+  });
+
+  return {
+    name: "blog-registry",
+    resolveId(id: string) {
+      return id === virtualId ? resolvedId : undefined;
+    },
+    load(id: string) {
+      if (id !== resolvedId) return undefined;
+      const contentDirectory = path.resolve(__dirname, "src/content/blog");
+      const entries = readdirSync(contentDirectory)
+        .filter((file) => file.endsWith(".md") || file.endsWith(".mdx"))
+        .map((file) => {
+          const source = readFileSync(path.join(contentDirectory, file), "utf8");
+          const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+          if (!match) throw new Error(`Missing blog frontmatter in src/content/blog/${file}`);
+          const parsed = frontmatterSchema.safeParse(parseYaml(match[1]));
+          if (!parsed.success) throw new Error(`Invalid blog frontmatter in src/content/blog/${file}: ${parsed.error.message}`);
+          return { ...parsed.data, format: file.endsWith(".mdx") ? "mdx" : "markdown", path: `../content/blog/${file}` };
+        });
+      const slugs = new Set<string>();
+      for (const entry of entries) {
+        if (slugs.has(entry.slug)) throw new Error(`Duplicate blog slug: ${entry.slug}`);
+        slugs.add(entry.slug);
+      }
+      const publishedEntries = entries.filter((entry) => !entry.draft);
+      const loaders = publishedEntries.map((entry) =>
+        `  ${JSON.stringify(entry.path)}: () => import(${JSON.stringify(`/src/content/blog/${path.basename(entry.path)}`)}),`,
+      );
+      return `export const blogEntries = ${JSON.stringify(publishedEntries)};\nexport const postLoaders = {\n${loaders.join("\n")}\n};`;
+    },
+    handleHotUpdate({ file, server }: { file: string; server: { moduleGraph: { getModuleById(id: string): unknown; invalidateModule(module: unknown): void }; ws: { send(message: { type: string }): void } } }) {
+      const contentDirectory = path.resolve(__dirname, "src/content/blog");
+      if (file.startsWith(`${contentDirectory}${path.sep}`)) {
+        server.ws.send({ type: "full-reload" });
+      }
+    },
+  };
+}
 
 function manualChunks(id: string): string | undefined {
   if (id.includes("/node_modules/chrono-node/")) return "chrono";
@@ -34,12 +92,14 @@ export default defineConfig({
     port: 3001,
   },
   plugins: [
-    {
+    blogRegistryPlugin(),
+    ({
       enforce: "pre",
+      include: /src[\\/]content[\\/]blog[\\/].*\.mdx?$/,
       ...mdx({
-        remarkPlugins: [remarkFrontmatter, remarkGfm, [remarkMdxFrontmatter, { name: "frontmatter" }]],
+        remarkPlugins: [remarkFrontmatter, remarkGfm],
       }),
-    },
+    } as unknown as Plugin),
     react(),
     cloudflare(),
     tailwindcss(),

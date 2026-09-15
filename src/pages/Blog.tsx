@@ -1,14 +1,12 @@
 import { ArrowLeft, ArrowRight, CalendarDays } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { SEOHead } from "@/components/SEOHead";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { getBlogPost, blogPosts } from "@/lib/blog";
+import { getBlogPost, blogPosts, loadBlogPost, type BlogPost } from "@/lib/blog";
 
 function formatDate(date: string): string {
   return new Intl.DateTimeFormat("en-US", { dateStyle: "long" }).format(new Date(`${date}T00:00:00`));
@@ -49,9 +47,25 @@ export default function Blog() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug?: string }>();
   const post = slug ? getBlogPost(slug) : undefined;
+  const [loadedPost, setLoadedPost] = useState<BlogPost | undefined>(post);
+  const [loadError, setLoadError] = useState<string | null>(null);
   function onGetStarted() {
     navigate("/?show_auth=true");
   }
+
+  useEffect(() => {
+    let active = true;
+    setLoadedPost(post);
+    setLoadError(null);
+    if (post) {
+      void loadBlogPost(post).then((loaded) => {
+        if (active) setLoadedPost(loaded);
+      }).catch(() => {
+        if (active) setLoadError("This article could not be loaded.");
+      });
+    }
+    return () => { active = false; };
+  }, [post]);
 
   if (slug && !post) {
     return (
@@ -84,7 +98,7 @@ export default function Blog() {
     );
   }
 
-  const PostBody = post.body;
+  const PostBody = loadedPost?.body;
   return (
     <BlogLayout onGetStarted={onGetStarted}>
       <SEOHead
@@ -101,7 +115,7 @@ export default function Blog() {
         <p className="mt-6 text-pretty text-xl leading-8 text-muted-foreground">{post.description}</p>
         <p className="mt-4 text-sm text-muted-foreground">By {post.author}</p>
         <div className="mt-12 overflow-hidden text-[17px] leading-8 text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-6 [&_blockquote]:py-4 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-3xl [&_h2]:font-semibold [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-2xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc">
-          {post.format === "mdx" && PostBody ? <PostBody /> : <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.source ?? ""}</ReactMarkdown>}
+          {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : PostBody ? <PostBody /> : <p className="text-muted-foreground">Loading article…</p>}
         </div>
       </main>
     </BlogLayout>
