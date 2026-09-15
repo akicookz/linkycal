@@ -326,7 +326,7 @@ export default function Landing() {
                 New
               </span>
               <span className="text-sm font-medium text-foreground">
-                Your agents can now manage your workspace via MCP
+                LinkyCal MCP is live for your agents
               </span>
             </Link>
           </div>
