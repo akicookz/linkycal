@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, ChevronDown } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { SEOHead } from "@/components/SEOHead";
@@ -303,6 +303,18 @@ export default function Blog() {
             <div className="blog-article-body text-[17px] leading-[1.75] text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:relative [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-[22px] [&_h2]:font-semibold [&_h2]:leading-[1.3] [&_h3]:relative [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-xl [&_h3]:font-semibold [&_h3]:leading-[1.3] [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:my-8 [&_table]:block [&_table]:w-full [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-sm [&_th]:min-w-[140px] [&_th]:max-w-[180px] [&_th]:px-4 [&_th]:py-3.5 [&_th]:text-left [&_th]:align-top [&_th]:font-semibold [&_th]:leading-[1.35] [&_td]:min-w-[140px] [&_td]:max-w-[240px] [&_td]:break-words [&_td]:px-4 [&_td]:py-3.5 [&_td]:text-left [&_td]:align-top [&_td]:leading-[1.45] [&_ul]:my-5 [&_ul]:list-disc">
               {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : loadedPost?.slug === post.slug && PostBody ? <ArticleBody PostBody={PostBody} onHeadings={setHeadings} /> : <p className="text-muted-foreground">Loading article…</p>}
             </div>
+            <section className="mt-14 overflow-hidden rounded-[24px] bg-brand px-6 py-8 text-white shadow-[0_18px_50px_rgba(27,67,50,0.18)] sm:px-10 sm:py-10" aria-labelledby="article-cta-title">
+              <div className="flex flex-col gap-8 sm:gap-9">
+                <div className="max-w-xl">
+                  <h2 id="article-cta-title" className="text-balance font-heading text-2xl font-semibold leading-tight tracking-[-0.03em] sm:text-3xl">Give your forms a better home.</h2>
+                  <p className="mt-3 max-w-lg text-pretty text-sm leading-6 text-white/75 sm:text-base">Start with 500 free responses per month, then connect your forms to contacts and workflows.</p>
+                </div>
+                <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+                  <Button size="lg" variant="secondary" onClick={onGetStarted} className="w-full bg-white text-brand shadow-none hover:bg-white/90 active:scale-[0.96] sm:w-auto"><ArrowRight /> Start for free</Button>
+                  <Button asChild size="lg" variant="ghost" className="w-full text-white hover:bg-white/10 hover:text-white active:scale-[0.96] sm:w-auto"><Link to="/docs"><BookOpen /> Explore the docs</Link></Button>
+                </div>
+              </div>
+            </section>
           </div>
           <aside className="sticky top-24 hidden max-h-[calc(100vh-7rem)] overflow-y-auto lg:block"><ArticleTableOfContents headings={headings} /></aside>
         </div>
