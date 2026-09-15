@@ -9,6 +9,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
+import type { ViteDevServer } from "vite";
 
 function blogRegistryPlugin() {
   const virtualId = "virtual:blog-registry";
@@ -41,14 +42,21 @@ function blogRegistryPlugin() {
           const source = readFileSync(path.join(contentDirectory, file), "utf8");
           const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
           if (!match) throw new Error(`Missing blog frontmatter in src/content/blog/${file}`);
-          const parsed = frontmatterSchema.safeParse(parseYaml(match[1]));
+          let frontmatter: unknown;
+          try {
+            frontmatter = parseYaml(match[1]);
+          } catch (error) {
+            throw new Error(`Invalid YAML in src/content/blog/${file}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+          const parsed = frontmatterSchema.safeParse(frontmatter);
           if (!parsed.success) throw new Error(`Invalid blog frontmatter in src/content/blog/${file}: ${parsed.error.message}`);
-          return { ...parsed.data, format: file.endsWith(".mdx") ? "mdx" : "markdown", path: `../content/blog/${file}` };
+          return { ...parsed.data, format: file.endsWith(".mdx") ? "mdx" : "markdown", path: `../content/blog/${file}`, sourceFile: file };
         });
-      const slugs = new Set<string>();
+      const slugs = new Map<string, string>();
       for (const entry of entries) {
-        if (slugs.has(entry.slug)) throw new Error(`Duplicate blog slug: ${entry.slug}`);
-        slugs.add(entry.slug);
+        const previousFile = slugs.get(entry.slug);
+        if (previousFile) throw new Error(`Duplicate blog slug "${entry.slug}" in src/content/blog/${entry.sourceFile}; already declared in src/content/blog/${previousFile}`);
+        slugs.set(entry.slug, entry.sourceFile);
       }
       const publishedEntries = entries.filter((entry) => !entry.draft);
       const loaders = publishedEntries.map((entry) =>
@@ -56,11 +64,19 @@ function blogRegistryPlugin() {
       );
       return `export const blogEntries = ${JSON.stringify(publishedEntries)};\nexport const postLoaders = {\n${loaders.join("\n")}\n};`;
     },
-    handleHotUpdate({ file, server }: { file: string; server: { restart: () => Promise<void> } }) {
+    configureServer(server: ViteDevServer) {
       const contentDirectory = path.resolve(__dirname, "src/content/blog");
-      if (file.startsWith(`${contentDirectory}${path.sep}`)) {
-        void server.restart();
-      }
+      const restart = (file: string) => {
+        if (file.startsWith(`${contentDirectory}${path.sep}`)) void server.restart();
+      };
+      server.watcher.on("add", restart);
+      server.watcher.on("change", restart);
+      server.watcher.on("unlink", restart);
+      return () => {
+        server.watcher.off("add", restart);
+        server.watcher.off("change", restart);
+        server.watcher.off("unlink", restart);
+      };
     },
   };
 }
