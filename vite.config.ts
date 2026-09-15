@@ -1,7 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
+import mdx from "@mdx-js/rollup";
 import tailwindcss from "@tailwindcss/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
+import remarkFrontmatter from "remark-frontmatter";
+import remarkGfm from "remark-gfm";
+import remarkMdxFrontmatter from "remark-mdx-frontmatter";
 import path from "path";
 
 function manualChunks(id: string): string | undefined {
@@ -29,7 +33,17 @@ export default defineConfig({
   server: {
     port: 3001,
   },
-  plugins: [react(), cloudflare(), tailwindcss()],
+  plugins: [
+    {
+      enforce: "pre",
+      ...mdx({
+        remarkPlugins: [remarkFrontmatter, remarkGfm, [remarkMdxFrontmatter, { name: "frontmatter" }]],
+      }),
+    },
+    react(),
+    cloudflare(),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
