@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown } from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { SEOHead } from "@/components/SEOHead";
@@ -7,6 +7,7 @@ import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { getBlogPost, blogPosts, loadBlogPost, type BlogPost } from "@/lib/blog";
 
 function formatDate(date: string): string {
@@ -115,14 +116,19 @@ function ArticleBody({ PostBody, onHeadings }: { PostBody: ComponentType; onHead
       const level: 2 | 3 = heading.tagName === "H3" ? 3 : 2;
       return { id, label, level };
     });
+    for (const table of bodyRef.current?.querySelectorAll<HTMLTableElement>("table") ?? []) {
+      table.tabIndex = 0;
+      table.setAttribute("aria-label", "Scrollable comparison table");
+    }
     onHeadings(articleHeadings);
   }, [PostBody, onHeadings]);
 
   return <div ref={bodyRef}><PostBody /></div>;
 }
 
-function ArticleTableOfContents({ headings }: { headings: ArticleHeading[] }) {
+function ArticleTableOfContents({ headings, mobile = false }: { headings: ArticleHeading[]; mobile?: boolean }) {
   const [activeId, setActiveId] = useState(headings[0]?.id);
+  const [open, setOpen] = useState(false);
 
   useEffect(() => {
     setActiveId(headings[0]?.id);
@@ -143,22 +149,49 @@ function ArticleTableOfContents({ headings }: { headings: ArticleHeading[] }) {
   }, [headings]);
 
   if (!headings.length) return null;
+
+  function selectHeading(): void {
+    if (!mobile) return;
+    setOpen(false);
+  }
+
+  const links = (
+    <ol className="mt-4 space-y-2">
+      {headings.map((heading) => (
+        <li key={heading.id} className={heading.level === 3 ? "pl-4" : undefined}>
+          <a
+            href={`#${heading.id}`}
+            aria-current={activeId === heading.id ? "location" : undefined}
+            onClick={selectHeading}
+            className={`${mobile ? "flex min-h-10 items-center py-2" : "block"} text-sm leading-5 transition-colors ${activeId === heading.id ? "font-medium text-brand" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            {heading.label}
+          </a>
+        </li>
+      ))}
+    </ol>
+  );
+
+  if (mobile) {
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button type="button" className="flex min-h-11 w-full items-center justify-between gap-3 rounded-[16px] bg-muted/50 px-4 py-3 text-left text-sm font-semibold text-foreground transition-colors hover:bg-brand/5" aria-expanded={open}>
+          <span className="min-w-0 truncate">On this page</span>
+          <ChevronDown className={`h-4 w-4 shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" sideOffset={8} collisionPadding={{ top: 88, bottom: 16, left: 24, right: 24 }} onCloseAutoFocus={(event) => event.preventDefault()} className="w-[var(--radix-popover-trigger-width)] max-h-[min(60vh,var(--radix-popover-content-available-height))] overflow-y-auto border-0 p-4 shadow-lg">
+          <nav aria-label="Table of contents">{links}</nav>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
   return (
     <nav aria-label="Table of contents" className="blog-toc">
       <p className="text-sm font-semibold text-foreground">On this page</p>
-      <ol className="mt-4 space-y-2">
-        {headings.map((heading) => (
-          <li key={heading.id} className={heading.level === 3 ? "pl-4" : undefined}>
-            <a
-              href={`#${heading.id}`}
-              aria-current={activeId === heading.id ? "location" : undefined}
-              className={`block text-sm leading-5 transition-colors ${activeId === heading.id ? "font-medium text-brand" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {heading.label}
-            </a>
-          </li>
-        ))}
-      </ol>
+      {links}
     </nav>
   );
 }
@@ -266,8 +299,8 @@ export default function Blog() {
               <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground"><span>{formatDate(post.date)}</span><span>·</span><span>By {post.author}</span></div>
               <p className="mt-4 text-lg leading-7 text-muted-foreground">{post.description}</p>
             </div>
-            <div className="mb-8 mt-10 lg:hidden"><ArticleTableOfContents headings={headings} /></div>
-            <div className="blog-article-body text-[17px] leading-[1.75] text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:relative [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-[22px] [&_h2]:font-semibold [&_h3]:relative [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-xl [&_h3]:font-semibold [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-sm [&_th]:min-w-[120px] [&_th]:px-3 [&_th]:py-3 [&_th]:text-left [&_th]:align-top [&_td]:min-w-[120px] [&_td]:px-3 [&_td]:py-3 [&_td]:text-left [&_td]:align-top [&_ul]:my-5 [&_ul]:list-disc">
+            <div className="mb-8 mt-10 lg:hidden"><ArticleTableOfContents headings={headings} mobile /></div>
+            <div className="blog-article-body text-[17px] leading-[1.75] text-foreground/85 [&_a]:font-medium [&_a]:text-brand [&_blockquote]:my-8 [&_blockquote]:rounded-[16px] [&_blockquote]:bg-muted/50 [&_blockquote]:px-5 [&_blockquote]:py-3 [&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_h2]:relative [&_h2]:mb-4 [&_h2]:mt-12 [&_h2]:font-heading [&_h2]:text-[22px] [&_h2]:font-semibold [&_h2]:leading-[1.3] [&_h3]:relative [&_h3]:mb-3 [&_h3]:mt-8 [&_h3]:font-heading [&_h3]:text-xl [&_h3]:font-semibold [&_h3]:leading-[1.3] [&_img]:max-w-full [&_li]:ml-6 [&_ol]:my-5 [&_ol]:list-decimal [&_p]:my-5 [&_pre]:my-6 [&_pre]:overflow-x-auto [&_pre]:rounded-[16px] [&_pre]:bg-[#0c1410] [&_pre]:p-5 [&_pre]:text-sm [&_pre]:text-white [&_pre_code]:bg-transparent [&_strong]:font-semibold [&_table]:my-8 [&_table]:block [&_table]:w-full [&_table]:max-w-full [&_table]:overflow-x-auto [&_table]:text-sm [&_th]:min-w-[140px] [&_th]:max-w-[180px] [&_th]:px-4 [&_th]:py-3.5 [&_th]:text-left [&_th]:align-top [&_th]:font-semibold [&_th]:leading-[1.35] [&_td]:min-w-[140px] [&_td]:max-w-[240px] [&_td]:break-words [&_td]:px-4 [&_td]:py-3.5 [&_td]:text-left [&_td]:align-top [&_td]:leading-[1.45] [&_ul]:my-5 [&_ul]:list-disc">
               {loadError ? <p className="text-destructive">{loadError} Refresh and try again.</p> : loadedPost?.slug === post.slug && PostBody ? <ArticleBody PostBody={PostBody} onHeadings={setHeadings} /> : <p className="text-muted-foreground">Loading article…</p>}
             </div>
           </div>

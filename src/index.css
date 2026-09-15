@@ -187,6 +187,29 @@
   padding-top: 0.35rem;
 }
 
+.blog-article-body table {
+  border-collapse: separate;
+  border-spacing: 0 0.35rem;
+}
+
+.blog-article-body thead th {
+  padding-bottom: 0.65rem;
+}
+
+.blog-article-body tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--brand) 4%, transparent);
+}
+
+.blog-article-body tbody td:first-child,
+.blog-article-body tbody tr:nth-child(even) td:first-child {
+  border-radius: 0.75rem 0 0 0.75rem;
+}
+
+.blog-article-body tbody td:last-child,
+.blog-article-body tbody tr:nth-child(even) td:last-child {
+  border-radius: 0 0.75rem 0.75rem 0;
+}
+
 .blog-article-body aside {
   position: relative;
   display: flex;
