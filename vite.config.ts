@@ -66,17 +66,19 @@ function blogRegistryPlugin() {
     },
     configureServer(server: ViteDevServer) {
       const contentDirectory = path.resolve(__dirname, "src/content/blog");
-      const restart = (file: string) => {
+      function restart(file: string) {
         if (file.startsWith(`${contentDirectory}${path.sep}`)) void server.restart();
-      };
-      server.watcher.on("add", restart);
-      server.watcher.on("change", restart);
-      server.watcher.on("unlink", restart);
-      return () => {
+      }
+      function cleanup() {
         server.watcher.off("add", restart);
         server.watcher.off("change", restart);
         server.watcher.off("unlink", restart);
-      };
+      }
+      server.watcher.add(contentDirectory);
+      server.watcher.on("add", restart);
+      server.watcher.on("change", restart);
+      server.watcher.on("unlink", restart);
+      server.httpServer?.once("close", cleanup);
     },
   };
 }
