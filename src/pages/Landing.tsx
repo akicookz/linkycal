@@ -349,10 +349,10 @@ export default function Landing() {
           <div className="mx-auto mt-9 flex w-full max-w-md flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
             <button
               onClick={openAuth}
-              className="marketing-pill-cta hero-cta-flat h-14 w-full justify-center gap-3 px-2.5 text-[15px] font-medium sm:w-auto sm:pl-8"
+              className="marketing-pill-cta hero-cta-flat relative h-14 w-full justify-center gap-3 px-16 text-[15px] font-medium sm:w-auto"
             >
               Build your free form
-              <span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center">
+              <span className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15">
                 <ArrowRight className="w-4 h-4" />
               </span>
             </button>
