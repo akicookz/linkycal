@@ -14,6 +14,7 @@ const navLinks = [
   { label: "Pricing", to: "/pricing" },
   { label: "FAQ", to: "/#faq" },
   { label: "Docs", to: "/docs" },
+  { label: "Blog", to: "/blog" },
 ];
 
 export function MarketingNav({ onGetStarted }: MarketingNavProps) {
@@ -43,7 +44,7 @@ export function MarketingNav({ onGetStarted }: MarketingNavProps) {
         </Link>
 
         {/* Centered links */}
-        <div className="hidden md:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
+        <div className="hidden lg:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
           {navLinks.map((link) => (
             <Link
               key={link.label}

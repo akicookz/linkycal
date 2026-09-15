@@ -7,6 +7,7 @@ const pageLinks = [
   { label: "Pricing", to: "/pricing" },
   { label: "FAQ", to: "/#faq" },
   { label: "Documentation", to: "/docs" },
+  { label: "Blog", to: "/blog" },
 ];
 
 const featureLinks = [

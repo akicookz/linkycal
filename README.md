@@ -150,6 +150,16 @@ specific top-level SPA routes.
 
 ## Local development
 
+### Blog authoring
+
+Blog posts live in `src/content/blog/` and support both `.md` and `.mdx` files.
+Each post starts with YAML frontmatter containing `title`, `description`,
+`date` (`YYYY-MM-DD`), `author`, `slug`, `category`, and optional `draft` and
+`image` fields. Posts marked `draft: true`, invalid frontmatter, and duplicate
+slugs are excluded from the public registry. Markdown uses GitHub-flavored
+syntax; MDX also supports React components. The public index is `/blog` and an
+article is available at `/blog/:slug`.
+
 ### Prerequisites
 
 - [Bun](https://bun.sh/) for package management and scripts.

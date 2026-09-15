@@ -37,6 +37,7 @@ import LegalPage from "./pages/LegalPage";
 import PublicResolver from "./pages/PublicResolver";
 import Invite from "./pages/Invite";
 import OAuthAuthorize from "./pages/OAuthAuthorize";
+import Blog from "./pages/Blog";
 
 // ─── Redirect /app to first project's dashboard ──────────────────────────────
 
@@ -68,6 +69,8 @@ function App() {
       <Route path="/" element={<Landing />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/docs" element={<Docs />} />
+      <Route path="/blog" element={<Blog />} />
+      <Route path="/blog/:slug" element={<Blog />} />
       <Route path="/features/:slug" element={<FeaturePage />} />
       <Route path="/alternatives/:slug" element={<AlternativePage />} />
       <Route path="/privacy" element={<LegalPage kind="privacy" />} />
