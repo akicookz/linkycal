@@ -146,6 +146,16 @@
   object-fit: cover;
 }
 
+.blog-cover-card {
+  aspect-ratio: 16 / 9;
+  max-height: none;
+  border-radius: 0;
+}
+
+.blog-cover-card-content {
+  padding: 1.25rem;
+}
+
 .blog-cover-grid {
   position: absolute;
   inset: 0;
@@ -187,8 +197,8 @@
 }
 
 @media (max-width: 639px) {
-  .blog-cover,
-  .blog-cover-image {
+  .blog-cover:not(.blog-cover-card),
+  .blog-cover-image:not(.blog-cover-card) {
     aspect-ratio: 1.18 / 1;
   }
 }

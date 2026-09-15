@@ -15,20 +15,23 @@ function formatDate(date: string): string {
 
 function BlogCard({ post }: { post: (typeof blogPosts)[number] }) {
   return (
-    <Card className="group border-0 bg-muted/45 p-6 shadow-none transition-colors hover:bg-brand/5">
-      <Link to={`/blog/${post.slug}`}>
-      <div className="flex items-center gap-2 text-xs font-medium text-brand">
-        <span>{post.category}</span>
-        <span className="text-muted-foreground/60">·</span>
-        <span className="text-muted-foreground">{formatDate(post.date)}</span>
-      </div>
-      <h2 className="mt-4 font-heading text-2xl font-semibold tracking-[-0.02em] text-foreground group-hover:text-brand">
-        {post.title}
-      </h2>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">{post.description}</p>
-      <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-brand">
-        Read article <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-      </span>
+    <Card className="group overflow-hidden border-0 bg-muted/45 p-0 shadow-none transition-colors hover:bg-brand/5 md:py-0">
+      <Link to={`/blog/${post.slug}`} className="block">
+        <ArticleCover post={post} compact />
+        <div className="p-6">
+          <div className="flex items-center gap-2 text-xs font-medium text-brand">
+            <span>{post.category}</span>
+            <span className="text-muted-foreground/60">·</span>
+            <span className="text-muted-foreground">{formatDate(post.date)}</span>
+          </div>
+          <h2 className="mt-4 font-heading text-2xl font-semibold tracking-[-0.02em] text-foreground group-hover:text-brand">
+            {post.title}
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{post.description}</p>
+          <span className="mt-6 inline-flex items-center gap-2 text-sm font-semibold text-brand">
+            Read article <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+          </span>
+        </div>
       </Link>
     </Card>
   );
@@ -159,23 +162,23 @@ function ArticleTableOfContents({ headings }: { headings: ArticleHeading[] }) {
   );
 }
 
-function ArticleCover({ post }: { post: BlogPost }) {
+function ArticleCover({ post, compact = false }: { post: BlogPost; compact?: boolean }) {
   if (post.image) {
-    return <img src={post.image} alt="" className="blog-cover-image" />;
+    return <img src={post.image} alt="" className={`blog-cover-image${compact ? " blog-cover-card" : ""}`} />;
   }
 
   return (
-    <div className="blog-cover" aria-label={`${post.title} cover`}>
+    <div className={`blog-cover${compact ? " blog-cover-card" : ""}`} aria-label={`${post.title} cover`}>
       <div className="blog-cover-grid" aria-hidden="true" />
       <div className="blog-cover-orbit blog-cover-orbit-one" aria-hidden="true" />
       <div className="blog-cover-orbit blog-cover-orbit-two" aria-hidden="true" />
-      <div className="relative z-10 flex h-full flex-col justify-between p-7 sm:p-10">
+      <div className={`relative z-10 flex h-full flex-col justify-between ${compact ? "blog-cover-card-content" : "p-7 sm:p-10"}`}>
         <div className="flex items-center justify-between gap-4">
-          <span className="text-sm font-medium text-white/75">{post.category}</span>
-          <Logo size="sm" variant="light" />
+          <span className={compact ? "text-[11px] font-medium text-white/75" : "text-sm font-medium text-white/75"}>{post.category}</span>
+          <Logo size={compact ? "xs" : "sm"} variant="light" />
         </div>
-        <p className="max-w-3xl text-balance font-heading text-4xl font-semibold leading-[1.02] tracking-[-0.045em] text-white sm:text-6xl">{post.title}</p>
-        <div className="flex items-center justify-between gap-4 text-sm text-white/65">
+        <p className={compact ? "max-w-3xl text-balance font-heading text-xl font-semibold leading-[1.02] tracking-[-0.04em] text-white sm:text-2xl" : "max-w-3xl text-balance font-heading text-4xl font-semibold leading-[1.02] tracking-[-0.045em] text-white sm:text-6xl"}>{post.title}</p>
+        <div className={compact ? "flex items-center justify-between gap-4 text-[11px] text-white/65" : "flex items-center justify-between gap-4 text-sm text-white/65"}>
           <span>{formatDate(post.date)}</span>
           <span className="hidden sm:inline">linkycal.com/blog</span>
         </div>
