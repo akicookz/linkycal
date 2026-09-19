@@ -1,5 +1,18 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+// `ring-shadow` (paints the ring) and `ring-shadow-*` (only sets
+// --ring-shadow-color) are custom utilities, so stock tailwind-merge reads both
+// as `ring-{color}` and drops the painter — leaving selected controls with
+// `box-shadow: none`. Give each its own group so they can coexist.
+const twMerge = extendTailwindMerge<"ring-shadow" | "ring-shadow-color">({
+  extend: {
+    classGroups: {
+      "ring-shadow": ["ring-shadow"],
+      "ring-shadow-color": [{ "ring-shadow": [() => true] }],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

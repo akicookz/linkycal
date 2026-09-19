@@ -621,6 +621,12 @@ html[data-embed="1"] body {
 .lc-themed-hover:not([data-selected="true"]):hover {
   --ring-shadow-color: var(--primary);
 }
+/* Selected ring colour lives here, not on a second utility class: twMerge
+   collapses `ring-shadow` + `ring-shadow-primary` to the colour-only class and
+   the box-shadow disappears. */
+.lc-themed-hover[data-selected="true"] {
+  --ring-shadow-color: var(--primary);
+}
 
 .dark {
   --sidebar: hsl(240 5.9% 10%);

@@ -481,7 +481,12 @@ export function FormExperience(props: FormExperienceProps) {
       <div className="space-y-3">
         {showTitle ? (
           <p
-            className="text-sm font-medium leading-snug"
+            className={cn(
+              "font-semibold leading-snug text-foreground text-balance",
+              surface === "booking"
+                ? "text-lg sm:text-xl"
+                : "text-xl sm:text-2xl",
+            )}
             {...chromeMarkerProps("intro")}
           >
             {title}

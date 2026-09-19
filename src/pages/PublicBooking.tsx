@@ -682,6 +682,12 @@ export default function PublicBooking({
   // ─── Actions ───────────────────────────────────────────────────────────
 
   function handleDateSelect(dateStr: string) {
+    // Re-clicking the chosen date clears it rather than re-selecting it.
+    if (dateStr === selectedDate) {
+      setSelectedDate(null);
+      setSelectedSlot(null);
+      return;
+    }
     setSelectedDate(dateStr);
     setSelectedSlot(null);
     if (analytics) {
@@ -702,6 +708,10 @@ export default function PublicBooking({
   }
 
   function handleTimeSelect(slot: TimeSlot): void {
+    if (slot.start === selectedSlot?.start) {
+      setSelectedSlot(null);
+      return;
+    }
     setSelectedSlot(slot);
     if (!analytics || !selectedDate) return;
     analytics.emit({
@@ -1097,10 +1107,11 @@ export default function PublicBooking({
                             disabled={day.disabled}
                             onClick={() => handleDateSelect(day.dateStr)}
                             className={cn(
-                              "lc-themed-hover aspect-square flex flex-col items-center justify-center rounded-[var(--radius)] text-[14px] font-medium transition-all relative border-0 ring-shadow",
-                              day.disabled && "text-muted-foreground/30 cursor-not-allowed",
-                              !day.disabled && !isSelected && "bg-muted/50 cursor-pointer",
-                              isSelected && "bg-primary text-primary-foreground ring-shadow-primary",
+                              "lc-themed-hover aspect-square flex flex-col items-center justify-center rounded-[max(8px,calc(var(--radius)*0.6))] text-[14px] font-medium transition-all relative border-0",
+                              day.disabled && "bg-muted text-muted-foreground/50 cursor-not-allowed",
+                              !day.disabled && "bg-background cursor-pointer ring-shadow",
+                              !day.disabled && !isSelected && "text-foreground",
+                              isSelected && "text-primary",
                             )}
                             data-selected={isSelected || undefined}
                           >
@@ -1130,7 +1141,7 @@ export default function PublicBooking({
                 {/* Time Slots — on mobile, shown as its own view */}
                 {(!isMobile || mobileSubStep === "time") && (
                   <div
-                    className={cn("min-h-[280px]", isMobile && "animate-mobile-slide-in")}
+                    className={cn("min-h-[384px]", isMobile && "animate-mobile-slide-in")}
                     style={isMobile ? { "--slide-from": mobileSlideDir === "left" ? "100%" : "-100%" } as React.CSSProperties : undefined}
                   >
 
@@ -1140,9 +1151,12 @@ export default function PublicBooking({
                       </div>
                     ) : loadingSlots ? (
                       <div>
-                        <div className="h-4 w-28 bg-muted rounded mb-3 animate-pulse" />
-                        <div className={cn("grid gap-1.5", isMobile ? "grid-cols-1" : "grid-cols-2")}>
-                          {Array.from({ length: 8 }).map((_, i) => (
+                        <div className="h-8 flex items-center justify-between mb-3">
+                          <div className="h-5 w-36 bg-muted rounded animate-pulse" />
+                          <div className="h-8 w-[86px] bg-muted rounded-[max(6px,calc(var(--radius)*0.625))] animate-pulse" />
+                        </div>
+                        <div className={cn("grid gap-1.5 h-[340px] overflow-hidden p-1", isMobile ? "grid-cols-1" : "grid-cols-2")}>
+                          {Array.from({ length: isMobile ? 8 : 16 }).map((_, i) => (
                             <div
                               key={i}
                               className="h-10 rounded-[var(--radius)] border-0 bg-muted/50 ring-shadow animate-pulse"
@@ -1160,13 +1174,13 @@ export default function PublicBooking({
                           <p className="text-sm font-medium">
                             {formatDateShort(new Date(selectedDate + "T00:00:00"))}
                           </p>
-                          <div className="flex items-center bg-muted rounded-[var(--radius)] p-1 text-xs font-medium">
+                          <div className="flex items-center bg-muted rounded-[max(6px,calc(var(--radius)*0.625))] p-1 text-xs font-medium">
                             {(["12h", "24h"] as const).map((fmt) => (
                               <button
                                 key={fmt}
                                 onClick={() => setTimeFormat(fmt)}
                                 className={cn(
-                                  "px-3 py-1 rounded-[var(--radius)] transition-all",
+                                  "px-3 py-1 rounded-[max(4px,calc(var(--radius)*0.5))] transition-all",
                                   timeFormat === fmt
                                     ? "bg-background text-foreground shadow-sm"
                                     : "text-muted-foreground hover:text-foreground",
@@ -1177,7 +1191,7 @@ export default function PublicBooking({
                             ))}
                           </div>
                         </div>
-                        <div className={cn("grid gap-1.5 max-h-[340px] overflow-y-auto pr-1", isMobile ? "grid-cols-1" : "grid-cols-2")}>
+                        <div className={cn("grid gap-1.5 max-h-[340px] overflow-y-auto p-1", isMobile ? "grid-cols-1" : "grid-cols-2")}>
                           {slots.map((slot) => {
                             const isSelected = selectedSlot?.start === slot.start;
                             return (
@@ -1185,9 +1199,9 @@ export default function PublicBooking({
                                 key={slot.start}
                                 onClick={() => handleTimeSelect(slot)}
                                 className={cn(
-                                  "lc-themed-button lc-themed-hover py-2.5 px-3 border-0 ring-shadow text-[13px] font-medium text-center transition-all",
-                                  isSelected && "bg-primary text-primary-foreground ring-shadow-primary",
-                                  !isSelected && "bg-muted/50",
+                                  "lc-themed-button lc-themed-hover py-2.5 px-3 border-0 text-[13px] font-medium text-center transition-all cursor-pointer bg-background ring-shadow",
+                                  isSelected && "text-primary",
+                                  !isSelected && "text-foreground",
                                 )}
                                 data-selected={isSelected || undefined}
                               >

@@ -11,7 +11,7 @@ const textareaVariants = cva(
         default:
           "min-h-16 rounded-[12px] border border-input bg-muted/50 px-3 py-2 resize-y focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 aria-invalid:border-destructive",
         focused:
-          "min-h-11 resize-none overflow-hidden rounded-[var(--radius)] border-0 bg-field-fill px-4 py-3 shadow-none ring-shadow focus:ring-shadow-[var(--primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 aria-invalid:ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
+          "min-h-11 resize-none overflow-hidden rounded-[var(--radius)] border-0 bg-field-fill px-4 py-3 shadow-none ring-shadow focus:ring-shadow-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 aria-invalid:ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
       },
     },
     defaultVariants: {

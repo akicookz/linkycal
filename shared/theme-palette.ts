@@ -32,7 +32,10 @@ interface Oklch {
 }
 
 const HEX_PATTERN = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
-const HUE_EPSILON = 1e-8;
+// Pure white/black land at chroma ~4e-8 rather than 0 from float error in the
+// OKLab matrix, so a tighter epsilon hands them a spurious yellow hue and every
+// mix off a white background drifts cream. Real colours never sit this low.
+const HUE_EPSILON = 1e-4;
 
 export function deriveThemePalette(input: ThemePaletteInput): ThemePalette | null {
   const background = parseHex(input.background);
@@ -71,7 +74,7 @@ export function deriveThemePalette(input: ThemePaletteInput): ThemePalette | nul
   const palette: ThemePalette = {
     background: backgroundHex,
     foreground: textHex,
-    card: muted,
+    card: backgroundHex,
     muted,
     mutedForeground,
     placeholder,
