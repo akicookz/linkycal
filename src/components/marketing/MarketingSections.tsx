@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import { plans as customerPlans } from "@/lib/constants";
 import { SetupAgentsLink } from "@/components/marketing/SetupAgentsLink";
 
@@ -294,6 +295,7 @@ export function ComparisonSection() {
     <section id="why" className="relative scroll-mt-24 py-24 sm:py-28 px-6">
       <div className="max-w-7xl mx-auto">
         <SectionHeading
+          align="left"
           title="Spam-free forms without leaving chat"
           subtitle="A working form needs spam filtering, new submission alerts, storage, and a backend to glue it together. LinkyCal takes care of it all and then some."
         />
@@ -621,13 +623,12 @@ export function IntegrationsSection() {
             align="left"
             title="One backend, unlimited integrations"
           />
-          <Link
-            to="/docs"
-            className="marketing-pill-dark h-12 px-7 gap-2 text-sm font-medium mt-8"
-          >
-            <BookOpen className="w-4 h-4" />
-            View documentation
-          </Link>
+          <Button size="lg" className="mt-8 h-12" asChild>
+            <Link to="/docs">
+              <BookOpen className="w-4 h-4" />
+              View documentation
+            </Link>
+          </Button>
           <p className="text-lg text-foreground/80 leading-relaxed mt-10 max-w-lg">
             &ldquo;Connect your calendar, pipe every submission anywhere with
             webhooks, and let AI agents check availability and book through the
@@ -788,16 +789,13 @@ export function HeadlessSection() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 mt-9">
-            <Link
-              to="/features/api"
-              className="marketing-pill-dark h-12 px-7 gap-2 text-sm font-medium"
-            >
-              <Code2 className="w-4 h-4" />
-              Explore the API
-            </Link>
-            <SetupAgentsLink
-              className="h-12 px-2 text-sm font-medium text-brand transition-colors hover:text-foreground"
-            />
+            <Button size="lg" className="h-12" asChild>
+              <Link to="/features/api">
+                <Code2 className="w-4 h-4" />
+                Explore the API
+              </Link>
+            </Button>
+            <SetupAgentsLink className="h-12" />
           </div>
         </div>
 
@@ -996,18 +994,13 @@ export function PricingSection({
                       </span>
                     </div>
                   </div>
-                  <button
+                  <Button
                     onClick={onGetStarted}
-                    className={cn(
-                      "w-full h-12 justify-center gap-2 text-sm font-medium mt-6",
-                      plan.highlighted
-                        ? "marketing-pill-cta"
-                        : "marketing-pill-dark",
-                    )}
+                    className="mt-6 h-12 w-full"
                   >
                     {plan.cta}
                     <ArrowRight className="w-4 h-4" />
-                  </button>
+                  </Button>
                 </div>
                 <div className="bg-[#F3F6F4] rounded-[20px] px-5 py-5 flex-1">
                   <p className="text-sm text-muted-foreground mb-3.5">
@@ -1144,22 +1137,22 @@ export function FinalCtaSection({ onGetStarted }: MarketingCtaProps) {
           subtitle="Create your free account and launch your first form or booking page in minutes. No credit card required."
         />
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mt-9">
-          <button
+          <Button
             onClick={onGetStarted}
-            className="marketing-pill-cta h-14 pl-8 pr-2.5 gap-3 text-[15px] font-medium"
+            size="lg"
+            className="h-14 text-[15px]"
           >
             Get Started — it&rsquo;s free
-            <span className="w-10 h-10 rounded-full bg-white/15 flex items-center justify-center">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15">
               <ArrowRight className="w-4 h-4" />
             </span>
-          </button>
-          <Link
-            to="/docs"
-            className="inline-flex items-center gap-2 h-14 px-7 rounded-full bg-white/70 backdrop-blur text-[15px] font-medium text-foreground shadow-sm hover:bg-white transition-colors"
-          >
-            <BookOpen className="w-4 h-4" />
-            View documentation
-          </Link>
+          </Button>
+          <Button variant="outline" size="lg" className="h-14 text-[15px]" asChild>
+            <Link to="/docs">
+              <BookOpen className="w-4 h-4" />
+              View documentation
+            </Link>
+          </Button>
         </div>
 
         {/* One-line embed mock bleeding into the footer */}

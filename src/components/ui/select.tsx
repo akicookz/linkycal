@@ -11,7 +11,7 @@ const selectTriggerVariants = cva(
     variants: {
       variant: {
         default:
-          "h-9 w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 focus:ring-2 focus:ring-ring focus:ring-offset-2 md:h-10",
+          "h-9 w-full rounded-full border border-input bg-muted/50 px-3 py-2 focus:ring-2 focus:ring-ring focus:ring-offset-2 md:h-10",
         underline:
           "inline-flex h-7 max-w-[9rem] min-w-0 gap-0.5 overflow-hidden rounded-none border-0 border-b border-foreground/25 bg-transparent px-0 py-0 text-[13px] font-medium shadow-none focus:border-foreground focus:ring-0 [&>span]:max-w-full",
       },

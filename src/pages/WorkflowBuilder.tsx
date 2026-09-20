@@ -41,6 +41,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -1747,13 +1748,13 @@ function StepConfigForm({
           </div>
           <div className="space-y-2">
             <Label htmlFor="webhook-headers">Headers (JSON)</Label>
-            <textarea
+            <Textarea
               id="webhook-headers"
               value={(config.headers as string) ?? ""}
               onChange={(e) => set("headers", e.target.value)}
               placeholder='{"Content-Type": "application/json"}'
               rows={2}
-              className="flex w-full rounded-[12px] border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y font-mono text-xs"
+              className="font-mono text-xs"
             />
           </div>
           <div className="space-y-2">

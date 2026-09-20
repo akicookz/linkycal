@@ -175,7 +175,7 @@ function LayoutInner() {
               <PopoverTrigger asChild>
                 <button
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-[12px] bg-muted/60 px-2 py-1.5 text-left transition-colors hover:bg-muted",
+                    "flex w-full items-center gap-2 rounded-full bg-muted/60 px-2 py-1.5 text-left transition-colors hover:bg-muted",
                     "group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:bg-transparent group-data-[collapsible=icon]:p-0",
                   )}
                 >

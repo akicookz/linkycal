@@ -9,9 +9,9 @@ const inputVariants = cva(
     variants: {
       variant: {
         default:
-          "h-9 rounded-[12px] border border-border bg-muted/50 px-3 py-1 selection:bg-primary selection:text-primary-foreground md:h-10 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive aria-invalid:ring-destructive/20",
+          "h-9 rounded-full border border-border bg-muted/50 px-3 py-1 selection:bg-primary selection:text-primary-foreground md:h-10 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] aria-invalid:border-destructive aria-invalid:ring-destructive/20",
         focused:
-          "h-11 rounded-[var(--radius)] border-0 bg-field-fill px-4 shadow-none ring-shadow focus:ring-shadow-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 aria-invalid:ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
+          "h-11 rounded-full border-0 bg-field-fill px-4 shadow-none ring-shadow focus:ring-shadow-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring/60 aria-invalid:ring-shadow-[color-mix(in_srgb,var(--destructive)_60%,transparent)]",
       },
     },
     defaultVariants: {
@@ -20,20 +20,19 @@ const inputVariants = cva(
   },
 );
 
-function Input({
-  className,
-  type,
-  variant,
-  ...props
-}: React.ComponentProps<"input"> & VariantProps<typeof inputVariants>) {
+const Input = React.forwardRef<
+  HTMLInputElement,
+  React.ComponentProps<"input"> & VariantProps<typeof inputVariants>
+>(function Input({ className, type, variant, ...props }, ref) {
   return (
     <input
+      ref={ref}
       type={type}
       data-slot="input"
       className={cn(inputVariants({ variant }), className)}
       {...props}
     />
   );
-}
+});
 
 export { Input, inputVariants };

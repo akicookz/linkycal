@@ -16,6 +16,7 @@ import {
   Tag,
   Upload,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { SEOHead } from "@/components/SEOHead";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
@@ -1147,19 +1148,16 @@ export default function FeaturePage() {
                 {feature.subcopy}
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={onGetStarted}
-                  className="glow-surface rounded-full h-12 px-8 text-sm font-medium inline-flex items-center justify-center gap-2"
-                >
+                <Button onClick={onGetStarted} size="lg" className="h-12">
                   Start free
                   <ArrowRight className="w-4 h-4" />
-                </button>
-                <Link
-                  to="/docs"
-                  className="glow-surface-subtle rounded-full h-12 px-6 text-sm font-medium inline-flex items-center justify-center text-foreground"
-                >
-                  View Documentation
-                </Link>
+                </Button>
+                <Button variant="outline" size="lg" className="h-12 px-6" asChild>
+                  <Link to="/docs">
+                    <FileText className="w-4 h-4" />
+                    View Documentation
+                  </Link>
+                </Button>
               </div>
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-6 text-sm font-medium text-foreground">
                 {feature.checkmarks.map((mark) => (

@@ -16,6 +16,7 @@ import { ActionsSheet } from "@/components/ActionsSheet";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Dialog,
@@ -459,13 +460,13 @@ export default function Dashboard() {
               Optionally include a message to the guest explaining why.
             </DialogDescription>
           </DialogHeader>
-          <textarea
-            className="w-full rounded-[12px] bg-muted/50 px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+          <Textarea
             rows={3}
             placeholder="Optional message to the guest..."
             value={declineMessage}
             onChange={(e) => setDeclineMessage(e.target.value)}
             disabled={declineMutation.isPending}
+            className="resize-none"
           />
           <DialogFooter>
             <Button

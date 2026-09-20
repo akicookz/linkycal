@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight } from "lucide-react";
 import { Logo } from "@/components/Logo";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface MarketingNavProps {
@@ -60,13 +61,10 @@ export function MarketingNav({ onGetStarted }: MarketingNavProps) {
         </div>
 
         {/* CTA */}
-        <button
-          onClick={onGetStarted}
-          className="marketing-pill-dark h-10 px-5 gap-2 text-sm font-medium whitespace-nowrap"
-        >
+        <Button onClick={onGetStarted}>
           Get Started
           <ArrowRight className="w-4 h-4" />
-        </button>
+        </Button>
       </nav>
     </header>
   );

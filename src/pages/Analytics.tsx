@@ -34,6 +34,7 @@ import { DetailedFunnel } from "@/components/analytics/DetailedFunnel";
 import PageHeader from "@/components/PageHeader";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
   Select,
@@ -907,22 +908,20 @@ export default function Analytics() {
                 <label className="sr-only" htmlFor="analytics-start-date">
                   Start date
                 </label>
-                <input
+                <Input
                   id="analytics-start-date"
                   type="date"
                   value={startDate}
                   onChange={(event) => setStartDate(event.target.value)}
-                  className="min-h-10 rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 />
                 <label className="sr-only" htmlFor="analytics-end-date">
                   End date
                 </label>
-                <input
+                <Input
                   id="analytics-end-date"
                   type="date"
                   value={endDate}
                   onChange={(event) => setEndDate(event.target.value)}
-                  className="min-h-10 rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
                 />
               </>
             )}

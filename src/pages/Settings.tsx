@@ -22,6 +22,7 @@ import PageHeader from "@/components/PageHeader";
 import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import type {
@@ -578,7 +579,7 @@ export default function Settings() {
                 {loadingProject ? (
                   <Skeleton className="h-9 w-64" />
                 ) : (
-                  <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-9 w-64">
+                  <div className="flex items-center rounded-full border border-border bg-muted/50 px-3 h-10 w-64">
                     <span className="text-sm text-muted-foreground shrink-0">linkycal.com/</span>
                     <input
                       value={projectSlug}
@@ -805,13 +806,13 @@ export default function Settings() {
               <Skeleton className="h-48 w-full rounded-[16px]" />
             ) : hasCustomCssAccess ? (
               <div className="space-y-3">
-                <textarea
+                <Textarea
                   aria-label="Custom CSS"
                   value={customCss}
                   onChange={(event) => setCustomCss(event.target.value)}
                   placeholder="[data-lc-title] { letter-spacing: -0.02em; }"
                   spellCheck={false}
-                  className="min-h-48 w-full resize-y rounded-[12px] bg-muted/45 px-4 py-3 font-mono text-sm outline-none transition-[box-shadow,background-color] focus:bg-background focus:ring-2 focus:ring-ring"
+                  className="min-h-48 font-mono"
                 />
                 <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>Selectors are scoped to LinkyCal public pages.</span>

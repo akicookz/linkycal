@@ -303,7 +303,7 @@ const VariableInput = forwardRef<HTMLInputElement, VariableInputProps>(
           data-slot="input"
           value={value}
           className={cn(
-            "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground border-border h-10 w-full min-w-0 rounded-[12px] border bg-muted/50 px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
+            "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground border-border h-10 w-full min-w-0 rounded-full border bg-muted/50 px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm",
             "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
             "aria-invalid:ring-destructive/20 aria-invalid:border-destructive",
             className,
@@ -382,7 +382,7 @@ const VariableTextarea = forwardRef<HTMLTextAreaElement, VariableTextareaProps>(
           ref={ref}
           value={value}
           className={cn(
-            "flex w-full rounded-[12px] border border-input bg-muted/50 px-3 py-2 text-sm shadow-xs ring-offset-background transition-[color,box-shadow] outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 resize-y",
+            "flex w-full rounded-[16px] border border-input bg-muted/50 px-3 py-2 text-sm shadow-xs ring-offset-background transition-[color,box-shadow] outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50 resize-y",
             "focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
             className,
           )}

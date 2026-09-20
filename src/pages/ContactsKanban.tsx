@@ -460,13 +460,14 @@ function AddStepColumn({
         }}
       >
         <PopoverTrigger asChild>
-          <button
+          <Button
             type="button"
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-[16px] border border-dashed border-border text-sm text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-colors"
+            variant="ghost"
+            className="h-11 w-full border border-dashed border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground"
           >
             <Plus className="h-4 w-4" />
             Add step
-          </button>
+          </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-72 p-3">
           <TagSearchCreate

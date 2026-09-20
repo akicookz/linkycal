@@ -724,7 +724,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
                     <div className="space-y-2">
                       <Label htmlFor="project-slug">URL Slug</Label>
-                      <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-10">
+                      <div className="flex items-center rounded-full border border-border bg-muted/50 px-3 h-10">
                         <span className="text-sm text-muted-foreground mr-1">linkycal.com/</span>
                         <span className="text-sm font-medium text-foreground">
                           {slug || "your-project"}
@@ -1020,7 +1020,7 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
 
                     <div className="space-y-2">
                       <Label htmlFor="event-slug">URL Slug</Label>
-                      <div className="flex items-center rounded-[12px] border bg-muted/50 px-3 h-10">
+                      <div className="flex items-center rounded-full border border-border bg-muted/50 px-3 h-10">
                         <span className="text-sm text-muted-foreground mr-1">linkycal.com/{slug}/</span>
                         <span className="text-sm font-medium text-foreground">
                           {eventSlug || "your-event"}

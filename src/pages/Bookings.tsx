@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -265,8 +266,8 @@ export default function Bookings() {
 
       {/* Loading */}
       {loadingBookings && (
-        <div className="grid max-w-3xl grid-cols-1 gap-3">
-          {Array.from({ length: 3 }).map((_, i) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-[160px] rounded-[20px]" />
           ))}
         </div>
@@ -291,7 +292,7 @@ export default function Bookings() {
           {filteredBookings.length === 0 ? (
             renderEmptyState()
           ) : (
-            <div className="grid max-w-3xl grid-cols-1 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredBookings.map((booking) => (
                 <ActivityCard
                   key={booking.id}
@@ -392,13 +393,13 @@ export default function Bookings() {
               Optionally include a message to the guest explaining why.
             </DialogDescription>
           </DialogHeader>
-          <textarea
-            className="w-full rounded-[12px] bg-muted/50 px-3 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-none"
+          <Textarea
             rows={3}
             placeholder="Optional message to the guest..."
             value={declineMessage}
             onChange={(e) => setDeclineMessage(e.target.value)}
             disabled={declineMutation.isPending}
+            className="resize-none"
           />
           <DialogFooter>
             <Button

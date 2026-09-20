@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { SEOHead } from "@/components/SEOHead";
 import { MarketingNav } from "@/components/marketing/MarketingNav";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
@@ -703,19 +704,13 @@ export default function AlternativePage() {
                 {data.subcopy}
               </p>
               <div className="flex flex-col sm:flex-row gap-3">
-                <button
-                  onClick={onGetStarted}
-                  className="glow-surface rounded-full h-12 px-8 text-sm font-medium inline-flex items-center justify-center gap-2"
-                >
+                <Button onClick={onGetStarted} size="lg" className="h-12">
                   Start free
                   <ArrowRight className="w-4 h-4" />
-                </button>
-                <a
-                  href="#pricing"
-                  className="glow-surface-subtle rounded-full h-12 px-6 text-sm font-medium inline-flex items-center justify-center text-foreground"
-                >
-                  See pricing
-                </a>
+                </Button>
+                <Button variant="outline" size="lg" className="h-12 px-6" asChild>
+                  <a href="#pricing">See pricing</a>
+                </Button>
               </div>
               <div className="flex flex-wrap items-center gap-x-6 gap-y-2 mt-6 text-sm font-medium text-foreground">
                 {data.checkmarks.map((mark) => (

@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, Link2, Code2 } from "lucide-react";
+import { ArrowRight, Link2, Code2, Mail, Loader } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { SEOHead } from "@/components/SEOHead";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -347,18 +349,17 @@ export default function Landing() {
 
           {/* CTA */}
           <div className="mx-auto mt-9 flex w-full max-w-md flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-center">
-            <button
+            <Button
               onClick={openAuth}
-              className="marketing-pill-cta hero-cta-flat relative h-14 w-full justify-center gap-3 px-16 text-[15px] font-medium sm:w-auto"
+              size="lg"
+              className="h-14 w-full text-[15px] sm:w-auto"
             >
               Build your free form
-              <span className="absolute right-2 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/15">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white/15">
                 <ArrowRight className="w-4 h-4" />
               </span>
-            </button>
-            <SetupAgentsLink
-              className="h-14 w-full justify-center rounded-full bg-white/70 px-4 text-[15px] font-medium text-foreground backdrop-blur transition-colors hover:bg-white sm:w-auto sm:px-7"
-            />
+            </Button>
+            <SetupAgentsLink className="h-14 w-full text-[15px] sm:w-auto" />
           </div>
 
           {/* Product showcase cards */}
@@ -494,10 +495,12 @@ export default function Landing() {
           {authStep === "social" ? (
             <>
               <div className="flex flex-col gap-3 mt-4">
-                <button
+                <Button
+                  variant="outline"
+                  size="lg"
                   onClick={() => handleSignIn("google")}
                   disabled={loading !== null}
-                  className="flex items-center justify-center gap-3 h-11 w-full rounded-[14px] border border-border bg-white text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  className="w-full"
                 >
                   <svg className="w-5 h-5" viewBox="0 0 24 24">
                     <path
@@ -518,11 +521,13 @@ export default function Landing() {
                     />
                   </svg>
                   {loading === "google" ? "Redirecting..." : "Continue with Google"}
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="outline"
+                  size="lg"
                   onClick={() => handleSignIn("facebook")}
                   disabled={loading !== null}
-                  className="flex items-center justify-center gap-3 h-11 w-full rounded-[14px] border border-border bg-white text-sm font-medium text-foreground hover:bg-accent transition-colors disabled:opacity-50"
+                  className="w-full"
                 >
                   <svg
                     className="w-5 h-5"
@@ -532,7 +537,7 @@ export default function Landing() {
                     <path d="M24 12c0-6.627-5.373-12-12-12S0 5.373 0 12c0 5.99 4.388 10.954 10.125 11.854V15.47H7.078V12h3.047V9.356c0-3.007 1.792-4.668 4.533-4.668 1.312 0 2.686.234 2.686.234v2.953H15.83c-1.491 0-1.956.925-1.956 1.875V12h3.328l-.532 3.47h-2.796v8.384C19.612 22.954 24 17.99 24 12z" />
                   </svg>
                   {loading === "facebook" ? "Redirecting..." : "Continue with Facebook"}
-                </button>
+                </Button>
               </div>
 
               <div className="flex items-center gap-3 mt-1">
@@ -548,31 +553,37 @@ export default function Landing() {
                 }}
                 className="flex flex-col gap-3"
               >
-                <input
+                <Input
                   type="email"
                   placeholder="name@example.com"
                   value={otpEmail}
                   onChange={(e) => setOtpEmail(e.target.value)}
                   disabled={loading !== null}
-                  className="h-11 w-full rounded-[12px] border border-border bg-muted/50 px-4 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50"
+                  className="h-11"
                 />
                 {otpError && (
                   <p className="text-xs text-red-500 text-center">{otpError}</p>
                 )}
-                <button
+                <Button
                   type="submit"
+                  size="lg"
                   disabled={loading !== null || !otpEmail.trim()}
-                  className="flex items-center justify-center gap-2 h-11 w-full rounded-[14px] bg-[#1B4332] text-sm font-medium text-white hover:bg-[#1B4332]/90 transition-colors disabled:opacity-50"
+                  className="w-full"
                 >
+                  {loading === "email" ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="h-4 w-4" />
+                  )}
                   {loading === "email" ? "Sending code..." : "Continue with email"}
-                </button>
+                </Button>
               </form>
             </>
           ) : (
             <div className="flex flex-col gap-4 mt-4">
               <div className="flex justify-center gap-2" onPaste={handleOtpPaste}>
                 {otpValues.map((val, i) => (
-                  <input
+                  <Input
                     key={i}
                     ref={(el) => { otpRefs.current[i] = el; }}
                     type="text"
@@ -582,30 +593,36 @@ export default function Landing() {
                     onChange={(e) => handleOtpChange(i, e.target.value)}
                     onKeyDown={(e) => handleOtpKeyDown(i, e)}
                     disabled={loading === "verify"}
-                    className="h-12 w-11 rounded-[10px] border border-border bg-muted/50 text-center text-lg font-semibold text-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:opacity-50"
+                    className="h-12 w-11 px-0 text-center text-lg font-semibold"
                   />
                 ))}
               </div>
               {otpError && (
                 <p className="text-xs text-red-500 text-center">{otpError}</p>
               )}
-              <button
+              <Button
                 onClick={handleVerifyOtp}
+                size="lg"
                 disabled={loading === "verify" || otpValues.join("").length !== 6}
-                className="flex items-center justify-center gap-2 h-11 w-full rounded-[14px] bg-[#1B4332] text-sm font-medium text-white hover:bg-[#1B4332]/90 transition-colors disabled:opacity-50"
+                className="w-full"
               >
+                {loading === "verify" ? (
+                  <Loader className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4" />
+                )}
                 {loading === "verify" ? "Verifying..." : "Verify & sign in"}
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="link"
                 onClick={() => {
                   setAuthStep("social");
                   setOtpValues(Array(6).fill(""));
                   setOtpError(null);
                 }}
-                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 &larr; Back
-              </button>
+              </Button>
             </div>
           )}
 

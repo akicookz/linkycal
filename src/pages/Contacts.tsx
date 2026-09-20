@@ -33,6 +33,7 @@ import { TagSearchCreate } from "@/components/tag-search-create";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { SwitchRow } from "@/components/ui/switch-row";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -1338,13 +1339,13 @@ export default function Contacts() {
         </div>
         <div className="space-y-2">
           <Label htmlFor="contact-notes">Notes</Label>
-          <textarea
+          <Textarea
             id="contact-notes"
             placeholder="Any additional notes..."
             value={form.notes}
             onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
             rows={3}
-            className="flex w-full rounded-[12px] border border-border bg-white px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+            className="resize-none"
           />
         </div>
       </div>
@@ -1534,7 +1535,7 @@ export default function Contacts() {
             placeholder="Search contacts by name, email, or phone..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
-            className="pl-9 h-9"
+            className="pl-9"
           />
           {searchInput && (
             <button
@@ -1550,7 +1551,7 @@ export default function Contacts() {
         {/* Filters popover */}
         <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
           <PopoverTrigger asChild>
-            <Button variant="outline" size="sm">
+            <Button variant="outline">
               <Filter className="h-4 w-4" />
               Filters
               {filterCount > 0 && (
@@ -1575,7 +1576,7 @@ export default function Contacts() {
                     }))
                   }
                 >
-                  <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Any activity type" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1608,7 +1609,6 @@ export default function Contacts() {
                             : undefined,
                         }))
                       }
-                      className="h-8 text-xs"
                     />
                   </div>
                   <div className="min-w-0 space-y-1">
@@ -1628,7 +1628,6 @@ export default function Contacts() {
                             : undefined,
                         }))
                       }
-                      className="h-8 text-xs"
                     />
                   </div>
                 </div>
@@ -1647,7 +1646,7 @@ export default function Contacts() {
                     }))
                   }
                 >
-                  <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Any" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1775,7 +1774,7 @@ export default function Contacts() {
           {/* Saved views dropdown */}
           <Popover open={viewsMenuOpen} onOpenChange={setViewsMenuOpen}>
             <PopoverTrigger asChild>
-              <Button variant="outline" className="h-9 min-w-0 max-w-full flex-1 sm:flex-none">
+              <Button variant="outline" className="min-w-0 max-w-full flex-1 sm:flex-none">
                 <Bookmark className="h-4 w-4" />
                 <span className="truncate">{activeView ? activeView.name : "All contacts"}</span>
                 <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
@@ -1879,12 +1878,12 @@ export default function Contacts() {
             value={viewType}
             onValueChange={(v) => setViewType(v as ViewType)}
           >
-            <TabsList className="h-9">
-              <TabsTrigger value="list" className="h-7 px-2.5">
+            <TabsList>
+              <TabsTrigger value="list" className="px-2.5">
                 <ListIcon className="h-3.5 w-3.5" />
                 Table
               </TabsTrigger>
-              <TabsTrigger value="kanban" className="h-7 px-2.5">
+              <TabsTrigger value="kanban" className="px-2.5">
                 <LayoutGrid className="h-3.5 w-3.5" />
                 Kanban
               </TabsTrigger>
