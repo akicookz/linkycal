@@ -204,22 +204,22 @@ const ALTERNATIVES: Record<string, AlternativeData> = {
   tally: {
     slug: "tally",
     competitor: "Tally",
-    seoTitle: "Tally Alternative",
+    seoTitle: "Free Tally Alternative with Scheduling",
     seoDescription:
-      "A Tally alternative that keeps the easy form builder and adds built-in scheduling, a contacts CRM, and workflows, all in one backend.",
-    eyebrow: "The Tally alternative",
-    headline: "Beautiful, free forms,",
-    highlightedHeadline: "to share or embed anywhere.",
+      "Looking for a free Tally alternative? LinkyCal keeps easy forms and adds built-in scheduling, contacts, and workflows — no Calendly or Zapier glue.",
+    eyebrow: "Free Tally alternative",
+    headline: "Tally alternative with forms,",
+    highlightedHeadline: "scheduling, and contacts.",
     subcopy:
-      "Tally is a lovely free form builder, and we mean that. Where it stops is the rest of the job. Once a form comes in you still need to schedule the meeting, keep the contact, and follow up. LinkyCal does the forms and all of that next part in one backend.",
+      "Tally is a lovely free form builder, and we mean that. Where it stops is the rest of the job. Once a form comes in you still need to schedule the meeting, keep the contact, and usually Zapier to glue them together. LinkyCal does the forms and all of that next part in one backend.",
     checkmarks: [
       "Quick, visual form builder",
-      "Booking pages included",
+      "Booking without Calendly glue",
       "Contacts list built in",
     ],
     HeroVisual: MockBookingUI,
     intro:
-      "Most people land on Tally because it is generous and easy. Then the workflow grows. You add a scheduling tool, then a place to store contacts, then a zap to glue them together. LinkyCal is what that pile of tools wants to be when it grows up, forms and scheduling and contacts under one roof.",
+      "Most people land on Tally because it is generous and easy. Then the workflow grows. You add a scheduling tool, then a place to store contacts, then a zap to glue them together. Reddit threads on Tally intake to Calendly and the Zapier/Make listings for Tally ↔ Calendly show the pattern. LinkyCal is what that pile of tools wants to be when it grows up — forms, scheduling, and contacts under one roof.",
     rows: [
       { label: "Quick multi-step form builder", linkycal: true, competitor: true },
       { label: "Scheduling & booking pages", linkycal: true, competitor: false },
@@ -234,12 +234,12 @@ const ALTERNATIVES: Record<string, AlternativeData> = {
       {
         Icon: Workflow,
         title: "Forms that do not stop at submit",
-        body: "Build multi-step forms, then send the submission straight into a booking, a tag, or a workflow. The answer turns into action on its own.",
+        body: "Build multi-step forms, then send the submission straight into a booking, a tag, or a workflow. No separate automation hop — the answer turns into action on its own.",
       },
       {
         Icon: CalendarCheck,
         title: "Scheduling that is actually built in",
-        body: "A booking page and live calendar sync ship with your project. No separate scheduler, no second login.",
+        body: "A booking page and live calendar sync ship with your project. The default path does not need a second scheduler login.",
       },
       {
         Icon: Users,
@@ -251,21 +251,21 @@ const ALTERNATIVES: Record<string, AlternativeData> = {
       {
         question: "Is LinkyCal free too?",
         answer:
-          "Yes, there is a free plan you can build and launch on. You move up when you need more projects, more calendar connections, team members, or the API.",
+          "Yes. There is a free plan you can build and launch on. Upgrade when you need more capacity or branding.",
       },
       {
         question: "Do I lose the simple builder?",
         answer:
-          "No. Building a form stays quick and visual. You just get scheduling and contacts sitting right next to it.",
+          "No. Building a form stays quick and visual. The difference is after submit — scheduling, contacts, and workflows sit next to the form.",
       },
       {
         question: "Can I embed on any site?",
         answer:
-          "Yes. Drop in a script tag or POST from plain HTML. It works on Webflow, WordPress, or a hand coded page.",
+          "Yes. Embed a widget, drop in a script tag, or POST from plain HTML. It works on Webflow, WordPress, or a hand-coded page.",
       },
     ],
     closing:
-      "Tally wins on a quick free form. LinkyCal wins the minute that form needs to lead somewhere, like a booked meeting and a saved contact.",
+      "Tally wins on a quick free form. LinkyCal wins the minute that form needs to lead somewhere — a booked meeting and a saved contact.",
   },
 
   calendly: {
