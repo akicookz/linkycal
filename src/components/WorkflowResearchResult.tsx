@@ -36,7 +36,9 @@ export function WorkflowResearchResult({
     asString(record.summary) ||
     fallbackSummary;
   const facts = FACT_FIELDS.flatMap((field) => {
-    const fieldValue = asString(result[field.key]);
+    const fieldValue = field.kind === "string_list"
+      ? asStringList(result[field.key]).join(", ")
+      : asString(result[field.key]);
     return fieldValue ? [{ ...field, value: fieldValue }] : [];
   });
   const sources = asSources(result.sources);

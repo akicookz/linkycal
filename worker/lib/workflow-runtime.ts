@@ -107,6 +107,8 @@ const workflowResearchResultShape = {
   summary: z.string(),
   company: z.string().nullable(),
   role: z.string().nullable(),
+  phone: z.array(z.string()),
+  email: z.array(z.string()),
   website: z.string().nullable(),
   linkedinUrl: z.string().nullable(),
   location: z.string().nullable(),

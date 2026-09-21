@@ -1471,6 +1471,8 @@ export class WorkflowExecutionService {
       `Research this contact and their company using public sources: ` +
       `${contact.name}${contact.email ? ` <${contact.email}>` : ""}. ` +
       `Return the company name, company website, the person's position/title, ` +
+      `every publicly listed phone number and email address for them or their ` +
+      `company, ` +
       `the company's size (employee range), an estimated annual revenue range, ` +
       `their LinkedIn URL, recent activity, expansion, recent posts from the ` +
       `company or leadership, team members, and a concise executive summary ` +

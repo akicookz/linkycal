@@ -37,6 +37,18 @@ export const WORKFLOW_RESEARCH_FIELD_DEFINITIONS = [
     section: "facts",
   },
   {
+    key: "phone",
+    label: "Phone",
+    kind: "string_list",
+    section: "facts",
+  },
+  {
+    key: "email",
+    label: "Email",
+    kind: "string_list",
+    section: "facts",
+  },
+  {
     key: "website",
     label: "Company website",
     kind: "url",

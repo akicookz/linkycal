@@ -105,6 +105,8 @@ export function buildResearchBrief(input: ResearchBriefInput): string {
       "Do not invent companies, roles, URLs, or tags:",
       "- Company",
       "- Role",
+      "- Phone numbers (list every publicly listed number, not just one)",
+      "- Email addresses (list every publicly listed address, not just one)",
       "- Website",
       "- LinkedIn",
       "- Location",

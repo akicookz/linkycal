@@ -17,6 +17,8 @@ Contact information:
 
 Identify and verify, where available:
 - Full name and current role
+- Phone numbers (include every publicly listed number, not just one)
+- Email addresses (include every publicly listed address, not just one)
 - Company name, website, industry, and description
 - Company size and estimated revenue range
 - Professional profile or LinkedIn URL
