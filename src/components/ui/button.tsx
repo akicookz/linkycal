@@ -66,8 +66,10 @@ function isIconNode(node: React.ReactNode): boolean {
 
 function visibleNodes(children: React.ReactNode): React.ReactNode[] {
   return React.Children.toArray(children).filter((node) => {
+    // Children.toArray already drops null, undefined and booleans, so only
+    // whitespace-only strings are left to filter out.
     if (typeof node === "string") return node.trim().length > 0;
-    return node != null && node !== false;
+    return true;
   });
 }
 
