@@ -730,7 +730,7 @@ function PageField({
       </button>
       <div
         className={cn(
-          "block w-full space-y-1.5 text-left",
+          "block w-full text-left",
           !isFieldSelected && "cursor-pointer",
         )}
         onClick={function selectField() {
@@ -770,29 +770,33 @@ function PageField({
             ) : null}
           </span>
         </div>
-        <FieldDescriptionEditor
-          field={field}
-          onSave={onSaveFieldDescription}
-        />
-        <FormFieldRenderer
-          key={`preview-${field.id}`}
-          field={{
-            id: field.id,
-            type: field.type,
-            label: field.label,
-            description: field.description,
-            placeholder: field.placeholder,
-            required: field.required,
-            options: field.options,
-            settings: field.settings ?? null,
-          }}
-          value={previewValues[field.id] ?? ""}
-          onChange={function changeValue(val) {
-            onPreviewValueChange(field.id, val);
-          }}
-          textareaRows={3}
-          chrome="control"
-        />
+        <div className="mt-1.5">
+          <FieldDescriptionEditor
+            field={field}
+            onSave={onSaveFieldDescription}
+          />
+        </div>
+        <div className="mt-3">
+          <FormFieldRenderer
+            key={`preview-${field.id}`}
+            field={{
+              id: field.id,
+              type: field.type,
+              label: field.label,
+              description: field.description,
+              placeholder: field.placeholder,
+              required: field.required,
+              options: field.options,
+              settings: field.settings ?? null,
+            }}
+            value={previewValues[field.id] ?? ""}
+            onChange={function changeValue(val) {
+              onPreviewValueChange(field.id, val);
+            }}
+            textareaRows={3}
+            chrome="control"
+          />
+        </div>
       </div>
     </div>
   );

@@ -61,10 +61,14 @@ export function FormFieldRenderer({
   if (field.type === "completion") return null;
 
   const showChrome = chrome === "full";
-  const hasSupportingCopy = Boolean(field.description) || showsChoiceHint;
+  // Nothing above the control means no gap above it, e.g. checkbox fields,
+  // which carry their own label inside the card.
+  const hasChromeAbove =
+    showChrome &&
+    (showsFieldLabel || Boolean(field.description) || showsChoiceHint);
 
   return (
-    <div className={cn(showChrome && "space-y-1.5", showChrome && !hasSupportingCopy && "space-y-3")}>
+    <div>
       {showChrome && showsFieldLabel && (
         <Label htmlFor={labelTargetId} className="text-sm font-medium">
           {field.label}
@@ -74,125 +78,131 @@ export function FormFieldRenderer({
 
       {showChrome && field.description && (
         <div
-          className="text-xs leading-5 text-muted-foreground prose prose-sm max-w-none"
+          className="mt-1.5 text-xs leading-5 text-muted-foreground prose prose-sm max-w-none"
           dangerouslySetInnerHTML={{ __html: field.description }}
         />
       )}
 
       {showChrome && showsChoiceHint && (
-        <p className="text-xs leading-5 text-muted-foreground">
+        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
           {field.placeholder}
         </p>
       )}
 
-      {field.type === "textarea" ? (
-        <Textarea
-          id={id}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={field.placeholder ?? undefined}
-          required={field.required}
-          rows={textareaRows}
-          aria-invalid={error ? true : undefined}
-          variant="focused"
-        />
-      ) : field.type === "select" ? (
-        <ChoiceFieldGroup
-          id={id}
-          mode="select"
-          options={field.options}
-          layout={parseOptionsLayout(field.settings)}
-          value={value}
-          onChange={onChange}
-          error={error}
-        />
-      ) : field.type === "multi_select" ? (
-        <ChoiceFieldGroup
-          id={id}
-          mode="multi_select"
-          options={field.options}
-          layout={parseOptionsLayout(field.settings)}
-          value={value}
-          onChange={onChange}
-          error={error}
-        />
-      ) : field.type === "radio" ? (
-        <ChoiceFieldGroup
-          id={id}
-          mode="radio"
-          options={field.options}
-          layout={parseOptionsLayout(field.settings)}
-          value={value}
-          onChange={onChange}
-          error={error}
-        />
-      ) : field.type === "checkbox" ? (
-        <ChoiceCard
-          title={
-            <>
-              {field.label}
-              {field.required && <span className="text-destructive ml-0.5">*</span>}
-            </>
-          }
-          description={field.placeholder}
-          selected={value === "true"}
-          control="checkbox"
-          error={!!error}
-        >
-          <input
+      <div className={cn(hasChromeAbove && "mt-3")}>
+        {field.type === "textarea" ? (
+          <Textarea
             id={id}
-            type="checkbox"
-            checked={value === "true"}
-            onChange={(e) => onChange(e.target.checked ? "true" : "")}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder ?? undefined}
             required={field.required}
-            className="sr-only"
+            rows={textareaRows}
             aria-invalid={error ? true : undefined}
+            variant="focused"
           />
-        </ChoiceCard>
-      ) : field.type === "rating" ? (
-        <RatingInput value={value} onChange={onChange} />
-      ) : field.type === "file" ? (
-        <FileInput
-          id={id}
-          inputRef={fileInputRef}
-          value={value}
-          fileValue={fileValue}
-          placeholder={field.placeholder}
-          required={field.required}
-          error={error}
-          onChange={(file) => {
-            onFileChange?.(file);
-            onChange(file?.name ?? "");
-          }}
-        />
-      ) : (
-        <Input
-          id={id}
-          type={
-            field.type === "email"
-              ? "email"
-              : field.type === "phone"
-                ? "tel"
-                : field.type === "url"
-                  ? "url"
-                  : field.type === "number"
-                    ? "number"
-                    : field.type === "date"
-                      ? "date"
-                      : field.type === "time"
-                        ? "time"
-                        : "text"
-          }
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={field.placeholder ?? undefined}
-          required={field.required}
-          aria-invalid={error ? true : undefined}
-          variant="focused"
-        />
-      )}
+        ) : field.type === "select" ? (
+          <ChoiceFieldGroup
+            id={id}
+            mode="select"
+            options={field.options}
+            layout={parseOptionsLayout(field.settings)}
+            value={value}
+            onChange={onChange}
+            error={error}
+          />
+        ) : field.type === "multi_select" ? (
+          <ChoiceFieldGroup
+            id={id}
+            mode="multi_select"
+            options={field.options}
+            layout={parseOptionsLayout(field.settings)}
+            value={value}
+            onChange={onChange}
+            error={error}
+          />
+        ) : field.type === "radio" ? (
+          <ChoiceFieldGroup
+            id={id}
+            mode="radio"
+            options={field.options}
+            layout={parseOptionsLayout(field.settings)}
+            value={value}
+            onChange={onChange}
+            error={error}
+          />
+        ) : field.type === "checkbox" ? (
+          <ChoiceCard
+            title={
+              <>
+                {field.label}
+                {field.required && <span className="text-destructive ml-0.5">*</span>}
+              </>
+            }
+            description={field.placeholder}
+            selected={value === "true"}
+            control="checkbox"
+            error={!!error}
+          >
+            <input
+              id={id}
+              type="checkbox"
+              checked={value === "true"}
+              onChange={(e) => onChange(e.target.checked ? "true" : "")}
+              required={field.required}
+              className="sr-only"
+              aria-invalid={error ? true : undefined}
+            />
+          </ChoiceCard>
+        ) : field.type === "rating" ? (
+          <RatingInput value={value} onChange={onChange} />
+        ) : field.type === "file" ? (
+          <FileInput
+            id={id}
+            inputRef={fileInputRef}
+            value={value}
+            fileValue={fileValue}
+            placeholder={field.placeholder}
+            required={field.required}
+            error={error}
+            onChange={(file) => {
+              onFileChange?.(file);
+              onChange(file?.name ?? "");
+            }}
+          />
+        ) : (
+          <Input
+            id={id}
+            type={
+              field.type === "email"
+                ? "email"
+                : field.type === "phone"
+                  ? "tel"
+                  : field.type === "url"
+                    ? "url"
+                    : field.type === "number"
+                      ? "number"
+                      : field.type === "date"
+                        ? "date"
+                        : field.type === "time"
+                          ? "time"
+                          : "text"
+            }
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={field.placeholder ?? undefined}
+            required={field.required}
+            aria-invalid={error ? true : undefined}
+            variant="focused"
+          />
+        )}
+      </div>
 
-      {error && <p className="text-xs text-destructive">{error}</p>}
+      {error && (
+        <p className="mt-1.5 text-xs text-destructive">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

@@ -507,7 +507,7 @@ export function FormExperience(props: FormExperienceProps) {
         ) : null}
         {showImage && image ? (
           <div
-            className="relative aspect-[4/3] w-full overflow-hidden rounded-[16px]"
+            className="relative aspect-[4/3] w-full overflow-hidden rounded-[var(--radius)]"
             {...chromeMarkerProps("media")}
           >
             <SectionMedia image={image} />

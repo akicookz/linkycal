@@ -25,10 +25,17 @@ function cssVars(
   return vars as CSSProperties;
 }
 
+// Customer-facing surfaces opt out of LinkyCal's pill control language and
+// follow the project's own radius, even when the project has no theme saved.
+const CONTROL_RADIUS: [string, string | undefined] = [
+  "--control-radius",
+  "var(--radius)",
+];
+
 export function experienceThemeVars(
   theme?: FormExperienceTheme,
 ): CSSProperties {
-  if (!theme) return {};
+  if (!theme) return cssVars([CONTROL_RADIUS]);
 
   const primaryBg = theme.primaryBg;
   const radius =
@@ -41,6 +48,7 @@ export function experienceThemeVars(
   });
 
   const entries: Array<[string, string | undefined]> = [
+    CONTROL_RADIUS,
     ["--primary", primaryBg],
     ["--primary-foreground", primaryBg ? theme.primaryText || "#ffffff" : theme.primaryText],
     ["--ring", primaryBg],

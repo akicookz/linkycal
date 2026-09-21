@@ -53,9 +53,24 @@
 }
 
 /* ─── Light-First Design Language ──────────────────────────────────────────── */
+/*
+ * Two radius domains, do not mix them:
+ *
+ *   --radius          the CUSTOMER's knob (Settings → Border Radius, applied by
+ *                     experienceThemeVars on public booking/form surfaces).
+ *                     Anything a customer's visitor sees reads this.
+ *   --control-radius  LinkyCal's own control language (pill). Customer surfaces
+ *                     override it to var(--radius); LinkyCal chrome keeps it.
+ *
+ * LinkyCal chrome (dashboard, marketing, auth) uses literal px radii on purpose
+ * so it never drifts when a customer moves their slider.
+ */
 
 :root {
   --radius: 1rem;
+  /* LinkyCal chrome speaks in pills. Customer-facing surfaces override this
+     with their own --radius via experienceThemeVars(). */
+  --control-radius: 9999px;
 
   /* Dark forest green brand scale */
   --brand: #1b4332;
@@ -572,7 +587,7 @@ html[data-embed="1"] body {
 }
 
 .lc-themed-button {
-  border-radius: 9999px;
+  border-radius: var(--radius);
 }
 .lc-themed-hover:not([data-selected="true"]):hover {
   --ring-shadow-color: var(--primary);

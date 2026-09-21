@@ -557,7 +557,7 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground">Display name for this project.</p>
                 </div>
                 {loadingProject ? (
-                  <Skeleton className="h-9 w-64" />
+                  <Skeleton className="h-9 md:h-10 w-64" />
                 ) : (
                   <Input
                     value={projectName}
@@ -577,7 +577,7 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground">Used in your public booking & form links. Old links redirect to the new slug.</p>
                 </div>
                 {loadingProject ? (
-                  <Skeleton className="h-9 w-64" />
+                  <Skeleton className="h-10 w-64" />
                 ) : (
                   <div className="flex items-center rounded-full border border-border bg-muted/50 px-3 h-10 w-64">
                     <span className="text-sm text-muted-foreground shrink-0">linkycal.com/</span>
@@ -602,7 +602,7 @@ export default function Settings() {
                   <p className="text-xs text-muted-foreground">Default for bookings and availability.</p>
                 </div>
                 {loadingProject ? (
-                  <Skeleton className="h-9 w-64" />
+                  <Skeleton className="h-9 md:h-10 w-64" />
                 ) : (
                   <Select
                     value={projectTimezone}
