@@ -54,10 +54,10 @@ function actionValue(result: ActionResult<unknown>, key?: string): ToolResult {
 
 // ─── Handlers (exported for unit tests) ──────────────────────────────────────
 
+// Returns the whole { contacts, total } page: MCP structuredContent must be an
+// object, so unwrapping to a bare array makes the response spec-invalid.
 export async function listContacts(ctx: ToolContext, input: z.input<typeof listContactsQuerySchema>): Promise<ToolResult> {
-  const result = await listContactsAction(deps(ctx), input);
-  if (!result.ok) return actionToMcpResult(result);
-  return ok((result.value as { contacts: unknown[] }).contacts);
+  return actionValue(await listContactsAction(deps(ctx), input));
 }
 
 export async function getContact(ctx: ToolContext, input: { contactId: string }): Promise<ToolResult> {

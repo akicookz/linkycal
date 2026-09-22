@@ -18,11 +18,20 @@ type AppDatabase = DrizzleD1Database<Record<string, unknown>>;
 
 export type ToolResult = CallToolResult;
 
+// MCP requires structuredContent to be a JSON object. Arrays and scalars are
+// wrapped under `result` rather than cast, or strict clients reject the whole
+// response and the tool reads as broken.
 export function ok(data: unknown): ToolResult {
   const text = JSON.stringify(data, null, 2);
+  const parsed: unknown = JSON.parse(text);
+  const isObject = parsed !== null
+    && typeof parsed === "object"
+    && !Array.isArray(parsed);
   return {
     content: [{ type: "text", text }],
-    structuredContent: JSON.parse(text) as Record<string, unknown>,
+    structuredContent: isObject
+      ? parsed as Record<string, unknown>
+      : { result: parsed },
   };
 }
 

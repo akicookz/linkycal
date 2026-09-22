@@ -41,8 +41,10 @@ function actionValue(result: ActionResult<unknown>, key?: string): ToolResult {
   return ok(key ? (result.value as Record<string, unknown>)[key] : result.value);
 }
 
+// Returns the whole { workflows } object: unwrapping to a bare array makes the
+// MCP response spec-invalid.
 export async function listWorkflows(ctx: ToolContext): Promise<ToolResult> {
-  return actionValue(await listWorkflowsAction(deps(ctx)), "workflows");
+  return actionValue(await listWorkflowsAction(deps(ctx)));
 }
 
 export async function getWorkflow(ctx: ToolContext, input: { workflowId: string }): Promise<ToolResult> {
