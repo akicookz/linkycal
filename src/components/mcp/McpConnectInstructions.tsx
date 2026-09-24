@@ -87,10 +87,95 @@ function InstructionList({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function McpConnectInstructions() {
+export function McpConnectTabs() {
   const mcpUrl = `${window.location.origin}/api/mcp`;
   const claudeCommand = `claude mcp add --transport http linkycal ${mcpUrl}`;
 
+  return (
+    <Tabs defaultValue="claude">
+      <div className="overflow-x-auto pb-1">
+        <TabsList className="h-auto min-w-max justify-start">
+          <TabsTrigger value="claude">
+            <ClientTab name="Claude" />
+          </TabsTrigger>
+          <TabsTrigger value="chatgpt">
+            <ClientTab name="ChatGPT" />
+          </TabsTrigger>
+          <TabsTrigger value="cursor">
+            <ClientTab name="Cursor" />
+          </TabsTrigger>
+          <TabsTrigger value="lovable">
+            <ClientTab name="Lovable" />
+          </TabsTrigger>
+        </TabsList>
+      </div>
+
+      <TabsContent value="claude" className="mt-5 space-y-5">
+        <InstructionList>
+          <li>Open Settings, then Connectors.</li>
+          <li>
+            Click Add custom connector, paste <code>{mcpUrl}</code>, and
+            continue.
+          </li>
+          <li>Sign in to LinkyCal and select the project to connect.</li>
+        </InstructionList>
+        <CopyField label="MCP server URL" value={mcpUrl} />
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-foreground">
+            Claude Code
+          </p>
+          <CopyField label="Run in a terminal" value={claudeCommand} />
+          <p className="text-sm text-muted-foreground">
+            Then run <code>/mcp</code> in a session and select{" "}
+            <code>linkycal</code> to sign in.
+          </p>
+        </div>
+      </TabsContent>
+
+      <TabsContent value="chatgpt" className="mt-5 space-y-5">
+        <InstructionList>
+          <li>Open Settings, then Apps &amp; Connectors.</li>
+          <li>
+            Open Advanced settings, enable Developer mode, and choose
+            Create app.
+          </li>
+          <li>
+            Paste the MCP URL and complete LinkyCal OAuth in the browser.
+          </li>
+        </InstructionList>
+        <CopyField label="MCP server URL" value={mcpUrl} />
+        <p className="text-xs leading-5 text-muted-foreground">
+          Availability depends on your current ChatGPT workspace and plan.
+        </p>
+      </TabsContent>
+
+      <TabsContent value="cursor" className="mt-5 space-y-5">
+        <InstructionList>
+          <li>Open Settings, then Tools &amp; MCP.</li>
+          <li>Choose New MCP server and select Streamable HTTP.</li>
+          <li>
+            Paste the MCP URL and complete OAuth in the browser window.
+          </li>
+        </InstructionList>
+        <CopyField label="MCP server URL" value={mcpUrl} />
+      </TabsContent>
+
+      <TabsContent value="lovable" className="mt-5 space-y-5">
+        <InstructionList>
+          <li>Open Settings, then Connectors.</li>
+          <li>Open Personal connectors and choose New MCP server.</li>
+          <li>
+            Paste the MCP URL, keep OAuth selected, then sign in and
+            select a LinkyCal project.
+          </li>
+        </InstructionList>
+        <CopyField label="MCP server URL" value={mcpUrl} />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+export function McpConnectInstructions() {
   return (
     <section aria-labelledby="mcp-connect-title">
       <Card>
@@ -102,86 +187,7 @@ export function McpConnectInstructions() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="claude">
-            <div className="overflow-x-auto pb-1">
-              <TabsList className="h-auto min-w-max justify-start">
-                <TabsTrigger value="claude">
-                  <ClientTab name="Claude" />
-                </TabsTrigger>
-                <TabsTrigger value="chatgpt">
-                  <ClientTab name="ChatGPT" />
-                </TabsTrigger>
-                <TabsTrigger value="cursor">
-                  <ClientTab name="Cursor" />
-                </TabsTrigger>
-                <TabsTrigger value="lovable">
-                  <ClientTab name="Lovable" />
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <TabsContent value="claude" className="mt-5 space-y-5">
-              <InstructionList>
-                <li>Open Settings, then Connectors.</li>
-                <li>
-                  Click Add custom connector, paste <code>{mcpUrl}</code>, and
-                  continue.
-                </li>
-                <li>Sign in to LinkyCal and select the project to connect.</li>
-              </InstructionList>
-              <CopyField label="MCP server URL" value={mcpUrl} />
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-foreground">
-                  Claude Code
-                </p>
-                <CopyField label="Run in a terminal" value={claudeCommand} />
-                <p className="text-sm text-muted-foreground">
-                  Then run <code>/mcp</code> in a session and select{" "}
-                  <code>linkycal</code> to sign in.
-                </p>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="chatgpt" className="mt-5 space-y-5">
-              <InstructionList>
-                <li>Open Settings, then Apps &amp; Connectors.</li>
-                <li>
-                  Open Advanced settings, enable Developer mode, and choose
-                  Create app.
-                </li>
-                <li>
-                  Paste the MCP URL and complete LinkyCal OAuth in the browser.
-                </li>
-              </InstructionList>
-              <CopyField label="MCP server URL" value={mcpUrl} />
-              <p className="text-xs leading-5 text-muted-foreground">
-                Availability depends on your current ChatGPT workspace and plan.
-              </p>
-            </TabsContent>
-
-            <TabsContent value="cursor" className="mt-5 space-y-5">
-              <InstructionList>
-                <li>Open Settings, then Tools &amp; MCP.</li>
-                <li>Choose New MCP server and select Streamable HTTP.</li>
-                <li>
-                  Paste the MCP URL and complete OAuth in the browser window.
-                </li>
-              </InstructionList>
-              <CopyField label="MCP server URL" value={mcpUrl} />
-            </TabsContent>
-
-            <TabsContent value="lovable" className="mt-5 space-y-5">
-              <InstructionList>
-                <li>Open Settings, then Connectors.</li>
-                <li>Open Personal connectors and choose New MCP server.</li>
-                <li>
-                  Paste the MCP URL, keep OAuth selected, then sign in and
-                  select a LinkyCal project.
-                </li>
-              </InstructionList>
-              <CopyField label="MCP server URL" value={mcpUrl} />
-            </TabsContent>
-          </Tabs>
+          <McpConnectTabs />
         </CardContent>
       </Card>
     </section>

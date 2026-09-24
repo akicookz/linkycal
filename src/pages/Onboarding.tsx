@@ -26,6 +26,7 @@ import { Logo } from "@/components/Logo";
 import { UpgradeDialog } from "@/components/UpgradeDialog";
 import FormBuilder from "@/pages/FormBuilder";
 import CopyPromptButton from "@/components/CopyPromptButton";
+import { AgentHandoffPanel } from "@/components/mcp/AgentHandoffPanel";
 import { cn, copyToClipboard } from "@/lib/utils";
 import { signOut } from "@/lib/auth-client";
 import { usePlanLimitDialog } from "@/hooks/use-plan-limit-dialog";
@@ -163,6 +164,12 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
             : "Team dashboard",
       }));
   }, [accessibleProjects]);
+
+  // Only collaborators on someone else's team need the switcher — a user
+  // setting up their own first workspace has nothing to switch to.
+  const showWorkspaceSwitcher = accessibleProjects.some(
+    (project) => project.teamRole && project.teamRole !== "owner",
+  );
 
   function handleWorkspaceChange(value: string) {
     if (value === "personal") return;
@@ -666,13 +673,13 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                   <Logo size="sm" iconOnly />
                 </span>
               </div>
-              {workspaceOptions.length > 0 && (
+              {showWorkspaceSwitcher && (
                 <Select value="personal" onValueChange={handleWorkspaceChange}>
                   <SelectTrigger
                     aria-label="Switch workspace"
                     className="h-10 w-[min(13.5rem,calc(100vw-6rem))] bg-background shadow-[0_8px_24px_-20px_rgba(15,26,20,0.45)]"
                   >
-                    <SelectValue placeholder="Personal setup" />
+                    <SelectValue>Personal setup</SelectValue>
                   </SelectTrigger>
                   <SelectContent align="end" className="w-64">
                     <SelectItem value="personal">
@@ -856,6 +863,14 @@ export default function Onboarding({ mode = "onboarding" }: OnboardingProps) {
                         );
                       })}
                     </div>
+
+                    <AgentHandoffPanel
+                      finishing={completeMutation.isPending}
+                      onFinish={() => {
+                        if (projectId) completeOnboarding(projectId);
+                      }}
+                      onConnectOpen={() => posthog?.capture("onboarding_agent_connect_opened")}
+                    />
 
                     {error && <p className="text-sm text-destructive">{error}</p>}
 
